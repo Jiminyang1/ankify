@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-ui: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* ── Dark theme (default) ── */
+:root,
+[data-theme="dark"] {
+  --bg: 20 20 24;
+  --surface: 28 28 33;
+  --subtle: 34 34 40;
+  --fg: 228 228 232;
+  --muted: 132 131 137;
+  --border: 48 48 54;
+  --accent: 212 168 83;
+  --accent-soft: 42 38 28;
+  --success: 76 175 145;
+  --warning: 212 168 83;
+  --danger: 224 85 106;
+  --easy: 76 175 145;
+  --medium: 212 168 83;
+  --hard: 224 85 106;
+  --shadow-color: 0 0 0;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg: 250 249 247;
+  --surface: 255 255 255;
+  --subtle: 242 241 239;
+  --fg: 26 26 30;
+  --muted: 110 109 115;
+  --border: 229 227 224;
+  --accent: 184 150 63;
+  --accent-soft: 250 246 236;
+  --success: 45 143 109;
+  --warning: 184 150 63;
+  --danger: 199 62 85;
+  --easy: 45 143 109;
+  --medium: 184 150 63;
+  --hard: 199 62 85;
+  --shadow-color: 30 30 40;
+}
+
+html,
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  label,
+  button,
+  th,
+  .font-ui {
+    font-family: var(--font-ui);
+  }
+}
+
+@layer utilities {
+  .surface {
+    background: rgb(var(--surface));
+  }
+  .subtle {
+    background: rgb(var(--subtle));
+  }
+  .shadow-card {
+    box-shadow:
+      0 1px 0 0 rgb(var(--border) / 0.6),
+      0 1px 2px -1px rgb(var(--shadow-color) / 0.08),
+      0 4px 8px -4px rgb(var(--shadow-color) / 0.06);
+  }
+  .shadow-card-hover {
+    box-shadow:
+      0 1px 0 0 rgb(var(--border) / 0.7),
+      0 4px 8px -2px rgb(var(--shadow-color) / 0.10),
+      0 12px 24px -8px rgb(var(--shadow-color) / 0.10);
+  }
+  .ring-focus {
+    @apply outline-none ring-2 ring-accent/40 ring-offset-2 ring-offset-bg;
+  }
+}
+
+/* nicer scrollbars in code blocks */
+pre::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+pre::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 3px;
+}
+
+/* focus visible on all interactive elements by default */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.5);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

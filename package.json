@@ -1,0 +1,24 @@
+{
+  "name": "ankify",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Personal LeetCode/CS spaced-repetition app with FSRS-6, AI MCQs, and a Chrome extension",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @ankify/web dev",
+    "dev:ext": "pnpm --filter @ankify/extension dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @ankify/db generate",
+    "db:migrate": "pnpm --filter @ankify/db migrate",
+    "db:studio": "pnpm --filter @ankify/db studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0"
+  }
+}

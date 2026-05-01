@@ -1,0 +1,71 @@
+import { NextResponse } from "next/server";
+import { getDb, schema } from "@ankify/db";
+import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { rate, retrievability, schemas, type FsrsCardState } from "@ankify/core";
+import { getReviewQueueStatus } from "@/lib/review-queue";
+
+/** Classical FSRS review: user self-rates → FSRS schedules next review. */
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => null);
+  const parsed = schemas.reviewRatingSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
+  }
+  const { problemId, rating, notes } = parsed.data;
+  const db = getDb();
+  const now = new Date();
+
+  const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
+  if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
+
+  const state: FsrsCardState = {
+    due: problem.fsrsDue,
+    stability: problem.fsrsStability,
+    difficulty: problem.fsrsDifficulty,
+    elapsedDays: problem.fsrsElapsedDays,
+    scheduledDays: problem.fsrsScheduledDays,
+    reps: problem.fsrsReps,
+    lapses: problem.fsrsLapses,
+    state: problem.fsrsState,
+    lastReview: problem.fsrsLastReview,
+  };
+
+  const retrAtReview = retrievability(state);
+  const { next } = rate(state, rating, now);
+
+  await db
+    .update(schema.problems)
+    .set({
+      fsrsDue: next.due,
+      fsrsStability: next.stability,
+      fsrsDifficulty: next.difficulty,
+      fsrsElapsedDays: next.elapsedDays,
+      fsrsScheduledDays: next.scheduledDays,
+      fsrsReps: next.reps,
+      fsrsLapses: next.lapses,
+      fsrsState: next.state,
+      fsrsLastReview: next.lastReview,
+      updatedAt: now,
+      ...(notes !== undefined ? { notes } : {}),
+    })
+    .where(eq(schema.problems.id, problemId));
+
+  await db.insert(schema.reviewEvents).values({
+    id: nanoid(12),
+    problemId,
+    eventType: "self_recall_rated",
+    fsrsRating: rating,
+    fsrsStabilitySnap: next.stability,
+    fsrsDifficultySnap: next.difficulty,
+    fsrsRetrievabilitySnap: retrAtReview,
+  });
+
+  const queue = await getReviewQueueStatus(db);
+
+  return NextResponse.json({
+    ok: true,
+    nextDue: next.due,
+    queue,
+  });
+}

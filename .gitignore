@@ -1,0 +1,44 @@
+node_modules
+.next
+dist
+build
+out
+.turbo
+coverage
+.cache
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea
+
+# Local DB
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Drizzle
+drizzle/meta/_journal.json.bak
+
+# Extension build
+apps/extension/dist
+apps/extension/.output
