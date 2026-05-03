@@ -39,7 +39,7 @@ export async function setAiSettings(value: AiSettings) {
   const next = {
     ...existing,
     ...value,
-    apiKey: value.apiKey || existing.apiKey,
+    apiKey: value.apiKey === undefined ? existing.apiKey : value.apiKey || undefined,
   };
   await db
     .insert(schema.settings)

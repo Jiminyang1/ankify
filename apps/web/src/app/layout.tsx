@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ankify",
-  description: "Daily LeetCode review with spaced repetition and quizzes",
+  description: "Daily LeetCode review with spaced repetition and Q&A flashcards",
 };
 
 async function getDueCount(): Promise<number> {

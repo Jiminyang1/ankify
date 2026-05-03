@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, lt, ne } from "drizzle-orm";
-import { rate, type FsrsCardState, type FsrsRating } from "@ankify/core";
+import { preview, type FsrsCardState } from "@ankify/core";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
 const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -55,12 +55,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
     lastReview: problem.fsrsLastReview,
   };
 
-  const previews: Record<FsrsRating, { due: string }> = {
-    1: { due: rate(state, 1, now).next.due!.toISOString() },
-    2: { due: rate(state, 2, now).next.due!.toISOString() },
-    3: { due: rate(state, 3, now).next.due!.toISOString() },
-    4: { due: rate(state, 4, now).next.due!.toISOString() },
-  };
+  const previews = preview(state, now);
 
   return NextResponse.json({ problem, cards, candidates, previews, queue });
 }

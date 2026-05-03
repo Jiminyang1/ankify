@@ -128,6 +128,7 @@ export const reviewEvents = sqliteTable(
       .references(() => problems.id, { onDelete: "cascade" }),
     eventType: text("event_type", {
       enum: [
+        "problem_captured",
         "card_created",
         "submission_imported",
         "self_recall_rated",

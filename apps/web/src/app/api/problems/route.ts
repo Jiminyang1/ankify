@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, isNull, like, sql } from "drizzle-orm";
+import { dueProblemCondition } from "@/lib/due-problems";
 
 /** GET /api/problems?search= — list all problems with card counts, optional title search */
 export async function GET(req: Request) {
@@ -36,9 +37,10 @@ export async function GET(req: Request) {
     ]),
   );
 
-  const dueCount = problems.filter(
-    (p) => !p.fsrsDue || new Date(p.fsrsDue).valueOf() <= Date.now(),
-  ).length;
+  const [dueRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(schema.problems)
+    .where(dueProblemCondition(new Date()));
 
   return NextResponse.json({
     problems: problems.map((p) => {
@@ -48,6 +50,6 @@ export async function GET(req: Request) {
         cardTotal: stats?.total ?? 0,
       };
     }),
-    dueCount,
+    dueCount: dueRow?.count ?? 0,
   });
 }

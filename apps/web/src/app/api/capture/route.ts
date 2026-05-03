@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     await db.insert(schema.reviewEvents).values({
       id: nanoid(12),
       problemId,
-      eventType: "card_created",
+      eventType: "problem_captured",
     });
     created = true;
   } else {
@@ -65,20 +65,45 @@ export async function POST(req: Request) {
       .where(eq(schema.problems.id, problemId));
   }
 
-  const submissionRows = input.submissions.map((s) => ({
-    id: nanoid(12),
-    problemId,
-    language: s.language,
-    code: s.code,
-    status: s.status,
-    runtimeMs: s.runtimeMs,
-    memoryKb: s.memoryKb,
-    failedTestcase: s.failedTestcase,
-    expectedOutput: s.expectedOutput,
-    actualOutput: s.actualOutput,
-    errorMessage: s.errorMessage,
-    submittedAt: s.submittedAt ? new Date(s.submittedAt) : new Date(),
-  }));
+  const existingSubmissions = await db
+    .select({
+      language: schema.submissions.language,
+      code: schema.submissions.code,
+      status: schema.submissions.status,
+      submittedAt: schema.submissions.submittedAt,
+    })
+    .from(schema.submissions)
+    .where(eq(schema.submissions.problemId, problemId));
+
+  const submissionKey = (s: {
+    language: string;
+    code: string;
+    status: string;
+    submittedAt: Date;
+  }) => `${s.language}\u0000${s.status}\u0000${s.submittedAt.valueOf()}\u0000${s.code}`;
+
+  const seen = new Set(existingSubmissions.map(submissionKey));
+  const submissionRows = input.submissions.flatMap((s) => {
+    const submittedAt = s.submittedAt ? new Date(s.submittedAt) : new Date();
+    const row = {
+      id: nanoid(12),
+      problemId,
+      language: s.language,
+      code: s.code,
+      status: s.status,
+      runtimeMs: s.runtimeMs,
+      memoryKb: s.memoryKb,
+      failedTestcase: s.failedTestcase,
+      expectedOutput: s.expectedOutput,
+      actualOutput: s.actualOutput,
+      errorMessage: s.errorMessage,
+      submittedAt,
+    };
+    const key = submissionKey(row);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [row];
+  });
 
   if (submissionRows.length > 0) {
     await db.insert(schema.submissions).values(submissionRows);

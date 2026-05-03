@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, isNull, lte, or, sql } from "drizzle-orm";
+import { isNull, sql } from "drizzle-orm";
 import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
@@ -65,12 +66,7 @@ async function loadAnalysis() {
   const [dueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(
-      and(
-        isNull(schema.problems.archivedAt),
-        or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-      ),
-    );
+    .where(dueProblemCondition(now));
 
   const problems = await db
     .select()

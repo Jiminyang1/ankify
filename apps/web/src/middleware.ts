@@ -1,50 +1,58 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { APP_SESSION_COOKIE, appPasswordConfigured, verifySessionCookieValue } from "@/lib/app-auth";
 
 /**
- * Auth gate for `/api/*`.
+ * Auth gate for the single-user app.
  *
  * Rule:
- *   - Same-origin requests (the web UI itself) are trusted.
- *   - Cross-origin requests (the Chrome extension, curl, anything else) must
- *     present `x-ankify-token` matching `ANKIFY_API_TOKEN`.
+ *   - The web UI must have a signed app-password session cookie.
+ *   - The Chrome extension can call API routes with `x-ankify-token`.
  *   - In production, a missing `ANKIFY_API_TOKEN` env var is fail-closed.
- *   - In development, a missing token is permissive so `pnpm dev` just works.
+ *   - In production, a missing `APP_PASSWORD` env var is fail-closed.
  */
-export function middleware(req: NextRequest) {
-  const expected = process.env.ANKIFY_API_TOKEN;
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const isApi = pathname.startsWith("/api/");
+  const isAuthRoute = pathname === "/login" || pathname.startsWith("/api/auth/");
 
-  if (!expected) {
-    if (process.env.NODE_ENV === "production") {
-      return new NextResponse("server misconfigured: ANKIFY_API_TOKEN missing", {
-        status: 500,
-      });
-    }
+  if (isAuthRoute) return NextResponse.next();
+
+  if (!appPasswordConfigured()) {
+    if (process.env.NODE_ENV !== "production") return NextResponse.next();
+    return new NextResponse("server misconfigured: APP_PASSWORD missing", {
+      status: 500,
+    });
+  }
+
+  const expectedToken = process.env.ANKIFY_API_TOKEN;
+  if (isApi && !expectedToken && process.env.NODE_ENV === "production") {
+    return new NextResponse("server misconfigured: ANKIFY_API_TOKEN missing", {
+      status: 500,
+    });
+  }
+
+  const gotToken = req.headers.get("x-ankify-token");
+  if (isApi && expectedToken && gotToken === expectedToken) {
     return NextResponse.next();
   }
 
-  // Same-origin: web UI is trusted. The browser always sends Origin on
-  // cross-origin and on same-origin POST/PUT/DELETE; same-origin GETs may
-  // omit it, in which case we allow (they can't be forged from a third party).
-  const origin = req.headers.get("origin");
-  if (origin) {
-    try {
-      if (new URL(origin).host === req.headers.get("host")) {
-        return NextResponse.next();
-      }
-    } catch {
-      // malformed Origin: fall through to token check
-    }
-  } else if (req.method === "GET" || req.method === "HEAD") {
+  const hasSession = await verifySessionCookieValue(req.cookies.get(APP_SESSION_COOKIE)?.value);
+  if (hasSession) {
     return NextResponse.next();
   }
 
-  const got = req.headers.get("x-ankify-token");
-  if (got !== expected) {
+  if (isApi) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  return NextResponse.next();
+
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.searchParams.set("next", pathname);
+  return NextResponse.redirect(url);
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.json|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map)$).*)",
+  ],
 };

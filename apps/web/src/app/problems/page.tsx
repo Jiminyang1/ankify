@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Problem } from "@ankify/db";
 import type { LeetCodeDifficulty } from "@ankify/core";
@@ -31,14 +31,6 @@ const STATE_OPTIONS: { value: FilterState["state"]; label: string }[] = [
   { value: "learning", label: "Learning" },
   { value: "review", label: "Review" },
   { value: "relearning", label: "Relearning" },
-];
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "title", label: "Title" },
-  { value: "due", label: "Due" },
-  { value: "difficulty", label: "Difficulty" },
-  { value: "reps", label: "Reps" },
-  { value: "drills", label: "Drills" },
 ];
 
 type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";

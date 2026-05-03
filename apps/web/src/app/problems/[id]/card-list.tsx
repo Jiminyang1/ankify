@@ -12,7 +12,7 @@ type EditForm = {
   answer: string;
 };
 
-export function CardList({ cards, problemId }: { cards: Card[]; problemId: string }) {
+export function CardList({ cards }: { cards: Card[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, startDelete] = useTransition();

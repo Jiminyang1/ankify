@@ -125,7 +125,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             </p>
           </Surface>
         ) : (
-          <CardList cards={cards} problemId={problem.id} />
+          <CardList cards={cards} />
         )}
       </section>
 

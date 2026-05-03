@@ -31,6 +31,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     question: d.question,
     answer: d.answer,
   });
+  await db.insert(schema.reviewEvents).values({
+    id: nanoid(12),
+    problemId,
+    cardId,
+    eventType: "card_created",
+    metadata: { source: "manual" },
+  });
 
   return NextResponse.json({ ok: true, cardId }, { status: 201 });
 }

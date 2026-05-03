@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { and, desc, eq, inArray, lt, ne } from "drizzle-orm";
@@ -9,6 +9,8 @@ import { getActiveModel } from "@/lib/ai";
 import { buildAiCardBatchPrompt, buildAiCardDraftPrompt } from "@/lib/card-prompt";
 
 const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+
+export const maxDuration = 60;
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: problemId } = await ctx.params;
@@ -58,28 +60,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         answer: "",
       })),
     );
-    void runBatchGeneration({ problemId, candidateIds: ids, count });
+    after(() => runBatchGeneration({ problemId, candidateIds: ids, count }));
     return NextResponse.json({ ok: true, cardIds: ids }, { status: 202 });
   }
 
   if (parsed.data.action === "generate") {
+    const rawText = parsed.data.rawText;
     const cardId = nanoid(12);
     await db.insert(schema.cards).values({
       id: cardId,
       problemId,
       aiStatus: "generating",
-      question: parsed.data.rawText.trim().slice(0, 200) || "Generating...",
+      question: rawText.trim().slice(0, 200) || "Generating...",
       answer: "",
     });
-    void runSingleGeneration({
+    after(() => runSingleGeneration({
       problemId,
       cardId,
       action: "generate",
-      rawText: parsed.data.rawText,
-    });
+      rawText,
+    }));
     return NextResponse.json({ ok: true, cardIds: [cardId] }, { status: 202 });
   }
 
+  const action = parsed.data.action;
+  const draft = parsed.data.draft;
+  const instruction = parsed.data.instruction;
   const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, parsed.data.cardId));
   if (!card || card.problemId !== problemId) {
     return NextResponse.json({ error: "card_not_found" }, { status: 404 });
@@ -90,13 +96,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .set({ aiStatus: "generating", errorMessage: null, createdAt: new Date() })
     .where(eq(schema.cards.id, card.id));
 
-  void runSingleGeneration({
+  after(() => runSingleGeneration({
     problemId,
     cardId: card.id,
-    action: parsed.data.action,
-    draft: parsed.data.draft,
-    instruction: parsed.data.instruction,
-  });
+    action,
+    draft,
+    instruction,
+  }));
 
   return NextResponse.json({ ok: true, cardIds: [card.id] }, { status: 202 });
 }

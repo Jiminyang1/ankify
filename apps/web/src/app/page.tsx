@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
 
@@ -25,12 +26,7 @@ async function getHomeData() {
     const dueProblems = await db
       .select()
       .from(schema.problems)
-      .where(
-        and(
-          isNull(schema.problems.archivedAt),
-          or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-        ),
-      )
+      .where(dueProblemCondition(now))
       .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
       .limit(Math.min(8, queue.remaining));
 

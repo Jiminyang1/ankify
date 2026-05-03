@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { schemas } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
 
 /** PATCH /api/cards/:id — edits a saved card or confirms a batch candidate. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -23,6 +24,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       ...(parsed.data.aiStatus === "ready" ? { errorMessage: null } : {}),
     })
     .where(eq(schema.cards.id, id));
+
+  if (parsed.data.aiStatus === "ready" && card.aiStatus !== "ready") {
+    await db.insert(schema.reviewEvents).values({
+      id: nanoid(12),
+      problemId: card.problemId,
+      cardId: card.id,
+      eventType: "card_created",
+      metadata: { source: "ai" },
+    });
+  }
 
   const [updated] = await db.select().from(schema.cards).where(eq(schema.cards.id, id));
   return NextResponse.json({ ok: true, card: updated });

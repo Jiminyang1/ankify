@@ -26,6 +26,7 @@ export function AiSettingsForm({
   const [provider, setProvider] = useState(initial.provider);
   const [model, setModel] = useState(initial.model);
   const [apiKey, setApiKey] = useState("");
+  const [clearApiKey, setClearApiKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -34,7 +35,8 @@ export function AiSettingsForm({
     setSaving(true);
     setMsg(null);
     const body: Record<string, unknown> = { provider, model };
-    if (apiKey) body.apiKey = apiKey;
+    if (clearApiKey) body.apiKey = "";
+    else if (apiKey) body.apiKey = apiKey;
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -43,6 +45,8 @@ export function AiSettingsForm({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg("Saved.");
+      setApiKey("");
+      setClearApiKey(false);
       router.refresh();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed to save");
@@ -95,10 +99,24 @@ export function AiSettingsForm({
         <input
           type="password"
           value={apiKey}
+          disabled={clearApiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="sk-…"
           className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
         />
+        {initial.hasApiKey && (
+          <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={clearApiKey}
+              onChange={(e) => {
+                setClearApiKey(e.target.checked);
+                if (e.target.checked) setApiKey("");
+              }}
+            />
+            Clear stored key and use env var fallback
+          </label>
+        )}
       </div>
 
       <div className="flex items-center gap-3">
