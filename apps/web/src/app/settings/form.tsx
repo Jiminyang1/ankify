@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { AiProvider } from "@ankify/core";
 
 const MODEL_PRESETS: Record<AiProvider, string[]> = {
+  "": [],
   anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   openai: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
   // DeepSeek V4 (April 2026). `deepseek-v4-pro` = 1.6T MoE for hard reasoning;

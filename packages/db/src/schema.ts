@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
@@ -46,6 +46,7 @@ export const problems = sqliteTable(
   (t) => ({
     dueIdx: index("problems_fsrs_due_idx").on(t.fsrsDue),
     slugIdx: index("problems_slug_idx").on(t.leetcodeSlug),
+    leetcodeIdIdx: uniqueIndex("problems_leetcode_id_unique").on(t.leetcodeId),
   }),
 );
 
@@ -91,7 +92,7 @@ export const submissions = sqliteTable(
 /* ────────────────────────────────────────────────────────────────────────────
  * cards
  * Flash cards for a problem. Only question (front) and answer (back).
- * AI generation creates generating rows, then candidate rows; user confirms to ready.
+ * AI generation creates candidate rows; user confirms to ready.
  * ──────────────────────────────────────────────────────────────────────────── */
 export const cards = sqliteTable(
   "cards",
@@ -102,11 +103,12 @@ export const cards = sqliteTable(
       .references(() => problems.id, { onDelete: "cascade" }),
     question: text("question").notNull(),
     answer: text("answer").notNull(),
-    aiStatus: text("ai_status", { enum: ["generating", "candidate", "failed", "ready"] })
+    aiStatus: text("ai_status", { enum: ["candidate", "failed", "ready"] })
       .notNull()
       .default("ready"),
     errorMessage: text("error_message"),
     createdAt: ts("created_at"),
+    updatedAt: optTs("updated_at"),
   },
   (t) => ({
     problemIdx: index("cards_problem_idx").on(t.problemId),

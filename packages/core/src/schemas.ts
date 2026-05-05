@@ -13,7 +13,7 @@ export const submissionStatusEnum = z.enum([
 ]);
 
 export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
-export const cardAiStatusEnum = z.enum(["generating", "candidate", "failed", "ready"]);
+export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
 
 /* Payload sent by the Chrome extension to add or update a problem. */
 export const captureProblemSchema = z.object({
@@ -52,25 +52,18 @@ export const cardDraftSchema = z.object({
 });
 export type CardDraft = z.infer<typeof cardDraftSchema>;
 
-/** AI output for an editable card draft. */
-export const generatedCardSchema = cardDraftSchema;
-
 export const aiCardsRequestSchema = z.union([
   z.object({
     mode: z.literal("single"),
     action: z.literal("generate"),
-    rawText: z.string().min(1).max(6000),
+    rawText: z.string().max(6000).optional(),
   }),
   z.object({
     mode: z.literal("single"),
-    action: z.enum(["polish", "followup"]),
+    action: z.literal("followup"),
     cardId: z.string().min(1),
-    draft: cardDraftSchema.optional(),
-    instruction: z.string().max(4000).optional(),
-  }),
-  z.object({
-    mode: z.literal("batch"),
-    count: z.number().int().min(1).max(8).default(3).optional(),
+    draft: cardDraftSchema,
+    instruction: z.string().min(1).max(4000),
   }),
 ]);
 

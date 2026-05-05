@@ -62,5 +62,7 @@ export function buildModel(settings: AiSettings): LanguageModelV1 {
       });
       return client(settings.model);
     }
+    default:
+      throw new Error(`unsupported AI provider: ${settings.provider || "(none)"}`);
   }
 }
