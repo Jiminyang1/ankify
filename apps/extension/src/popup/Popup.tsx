@@ -4,7 +4,7 @@ import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } 
 
 type ApiCard = {
   id: string;
-  aiStatus: "generating" | "candidate" | "failed" | "ready";
+  aiStatus: "candidate" | "failed" | "ready";
   errorMessage: string | null;
   question: string;
   answer: string;
@@ -78,10 +78,6 @@ function parseSlugFromUrl(url: string | undefined): string | null {
   if (!url) return null;
   const m = url.match(/leetcode\.com\/problems\/([^/?#]+)/);
   return m?.[1] ?? null;
-}
-
-function isGeneratingCandidate(card: ApiCard) {
-  return card.aiStatus === "generating";
 }
 
 function isDue(fsrsDue: string | null): boolean {
@@ -194,14 +190,6 @@ export function Popup() {
       chrome.tabs.onUpdated.removeListener(onUpdated);
     };
   }, [settings, detect]);
-
-  /* auto-poll when candidates are generating */
-  useEffect(() => {
-    if (state.kind !== "captured") return;
-    if (!state.candidates.some(isGeneratingCandidate)) return;
-    const t = setInterval(() => void detect(), 2500);
-    return () => clearInterval(t);
-  }, [state, detect]);
 
   const captured = state.kind === "captured" ? state : null;
 
@@ -725,7 +713,7 @@ function AddCardForm({
 }) {
   const slug = problem.leetcodeSlug;
   const [mode, setMode] = useState<"manual" | "ai">("ai");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
   const [error, setError] = useState<string | null>(null);
 
   /* manual */
@@ -767,7 +755,7 @@ function AddCardForm({
 
   async function handleManualSave() {
     if (!question.trim() || !answer.trim()) return;
-    setBusy(true);
+    setBusy("manual");
     setError(null);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/user-card`, {
@@ -789,21 +777,25 @@ function AddCardForm({
     }
   }
 
-  async function handleAiGenerate() {
-    if (!rawText.trim()) return;
-    setBusy(true);
+  async function handleAiGenerate(kind: "auto" | "note") {
+    if (kind === "note" && !rawText.trim()) return;
+    setBusy(kind);
     setError(null);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
-        body: JSON.stringify({ mode: "single", action: "generate", rawText: rawText.trim() }),
+        body: JSON.stringify({
+          mode: "single",
+          action: "generate",
+          ...(kind === "note" ? { rawText: rawText.trim() } : {}),
+        }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
-      await clearLocalDraft();
+      if (kind === "note") await clearLocalDraft();
       onAdded();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -833,7 +825,7 @@ function AddCardForm({
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="What do you want to recall?"
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           <label className="field-label">
@@ -844,14 +836,14 @@ function AddCardForm({
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="The answer you need to remember."
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           {error && <div className="err-banner">{error}</div>}
           <button
             type="button"
             onClick={handleManualSave}
-            disabled={busy || !question.trim() || !answer.trim()}
+            disabled={!!busy || !question.trim() || !answer.trim()}
             className="btn btn-primary"
           >
             {busy ? "Saving…" : "Save card"}
@@ -869,7 +861,7 @@ function AddCardForm({
               value={rawText}
               onChange={(e) => updateRawText(e.target.value)}
               placeholder="刚做完时的疑惑、坑、想记住的推理…"
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           <div className="ai-toolbar">
@@ -878,12 +870,20 @@ function AddCardForm({
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               {rawText.trim() && (
-                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={busy}>
+                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={!!busy}>
                   Clear
                 </button>
               )}
-              <button type="button" onClick={handleAiGenerate} disabled={!rawText.trim() || busy} className="btn btn-primary">
-                {busy ? "Starting…" : "Generate"}
+              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={!!busy} className="btn btn-ghost">
+                {busy === "auto" ? "Generating…" : "Auto generate"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiGenerate("note")}
+                disabled={!rawText.trim() || !!busy}
+                className="btn btn-primary"
+              >
+                {busy === "note" ? "Generating…" : "Generate from note"}
               </button>
             </div>
           </div>
@@ -942,17 +942,16 @@ function CandidateList({
 
   async function runAi(
     card: ApiCard & { instruction: string; busy: string | null; localError: string | null },
-    action: "polish" | "followup",
     instruction?: string,
   ) {
-    update(card.id, { busy: action, localError: null });
+    update(card.id, { busy: "followup", localError: null });
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({
           mode: "single",
-          action,
+          action: "followup",
           cardId: card.id,
           draft: { question: card.question.trim(), answer: card.answer.trim() },
           instruction,
@@ -1003,21 +1002,16 @@ function CandidateList({
         {candidates.length} AI candidate{candidates.length !== 1 ? "s" : ""} — review &amp; confirm
       </div>
       {local.map((c) => {
-        const generating = isGeneratingCandidate(c);
-        const disabled = generating || !!c.busy;
+        const disabled = !!c.busy;
         return (
           <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
             <div
               className="candidate-status"
               style={{
-                color: generating
-                  ? "var(--accent-strong)"
-                  : c.aiStatus === "failed"
-                    ? "var(--danger)"
-                    : "var(--muted)",
+                color: c.aiStatus === "failed" ? "var(--danger)" : "var(--muted)",
               }}
             >
-              {generating ? "Generating…" : c.aiStatus === "failed" ? "Failed" : "Candidate"}
+              {c.aiStatus === "failed" ? "Failed" : "Candidate"}
             </div>
             {c.errorMessage && <div className="err-banner" style={{ marginBottom: 8 }}>{c.errorMessage}</div>}
 
@@ -1053,16 +1047,8 @@ function CandidateList({
                 <button
                   type="button"
                   className="btn-xs"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim()}
-                  onClick={() => runAi(c, "polish")}
-                >
-                  {c.busy === "polish" ? "…" : "Polish"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-xs"
                   disabled={disabled || !c.question.trim() || !c.answer.trim() || !c.instruction.trim()}
-                  onClick={() => runAi(c, "followup", c.instruction)}
+                  onClick={() => runAi(c, c.instruction)}
                 >
                   {c.busy === "followup" ? "…" : "Apply"}
                 </button>

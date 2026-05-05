@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, lt, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { preview, type FsrsCardState } from "@ankify/core";
 import { getReviewQueueStatus } from "@/lib/review-queue";
-
-const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
 
 export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
@@ -17,16 +15,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ slug: string }
   if (!problem) {
     return NextResponse.json({ error: "not_captured" }, { status: 404 });
   }
-
-  const stuckBefore = new Date(Date.now() - GENERATION_TIMEOUT_MS);
-  await db
-    .update(schema.cards)
-    .set({ aiStatus: "failed", errorMessage: "timeout: generation did not complete" })
-    .where(and(
-      eq(schema.cards.problemId, problem.id),
-      eq(schema.cards.aiStatus, "generating"),
-      lt(schema.cards.createdAt, stuckBefore),
-    ));
 
   const [cards, candidates, queue] = await Promise.all([
     db

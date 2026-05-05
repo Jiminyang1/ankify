@@ -105,7 +105,8 @@ export default async function HomePage() {
 
       {"error" in data && data.error && (
         <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code>, then run{" "}
+          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
+          <code className="font-mono">.env</code>, then run{" "}
           <code className="font-mono">pnpm db:migrate</code>.
         </div>
       )}

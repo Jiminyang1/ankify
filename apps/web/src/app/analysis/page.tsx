@@ -144,7 +144,8 @@ export default async function AnalysisPage() {
       <Surface className="p-8">
         <h1 className="text-2xl font-semibold">Analysis</h1>
         <p className="mt-2 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code>, then run{" "}
+          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
+          <code className="font-mono">.env</code>, then run{" "}
           <code className="font-mono">pnpm db:migrate</code>.
         </p>
       </Surface>

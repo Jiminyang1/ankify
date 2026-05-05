@@ -98,7 +98,7 @@ export function buildAiCardPromptContext(args: {
 export function buildAiCardDraftPrompt(args: {
   problem: Parameters<typeof buildAiCardPromptContext>[0]["problem"];
   submissions: Parameters<typeof buildAiCardPromptContext>[0]["submissions"];
-  action: "generate" | "polish" | "followup";
+  action: "generate" | "followup";
   rawText?: string;
   draft?: Pick<CardDraft, "question" | "answer">;
   instruction?: string;
@@ -112,7 +112,7 @@ export function buildAiCardDraftPrompt(args: {
   const system = `你是 LeetCode 复习卡片编辑助手。你的输出会写入一张待确认候选卡，但不会进入复习队列。
 
 核心原则：
-- 用户确认后才会成为正式卡片；你只帮忙生成、润色或按 follow up 改写。
+- 用户确认后才会成为正式卡片；你只帮忙生成或按 follow up 改写。
 - 不要凭空发散成标准题解；题目和提交历史只用于理解语境。
 - 只返回 question（正面）和 answer（背面）两个字段。
 - question 要适合主动回忆，直接问一个可检验的回忆点。
@@ -120,10 +120,10 @@ export function buildAiCardDraftPrompt(args: {
 
   const actionLine =
     args.action === "generate"
-      ? "任务：根据 C 里的原始想法生成一张可编辑复习卡草稿。"
-      : args.action === "polish"
-        ? "任务：润色当前草稿，让它更适合主动回忆；不要改变用户本来想记的点。"
-        : "任务：根据用户 follow up 指令改写当前草稿，返回完整新草稿。";
+      ? args.rawText?.trim()
+        ? "任务：根据 C 里的原始想法生成一张可编辑复习卡草稿。"
+        : "任务：根据题目上下文和提交历史自动生成一张可编辑复习卡草稿。"
+      : "任务：根据用户 follow up 指令改写当前草稿，返回完整新草稿。";
 
   const user = [
     vars.SECTION_A,
@@ -143,40 +143,4 @@ export function buildAiCardDraftPrompt(args: {
     .join("\n\n");
 
   return { system, user };
-}
-
-export function buildAiCardBatchPrompt(args: {
-  problem: Parameters<typeof buildAiCardPromptContext>[0]["problem"];
-  submissions: Parameters<typeof buildAiCardPromptContext>[0]["submissions"];
-  existingCards: Pick<CardDraft, "question" | "answer">[];
-  count: number;
-}): { system: string; user: string } {
-  const vars = buildAiCardPromptContext({
-    problem: args.problem,
-    submissions: args.submissions,
-    rawText: "",
-  });
-  const existing = args.existingCards.length
-    ? args.existingCards
-        .map((card, i) => `#${i + 1}\nQ: ${card.question}\nA: ${card.answer}`)
-        .join("\n\n")
-    : "_暂无已有卡片。_";
-
-  return {
-    system: `你是 LeetCode 复习卡片候选生成助手。候选会记录在系统中，用户确认后才会进入复习队列。
-
-规则：
-- 生成 ${args.count} 张互不重复的候选卡。
-- 优先覆盖提交历史暴露的错因、边界、推理断点、复杂度误判或代码追踪盲点。
-- 避免重复已有卡片。
-- 不要生成泛泛题解摘要；每张卡必须适合主动回忆。
-- 只返回 question（正面）和 answer（背面）两个字段。`,
-    user: [
-      vars.SECTION_A,
-      vars.SECTION_B,
-      "## 已有卡片（避免重复）",
-      existing,
-      `请生成 ${args.count} 张候选复习卡。只返回结构化 candidates。`,
-    ].join("\n\n"),
-  };
 }

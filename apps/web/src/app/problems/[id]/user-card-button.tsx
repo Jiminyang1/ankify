@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Card } from "@ankify/db";
@@ -13,15 +13,11 @@ type Mode = "manual" | "ai";
 type Candidate = Card & {
   instruction: string;
   localError: string | null;
-  busy: "polish" | "followup" | "confirm" | "discard" | null;
+  busy: "followup" | "confirm" | "discard" | null;
 };
 
 function hydrateCandidate(card: Card): Candidate {
   return { ...card, instruction: "", localError: null, busy: null };
-}
-
-function isGenerating(candidate: Pick<Card, "aiStatus">) {
-  return candidate.aiStatus === "generating";
 }
 
 export function UserCardButton({
@@ -40,11 +36,10 @@ export function UserCardButton({
   const [rawText, setRawText] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
-  const [busy, setBusy] = useState<"single" | "batch" | "save" | null>(null);
+  const [busy, setBusy] = useState<"auto" | "note" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateIndex, setCandidateIndex] = useState(0);
-  const hadGeneratingRef = useRef(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -65,26 +60,11 @@ export function UserCardButton({
     });
 
     setCandidateIndex((index) => Math.min(index, Math.max(0, nextCards.length - 1)));
-
-    const hasGenerating = nextCards.some(isGenerating);
-    if (hadGeneratingRef.current && !hasGenerating && nextCards.length > 0) {
-      setMode("ai");
-      setOpen(true);
-    }
-    hadGeneratingRef.current = hasGenerating;
   }, [problemId]);
 
   useEffect(() => {
     void loadCandidates().catch(() => undefined);
   }, [loadCandidates]);
-
-  const hasGenerating = useMemo(() => candidates.some(isGenerating), [candidates]);
-
-  useEffect(() => {
-    if (!hasGenerating) return;
-    const t = setInterval(() => void loadCandidates().catch(() => undefined), 2500);
-    return () => clearInterval(t);
-  }, [hasGenerating, loadCandidates]);
 
   const resetManual = useCallback(() => {
     setRawText("");
@@ -144,8 +124,8 @@ export function UserCardButton({
     }
   }
 
-  async function startAiGenerate(kind: "single" | "batch") {
-    if (kind === "single" && !rawText.trim()) return;
+  async function startAiGenerate(kind: "auto" | "note") {
+    if (kind === "note" && !rawText.trim()) return;
     setBusy(kind);
     setError(null);
     setMode("ai");
@@ -153,16 +133,22 @@ export function UserCardButton({
       const res = await fetch(`/api/problems/${problemId}/ai-cards`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          kind === "single"
-            ? { mode: "single", action: "generate", rawText: rawText.trim() }
-            : { mode: "batch", count: 3 },
-        ),
+        body: JSON.stringify({
+          mode: "single",
+          action: "generate",
+          ...(kind === "note" ? { rawText: rawText.trim() } : {}),
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setRawText("");
-      await loadCandidates();
+      const card = json.card as Card | undefined;
+      if (card) {
+        setCandidates((prev) => [hydrateCandidate(card), ...prev.filter((c) => c.id !== card.id)]);
+        setCandidateIndex(0);
+      } else {
+        await loadCandidates();
+      }
+      if (kind === "note") setRawText("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "AI request failed");
     } finally {
@@ -174,27 +160,32 @@ export function UserCardButton({
     setCandidates((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
-  async function runCandidateAi(candidate: Candidate, action: "polish" | "followup") {
-    setCandidateState(candidate.id, { busy: action, localError: null });
+  async function runCandidateAi(candidate: Candidate) {
+    setCandidateState(candidate.id, { busy: "followup", localError: null });
     try {
       const res = await fetch(`/api/problems/${problemId}/ai-cards`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           mode: "single",
-          action,
+          action: "followup",
           cardId: candidate.id,
           draft: {
             question: candidate.question.trim(),
             answer: candidate.answer.trim(),
           },
-          instruction: action === "followup" ? candidate.instruction : undefined,
+          instruction: candidate.instruction.trim(),
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setCandidateState(candidate.id, { instruction: "", busy: null });
-      await loadCandidates();
+      const card = json.card as Card | undefined;
+      if (card) {
+        setCandidateState(candidate.id, { ...card, instruction: "", busy: null, localError: null });
+      } else {
+        setCandidateState(candidate.id, { instruction: "", busy: null });
+        await loadCandidates();
+      }
     } catch (e) {
       setCandidateState(candidate.id, {
         busy: null,
@@ -354,19 +345,19 @@ export function UserCardButton({
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={!!busy || !rawText.trim()}
-                          onClick={() => startAiGenerate("single")}
-                          className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+                          disabled={!!busy}
+                          onClick={() => startAiGenerate("auto")}
+                          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
                         >
-                          {busy === "single" ? "Starting..." : "Generate from note"}
+                          {busy === "auto" ? "Generating..." : "Auto generate"}
                         </button>
                         <button
                           type="button"
-                          disabled={!!busy}
-                          onClick={() => startAiGenerate("batch")}
-                          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+                          disabled={!!busy || !rawText.trim()}
+                          onClick={() => startAiGenerate("note")}
+                          className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
                         >
-                          {busy === "batch" ? "Starting..." : "Generate 3 from history"}
+                          {busy === "note" ? "Generating..." : "Generate from note"}
                         </button>
                       </div>
                     </div>
@@ -386,8 +377,7 @@ export function UserCardButton({
                       onPrev={() => setCandidateIndex((i) => Math.max(0, i - 1))}
                       onNext={() => setCandidateIndex((i) => Math.min(candidateCount - 1, i + 1))}
                       onChange={(patch) => setCandidateState(currentCandidate.id, patch)}
-                      onPolish={() => runCandidateAi(currentCandidate, "polish")}
-                      onFollowup={() => runCandidateAi(currentCandidate, "followup")}
+                      onFollowup={() => runCandidateAi(currentCandidate)}
                       onConfirm={() => confirmCandidate(currentCandidate)}
                       onDiscard={() => discardCandidate(currentCandidate)}
                     />
@@ -412,9 +402,7 @@ export function UserCardButton({
         className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-card hover:opacity-90"
       >
         New
-        {hasGenerating ? (
-          <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">running</span>
-        ) : candidateCount > 0 ? (
+        {candidateCount > 0 ? (
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{candidateCount}</span>
         ) : null}
       </button>
@@ -466,7 +454,6 @@ function CandidateReview({
   onPrev,
   onNext,
   onChange,
-  onPolish,
   onFollowup,
   onConfirm,
   onDiscard,
@@ -477,19 +464,17 @@ function CandidateReview({
   onPrev: () => void;
   onNext: () => void;
   onChange: (patch: Partial<Candidate>) => void;
-  onPolish: () => void;
   onFollowup: () => void;
   onConfirm: () => void;
   onDiscard: () => void;
 }) {
-  const generating = isGenerating(candidate);
-  const disabled = generating || !!candidate.busy;
+  const disabled = !!candidate.busy;
   return (
     <Surface className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Pill tone={candidate.aiStatus === "failed" ? "danger" : generating ? "accent" : "success"}>
-            {generating ? "generating" : candidate.aiStatus === "failed" ? "failed" : "candidate"}
+          <Pill tone={candidate.aiStatus === "failed" ? "danger" : "success"}>
+            {candidate.aiStatus === "failed" ? "failed" : "candidate"}
           </Pill>
           <span className="text-xs text-muted">
             {index + 1} / {count}
@@ -547,19 +532,11 @@ function CandidateReview({
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={disabled || !candidate.question.trim() || !candidate.answer.trim()}
-            onClick={onPolish}
-            className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
-          >
-            {candidate.busy === "polish" ? "Starting..." : "AI Polish"}
-          </button>
-          <button
-            type="button"
             disabled={disabled || !candidate.question.trim() || !candidate.answer.trim() || !candidate.instruction.trim()}
             onClick={onFollowup}
             className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
           >
-            {candidate.busy === "followup" ? "Starting..." : "Apply follow up"}
+            {candidate.busy === "followup" ? "Applying..." : "Apply follow up"}
           </button>
         </div>
       </div>
