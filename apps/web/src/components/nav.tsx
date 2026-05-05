@@ -19,7 +19,7 @@ export function Nav({ dueCount }: { dueCount: number }) {
   const isLogin = pathname === "/login";
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
-      <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
         <Link href="/" className="group flex items-center gap-2">
           <span
             aria-hidden

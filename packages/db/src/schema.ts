@@ -158,6 +158,50 @@ export const reviewEvents = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * quiz_sessions
+ * Per-problem review quiz sessions. V1 keeps quiz items and answers as JSON so
+ * the feature can iterate without normalizing every quiz item into its own row.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type QuizItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  source: "statement" | "submission" | "notes" | "card";
+};
+
+export type QuizAnswer = {
+  itemId: string;
+  selectedIndex: number;
+  correct: boolean;
+  answeredAt: string;
+};
+
+export const quizSessions = sqliteTable(
+  "quiz_sessions",
+  {
+    id: text("id").primaryKey(),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["active", "completed", "archived"] })
+      .notNull()
+      .default("active"),
+    itemsJson: text("items_json", { mode: "json" }).$type<QuizItem[]>().notNull(),
+    answersJson: text("answers_json", { mode: "json" }).$type<QuizAnswer[]>().notNull().default(sql`(json('[]'))`),
+    score: integer("score"),
+    createdAt: ts("created_at"),
+    updatedAt: optTs("updated_at"),
+    completedAt: optTs("completed_at"),
+  },
+  (t) => ({
+    problemIdx: index("quiz_sessions_problem_idx").on(t.problemId),
+    statusIdx: index("quiz_sessions_status_idx").on(t.status),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * settings
  * Single-row k/v table for V1 (single user, no auth). Holds AI provider choice,
  * API keys (if user prefers DB-stored over env), FSRS params, etc.
@@ -176,4 +220,6 @@ export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
+export type QuizSession = typeof quizSessions.$inferSelect;
+export type NewQuizSession = typeof quizSessions.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;

@@ -111,6 +111,30 @@ Monorepo with three layers:
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` — stored `elapsed_days` is never trusted. Safe even if reviews are delayed.
 - **AI defaults to empty** — must configure provider/model in Settings before generating cards. Clear error if unconfigured.
 
+### UI conventions
+
+The web app and the extension popup share one typographic language. **Default everywhere is sans (`system-ui` stack); mono is a marked notation, not a default.**
+
+**Use sans (do nothing — it's the default):**
+- All prose, labels, buttons, headings, nav tabs, pills, hero titles, table cells, list items.
+- Numeric columns and counters. **For digit alignment, use Tailwind `tabular-nums` (CSS `font-variant-numeric: tabular-nums`) — not `font-mono`.** sans + `tabular-nums` aligns digits without flipping fonts.
+
+**Use mono (Tailwind `font-mono` in web; `var(--font-mono)` in extension popup CSS) only for:**
+1. Real code: `<pre>` blocks and inline `<code>` rendered by `components/ui/markdown.tsx`, submission code displays.
+2. Shell commands and env-path tokens inside copy: `<code>pnpm db:migrate</code>`, `<code>.env.local</code>`.
+3. Identifier-shaped inputs: API key, model id, API base URL, API token. Slug displays (`two-sum`).
+4. Programming-language labels rendered next to code (`python`, `cpp`).
+
+Anything else in `font-mono` is a bug — it splits the visual register and looks "terminal-ish" against the rest of the app.
+
+**Extension popup CSS (`apps/extension/src/popup/popup.css`)** declares two font variables on `:root`:
+- `--font-ui` — sans stack, the popup's default. Used by topbar, tabs, hero, pills, buttons, list items, today-stats, etc.
+- `--font-mono` — mono stack. Used **only** by `.popup-code` (slug chips) and `.settings-stack input` (API URL / token fields).
+
+If a new component needs a mono look, justify it against the four cases above; otherwise use the variable's default.
+
+**Editor ↔ rendered-markdown parity.** Where a textarea coexists with a `<Markdown>` view of the same content (e.g. the review notes panel), the textarea must use the same font/size/leading as the rendered output so the visual transition is invisible. Don't apply `font-mono` to such textareas — markdown's own `<pre>`/`<code>` styles will switch to mono inside fenced blocks, which is the correct local override.
+
 ### Terminology
 
 - **problem** = a LeetCode problem stored in `problems`; the unit FSRS schedules.

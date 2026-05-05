@@ -170,7 +170,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
           max={100}
           value={dailyReviewLimit}
           onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
-          className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
+          className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm tabular-nums"
         />
         <p className="text-xs text-muted">
           Caps how many due problems enter today&apos;s review queue. Extra due problems roll over.

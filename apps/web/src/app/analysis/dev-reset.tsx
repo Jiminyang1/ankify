@@ -12,7 +12,7 @@ export function DevResetButton() {
 
   const onClick = () => {
     const ok = window.confirm(
-      "Wipe ALL problems, cards, submissions, and review history?\n\n" +
+      "Wipe ALL problems, cards, submissions, quizzes, and review history?\n\n" +
         "Settings (API keys / model) are kept. This cannot be undone.",
     );
     if (!ok) return;

@@ -131,7 +131,7 @@ export default async function HomePage() {
               return (
                 <li key={problem.id}>
                   <Link href={`/problems/${problem.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-subtle sm:grid-cols-[32px_1fr_auto] sm:items-center">
-                    <div className="font-mono text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
+                    <div className="text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{problem.title}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">

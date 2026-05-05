@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
 import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
+import { PopupMarkdown } from "./PopupMarkdown";
 
 type ApiCard = {
   id: string;
@@ -19,9 +20,36 @@ type ApiProblem = {
   fsrsReps: number;
   fsrsLapses: number;
   fsrsStability: number | null;
+  notes: string | null;
 };
 type FsrsRating = 1 | 2 | 3 | 4;
 type Previews = Record<FsrsRating, { due: string }>;
+type ThemePreference = "system" | "light" | "dark";
+type QuizItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  source: "statement" | "submission" | "notes" | "card";
+};
+type QuizAnswer = {
+  itemId: string;
+  selectedIndex: number;
+  correct: boolean;
+  answeredAt: string;
+};
+type QuizSession = {
+  id: string;
+  problemId: string;
+  status: "active" | "completed" | "archived";
+  itemsJson: QuizItem[];
+  answersJson: QuizAnswer[];
+  score: number | null;
+  createdAt: string;
+  updatedAt: string | null;
+  completedAt: string | null;
+};
 
 type State =
   | { kind: "detecting" }
@@ -62,6 +90,12 @@ const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
   { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
 ];
 
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 /* ── helpers ── */
 
 function jsonHeaders(settings: ExtSettings): HeadersInit {
@@ -72,6 +106,14 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 
 function authHeaders(settings: ExtSettings): HeadersInit {
   return settings.apiToken ? { "x-ankify-token": settings.apiToken } : {};
+}
+
+function applyThemePreference(preference: ThemePreference) {
+  if (preference === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", preference);
+  }
 }
 
 function parseSlugFromUrl(url: string | undefined): string | null {
@@ -131,7 +173,7 @@ function Collapse({ header, defaultOpen, children }: { header: React.ReactNode; 
         <span className="collapse-chevron">{open ? "▾" : "▸"}</span>
         <span className="collapse-label">{header}</span>
       </button>
-      <div className={`collapse-body${open ? " collapse-body-open" : ""}`}>
+      <div className={`collapse-body scroll-area${open ? " collapse-body-open" : ""}`}>
         <div className="collapse-inner">{children}</div>
       </div>
     </div>
@@ -144,6 +186,23 @@ export function Popup() {
   const [state, setState] = useState<State>({ kind: "detecting" });
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
   const [tab, setTab] = useState<NavTab>("today");
+  const [theme, setTheme] = useState<ThemePreference>("system");
+
+  useEffect(() => {
+    chrome.storage.local.get("ankify.theme").then((r) => {
+      const saved = r["ankify.theme"] as string | undefined;
+      if (saved === "system" || saved === "dark" || saved === "light") {
+        setTheme(saved);
+        applyThemePreference(saved);
+      }
+    });
+  }, []);
+
+  function setThemePreference(next: ThemePreference) {
+    setTheme(next);
+    applyThemePreference(next);
+    chrome.storage.local.set({ "ankify.theme": next });
+  }
 
   useEffect(() => {
     getSettings().then(setLocalSettings);
@@ -201,19 +260,34 @@ export function Popup() {
           <span className="popup-brand-title">ankify</span>
           <span className="popup-brand-tag">LC</span>
         </div>
-        {tab !== "settings" && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              if (tab === "this-problem") void detect();
-              else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
-            }}
-            title="Refresh"
-          >
-            Refresh
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          {tab !== "settings" && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                if (tab === "this-problem") void detect();
+                else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+              }}
+              title="Refresh"
+            >
+              Refresh
+            </button>
+          )}
+          <div className="theme-control" aria-label="Theme">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                data-active={theme === option.value}
+                onClick={() => setThemePreference(option.value)}
+                aria-pressed={theme === option.value}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Nav */}
@@ -448,6 +522,21 @@ function ThisProblemTab({
   onRefresh: () => void;
   onError: (msg: string) => void;
 }) {
+  // Mode lives here so it survives the captured→null→captured cycle on refetch.
+  // Reset only when the *problem* itself changes (different id), not on transient
+  // state churn. Initial mode follows due-ness of the first loaded problem.
+  const [mode, setMode] = useState<"review" | "manage">("review");
+  const lastProblemIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!captured) return;
+    const newId = captured.problem.id;
+    if (lastProblemIdRef.current !== newId) {
+      setMode(isDue(captured.problem.fsrsDue) ? "review" : "manage");
+      lastProblemIdRef.current = newId;
+    }
+  }, [captured]);
+
   if (state.kind === "detecting") return <p className="popup-muted">Connecting…</p>;
   if (state.kind === "loading") return <p className="popup-muted">Syncing <span className="popup-code">{state.slug}</span>…</p>;
 
@@ -486,64 +575,550 @@ function ThisProblemTab({
 
   if (!captured) return null;
 
+  return (
+    <ThisProblemContent
+      captured={captured}
+      settings={settings}
+      onRefresh={onRefresh}
+      mode={mode}
+      setMode={setMode}
+    />
+  );
+}
+
+function ThisProblemContent({
+  captured,
+  settings,
+  onRefresh,
+  mode,
+  setMode,
+}: {
+  captured: {
+    problem: ApiProblem;
+    cards: ApiCard[];
+    candidates: ApiCard[];
+    previews: Previews;
+  };
+  settings: ExtSettings;
+  onRefresh: () => void;
+  mode: "review" | "manage";
+  setMode: (m: "review" | "manage") => void;
+}) {
   const { problem, cards, candidates, previews } = captured;
   const due = isDue(problem.fsrsDue);
 
   return (
     <div className="stack">
-      {/* Problem header */}
-      <div className="panel">
-        <div className="hero-row">
-          <div style={{ minWidth: 0 }}>
-            <h2 className="hero-title">{problem.title}</h2>
-            <div className="hero-meta">
-              <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>{" "}
-              <span className="pill pill-state">{problem.fsrsState}</span>{" "}
-              {due && <span className="pill pill-due">due</span>}
+      <ProblemHeader
+        problem={problem}
+        settings={settings}
+        due={due}
+        mode={mode}
+        setMode={setMode}
+      />
+
+      {mode === "review" ? (
+        <ReviewView
+          problem={problem}
+          cards={cards}
+          previews={previews}
+          settings={settings}
+          due={due}
+          onRefresh={onRefresh}
+          onRated={onRefresh}
+          onSwitchToManage={() => setMode("manage")}
+        />
+      ) : (
+        <ManageView
+          problem={problem}
+          cards={cards}
+          candidates={candidates}
+          settings={settings}
+          onRefresh={onRefresh}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── ProblemHeader (compact) ── */
+
+function ProblemHeader({
+  problem,
+  settings,
+  due,
+  mode,
+  setMode,
+}: {
+  problem: ApiProblem;
+  settings: ExtSettings;
+  due: boolean;
+  mode: "review" | "manage";
+  setMode: (m: "review" | "manage") => void;
+}) {
+  return (
+    <div className="problem-header">
+      <div className="problem-header-row">
+        <h2 className="hero-title problem-header-title">{problem.title}</h2>
+        <a
+          href={`${settings.apiBaseUrl}/problems/${problem.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className="problem-header-web"
+          title="Open in web"
+          aria-label="Open in web"
+        >
+          ↗
+        </a>
+      </div>
+      <div className="problem-header-meta">
+        <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
+        {due ? (
+          <span className="pill pill-due">due</span>
+        ) : (
+          <span className="problem-header-next">next: {formatInterval(problem.fsrsDue)}</span>
+        )}
+        <div className="mode-chip">
+          <button
+            type="button"
+            data-active={mode === "review"}
+            onClick={() => setMode("review")}
+          >
+            Review
+          </button>
+          <button
+            type="button"
+            data-active={mode === "manage"}
+            onClick={() => setMode("manage")}
+          >
+            Manage
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── ReviewView ── */
+
+function ReviewView({
+  problem,
+  cards,
+  previews,
+  settings,
+  due,
+  onRefresh,
+  onRated,
+  onSwitchToManage,
+}: {
+  problem: ApiProblem;
+  cards: ApiCard[];
+  previews: Previews;
+  settings: ExtSettings;
+  due: boolean;
+  onRefresh: () => void;
+  onRated: () => void;
+  onSwitchToManage: () => void;
+}) {
+  const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
+
+  return (
+    <div className="review-workspace">
+      <div className="review-stage">
+        <div className="review-stage-tabs">
+          <div className="mode-chip">
+            <button
+              type="button"
+              data-active={view === "quiz"}
+              onClick={() => setView("quiz")}
+            >
+              Quiz
+            </button>
+            <button
+              type="button"
+              data-active={view === "card"}
+              onClick={() => setView("card")}
+            >
+              Card
+            </button>
+            <button
+              type="button"
+              data-active={view === "notes"}
+              onClick={() => setView("notes")}
+            >
+              Notes
+            </button>
+          </div>
+        </div>
+
+        <div className="review-stage-body">
+          <div className={`review-stage-pane${view === "quiz" ? "" : " is-hidden"}`}>
+            <QuizPanel
+              problem={problem}
+              settings={settings}
+              onRefresh={onRefresh}
+            />
+          </div>
+
+          <div className={`review-stage-pane${view === "card" ? "" : " is-hidden"}`}>
+            {cards.length === 0 ? (
+              <div className="review-empty">
+                <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
+                  No cards yet — add one to start reviewing.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={onSwitchToManage}
+                >
+                  Add a card
+                </button>
+              </div>
+            ) : (
+              <CardFlipper cards={cards} />
+            )}
+          </div>
+
+          <div className={`review-stage-pane${view === "notes" ? "" : " is-hidden"}`}>
+            <NotesPanel problem={problem} settings={settings} />
+          </div>
+        </div>
+      </div>
+
+      {due && (
+        <QuickRate
+          problemId={problem.id}
+          previews={previews}
+          settings={settings}
+          onRated={onRated}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── QuizPanel ── */
+
+function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; settings: ExtSettings; onRefresh: () => void }) {
+  const [session, setSession] = useState<QuizSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [submittingItem, setSubmittingItem] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
+  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSession = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setFeedback(null);
+    setSavedItemIds(new Set());
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+        headers: authHeaders(settings),
+      });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      const nextSession = json?.session ?? null;
+      setSession(nextSession);
+      setCurrentIndex(getFirstUnansweredQuizIndex(nextSession));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load quiz");
+    } finally {
+      setLoading(false);
+    }
+  }, [problem.id, settings]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  async function generateQuiz(action: "generate" | "regenerate") {
+    setGenerating(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+        method: "POST",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ action }),
+      });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSession; error?: string } | null;
+      if (!res.ok || !json?.session) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      setSession(json.session);
+      setSavedItemIds(new Set());
+      setCurrentIndex(getFirstUnansweredQuizIndex(json.session));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate quiz");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function submitAnswer(item: QuizItem, selectedIndex: number) {
+    if (!session || feedback || submittingItem) return;
+    setSubmittingItem(true);
+    setError(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ itemId: item.id, selectedIndex }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        session?: QuizSession;
+        item?: QuizItem;
+        answer?: QuizAnswer;
+        error?: string;
+      } | null;
+      if (!res.ok || !json?.session || !json.item || !json.answer) {
+        throw new Error(json?.error ?? `HTTP ${res.status}`);
+      }
+      setSession(json.session);
+      setFeedback({ item: json.item, answer: json.answer });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit answer");
+    } finally {
+      setSubmittingItem(false);
+    }
+  }
+
+  async function saveAsCard(item: QuizItem) {
+    if (!session) return;
+    setSavingItemId(item.id);
+    setError(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
+        method: "POST",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ itemId: item.id }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      setSavedItemIds((prev) => new Set(prev).add(item.id));
+      void onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save card");
+    } finally {
+      setSavingItemId(null);
+    }
+  }
+
+  function goNext() {
+    if (!session) return;
+    setFeedback(null);
+    setCurrentIndex(getFirstUnansweredQuizIndex(session));
+  }
+
+  if (loading) {
+    return <div className="quiz-empty"><p className="popup-muted">Loading quiz...</p></div>;
+  }
+
+  if (generating && !session) {
+    return (
+      <div className="quiz-empty">
+        <div className="quiz-pending-bar"><span /></div>
+        <div className="quiz-empty-title">Pending quiz generation</div>
+        <p className="popup-muted">You can switch to Card or Notes and come back here.</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="quiz-empty">
+        <div className="quiz-empty-kicker">Quiz</div>
+        <div className="quiz-empty-title">No quiz yet</div>
+        <p className="popup-muted">Generate 5 focused questions from this problem, your submissions, notes, and cards.</p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={generating}
+          onClick={() => void generateQuiz("generate")}
+        >
+          {generating ? "Generating..." : "Generate quiz"}
+        </button>
+        {error && <div className="err-banner quiz-error">{error}</div>}
+      </div>
+    );
+  }
+
+  if (session.status === "completed" && !feedback) {
+    const suggested = getSuggestedRating(session.score ?? 0);
+    return (
+      <div className="quiz-panel">
+        <div className="quiz-panel-head">
+          <div>
+            <div className="quiz-head-title">Quiz complete</div>
+            <div className="quiz-head-meta">
+              Score {session.score ?? 0} / {session.itemsJson.length} · Suggested {suggested.label}
             </div>
           </div>
-          <a
-            href={`${settings.apiBaseUrl}/problems/${problem.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="hero-link"
+          <button
+            type="button"
+            className="quiz-link-btn"
+            disabled={generating}
+            onClick={() => void generateQuiz("regenerate")}
           >
-            Web ↗
-          </a>
+            {generating ? "Regenerating..." : "Regenerate"}
+          </button>
         </div>
-        <div className="hero-stats">
-          <span>Reps: {problem.fsrsReps}</span>
-          <span>Lapses: {problem.fsrsLapses}</span>
-          {problem.fsrsStability != null && (
-            <span>Stability: {problem.fsrsStability.toFixed(1)}d</span>
-          )}
+        <div className="quiz-results scroll-area">
+          {session.itemsJson.map((item, index) => {
+            const answer = session.answersJson.find((a) => a.itemId === item.id) ?? null;
+            const correctChoice = item.choices[item.answerIndex] ?? "";
+            const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
+            return (
+              <div key={item.id} className="quiz-result-item">
+                <div className="quiz-result-meta">
+                  <span>Question {index + 1}</span>
+                  <span className={answer?.correct ? "quiz-ok" : "quiz-bad"}>
+                    {answer?.correct ? "Correct" : "Incorrect"}
+                  </span>
+                </div>
+                <PopupMarkdown>{item.question}</PopupMarkdown>
+                {selectedChoice && <div className="quiz-result-line">Your answer: {selectedChoice}</div>}
+                <div className="quiz-result-line">Correct answer: {correctChoice}</div>
+                <PopupMarkdown>{item.explanation}</PopupMarkdown>
+                <button
+                  type="button"
+                  className="quiz-save-btn"
+                  disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                  onClick={() => void saveAsCard(item)}
+                >
+                  {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+                </button>
+              </div>
+            );
+          })}
         </div>
+        {error && <div className="err-banner quiz-error">{error}</div>}
       </div>
+    );
+  }
 
-      {/* Quick Rate */}
-      <div className="panel">
-        <div className="section-label">Quick Review</div>
-        {due ? (
-          <QuickRate
-            problemId={problem.id}
-            previews={previews}
-            settings={settings}
-            onRated={onRefresh}
-          />
+  const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
+  if (!item) {
+    return (
+      <div className="quiz-empty">
+        <p className="popup-muted">This quiz has no questions.</p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={generating}
+          onClick={() => void generateQuiz("regenerate")}
+        >
+          {generating ? "Regenerating..." : "Regenerate quiz"}
+        </button>
+      </div>
+    );
+  }
+
+  const progress = session.answersJson.length + (feedback ? 0 : 1);
+  const progressPct = Math.max(8, (session.answersJson.length / session.itemsJson.length) * 100);
+
+  return (
+    <div className="quiz-panel">
+      <div className="quiz-panel-head">
+        <div>
+          <div className="quiz-head-title">Question {Math.min(progress, session.itemsJson.length)} / {session.itemsJson.length}</div>
+          <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
+        </div>
+        <button
+          type="button"
+          className="quiz-link-btn"
+          disabled={generating}
+          onClick={() => void generateQuiz("regenerate")}
+        >
+          Regenerate
+        </button>
+      </div>
+      <div className="quiz-active scroll-area">
+        <div className="quiz-question">
+          <PopupMarkdown>{item.question}</PopupMarkdown>
+        </div>
+        <div className="quiz-choices">
+          {item.choices.map((choice, index) => {
+            const wasSelected = feedback?.answer.selectedIndex === index;
+            const isCorrect = feedback && item.answerIndex === index;
+            return (
+              <button
+                key={index}
+                type="button"
+                disabled={!!feedback || submittingItem}
+                onClick={() => void submitAnswer(item, index)}
+                className={`quiz-choice${isCorrect ? " is-correct" : ""}${feedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
+              >
+                <span className="quiz-choice-letter">{String.fromCharCode(65 + index)}</span>
+                <PopupMarkdown>{choice}</PopupMarkdown>
+              </button>
+            );
+          })}
+        </div>
+        {feedback ? (
+          <div className={`quiz-feedback${feedback.answer.correct ? " is-correct" : " is-wrong"}`}>
+            <div className="quiz-feedback-title">{feedback.answer.correct ? "Correct" : "Not quite"}</div>
+            <PopupMarkdown>{item.explanation}</PopupMarkdown>
+            <div className="quiz-actions">
+              <button
+                type="button"
+                className="quiz-save-btn"
+                disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                onClick={() => void saveAsCard(item)}
+              >
+                {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+              </button>
+              <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
+                {session.status === "completed" ? "View results" : "Next"}
+              </button>
+            </div>
+          </div>
         ) : (
-          <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
-            Next review: <strong style={{ color: "var(--fg)" }}>{formatInterval(problem.fsrsDue)}</strong>
-          </p>
+          <p className="quiz-hint">{submittingItem ? "Checking answer..." : "Click an option to answer."}</p>
         )}
+        {error && <div className="err-banner quiz-error">{error}</div>}
       </div>
+    </div>
+  );
+}
 
-      {/* Add card */}
+function getFirstUnansweredQuizIndex(session: QuizSession | null) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
+  return idx === -1 ? 0 : idx;
+}
+
+function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {
+  if (score <= 1) return { rating: 1, label: "Again" };
+  if (score === 2) return { rating: 2, label: "Hard" };
+  if (score <= 4) return { rating: 3, label: "Good" };
+  return { rating: 4, label: "Easy" };
+}
+
+/* ── ManageView ── */
+
+function ManageView({
+  problem,
+  cards,
+  candidates,
+  settings,
+  onRefresh,
+}: {
+  problem: ApiProblem;
+  cards: ApiCard[];
+  candidates: ApiCard[];
+  settings: ExtSettings;
+  onRefresh: () => void;
+}) {
+  return (
+    <>
       <div className="panel">
         <div className="section-label">Add a card</div>
         <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
       </div>
 
-      {/* AI candidates */}
       {candidates.length > 0 && (
         <CandidateList
           problem={problem}
@@ -553,7 +1128,6 @@ function ThisProblemTab({
         />
       )}
 
-      {/* Saved cards */}
       <div>
         <div className="section-label">
           {cards.length} saved card{cards.length === 1 ? "" : "s"}
@@ -568,6 +1142,165 @@ function ThisProblemTab({
           <CardList cards={cards} settings={settings} onRefresh={onRefresh} />
         )}
       </div>
+    </>
+  );
+}
+
+/* ── CardFlipper ── */
+
+function CardFlipper({ cards }: { cards: ApiCard[] }) {
+  const [idx, setIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+
+  // Reset flip when card changes
+  useEffect(() => {
+    setFlipped(false);
+  }, [idx]);
+
+  // Keyboard: Space flips, ←/→ navigates (ignore when typing)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLInputElement ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+      } else if (e.key === "ArrowLeft") {
+        setIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === "ArrowRight") {
+        setIdx((i) => Math.min(cards.length - 1, i + 1));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cards.length]);
+
+  const card = cards[idx];
+  if (!card) return null;
+
+  return (
+    <div className="card-flipper">
+      <div
+        className="card-flipper-stage"
+        onClick={() => setFlipped((f) => !f)}
+        role="button"
+        tabIndex={0}
+        aria-label={flipped ? "Show question" : "Show answer"}
+      >
+        <div className={`card-flipper-inner${flipped ? " is-flipped" : ""}`}>
+          <div className="card-face card-face-front">
+            <div className="card-face-label">Question</div>
+            <div className="card-face-content scroll-area">
+              <PopupMarkdown className="card-face-md">{card.question}</PopupMarkdown>
+            </div>
+            <div className="card-face-hint">Tap or press Space</div>
+          </div>
+          <div className="card-face card-face-back">
+            <div className="card-face-label card-face-label-answer">Answer</div>
+            <div className="card-face-content scroll-area">
+              <PopupMarkdown className="card-face-md">{card.answer}</PopupMarkdown>
+            </div>
+            <div className="card-face-hint">Tap to flip back</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-flipper-nav">
+        <button
+          type="button"
+          className="card-flipper-arrow"
+          disabled={idx === 0}
+          onClick={() => setIdx((i) => Math.max(0, i - 1))}
+          aria-label="Previous card"
+        >
+          ←
+        </button>
+        <span className="card-flipper-pos">
+          {idx + 1} / {cards.length}
+        </span>
+        <button
+          type="button"
+          className="card-flipper-arrow"
+          disabled={idx >= cards.length - 1}
+          onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
+          aria-label="Next card"
+        >
+          →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── NotesPanel (auto-save) ── */
+
+function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+  const [notes, setNotes] = useState(problem.notes ?? "");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const savedRef = useRef(notes);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  async function persist(value: string) {
+    if (value === savedRef.current) return;
+    setStatus("saving");
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ notes: value }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      savedRef.current = value;
+      setStatus("saved");
+      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
+    } catch {
+      setStatus("idle");
+    }
+  }
+
+  function scheduleSave(value: string) {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => void persist(value), 600);
+  }
+
+  function flushSave() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    void persist(notes);
+  }
+
+  return (
+    <div className="notes-panel">
+      <div className="notes-panel-header">
+        <span className="section-label" style={{ margin: 0 }}>Notes</span>
+        <span className={`notes-panel-status${status !== "idle" ? " is-visible" : ""}`}>
+          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+        </span>
+      </div>
+      <textarea
+        className="notes-panel-textarea scroll-area"
+        value={notes}
+        onChange={(e) => {
+          setNotes(e.target.value);
+          scheduleSave(e.target.value);
+        }}
+        onBlur={flushSave}
+        placeholder="What tripped you up, key insights, alternative approaches…"
+      />
     </div>
   );
 }
@@ -612,7 +1345,7 @@ function QuickRate({
 
   return (
     <div className="quick-rate">
-      <div className="rate-grid">
+      <div className="rate-row">
         {RATING_BUTTONS.map((b) => {
           const active = rating === b.rating;
           const interval = formatInterval(previews?.[b.rating]?.due);
@@ -620,28 +1353,26 @@ function QuickRate({
             <button
               key={b.rating}
               type="button"
-              className={`rate-btn${active ? " rate-btn-active" : ""}`}
+              className={`rate-btn rate-btn-flat${active ? " rate-btn-active" : ""}`}
+              title={b.hint}
               onClick={() => setRating(b.rating)}
             >
               <span className="rate-btn-label">{b.label}</span>
               <span className="rate-btn-interval">{interval}</span>
-              <span className="rate-btn-hint">{b.hint}</span>
             </button>
           );
         })}
+        <button
+          type="button"
+          className="btn btn-primary rate-submit"
+          disabled={busy}
+          onClick={submit}
+        >
+          {busy ? "…" : "Submit"}
+        </button>
       </div>
 
-      {error && <div className="err-banner" style={{ marginTop: 10 }}>{error}</div>}
-
-      <button
-        type="button"
-        className="btn btn-primary"
-        style={{ marginTop: 12, width: "100%" }}
-        disabled={busy}
-        onClick={submit}
-      >
-        {busy ? "Submitting…" : "Submit Rating"}
-      </button>
+      {error && <div className="err-banner" style={{ marginTop: 8 }}>{error}</div>}
     </div>
   );
 }
@@ -681,9 +1412,13 @@ function CardList({
     <>
       {cards.map((card) => (
         <Collapse key={card.id} header={<span className="card-q-preview">{card.question}</span>}>
+          <div className="card-q-box">
+            <div className="card-q-label">Question</div>
+            <PopupMarkdown>{card.question}</PopupMarkdown>
+          </div>
           <div className="card-a-box">
             <div className="card-a-label">Answer</div>
-            <div className="card-a-text">{card.answer}</div>
+            <PopupMarkdown>{card.answer}</PopupMarkdown>
           </div>
           <button
             type="button"

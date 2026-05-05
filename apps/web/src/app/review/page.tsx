@@ -13,7 +13,7 @@ import {
 } from "react";
 import Link from "next/link";
 import type { Problem, Card, Submission } from "@ankify/db";
-import type { FsrsRating } from "@ankify/core";
+import type { FsrsRating, QuizAnswer, QuizItem } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
@@ -30,7 +30,18 @@ type RateResult = {
   queue?: { dueCount: number; totalDue: number };
 };
 type Stage = "loading" | "review" | "result" | "empty";
-type WorkspaceTab = "cards" | "submissions" | "notes";
+type WorkspaceTab = "quiz" | "cards" | "submissions" | "notes";
+type QuizSessionPayload = {
+  id: string;
+  problemId: string;
+  status: "active" | "completed" | "archived";
+  itemsJson: QuizItem[];
+  answersJson: QuizAnswer[];
+  score: number | null;
+  createdAt: string;
+  updatedAt: string | null;
+  completedAt: string | null;
+};
 
 const MIN_CONTEXT_SPLIT = 35;
 const MAX_CONTEXT_SPLIT = 70;
@@ -49,8 +60,7 @@ export default function ReviewPage() {
   const [stage, setStage] = useState<Stage>("loading");
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating>(3);
   const [notes, setNotes] = useState("");
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("cards");
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("quiz");
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [cardIdx, setCardIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -64,8 +74,7 @@ export default function ReviewPage() {
     setStage("loading");
     setUserFsrsRating(3);
     setNotes("");
-    setEditingNotes(false);
-    setWorkspaceTab("cards");
+    setWorkspaceTab("quiz");
     setSelectedSubmissionId(null);
     setCardIdx(0);
     setFlipped(false);
@@ -176,6 +185,20 @@ export default function ReviewPage() {
     setSubmitting(false);
   }, [data?.problem, userFsrsRating, notes]);
 
+  const handleQuizCardSaved = useCallback((card: Card) => {
+    setData((current) => {
+      if (!current?.problem || current.problem.id !== card.problemId) return current;
+      if (current.problem.cards.some((existing) => existing.id === card.id)) return current;
+      return {
+        ...current,
+        problem: {
+          ...current.problem,
+          cards: [card, ...current.problem.cards],
+        },
+      };
+    });
+  }, []);
+
   if (stage === "loading" || !data) return <p className="text-muted p-8 text-center">Loading...</p>;
 
   if (stage === "empty" || !data.problem) {
@@ -202,9 +225,6 @@ export default function ReviewPage() {
         problem={problem}
         cardTotal={cards.length}
         dueCount={result?.queue?.dueCount ?? data.queue?.dueCount ?? 0}
-        notesOpen={workspaceTab === "notes"}
-        onToggleNotes={() => setWorkspaceTab((tab) => (tab === "notes" ? "cards" : "notes"))}
-        hasNotes={notes.trim().length > 0}
       />
 
       {stage === "review" && (
@@ -215,9 +235,17 @@ export default function ReviewPage() {
             className="flex flex-col gap-4 lg:h-[calc(100vh_-_150px)] lg:flex-row lg:gap-0"
             style={{ "--context-pane-width": `${splitPercent}%` } as CSSProperties}
           >
-            {/* Left: Problem statement */}
+            {/* Left: Problem statement + rating (both problem-level) */}
             <div className="min-w-0 lg:min-w-[360px] lg:basis-[var(--context-pane-width)] lg:shrink-0">
-              <StatementPanel problem={problem} />
+              <StatementPanel
+                problem={problem}
+                previews={data.previews}
+                userFsrsRating={userFsrsRating}
+                setUserFsrsRating={setUserFsrsRating}
+                error={error}
+                submitting={submitting}
+                onSubmitRating={submitRating}
+              />
             </div>
 
             <div
@@ -248,15 +276,8 @@ export default function ReviewPage() {
                 onSelectSubmission={setSelectedSubmissionId}
                 notes={notes}
                 setNotes={setNotes}
-                editingNotes={editingNotes}
-                setEditingNotes={setEditingNotes}
-                previews={data.previews}
-                userFsrsRating={userFsrsRating}
-                setUserFsrsRating={setUserFsrsRating}
-                error={error}
-                submitting={submitting}
-                onSubmitRating={submitRating}
                 problemId={problem.id}
+                onQuizCardSaved={handleQuizCardSaved}
               />
             </div>
           </div>
@@ -286,36 +307,60 @@ export default function ReviewPage() {
 }
 
 function ReviewHeader({
-  problem, cardTotal, dueCount, notesOpen, onToggleNotes, hasNotes,
+  problem, cardTotal, dueCount,
 }: {
   problem: Problem; cardTotal: number; dueCount: number;
-  notesOpen: boolean; onToggleNotes: () => void; hasNotes: boolean;
 }) {
+  const [tagsHidden, setTagsHidden] = useState(() => {
+    try { return localStorage.getItem("review-tags-hidden") === "1"; } catch { return false; }
+  });
+
+  function toggleTags() {
+    setTagsHidden((v) => {
+      const next = !v;
+      try { localStorage.setItem("review-tags-hidden", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }
+
   return (
     <header className="flex flex-wrap items-center gap-2">
       <DifficultyPill difficulty={problem.difficulty} />
       <FsrsStatePill state={problem.fsrsState} />
-      {problem.topicTags.slice(0, 3).map((tag) => (
+      {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
         <span key={tag} className="text-xs text-muted">#{tag}</span>
       ))}
       <span className="text-xs text-muted">· {cardTotal} cards</span>
       <button
         type="button"
-        onClick={onToggleNotes}
-        className={cn(
-          "ml-auto rounded-md border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide transition",
-          notesOpen ? "border-accent text-accent bg-accent-soft/20" : "border-border text-muted hover:border-fg/30",
-          hasNotes && !notesOpen && "text-accent border-accent/40",
-        )}
+        onClick={toggleTags}
+        className="ml-auto text-[11px] text-muted hover:text-fg transition-colors"
+        title={tagsHidden ? "Show topic tags" : "Hide topic tags"}
       >
-        Notes
+        {tagsHidden ? "show tags" : "hide tags"}
       </button>
       <span className="text-xs uppercase tracking-wider text-muted">{dueCount} due</span>
     </header>
   );
 }
 
-function StatementPanel({ problem }: { problem: Problem }) {
+function StatementPanel({
+  problem,
+  previews,
+  userFsrsRating,
+  setUserFsrsRating,
+  error,
+  submitting,
+  onSubmitRating,
+}: {
+  problem: Problem;
+  previews: ReviewPayload["previews"];
+  userFsrsRating: FsrsRating;
+  setUserFsrsRating: (rating: FsrsRating) => void;
+  error: string | null;
+  submitting: boolean;
+  onSubmitRating: () => void;
+}) {
   return (
     <Surface className="flex h-full min-h-[420px] flex-col overflow-hidden lg:min-h-0">
       <div className="shrink-0 border-b border-border px-4 py-3">
@@ -332,6 +377,16 @@ function StatementPanel({ problem }: { problem: Problem }) {
           <p className="text-sm text-muted">No problem description captured.</p>
         )}
       </div>
+
+      {/* Rating is problem-level — lives alongside the problem statement */}
+      <CompactRating
+        previews={previews}
+        userFsrsRating={userFsrsRating}
+        setUserFsrsRating={setUserFsrsRating}
+        error={error}
+        submitting={submitting}
+        onSubmitRating={onSubmitRating}
+      />
     </Surface>
   );
 }
@@ -350,15 +405,8 @@ function WorkspacePanel({
   onSelectSubmission,
   notes,
   setNotes,
-  editingNotes,
-  setEditingNotes,
-  previews,
-  userFsrsRating,
-  setUserFsrsRating,
-  error,
-  submitting,
-  onSubmitRating,
   problemId,
+  onQuizCardSaved,
 }: {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
@@ -373,17 +421,11 @@ function WorkspacePanel({
   onSelectSubmission: (id: string) => void;
   notes: string;
   setNotes: (value: string) => void;
-  editingNotes: boolean;
-  setEditingNotes: (editing: boolean) => void;
-  previews: ReviewPayload["previews"];
-  userFsrsRating: FsrsRating;
-  setUserFsrsRating: (rating: FsrsRating) => void;
-  error: string | null;
-  submitting: boolean;
-  onSubmitRating: () => void;
   problemId: string;
+  onQuizCardSaved: (card: Card) => void;
 }) {
   const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
+    { id: "quiz", label: "Quiz" },
     { id: "cards", label: "Cards", count: cards.length },
     { id: "submissions", label: "Submissions", count: submissions.length },
     { id: "notes", label: "Notes" },
@@ -394,7 +436,7 @@ function WorkspacePanel({
       <div className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted">Review workspace</span>
-          <span className="text-xs text-muted">Cards · Code · Notes</span>
+          <span className="text-xs text-muted">Quiz · Cards · Code · Notes</span>
         </div>
 
         <div className="mt-3 flex rounded-lg bg-subtle p-1">
@@ -411,7 +453,11 @@ function WorkspacePanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === "cards" && (
+        <div className={cn("h-full", activeTab !== "quiz" && "hidden")}>
+          <QuizPanel problemId={problemId} onCardSaved={onQuizCardSaved} />
+        </div>
+
+        <div className={cn("h-full", activeTab !== "cards" && "hidden")}>
           <CardReviewPanel
             cards={cards}
             currentCard={currentCard}
@@ -419,32 +465,25 @@ function WorkspacePanel({
             setCardIdx={setCardIdx}
             flipped={flipped}
             setFlipped={setFlipped}
-            previews={previews}
-            userFsrsRating={userFsrsRating}
-            setUserFsrsRating={setUserFsrsRating}
-            error={error}
-            submitting={submitting}
-            onSubmitRating={onSubmitRating}
             problemId={problemId}
           />
-        )}
+        </div>
 
-        {activeTab === "submissions" && (
+        <div className={cn("h-full", activeTab !== "submissions" && "hidden")}>
           <SubmissionExplorer
             submissions={submissions}
             selectedSubmissionId={selectedSubmissionId}
             onSelectSubmission={onSelectSubmission}
           />
-        )}
+        </div>
 
-        {activeTab === "notes" && (
+        <div className={cn("h-full", activeTab !== "notes" && "hidden")}>
           <NotesEditor
             notes={notes}
             setNotes={setNotes}
-            editing={editingNotes}
-            setEditing={setEditingNotes}
+            problemId={problemId}
           />
-        )}
+        </div>
       </div>
     </Surface>
   );
@@ -477,6 +516,391 @@ function ReviewTabButton({
   );
 }
 
+function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved: (card: Card) => void }) {
+  const [session, setSession] = useState<QuizSessionPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [submittingItem, setSubmittingItem] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
+  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSession = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setFeedback(null);
+    setSavedItemIds(new Set());
+    try {
+      const res = await fetch(`/api/problems/${problemId}/quiz`, { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload | null; error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Failed to load quiz");
+      const nextSession = json?.session ?? null;
+      setSession(nextSession);
+      setCurrentIndex(getFirstUnansweredIndex(nextSession));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load quiz");
+    } finally {
+      setLoading(false);
+    }
+  }, [problemId]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  async function generateQuiz(action: "generate" | "regenerate") {
+    setGenerating(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      const res = await fetch(`/api/problems/${problemId}/quiz`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload; error?: string } | null;
+      if (!res.ok || !json?.session) throw new Error(json?.error ?? "Failed to generate quiz");
+      setSession(json.session);
+      setSavedItemIds(new Set());
+      setCurrentIndex(getFirstUnansweredIndex(json.session));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate quiz");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function submitAnswer(item: QuizItem, selectedIndex: number) {
+    if (!session || feedback || submittingItem) return;
+    setSubmittingItem(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/problems/${problemId}/quiz/${session.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, selectedIndex }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        session?: QuizSessionPayload;
+        item?: QuizItem;
+        answer?: QuizAnswer;
+        error?: string;
+      } | null;
+      if (!res.ok || !json?.session || !json.item || !json.answer) {
+        throw new Error(json?.error ?? "Failed to submit answer");
+      }
+      setSession(json.session);
+      setFeedback({ item: json.item, answer: json.answer });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit answer");
+    } finally {
+      setSubmittingItem(false);
+    }
+  }
+
+  async function saveAsCard(item: QuizItem) {
+    if (!session) return;
+    setSavingItemId(item.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/problems/${problemId}/quiz/${session.id}/save-card`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ itemId: item.id }),
+      });
+      const json = (await res.json().catch(() => null)) as { card?: Card; error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? "Failed to save card");
+      if (json?.card) onCardSaved(json.card);
+      setSavedItemIds((prev) => new Set(prev).add(item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save card");
+    } finally {
+      setSavingItemId(null);
+    }
+  }
+
+  function goNext() {
+    if (!session) return;
+    setFeedback(null);
+    setCurrentIndex(getFirstUnansweredIndex(session));
+  }
+
+  if (loading) {
+    return <div className="flex h-full items-center justify-center p-5 text-sm text-muted">Loading quiz...</div>;
+  }
+
+  if (generating && !session) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-lg border border-border bg-surface p-5 text-center shadow-card">
+          <div className="mx-auto h-1.5 w-32 overflow-hidden rounded-full bg-subtle">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/80" />
+          </div>
+          <h3 className="mt-4 text-sm font-semibold">Pending quiz generation</h3>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            The request is still running. You can review Cards, Submissions, or Notes and come back here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-lg border border-border bg-surface p-5 text-center shadow-card">
+          <div className="mx-auto inline-flex rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-accent">
+            Quiz
+          </div>
+          <h3 className="mt-3 text-sm font-semibold">No quiz for this review yet</h3>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Generate 5 focused questions from the statement, your submissions, notes, and saved cards.
+          </p>
+          <button
+            type="button"
+            disabled={generating}
+            onClick={() => void generateQuiz("generate")}
+            className="mt-4 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+          >
+            {generating ? "Generating..." : "Generate 5-question quiz"}
+          </button>
+          {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (session.status === "completed" && !feedback) {
+    const suggested = getSuggestedRating(session.score ?? 0);
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="shrink-0 border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div>
+              <div className="text-sm font-semibold">Quiz complete</div>
+              <div className="mt-0.5 text-xs text-muted">
+                Score {session.score ?? 0} / {session.itemsJson.length} · Suggested: {suggested.label}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={generating}
+              onClick={() => void generateQuiz("regenerate")}
+              className="ml-auto rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
+            >
+              {generating ? "Regenerating..." : "Regenerate"}
+            </button>
+          </div>
+          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+          {session.itemsJson.map((item, index) => {
+            const answer = session.answersJson.find((a) => a.itemId === item.id);
+            return (
+              <QuizResultItem
+                key={item.id}
+                index={index}
+                item={item}
+                answer={answer ?? null}
+                saved={savedItemIds.has(item.id)}
+                saving={savingItemId === item.id}
+                onSave={() => void saveAsCard(item)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
+  if (!item) {
+    return (
+      <div className="flex h-full items-center justify-center p-5 text-center">
+        <div>
+          <p className="text-sm text-muted">This quiz has no questions.</p>
+          <button
+            type="button"
+            disabled={generating}
+            onClick={() => void generateQuiz("regenerate")}
+            className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+          >
+            {generating ? "Regenerating..." : "Regenerate quiz"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const progress = session.answersJson.length + (feedback ? 0 : 1);
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-medium uppercase tracking-wide text-muted">
+              Quiz · Question {Math.min(progress, session.itemsJson.length)} / {session.itemsJson.length}
+            </div>
+            <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-subtle">
+              <div
+                className="h-full rounded-full bg-accent/80 transition-all"
+                style={{ width: `${Math.max(8, (session.answersJson.length / session.itemsJson.length) * 100)}%` }}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={generating}
+            onClick={() => void generateQuiz("regenerate")}
+            className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-50"
+          >
+            Regenerate
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
+        <div className="mx-auto max-w-2xl">
+          <div className="rounded-lg border border-border bg-subtle/40 px-4 py-4 sm:px-5">
+            <Markdown className="text-base font-medium leading-relaxed [&_p]:text-base">{item.question}</Markdown>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {item.choices.map((choice, index) => {
+              const wasSelected = feedback?.answer.selectedIndex === index;
+              const isCorrect = feedback && item.answerIndex === index;
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  disabled={!!feedback || submittingItem}
+                  onClick={() => void submitAnswer(item, index)}
+                  className={cn(
+                    "group w-full rounded-lg border px-4 py-3 text-left transition",
+                    "border-border bg-surface hover:border-accent/40 hover:bg-subtle/70 disabled:cursor-default",
+                    feedback && isCorrect ? "border-success/50 bg-success/10" : "",
+                    feedback && wasSelected && !isCorrect ? "border-danger/50 bg-danger/10" : "",
+                  )}
+                >
+                  <div className="flex gap-3">
+                    <span className={cn(
+                      "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold",
+                      "border-border text-muted group-hover:border-accent/40 group-hover:text-accent",
+                      feedback && isCorrect ? "border-success/40 text-success" : "",
+                      feedback && wasSelected && !isCorrect ? "border-danger/40 text-danger" : "",
+                    )}>
+                      {String.fromCharCode(65 + index)}
+                    </span>
+                    <Markdown className="min-w-0 flex-1 text-sm">{choice}</Markdown>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {feedback ? (
+            <div className={cn("mt-5 rounded-lg border p-4", feedback.answer.correct ? "border-success/40 bg-success/10" : "border-danger/40 bg-danger/10")}>
+              <div className={cn("text-sm font-semibold", feedback.answer.correct ? "text-success" : "text-danger")}>
+                {feedback.answer.correct ? "Correct" : "Not quite"}
+              </div>
+              <Markdown className="mt-2 text-sm">{item.explanation}</Markdown>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                  onClick={() => void saveAsCard(item)}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+                >
+                  {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+                </button>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90"
+                >
+                  {session.status === "completed" ? "View results" : "Next question"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-muted">
+              {submittingItem ? "Checking answer..." : "Click an option to answer."}
+            </p>
+          )}
+
+          {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuizResultItem({
+  index,
+  item,
+  answer,
+  saved,
+  saving,
+  onSave,
+}: {
+  index: number;
+  item: QuizItem;
+  answer: QuizAnswer | null;
+  saved: boolean;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  const correctChoice = item.choices[item.answerIndex] ?? "";
+  const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span>Question {index + 1}</span>
+        {answer && (
+          <Pill tone={answer.correct ? "success" : "danger"}>
+            {answer.correct ? "Correct" : "Incorrect"}
+          </Pill>
+        )}
+        <span className="ml-auto">{item.source}</span>
+      </div>
+      <Markdown className="mt-2 text-sm font-medium">{item.question}</Markdown>
+      {selectedChoice && (
+        <div className="mt-3 text-xs text-muted">
+          Your answer: <span className="text-fg">{selectedChoice}</span>
+        </div>
+      )}
+      <div className="mt-1 text-xs text-muted">
+        Correct answer: <span className="text-fg">{correctChoice}</span>
+      </div>
+      <Markdown className="mt-3 text-sm">{item.explanation}</Markdown>
+      <button
+        type="button"
+        disabled={saved || saving}
+        onClick={onSave}
+        className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {saved ? "Saved" : saving ? "Saving..." : "Save as card"}
+      </button>
+    </div>
+  );
+}
+
+function getFirstUnansweredIndex(session: QuizSessionPayload | null) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
+  return idx === -1 ? 0 : idx;
+}
+
+function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {
+  if (score <= 1) return { rating: 1, label: "Again" };
+  if (score === 2) return { rating: 2, label: "Hard" };
+  if (score <= 4) return { rating: 3, label: "Good" };
+  return { rating: 4, label: "Easy" };
+}
+
 function CardReviewPanel({
   cards,
   currentCard,
@@ -484,12 +908,6 @@ function CardReviewPanel({
   setCardIdx,
   flipped,
   setFlipped,
-  previews,
-  userFsrsRating,
-  setUserFsrsRating,
-  error,
-  submitting,
-  onSubmitRating,
   problemId,
 }: {
   cards: Card[];
@@ -498,12 +916,6 @@ function CardReviewPanel({
   setCardIdx: Dispatch<SetStateAction<number>>;
   flipped: boolean;
   setFlipped: Dispatch<SetStateAction<boolean>>;
-  previews: ReviewPayload["previews"];
-  userFsrsRating: FsrsRating;
-  setUserFsrsRating: (rating: FsrsRating) => void;
-  error: string | null;
-  submitting: boolean;
-  onSubmitRating: () => void;
   problemId: string;
 }) {
   return (
@@ -593,14 +1005,6 @@ function CardReviewPanel({
         )}
       </div>
 
-      <CompactRating
-        previews={previews}
-        userFsrsRating={userFsrsRating}
-        setUserFsrsRating={setUserFsrsRating}
-        error={error}
-        submitting={submitting}
-        onSubmitRating={onSubmitRating}
-      />
     </div>
   );
 }
@@ -622,19 +1026,8 @@ function CompactRating({
 }) {
   return (
     <div className="shrink-0 border-t border-border bg-surface/70 p-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Rating</span>
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={onSubmitRating}
-          className="inline-flex h-7 items-center justify-center rounded-md bg-accent px-3 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
-        >
-          {submitting ? "..." : "Submit"}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">Rating</div>
+      <div className="flex items-stretch gap-1.5">
         {RATING_BUTTONS.map((button) => {
           const due = previews?.[button.rating]?.due;
           const active = userFsrsRating === button.rating;
@@ -646,15 +1039,24 @@ function CompactRating({
               aria-label={`${button.label}: ${button.hint}`}
               onClick={() => setUserFsrsRating(button.rating)}
               className={cn(
-                "rounded-md border px-2 py-1.5 text-center transition hover:bg-subtle",
+                "flex-1 rounded-md border px-2 py-1.5 text-center transition hover:bg-subtle",
                 active ? "border-accent ring-1 ring-accent/30 bg-accent-soft/30" : "border-border bg-surface",
               )}
             >
               <div className="text-xs font-semibold leading-tight">{button.label}</div>
-              <div className="mt-0.5 font-mono text-[10px] leading-tight text-muted">{due ? formatInterval(due) : "-"}</div>
+              <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">{due ? formatInterval(due) : "-"}</div>
             </button>
           );
         })}
+
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={onSubmitRating}
+          className="rounded-md bg-accent px-4 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+        >
+          {submitting ? "…" : "Submit"}
+        </button>
       </div>
 
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
@@ -665,44 +1067,94 @@ function CompactRating({
 function NotesEditor({
   notes,
   setNotes,
-  editing,
-  setEditing,
+  problemId,
 }: {
   notes: string;
   setNotes: (value: string) => void;
-  editing: boolean;
-  setEditing: (editing: boolean) => void;
+  problemId: string;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const savedRef = useRef(notes);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  async function persist(value: string) {
+    if (value === savedRef.current) return;
+    setStatus("saving");
+    try {
+      await fetch(`/api/problems/${problemId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ notes: value }),
+      });
+      savedRef.current = value;
+      setStatus("saved");
+      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
+    } catch {
+      setStatus("idle");
+    }
+  }
+
+  function scheduleSave(value: string) {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => persist(value), 600);
+  }
+
+  function flushSave() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    persist(notes);
+  }
+
+  const showTextarea = editing || !notes.trim();
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-border px-5 py-3">
-        <button
-          type="button"
-          onClick={() => setEditing(!editing)}
-          className="rounded-md border border-border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted transition hover:border-fg/30 hover:text-fg"
-        >
-          {editing ? "Preview" : "Edit"}
-        </button>
-      </div>
-
       <div className="min-h-0 flex-1 overflow-auto p-5">
-        {editing ? (
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            className="h-full min-h-[320px] w-full resize-none rounded-lg border border-border bg-subtle p-3 font-mono text-sm leading-relaxed placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/40"
-            placeholder="Markdown notes — what to remember, what changed, open questions..."
-            autoFocus
-          />
-        ) : notes.trim() ? (
-          <div className="min-h-full cursor-text" onClick={() => setEditing(true)}>
-            <Markdown>{notes}</Markdown>
+        <div className="relative flex h-full min-h-[20rem] flex-col rounded-lg border border-border bg-subtle p-3 transition-colors focus-within:border-accent/40">
+          {showTextarea ? (
+            <textarea
+              ref={textareaRef}
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                scheduleSave(e.target.value);
+              }}
+              onFocus={() => setEditing(true)}
+              onBlur={() => {
+                setEditing(false);
+                flushSave();
+              }}
+              placeholder="Markdown notes — what to remember, what changed, open questions..."
+              className="min-h-0 flex-1 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50 focus:outline-none focus:ring-0"
+              autoFocus={editing}
+            />
+          ) : (
+            <div
+              className="min-h-0 flex-1 cursor-text"
+              onClick={() => setEditing(true)}
+            >
+              <Markdown>{notes}</Markdown>
+            </div>
+          )}
+          <div
+            className={cn(
+              "pointer-events-none absolute right-3 top-3 text-[10px] text-muted tabular-nums transition-opacity",
+              status === "idle" ? "opacity-0" : "opacity-70",
+            )}
+          >
+            {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
           </div>
-        ) : (
-          <p className="cursor-pointer text-sm text-muted" onClick={() => setEditing(true)}>
-            Click to start writing...
-          </p>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -759,7 +1211,7 @@ function SubmissionExplorer({
                   <Pill tone={submission.status === "Accepted" ? "success" : "danger"}>
                     {submission.status}
                   </Pill>
-                  <span className="font-mono text-xs text-muted">#{submissions.length - index}</span>
+                  <span className="text-xs text-muted tabular-nums">#{submissions.length - index}</span>
                 </div>
                 <div className="mt-1 truncate text-xs text-muted">
                   {submission.language}

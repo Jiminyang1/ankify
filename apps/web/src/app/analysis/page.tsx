@@ -199,7 +199,7 @@ export default async function AnalysisPage() {
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <span className="w-10 text-right font-mono text-xs tabular-nums">{c}</span>
+                      <span className="w-10 text-right text-xs tabular-nums">{c}</span>
                     </div>
                   );
                 })}
@@ -219,7 +219,7 @@ export default async function AnalysisPage() {
                         style={{ width: `${b.pct}%` }}
                       />
                     </div>
-                    <span className="w-10 text-right font-mono text-xs tabular-nums">{b.count}</span>
+                    <span className="w-10 text-right text-xs tabular-nums">{b.count}</span>
                   </div>
                 ))}
               </div>
@@ -265,8 +265,8 @@ export default async function AnalysisPage() {
                     <td className="px-4 py-3">
                       <FsrsStatePill state={problem.fsrsState} />
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{Math.round(problem.retrievabilityNow * 100)}%</td>
-                    <td className="px-4 py-3 font-mono tabular-nums">
+                    <td className="px-4 py-3 tabular-nums">{Math.round(problem.retrievabilityNow * 100)}%</td>
+                    <td className="px-4 py-3 tabular-nums">
                       {problem.fsrsStability != null ? `${problem.fsrsStability.toFixed(1)}d` : "-"}
                     </td>
                     <td className="px-4 py-3 text-muted">{formatRelative(problem.fsrsDue)}</td>

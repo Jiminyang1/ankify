@@ -245,18 +245,18 @@ export default function ProblemsPage() {
                     <td className="px-4 py-2.5">
                       <span
                         className={cn(
-                          "font-mono text-xs tabular-nums",
+                          "text-xs tabular-nums",
                           isDue ? "text-accent font-medium" : "text-muted",
                         )}
                       >
                         {isDue && p.fsrsReps > 0 ? "now" : formatRelative(p.fsrsDue)}
                       </span>
                     </td>
-                    <td className="hidden md:table-cell px-4 py-2.5 font-mono text-xs tabular-nums">
+                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
                       {p.fsrsReps}
                       {p.fsrsLapses > 0 && <span className="text-danger ml-0.5">↓{p.fsrsLapses}</span>}
                     </td>
-                    <td className="hidden md:table-cell px-4 py-2.5 font-mono text-xs tabular-nums">
+                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
                       <span className={p.cardTotal > 0 ? "text-accent" : "text-muted"}>
                         {p.cardTotal}
                       </span>

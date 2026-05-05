@@ -14,6 +14,8 @@ export const submissionStatusEnum = z.enum([
 
 export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
 export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
+export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
+export const quizItemSourceEnum = z.enum(["statement", "submission", "notes", "card"]);
 
 /* Payload sent by the Chrome extension to add or update a problem. */
 export const captureProblemSchema = z.object({
@@ -51,6 +53,29 @@ export const cardDraftSchema = z.object({
   answer: z.string().min(1),
 });
 export type CardDraft = z.infer<typeof cardDraftSchema>;
+
+export const quizItemSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  choices: z.array(z.string().min(1)).length(4),
+  answerIndex: z.number().int().min(0).max(3),
+  explanation: z.string().min(1),
+  source: quizItemSourceEnum,
+});
+export type QuizItem = z.infer<typeof quizItemSchema>;
+
+export const quizAnswerSchema = z.object({
+  itemId: z.string().min(1),
+  selectedIndex: z.number().int().min(0).max(3),
+  correct: z.boolean(),
+  answeredAt: z.string().datetime(),
+});
+export type QuizAnswer = z.infer<typeof quizAnswerSchema>;
+
+export const quizDraftSchema = z.object({
+  items: z.array(quizItemSchema).length(5),
+});
+export type QuizDraft = z.infer<typeof quizDraftSchema>;
 
 export const aiCardsRequestSchema = z.union([
   z.object({
@@ -93,4 +118,17 @@ export const reviewRatingSchema = z.object({
   problemId: z.string(),
   rating: fsrsRatingSchema,
   notes: z.string().optional(),
+});
+
+export const quizGenerateRequestSchema = z.object({
+  action: z.enum(["generate", "regenerate"]),
+});
+
+export const quizAnswerRequestSchema = z.object({
+  itemId: z.string().min(1),
+  selectedIndex: z.number().int().min(0).max(3),
+});
+
+export const quizSaveCardRequestSchema = z.object({
+  itemId: z.string().min(1),
 });

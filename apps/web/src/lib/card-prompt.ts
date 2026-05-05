@@ -115,6 +115,9 @@ export function buildAiCardDraftPrompt(args: {
 - 用户确认后才会成为正式卡片；你只帮忙生成或按 follow up 改写。
 - 不要凭空发散成标准题解；题目和提交历史只用于理解语境。
 - 只返回 question（正面）和 answer（背面）两个字段。
+- question 和 answer 都支持 GitHub Flavored Markdown。
+- Markdown 要克制使用：question 通常是一句主动回忆问题，可用 inline code 标记变量/函数；answer 可用短列表、inline code、必要时代码块。
+- 不要使用 H1/H2/H3 标题，不要把 answer 写成完整题解长文。
 - question 要适合主动回忆，直接问一个可检验的回忆点。
 - answer 要直接、准确，能在复习时检验自己是否掌握。`;
 
