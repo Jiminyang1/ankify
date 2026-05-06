@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas, type QuizItem } from "@ankify/core";
 import { getDb, schema, type QuizSession } from "@ankify/db";
@@ -35,14 +35,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (parsed.data.action === "generate" && current) {
     return NextResponse.json({ ok: true, session: current });
   }
+  if (parsed.data.action === "nextBatch" && current?.status !== "completed") {
+    return NextResponse.json({ error: "quiz_session_not_completed" }, { status: 400 });
+  }
 
   try {
-    const items = await generateQuizItems(problemId);
+    const history = parsed.data.action === "nextBatch" ? await getRecentCompletedQuizSessions(problemId) : [];
+    const items = await generateQuizItems(problemId, history);
     const now = new Date();
     const sessionId = nanoid(12);
 
     await db.transaction(async (tx) => {
-      if (parsed.data.action === "regenerate") {
+      if (parsed.data.action === "regenerate" || parsed.data.action === "nextBatch") {
         await tx
           .update(schema.quizSessions)
           .set({ status: "archived", updatedAt: now })
@@ -80,6 +84,16 @@ async function getCurrentQuizSession(problemId: string): Promise<QuizSession | n
   return session ?? null;
 }
 
+async function getRecentCompletedQuizSessions(problemId: string): Promise<QuizSession[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(schema.quizSessions)
+    .where(and(eq(schema.quizSessions.problemId, problemId), isNotNull(schema.quizSessions.completedAt)))
+    .orderBy(desc(schema.quizSessions.completedAt))
+    .limit(3);
+}
+
 async function loadPromptContext(problemId: string) {
   const db = getDb();
   const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
@@ -103,13 +117,13 @@ async function loadPromptContext(problemId: string) {
   return { problem, cards, submissions };
 }
 
-async function generateQuizItems(problemId: string): Promise<QuizItem[]> {
+async function generateQuizItems(problemId: string, history: QuizSession[] = []): Promise<QuizItem[]> {
   const tag = `[quiz ${problemId}]`;
   const t0 = Date.now();
   const { problem, cards, submissions } = await loadPromptContext(problemId);
   const { model, settings } = await getActiveModel();
   const mode = settings.provider === "deepseek" ? "json" : "auto";
-  const prompt = buildQuizPrompt({ problem, cards, submissions });
+  const prompt = buildQuizPrompt({ problem, cards, submissions, history });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45_000);
 
@@ -124,16 +138,25 @@ async function generateQuizItems(problemId: string): Promise<QuizItem[]> {
       abortSignal: controller.signal,
     });
 
-    console.log(`${tag} generated in ${Date.now() - t0}ms`);
-    return object.items.map((item, index) => ({
+    const items = object.items.map((item, index) => ({
       ...item,
       id: `q${index + 1}`,
       choices: item.choices.map((choice) => choice.trim()),
       question: item.question.trim(),
       explanation: item.explanation.trim(),
     }));
+    validateScopeCoverage(items);
+    console.log(`${tag} generated in ${Date.now() - t0}ms`);
+    return items;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function validateScopeCoverage(items: QuizItem[]) {
+  const scopes = new Set(items.map((item) => item.scope));
+  if (scopes.size < 4 || !scopes.has("complexity")) {
+    throw new Error("quiz_scope_coverage_failed");
   }
 }
 

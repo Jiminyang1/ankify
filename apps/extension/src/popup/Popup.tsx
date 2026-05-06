@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatQuizMarkdown } from "@ankify/core";
 import type { CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
 import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
 import { PopupMarkdown } from "./PopupMarkdown";
@@ -32,6 +33,7 @@ type QuizItem = {
   answerIndex: number;
   explanation: string;
   source: "statement" | "submission" | "notes" | "card";
+  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
 };
 type QuizAnswer = {
   itemId: string;
@@ -90,11 +92,36 @@ const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
   { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
 ];
 
+const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
+  approach: "Approach",
+  invariant: "Invariant",
+  edge_case: "Edge cases",
+  complexity: "Complexity",
+  implementation: "Implementation",
+  mistake_review: "Mistakes",
+};
+
+const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
+  statement: "Statement",
+  submission: "Submission",
+  notes: "Notes",
+  card: "Card",
+};
+
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ];
+
+const PENDING_OPERATION_TTL_MS = 90_000;
+const PENDING_OPERATION_EVENT = "ankify:pending-operation";
+
+type PendingOperation = {
+  id: string;
+  kind: string;
+  startedAt: number;
+};
 
 /* ── helpers ── */
 
@@ -106,6 +133,59 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 
 function authHeaders(settings: ExtSettings): HeadersInit {
   return settings.apiToken ? { "x-ankify-token": settings.apiToken } : {};
+}
+
+function pendingQuizKey(problemId: string) {
+  return `ankify.pending.quiz.${problemId}`;
+}
+
+function pendingAiCardKey(problemId: string) {
+  return `ankify.pending.aiCard.${problemId}`;
+}
+
+function pendingCandidateAiKey(problemId: string, cardId: string) {
+  return `ankify.pending.aiCandidate.${problemId}.${cardId}`;
+}
+
+function readPendingOperation(key: string): PendingOperation | null {
+  const raw = window.sessionStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as PendingOperation;
+    if (!value?.id || !value.kind || !value.startedAt) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    if (Date.now() - value.startedAt > PENDING_OPERATION_TTL_MS) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return value;
+  } catch {
+    window.sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+function writePendingOperation(key: string, kind: string): PendingOperation {
+  const operation: PendingOperation = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    kind,
+    startedAt: Date.now(),
+  };
+  window.sessionStorage.setItem(key, JSON.stringify(operation));
+  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
+  return operation;
+}
+
+function clearPendingOperation(key: string) {
+  window.sessionStorage.removeItem(key);
+  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
+}
+
+function isSessionNewerThanPending(session: QuizSession | null, pending: PendingOperation | null) {
+  if (!session || !pending) return false;
+  return new Date(session.createdAt).getTime() >= pending.startedAt - 1000;
 }
 
 function applyThemePreference(preference: ThemePreference) {
@@ -260,34 +340,19 @@ export function Popup() {
           <span className="popup-brand-title">ankify</span>
           <span className="popup-brand-tag">LC</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-          {tab !== "settings" && (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                if (tab === "this-problem") void detect();
-                else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
-              }}
-              title="Refresh"
-            >
-              Refresh
-            </button>
-          )}
-          <div className="theme-control" aria-label="Theme">
-            {THEME_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                data-active={theme === option.value}
-                onClick={() => setThemePreference(option.value)}
-                aria-pressed={theme === option.value}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {tab !== "settings" && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              if (tab === "this-problem") void detect();
+              else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+            }}
+            title="Refresh"
+          >
+            Refresh
+          </button>
+        )}
       </div>
 
       {/* Nav */}
@@ -327,6 +392,8 @@ export function Popup() {
         {tab === "settings" && settings && (
           <SettingsTab
             settings={settings}
+            theme={theme}
+            onThemeChange={setThemePreference}
             onSave={(next) => {
               void setSettings(next);
               setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
@@ -609,13 +676,22 @@ function ThisProblemContent({
 
   return (
     <div className="stack">
-      <ProblemHeader
-        problem={problem}
-        settings={settings}
-        due={due}
-        mode={mode}
-        setMode={setMode}
-      />
+      <div className="problem-shell">
+        <ProblemHeader
+          problem={problem}
+          settings={settings}
+          due={due}
+        />
+
+        <div className="problem-mode-tabs">
+          <button type="button" data-active={mode === "review"} onClick={() => setMode("review")}>
+            Study
+          </button>
+          <button type="button" data-active={mode === "manage"} onClick={() => setMode("manage")}>
+            Manage
+          </button>
+        </div>
+      </div>
 
       {mode === "review" ? (
         <ReviewView
@@ -647,19 +723,23 @@ function ProblemHeader({
   problem,
   settings,
   due,
-  mode,
-  setMode,
 }: {
   problem: ApiProblem;
   settings: ExtSettings;
   due: boolean;
-  mode: "review" | "manage";
-  setMode: (m: "review" | "manage") => void;
 }) {
   return (
     <div className="problem-header">
       <div className="problem-header-row">
-        <h2 className="hero-title problem-header-title">{problem.title}</h2>
+        <div className="problem-title-line">
+          <h2 className="hero-title problem-header-title">{problem.title}</h2>
+          <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
+          {due ? (
+            <span className="pill pill-due">due</span>
+          ) : (
+            <span className="problem-header-next">next: {formatInterval(problem.fsrsDue)}</span>
+          )}
+        </div>
         <a
           href={`${settings.apiBaseUrl}/problems/${problem.id}`}
           target="_blank"
@@ -670,30 +750,6 @@ function ProblemHeader({
         >
           ↗
         </a>
-      </div>
-      <div className="problem-header-meta">
-        <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
-        {due ? (
-          <span className="pill pill-due">due</span>
-        ) : (
-          <span className="problem-header-next">next: {formatInterval(problem.fsrsDue)}</span>
-        )}
-        <div className="mode-chip">
-          <button
-            type="button"
-            data-active={mode === "review"}
-            onClick={() => setMode("review")}
-          >
-            Review
-          </button>
-          <button
-            type="button"
-            data-active={mode === "manage"}
-            onClick={() => setMode("manage")}
-          >
-            Manage
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -726,7 +782,7 @@ function ReviewView({
     <div className="review-workspace">
       <div className="review-stage">
         <div className="review-stage-tabs">
-          <div className="mode-chip">
+          <div className="study-tabs">
             <button
               type="button"
               data-active={view === "quiz"}
@@ -803,15 +859,25 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   const [session, setSession] = useState<QuizSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [pendingQuiz, setPendingQuiz] = useState<PendingOperation | null>(null);
   const [submittingItem, setSubmittingItem] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [savingMissed, setSavingMissed] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSession = useCallback(async () => {
-    setLoading(true);
+  const refreshPendingQuiz = useCallback(() => {
+    const pending = readPendingOperation(pendingQuizKey(problem.id));
+    setPendingQuiz(pending);
+    setGenerating(Boolean(pending));
+    return pending;
+  }, [problem.id]);
+
+  const loadSession = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     setFeedback(null);
     setSavedItemIds(new Set());
@@ -822,23 +888,67 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
       const nextSession = json?.session ?? null;
+      const pending = readPendingOperation(pendingQuizKey(problem.id));
+      if (isSessionNewerThanPending(nextSession, pending) && nextSession?.status === "active") {
+        clearPendingOperation(pendingQuizKey(problem.id));
+        setPendingQuiz(null);
+        setGenerating(false);
+      } else {
+        setPendingQuiz(pending);
+        setGenerating(Boolean(pending));
+      }
+      const pendingFeedback = getStoredQuizFeedback(problem.id, nextSession);
       setSession(nextSession);
-      setCurrentIndex(getFirstUnansweredQuizIndex(nextSession));
+      setFeedback(pendingFeedback);
+      setCurrentIndex(pendingFeedback ? getQuizItemIndex(nextSession, pendingFeedback.item.id) : getFirstUnansweredQuizIndex(nextSession));
+      setSavingMissed(false);
+      setShowResults(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load quiz");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [problem.id, settings]);
 
   useEffect(() => {
+    refreshPendingQuiz();
     void loadSession();
-  }, [loadSession]);
+  }, [loadSession, refreshPendingQuiz]);
 
-  async function generateQuiz(action: "generate" | "regenerate") {
+  useEffect(() => {
+    const key = pendingQuizKey(problem.id);
+    const handlePendingChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key && detail.key !== key) return;
+      refreshPendingQuiz();
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id, refreshPendingQuiz]);
+
+  useEffect(() => {
+    if (!pendingQuiz) return;
+    const timer = window.setInterval(() => {
+      const pending = readPendingOperation(pendingQuizKey(problem.id));
+      if (!pending) {
+        setPendingQuiz(null);
+        setGenerating(false);
+        setError("Quiz generation timed out. Try again.");
+        return;
+      }
+      void loadSession({ silent: true });
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [loadSession, pendingQuiz, problem.id]);
+
+  async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
+    const pendingKey = pendingQuizKey(problem.id);
+    const operation = writePendingOperation(pendingKey, action);
+    setPendingQuiz(operation);
     setGenerating(true);
     setError(null);
     setFeedback(null);
+    setShowResults(false);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
         method: "POST",
@@ -847,10 +957,16 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       });
       const json = (await res.json().catch(() => null)) as { session?: QuizSession; error?: string } | null;
       if (!res.ok || !json?.session) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      if (session) clearStoredQuizFeedback(problem.id, session.id);
+      clearStoredQuizFeedback(problem.id, json.session.id);
+      clearPendingOperation(pendingKey);
+      setPendingQuiz(null);
       setSession(json.session);
       setSavedItemIds(new Set());
       setCurrentIndex(getFirstUnansweredQuizIndex(json.session));
     } catch (e) {
+      clearPendingOperation(pendingKey);
+      setPendingQuiz(null);
       setError(e instanceof Error ? e.message : "Failed to generate quiz");
     } finally {
       setGenerating(false);
@@ -858,7 +974,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   }
 
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
-    if (!session || feedback || submittingItem) return;
+    if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
     setSubmittingItem(true);
     setError(null);
     try {
@@ -877,6 +993,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         throw new Error(json?.error ?? `HTTP ${res.status}`);
       }
       setSession(json.session);
+      storeQuizFeedback(problem.id, json.session.id, json.item.id);
       setFeedback({ item: json.item, answer: json.answer });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit answer");
@@ -906,21 +1023,43 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     }
   }
 
+  async function saveMissedAsCards() {
+    if (!session || savingMissed) return;
+    const missedItems = getMissedQuizItems(session).filter((item) => !savedItemIds.has(item.id));
+    if (missedItems.length === 0) return;
+    setSavingMissed(true);
+    try {
+      for (const item of missedItems) {
+        await saveAsCard(item);
+      }
+    } finally {
+      setSavingMissed(false);
+    }
+  }
+
   function goNext() {
     if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
     setFeedback(null);
-    setCurrentIndex(getFirstUnansweredQuizIndex(session));
+    setCurrentIndex(getNextUnansweredQuizIndex(session, currentIndex));
+  }
+
+  function goToQuestion(index: number) {
+    if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
+    setFeedback(null);
+    setCurrentIndex(clampNumber(index, 0, session.itemsJson.length - 1));
   }
 
   if (loading) {
     return <div className="quiz-empty"><p className="popup-muted">Loading quiz...</p></div>;
   }
 
-  if (generating && !session) {
+  if (pendingQuiz) {
     return (
       <div className="quiz-empty">
         <div className="quiz-pending-bar"><span /></div>
-        <div className="quiz-empty-title">Pending quiz generation</div>
+        <div className="quiz-empty-title">Generating quiz</div>
         <p className="popup-muted">You can switch to Card or Notes and come back here.</p>
       </div>
     );
@@ -947,29 +1086,73 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
 
   if (session.status === "completed" && !feedback) {
     const suggested = getSuggestedRating(session.score ?? 0);
+    const missedItems = getMissedQuizItems(session);
+    const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
+    const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
+    const scopeBreakdown = getQuizBreakdown(session, "scope");
+    const sourceBreakdown = getQuizBreakdown(session, "source");
+    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map(formatQuizScope);
     return (
       <div className="quiz-panel">
-        <div className="quiz-panel-head">
-          <div>
-            <div className="quiz-head-title">Quiz complete</div>
-            <div className="quiz-head-meta">
-              Score {session.score ?? 0} / {session.itemsJson.length} · Suggested {suggested.label}
+        <div className="quiz-results scroll-area">
+          <div className="quiz-overview-card">
+            <div className="quiz-overview-main">
+              <div className="quiz-score-card">
+                <div className="quiz-score-value">
+                  {session.score ?? 0}<span>/{session.itemsJson.length}</span>
+                </div>
+                <div className="quiz-score-label">{accuracy}% · {suggested.label}</div>
+              </div>
+              <div className="quiz-overview-copy">
+                <div className="quiz-overview-title">Batch complete</div>
+                <div className="quiz-overview-meta">
+                  {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-inline quiz-next-batch"
+                disabled={generating}
+                onClick={() => void generateQuiz("nextBatch")}
+              >
+                {generating ? "Generating..." : "New Batch"}
+              </button>
+            </div>
+
+            <div className="quiz-overview-rows">
+              <QuizBreakdown label="Scope" items={scopeBreakdown} />
+              <QuizBreakdown label="Source" items={sourceBreakdown} />
+            </div>
+
+            <div className="quiz-missed-row">
+              <div>
+                <span className="quiz-missed-label">Missed</span>
+                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : "None"}</span>
+              </div>
+              <button
+                type="button"
+                className="quiz-missed-save"
+                disabled={unsavedMissedCount === 0 || savingMissed}
+                onClick={() => void saveMissedAsCards()}
+              >
+                {savingMissed ? "Creating..." : unsavedMissedCount === 0 ? "Cards saved" : "Create cards"}
+                {unsavedMissedCount > 0 && !savingMissed && <span>{unsavedMissedCount}</span>}
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            className="quiz-link-btn"
-            disabled={generating}
-            onClick={() => void generateQuiz("regenerate")}
-          >
-            {generating ? "Regenerating..." : "Regenerate"}
-          </button>
-        </div>
-        <div className="quiz-results scroll-area">
-          {session.itemsJson.map((item, index) => {
+
+          <div className="quiz-review-toggle-wrap">
+            <button type="button" className="quiz-review-toggle" onClick={() => setShowResults((value) => !value)}>
+              <span>{showResults ? "Hide Quiz" : "Review Quiz"}</span>
+              <span>{showResults ? "Hide all answers" : "Expand all questions"}</span>
+            </button>
+          </div>
+          {showResults && session.itemsJson.map((item, index) => {
             const answer = session.answersJson.find((a) => a.itemId === item.id) ?? null;
             const correctChoice = item.choices[item.answerIndex] ?? "";
             const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
+            const saved = savedItemIds.has(item.id);
+            const saving = savingItemId === item.id;
             return (
               <div key={item.id} className="quiz-result-item">
                 <div className="quiz-result-meta">
@@ -978,17 +1161,27 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                     {answer?.correct ? "Correct" : "Incorrect"}
                   </span>
                 </div>
-                <PopupMarkdown>{item.question}</PopupMarkdown>
-                {selectedChoice && <div className="quiz-result-line">Your answer: {selectedChoice}</div>}
-                <div className="quiz-result-line">Correct answer: {correctChoice}</div>
-                <PopupMarkdown>{item.explanation}</PopupMarkdown>
+                <div className="quiz-result-tags">
+                  <span>{QUIZ_SOURCE_LABELS[item.source]}</span>
+                  <span>{formatQuizScope(item.scope)}</span>
+                </div>
+                <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
+                {selectedChoice && (
+                  <div className="quiz-result-line">
+                    Your answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
+                  </div>
+                )}
+                <div className="quiz-result-line">
+                  Correct answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
+                </div>
+                <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
                 <button
                   type="button"
-                  className="quiz-save-btn"
-                  disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                  className={`quiz-result-save${saved ? " is-saved" : ""}`}
+                  disabled={saved || saving}
                   onClick={() => void saveAsCard(item)}
                 >
-                  {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+                  {saved ? "Saved" : saving ? "Saving..." : "Save"}
                 </button>
               </div>
             );
@@ -1016,51 +1209,79 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     );
   }
 
-  const progress = session.answersJson.length + (feedback ? 0 : 1);
-  const progressPct = Math.max(8, (session.answersJson.length / session.itemsJson.length) * 100);
+  const answeredCount = session.answersJson.length;
+  const activeAnswer = session.answersJson.find((answer) => answer.itemId === item.id) ?? null;
+  const activeFeedback = feedback?.item.id === item.id ? feedback : activeAnswer ? { item, answer: activeAnswer } : null;
+  const canGoPrev = currentIndex > 0;
+  const canGoNext = currentIndex < session.itemsJson.length - 1;
+  const progressPct = Math.max(8, (answeredCount / session.itemsJson.length) * 100);
 
   return (
     <div className="quiz-panel">
       <div className="quiz-panel-head">
         <div>
-          <div className="quiz-head-title">Question {Math.min(progress, session.itemsJson.length)} / {session.itemsJson.length}</div>
+          <div className="quiz-head-title">Question {currentIndex + 1} / {session.itemsJson.length}</div>
+          <div className="quiz-head-meta">Answered {answeredCount}/{session.itemsJson.length}</div>
           <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
         </div>
-        <button
-          type="button"
-          className="quiz-link-btn"
-          disabled={generating}
-          onClick={() => void generateQuiz("regenerate")}
-        >
-          Regenerate
-        </button>
+        <div className="quiz-nav-row">
+          <button
+            type="button"
+            className="quiz-link-btn"
+            disabled={!canGoPrev}
+            onClick={() => goToQuestion(currentIndex - 1)}
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            className="quiz-link-btn"
+            disabled={!canGoNext}
+            onClick={() => goToQuestion(currentIndex + 1)}
+          >
+            Next
+          </button>
+          <button
+            type="button"
+            className="quiz-link-btn quiz-link-muted"
+            disabled={generating}
+            onClick={() => void generateQuiz("regenerate")}
+          >
+            Regenerate
+          </button>
+        </div>
       </div>
       <div className="quiz-active scroll-area">
         <div className="quiz-question">
-          <PopupMarkdown>{item.question}</PopupMarkdown>
+          <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
         </div>
         <div className="quiz-choices">
           {item.choices.map((choice, index) => {
-            const wasSelected = feedback?.answer.selectedIndex === index;
-            const isCorrect = feedback && item.answerIndex === index;
+            const wasSelected = activeFeedback?.answer.selectedIndex === index;
+            const isCorrect = activeFeedback && item.answerIndex === index;
             return (
               <button
                 key={index}
                 type="button"
-                disabled={!!feedback || submittingItem}
+                disabled={!!activeFeedback || submittingItem}
                 onClick={() => void submitAnswer(item, index)}
-                className={`quiz-choice${isCorrect ? " is-correct" : ""}${feedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
+                className={`quiz-choice${isCorrect ? " is-correct" : ""}${activeFeedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
               >
                 <span className="quiz-choice-letter">{String.fromCharCode(65 + index)}</span>
-                <PopupMarkdown>{choice}</PopupMarkdown>
+                <PopupMarkdown>{formatQuizMarkdown(choice)}</PopupMarkdown>
               </button>
             );
           })}
         </div>
-        {feedback ? (
-          <div className={`quiz-feedback${feedback.answer.correct ? " is-correct" : " is-wrong"}`}>
-            <div className="quiz-feedback-title">{feedback.answer.correct ? "Correct" : "Not quite"}</div>
-            <PopupMarkdown>{item.explanation}</PopupMarkdown>
+        {activeFeedback ? (
+          <div className={`quiz-feedback${activeFeedback.answer.correct ? " is-correct" : " is-wrong"}`}>
+            <div className="quiz-feedback-head">
+              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? "Correct" : "Wrong"}</div>
+              <span>{QUIZ_SOURCE_LABELS[item.source]} · {formatQuizScope(item.scope)}</span>
+            </div>
+            <div className="quiz-feedback-body">
+              <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
+            </div>
             <div className="quiz-actions">
               <button
                 type="button"
@@ -1068,15 +1289,22 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 disabled={savedItemIds.has(item.id) || savingItemId === item.id}
                 onClick={() => void saveAsCard(item)}
               >
-                {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+                {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save"}
               </button>
               <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
-                {session.status === "completed" ? "View results" : "Next"}
+                {session.status === "completed" ? "Results" : "Next"}
               </button>
             </div>
           </div>
         ) : (
-          <p className="quiz-hint">{submittingItem ? "Checking answer..." : "Click an option to answer."}</p>
+          <div className="quiz-hint-row">
+            <p className="quiz-hint">{submittingItem ? "Checking answer..." : "Click an option to answer, or use Next to skip for now."}</p>
+            {answeredCount < session.itemsJson.length && !canGoNext && (
+              <button type="button" className="quiz-link-btn" onClick={() => goToQuestion(getFirstUnansweredQuizIndex(session))}>
+                First unanswered
+              </button>
+            )}
+          </div>
         )}
         {error && <div className="err-banner quiz-error">{error}</div>}
       </div>
@@ -1088,6 +1316,84 @@ function getFirstUnansweredQuizIndex(session: QuizSession | null) {
   if (!session) return 0;
   const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
   return idx === -1 ? 0 : idx;
+}
+
+function getNextUnansweredQuizIndex(session: QuizSession, currentIndex: number) {
+  const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
+  if (afterCurrent !== -1) return afterCurrent;
+  return getFirstUnansweredQuizIndex(session);
+}
+
+function isQuizItemAnswered(session: QuizSession, itemId: string) {
+  return session.answersJson.some((answer) => answer.itemId === itemId);
+}
+
+function getQuizItemIndex(session: QuizSession | null, itemId: string) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => item.id === itemId);
+  return idx === -1 ? getFirstUnansweredQuizIndex(session) : idx;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function quizFeedbackStorageKey(problemId: string, sessionId: string) {
+  return `ankify.quiz.pendingFeedback.${problemId}.${sessionId}`;
+}
+
+function storeQuizFeedback(problemId: string, sessionId: string, itemId: string) {
+  window.sessionStorage.setItem(quizFeedbackStorageKey(problemId, sessionId), itemId);
+}
+
+function clearStoredQuizFeedback(problemId: string, sessionId: string) {
+  window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
+}
+
+function getStoredQuizFeedback(problemId: string, session: QuizSession | null) {
+  if (!session) return null;
+  const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
+  if (!itemId) return null;
+  const item = session.itemsJson.find((quizItem) => quizItem.id === itemId);
+  const answer = session.answersJson.find((quizAnswer) => quizAnswer.itemId === itemId);
+  if (!item || !answer) {
+    clearStoredQuizFeedback(problemId, session.id);
+    return null;
+  }
+  return { item, answer };
+}
+
+function QuizBreakdown({ label, items }: { label: string; items: { label: string; count: number }[] }) {
+  return (
+    <div className="quiz-breakdown-row">
+      <span className="quiz-breakdown-label">{label}</span>
+      <div className="quiz-breakdown">
+        {items.map((item) => (
+          <span key={item.label}>{item.label} <b>{item.count}</b></span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getMissedQuizItems(session: QuizSession) {
+  return session.itemsJson.filter((item) => {
+    const answer = session.answersJson.find((a) => a.itemId === item.id);
+    return answer && !answer.correct;
+  });
+}
+
+function getQuizBreakdown(session: QuizSession, field: "scope" | "source") {
+  const counts = new Map<string, number>();
+  session.itemsJson.forEach((item) => {
+    const key = field === "scope" ? formatQuizScope(item.scope) : QUIZ_SOURCE_LABELS[item.source];
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
+}
+
+function formatQuizScope(scope: QuizItem["scope"]) {
+  return QUIZ_SCOPE_LABELS[scope];
 }
 
 function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {
@@ -1449,6 +1755,7 @@ function AddCardForm({
   const slug = problem.leetcodeSlug;
   const [mode, setMode] = useState<"manual" | "ai">("ai");
   const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
+  const [pendingAiCard, setPendingAiCard] = useState<PendingOperation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /* manual */
@@ -1476,6 +1783,45 @@ function AddCardForm({
     const t = setTimeout(() => void setCardDraft(slug, rawText), 380);
     return () => clearTimeout(t);
   }, [rawText, slug, hydrated]);
+
+  const refreshPendingAiCard = useCallback(() => {
+    const pending = readPendingOperation(pendingAiCardKey(problem.id));
+    setPendingAiCard(pending);
+    if (pending?.kind === "auto" || pending?.kind === "note") {
+      setBusy(pending.kind);
+    } else {
+      setBusy((current) => (current === "auto" || current === "note" ? false : current));
+    }
+    return pending;
+  }, [problem.id]);
+
+  useEffect(() => {
+    refreshPendingAiCard();
+  }, [refreshPendingAiCard]);
+
+  useEffect(() => {
+    const key = pendingAiCardKey(problem.id);
+    const handlePendingChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key && detail.key !== key) return;
+      refreshPendingAiCard();
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id, refreshPendingAiCard]);
+
+  useEffect(() => {
+    if (!pendingAiCard) return;
+    const timer = window.setInterval(() => {
+      const pending = readPendingOperation(pendingAiCardKey(problem.id));
+      if (!pending) {
+        setPendingAiCard(null);
+        setBusy((current) => (current === "auto" || current === "note" ? false : current));
+        setError("AI card generation timed out. Try again.");
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [pendingAiCard, problem.id]);
 
   const updateRawText = (v: string) => {
     userEditedRef.current = true;
@@ -1514,6 +1860,9 @@ function AddCardForm({
 
   async function handleAiGenerate(kind: "auto" | "note") {
     if (kind === "note" && !rawText.trim()) return;
+    const pendingKey = pendingAiCardKey(problem.id);
+    const operation = writePendingOperation(pendingKey, kind);
+    setPendingAiCard(operation);
     setBusy(kind);
     setError(null);
     try {
@@ -1531,8 +1880,12 @@ function AddCardForm({
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
       if (kind === "note") await clearLocalDraft();
+      clearPendingOperation(pendingKey);
+      setPendingAiCard(null);
       onAdded();
     } catch (e) {
+      clearPendingOperation(pendingKey);
+      setPendingAiCard(null);
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setBusy(false);
@@ -1601,7 +1954,7 @@ function AddCardForm({
           </label>
           <div className="ai-toolbar">
             <span className="draft-hint">
-              {rawText.length}/6000{rawText.trim() && hydrated ? " · autosaved" : ""}
+              {pendingAiCard ? "Generating candidate…" : `${rawText.length}/6000${rawText.trim() && hydrated ? " · autosaved" : ""}`}
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               {rawText.trim() && (
@@ -1646,6 +1999,7 @@ function CandidateList({
   const [local, setLocal] = useState<
     (ApiCard & { instruction: string; busy: string | null; localError: string | null })[]
   >([]);
+  const [pendingVersion, setPendingVersion] = useState(0);
 
   useEffect(() => {
     setLocal((prev) => {
@@ -1653,11 +2007,27 @@ function CandidateList({
       return candidates.map((c) => ({
         ...c,
         instruction: prevById.get(c.id)?.instruction ?? "",
-        busy: prevById.get(c.id)?.busy ?? null,
+        busy: readPendingOperation(pendingCandidateAiKey(problem.id, c.id)) ? "followup" : prevById.get(c.id)?.busy ?? null,
         localError: prevById.get(c.id)?.localError ?? null,
       }));
     });
-  }, [candidates]);
+  }, [candidates, pendingVersion, problem.id]);
+
+  useEffect(() => {
+    const handlePendingChange = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key && !key.startsWith(`ankify.pending.aiCandidate.${problem.id}.`)) return;
+      setPendingVersion((value) => value + 1);
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id]);
+
+  useEffect(() => {
+    if (!local.some((card) => card.busy === "followup")) return;
+    const timer = window.setInterval(() => setPendingVersion((value) => value + 1), 2500);
+    return () => window.clearInterval(timer);
+  }, [local]);
 
   function update(id: string, patch: Record<string, unknown>) {
     setLocal((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -1679,6 +2049,8 @@ function CandidateList({
     card: ApiCard & { instruction: string; busy: string | null; localError: string | null },
     instruction?: string,
   ) {
+    const pendingKey = pendingCandidateAiKey(problem.id, card.id);
+    writePendingOperation(pendingKey, "followup");
     update(card.id, { busy: "followup", localError: null });
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
@@ -1696,9 +2068,11 @@ function CandidateList({
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      clearPendingOperation(pendingKey);
       update(card.id, { busy: null, instruction: "" });
       onRefresh();
     } catch (e) {
+      clearPendingOperation(pendingKey);
       update(card.id, { busy: null, localError: e instanceof Error ? e.message : "AI request failed" });
     }
   }
@@ -1910,9 +2284,13 @@ function CaptureView({
 
 function SettingsTab({
   settings,
+  theme,
+  onThemeChange,
   onSave,
 }: {
   settings: ExtSettings;
+  theme: ThemePreference;
+  onThemeChange: (next: ThemePreference) => void;
   onSave: (next: ExtSettings) => void;
 }) {
   const [base, setBase] = useState(settings.apiBaseUrl);
@@ -1921,6 +2299,21 @@ function SettingsTab({
 
   return (
     <div className="settings-stack panel">
+      <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Appearance</strong>
+      <div className="theme-control settings-theme-control" aria-label="Theme">
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            data-active={theme === option.value}
+            onClick={() => onThemeChange(option.value)}
+            aria-pressed={theme === option.value}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Connection</strong>
       <label>
         API base URL

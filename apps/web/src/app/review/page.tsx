@@ -13,7 +13,7 @@ import {
 } from "react";
 import Link from "next/link";
 import type { Problem, Card, Submission } from "@ankify/db";
-import type { FsrsRating, QuizAnswer, QuizItem } from "@ankify/core";
+import { formatQuizMarkdown, type FsrsRating, type QuizAnswer, type QuizItem } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
@@ -54,6 +54,22 @@ const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
   { rating: 3, label: "Good", hint: "能讲出主要方法" },
   { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
 ];
+
+const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
+  approach: "Approach",
+  invariant: "Invariant",
+  edge_case: "Edge cases",
+  complexity: "Complexity",
+  implementation: "Implementation",
+  mistake_review: "Mistakes",
+};
+
+const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
+  statement: "Statement",
+  submission: "Submission",
+  notes: "Notes",
+  card: "Card",
+};
 
 export default function ReviewPage() {
   const [data, setData] = useState<ReviewPayload | null>(null);
@@ -525,6 +541,8 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
   const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [savingMissed, setSavingMissed] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadSession = useCallback(async () => {
@@ -532,13 +550,17 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
     setError(null);
     setFeedback(null);
     setSavedItemIds(new Set());
+    setSavingMissed(false);
+    setShowResults(false);
     try {
       const res = await fetch(`/api/problems/${problemId}/quiz`, { cache: "no-store" });
       const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload | null; error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? "Failed to load quiz");
       const nextSession = json?.session ?? null;
+      const pendingFeedback = getStoredQuizFeedback(problemId, nextSession);
       setSession(nextSession);
-      setCurrentIndex(getFirstUnansweredIndex(nextSession));
+      setFeedback(pendingFeedback);
+      setCurrentIndex(pendingFeedback ? getQuizItemIndex(nextSession, pendingFeedback.item.id) : getFirstUnansweredIndex(nextSession));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load quiz");
     } finally {
@@ -550,10 +572,11 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
     void loadSession();
   }, [loadSession]);
 
-  async function generateQuiz(action: "generate" | "regenerate") {
+  async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
     setGenerating(true);
     setError(null);
     setFeedback(null);
+    setShowResults(false);
     try {
       const res = await fetch(`/api/problems/${problemId}/quiz`, {
         method: "POST",
@@ -562,6 +585,8 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
       });
       const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload; error?: string } | null;
       if (!res.ok || !json?.session) throw new Error(json?.error ?? "Failed to generate quiz");
+      if (session) clearStoredQuizFeedback(problemId, session.id);
+      clearStoredQuizFeedback(problemId, json.session.id);
       setSession(json.session);
       setSavedItemIds(new Set());
       setCurrentIndex(getFirstUnansweredIndex(json.session));
@@ -573,7 +598,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
   }
 
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
-    if (!session || feedback || submittingItem) return;
+    if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
     setSubmittingItem(true);
     setError(null);
     try {
@@ -592,6 +617,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
         throw new Error(json?.error ?? "Failed to submit answer");
       }
       setSession(json.session);
+      storeQuizFeedback(problemId, json.session.id, json.item.id);
       setFeedback({ item: json.item, answer: json.answer });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit answer");
@@ -621,10 +647,32 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
     }
   }
 
+  async function saveMissedAsCards() {
+    if (!session || savingMissed) return;
+    const missedItems = getMissedQuizItems(session).filter((item) => !savedItemIds.has(item.id));
+    if (missedItems.length === 0) return;
+    setSavingMissed(true);
+    try {
+      for (const item of missedItems) {
+        await saveAsCard(item);
+      }
+    } finally {
+      setSavingMissed(false);
+    }
+  }
+
   function goNext() {
     if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problemId, session.id);
     setFeedback(null);
-    setCurrentIndex(getFirstUnansweredIndex(session));
+    setCurrentIndex(getNextUnansweredIndex(session, currentIndex));
+  }
+
+  function goToQuestion(index: number) {
+    if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problemId, session.id);
+    setFeedback(null);
+    setCurrentIndex(clamp(index, 0, session.itemsJson.length - 1));
   }
 
   if (loading) {
@@ -674,43 +722,92 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
 
   if (session.status === "completed" && !feedback) {
     const suggested = getSuggestedRating(session.score ?? 0);
+    const missedItems = getMissedQuizItems(session);
+    const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
+    const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
+    const scopeBreakdown = getQuizBreakdown(session, "scope");
+    const sourceBreakdown = getQuizBreakdown(session, "source");
+    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map(formatQuizScope);
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-border px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div>
-              <div className="text-sm font-semibold">Quiz complete</div>
-              <div className="mt-0.5 text-xs text-muted">
-                Score {session.score ?? 0} / {session.itemsJson.length} · Suggested: {suggested.label}
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="rounded-lg border border-accent/30 bg-bg px-3 py-2">
+                <div className="text-2xl font-bold leading-none tabular-nums">
+                  {session.score ?? 0}<span className="text-sm font-semibold text-muted">/{session.itemsJson.length}</span>
+                </div>
+                <div className="mt-1 text-[11px] font-semibold text-muted tabular-nums">{accuracy}% · {suggested.label}</div>
               </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">Batch complete</div>
+                <div className="mt-1 text-xs text-muted">
+                  {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => void generateQuiz("nextBatch")}
+                className="rounded-md bg-accent px-3.5 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+              >
+                {generating ? "Generating..." : "New batch"}
+              </button>
             </div>
+
+            <div className="mt-4 space-y-2 border-t border-border pt-3">
+              <QuizBreakdown label="Scope" items={scopeBreakdown} />
+              <QuizBreakdown label="Source" items={sourceBreakdown} />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-xs text-muted">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide">Missed</span>
+                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : "None"}</span>
+              </div>
+              <button
+                type="button"
+                disabled={unsavedMissedCount === 0 || savingMissed}
+                onClick={() => void saveMissedAsCards()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent-soft px-2.5 py-1.5 text-xs font-semibold text-accent hover:border-accent/50 disabled:border-border disabled:bg-subtle disabled:text-muted disabled:opacity-75"
+              >
+                {savingMissed ? "Creating..." : unsavedMissedCount === 0 ? "Cards saved" : "Create cards"}
+                {unsavedMissedCount > 0 && !savingMissed && (
+                  <span className="rounded-full bg-accent/15 px-1.5 text-[10px] tabular-nums">{unsavedMissedCount}</span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3">
             <button
               type="button"
-              disabled={generating}
-              onClick={() => void generateQuiz("regenerate")}
-              className="ml-auto rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
+              onClick={() => setShowResults((value) => !value)}
+              className="flex w-full items-center justify-between rounded-lg border border-border bg-surface px-3 py-2 text-left text-xs hover:bg-subtle"
             >
-              {generating ? "Regenerating..." : "Regenerate"}
+              <span className="font-semibold">{showResults ? "Hide Quiz" : "Review Quiz"}</span>
+              <span className="text-muted">{showResults ? "Hide all answers" : "Expand all questions"}</span>
             </button>
           </div>
-          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
-        </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
-          {session.itemsJson.map((item, index) => {
-            const answer = session.answersJson.find((a) => a.itemId === item.id);
-            return (
-              <QuizResultItem
-                key={item.id}
-                index={index}
-                item={item}
-                answer={answer ?? null}
-                saved={savedItemIds.has(item.id)}
-                saving={savingItemId === item.id}
-                onSave={() => void saveAsCard(item)}
-              />
-            );
-          })}
+          {showResults && (
+            <div className="mt-4 space-y-3">
+              {session.itemsJson.map((item, index) => {
+                const answer = session.answersJson.find((a) => a.itemId === item.id);
+                return (
+                  <QuizResultItem
+                    key={item.id}
+                    index={index}
+                    item={item}
+                    answer={answer ?? null}
+                    saved={savedItemIds.has(item.id)}
+                    saving={savingItemId === item.id}
+                    onSave={() => void saveAsCard(item)}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -734,7 +831,11 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
       </div>
     );
   }
-  const progress = session.answersJson.length + (feedback ? 0 : 1);
+  const answeredCount = session.answersJson.length;
+  const activeAnswer = session.answersJson.find((answer) => answer.itemId === item.id) ?? null;
+  const activeFeedback = feedback?.item.id === item.id ? feedback : activeAnswer ? { item, answer: activeAnswer } : null;
+  const canGoPrev = currentIndex > 0;
+  const canGoNext = currentIndex < session.itemsJson.length - 1;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -742,93 +843,137 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] font-medium uppercase tracking-wide text-muted">
-              Quiz · Question {Math.min(progress, session.itemsJson.length)} / {session.itemsJson.length}
+              Quiz · Question {currentIndex + 1} / {session.itemsJson.length} · Answered {answeredCount}/{session.itemsJson.length}
             </div>
             <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-subtle">
               <div
                 className="h-full rounded-full bg-accent/80 transition-all"
-                style={{ width: `${Math.max(8, (session.answersJson.length / session.itemsJson.length) * 100)}%` }}
+                style={{ width: `${Math.max(8, (answeredCount / session.itemsJson.length) * 100)}%` }}
               />
             </div>
           </div>
-          <button
-            type="button"
-            disabled={generating}
-            onClick={() => void generateQuiz("regenerate")}
-            className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-50"
-          >
-            Regenerate
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!canGoPrev}
+              onClick={() => goToQuestion(currentIndex - 1)}
+              className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-45"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={!canGoNext}
+              onClick={() => goToQuestion(currentIndex + 1)}
+              className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-45"
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              disabled={generating}
+              onClick={() => void generateQuiz("regenerate")}
+              className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-50"
+            >
+              Regenerate
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
         <div className="mx-auto max-w-2xl">
           <div className="rounded-lg border border-border bg-subtle/40 px-4 py-4 sm:px-5">
-            <Markdown className="text-base font-medium leading-relaxed [&_p]:text-base">{item.question}</Markdown>
+            <Markdown className="text-base font-medium leading-relaxed [&_p]:text-base">{formatQuizMarkdown(item.question)}</Markdown>
           </div>
 
           <div className="mt-4 space-y-2">
             {item.choices.map((choice, index) => {
-              const wasSelected = feedback?.answer.selectedIndex === index;
-              const isCorrect = feedback && item.answerIndex === index;
+              const wasSelected = activeFeedback?.answer.selectedIndex === index;
+              const isCorrect = activeFeedback && item.answerIndex === index;
               return (
                 <button
                   key={index}
                   type="button"
-                  disabled={!!feedback || submittingItem}
+                  disabled={!!activeFeedback || submittingItem}
                   onClick={() => void submitAnswer(item, index)}
                   className={cn(
                     "group w-full rounded-lg border px-4 py-3 text-left transition",
                     "border-border bg-surface hover:border-accent/40 hover:bg-subtle/70 disabled:cursor-default",
-                    feedback && isCorrect ? "border-success/50 bg-success/10" : "",
-                    feedback && wasSelected && !isCorrect ? "border-danger/50 bg-danger/10" : "",
+                    activeFeedback && isCorrect ? "border-success/50 bg-success/10" : "",
+                    activeFeedback && wasSelected && !isCorrect ? "border-danger/50 bg-danger/10" : "",
                   )}
                 >
                   <div className="flex gap-3">
                     <span className={cn(
                       "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold",
                       "border-border text-muted group-hover:border-accent/40 group-hover:text-accent",
-                      feedback && isCorrect ? "border-success/40 text-success" : "",
-                      feedback && wasSelected && !isCorrect ? "border-danger/40 text-danger" : "",
+                      activeFeedback && isCorrect ? "border-success/40 text-success" : "",
+                      activeFeedback && wasSelected && !isCorrect ? "border-danger/40 text-danger" : "",
                     )}>
                       {String.fromCharCode(65 + index)}
                     </span>
-                    <Markdown className="min-w-0 flex-1 text-sm">{choice}</Markdown>
+                    <Markdown className="min-w-0 flex-1 text-sm">{formatQuizMarkdown(choice)}</Markdown>
                   </div>
                 </button>
               );
             })}
           </div>
 
-          {feedback ? (
-            <div className={cn("mt-5 rounded-lg border p-4", feedback.answer.correct ? "border-success/40 bg-success/10" : "border-danger/40 bg-danger/10")}>
-              <div className={cn("text-sm font-semibold", feedback.answer.correct ? "text-success" : "text-danger")}>
-                {feedback.answer.correct ? "Correct" : "Not quite"}
+          {activeFeedback ? (
+            <div
+              className={cn(
+                "mt-3 overflow-hidden rounded-lg border bg-surface",
+                activeFeedback.answer.correct ? "border-success/35" : "border-danger/35",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex items-center justify-between gap-3 border-b px-3 py-1.5",
+                  activeFeedback.answer.correct
+                    ? "border-success/20 bg-success/5"
+                    : "border-danger/20 bg-danger/5",
+                )}
+              >
+                <div className={cn("text-xs font-semibold", activeFeedback.answer.correct ? "text-success" : "text-danger")}>
+                  {activeFeedback.answer.correct ? "Correct" : "Wrong"}
+                </div>
+                <span className="text-[11px] text-muted">
+                  {QUIZ_SOURCE_LABELS[item.source]} · {formatQuizScope(item.scope)}
+                </span>
               </div>
-              <Markdown className="mt-2 text-sm">{item.explanation}</Markdown>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <Markdown className="px-3 py-2.5 text-sm leading-relaxed">{formatQuizMarkdown(item.explanation)}</Markdown>
+              <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
                 <button
                   type="button"
                   disabled={savedItemIds.has(item.id) || savingItemId === item.id}
                   onClick={() => void saveAsCard(item)}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
                 >
-                  {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save as card"}
+                  {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save"}
                 </button>
                 <button
                   type="button"
                   onClick={goNext}
-                  className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90"
+                  className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90"
                 >
-                  {session.status === "completed" ? "View results" : "Next question"}
+                  {session.status === "completed" ? "Results" : "Next"}
                 </button>
               </div>
             </div>
           ) : (
-            <p className="mt-3 text-xs text-muted">
-              {submittingItem ? "Checking answer..." : "Click an option to answer."}
-            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+              <span>{submittingItem ? "Checking answer..." : "Click an option to answer, or use Next to skip for now."}</span>
+              {answeredCount < session.itemsJson.length && !canGoNext && (
+                <button
+                  type="button"
+                  onClick={() => goToQuestion(getFirstUnansweredIndex(session))}
+                  className="rounded-md border border-border bg-surface px-2.5 py-1 font-medium hover:bg-subtle hover:text-fg"
+                >
+                  First unanswered
+                </button>
+              )}
+            </div>
           )}
 
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
@@ -864,34 +1009,113 @@ function QuizResultItem({
             {answer.correct ? "Correct" : "Incorrect"}
           </Pill>
         )}
-        <span className="ml-auto">{item.source}</span>
+        <span className="ml-auto">{QUIZ_SOURCE_LABELS[item.source]}</span>
+        <span>{formatQuizScope(item.scope)}</span>
       </div>
-      <Markdown className="mt-2 text-sm font-medium">{item.question}</Markdown>
+      <Markdown className="mt-2 text-sm font-medium">{formatQuizMarkdown(item.question)}</Markdown>
       {selectedChoice && (
         <div className="mt-3 text-xs text-muted">
-          Your answer: <span className="text-fg">{selectedChoice}</span>
+          Your answer: <Markdown className="inline text-fg [&_code]:text-[0.95em] [&_p]:inline">{formatQuizMarkdown(selectedChoice)}</Markdown>
         </div>
       )}
       <div className="mt-1 text-xs text-muted">
-        Correct answer: <span className="text-fg">{correctChoice}</span>
+        Correct answer: <Markdown className="inline text-fg [&_code]:text-[0.95em] [&_p]:inline">{formatQuizMarkdown(correctChoice)}</Markdown>
       </div>
-      <Markdown className="mt-3 text-sm">{item.explanation}</Markdown>
+      <Markdown className="mt-3 text-sm">{formatQuizMarkdown(item.explanation)}</Markdown>
       <button
         type="button"
         disabled={saved || saving}
         onClick={onSave}
         className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
       >
-        {saved ? "Saved" : saving ? "Saving..." : "Save as card"}
+        {saved ? "Saved" : saving ? "Saving..." : "Save"}
       </button>
     </div>
   );
+}
+
+function QuizBreakdown({ label, items }: { label: string; items: { label: string; count: number }[] }) {
+  return (
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-2">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <Pill key={item.label}>
+            {item.label} <span className="tabular-nums">{item.count}</span>
+          </Pill>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getMissedQuizItems(session: QuizSessionPayload) {
+  return session.itemsJson.filter((item) => {
+    const answer = session.answersJson.find((a) => a.itemId === item.id);
+    return answer && !answer.correct;
+  });
+}
+
+function getQuizBreakdown(session: QuizSessionPayload, field: "scope" | "source") {
+  const counts = new Map<string, number>();
+  session.itemsJson.forEach((item) => {
+    const key = field === "scope" ? formatQuizScope(item.scope) : QUIZ_SOURCE_LABELS[item.source];
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
+}
+
+function formatQuizScope(scope: QuizItem["scope"]) {
+  return QUIZ_SCOPE_LABELS[scope];
 }
 
 function getFirstUnansweredIndex(session: QuizSessionPayload | null) {
   if (!session) return 0;
   const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
   return idx === -1 ? 0 : idx;
+}
+
+function getNextUnansweredIndex(session: QuizSessionPayload, currentIndex: number) {
+  const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
+  if (afterCurrent !== -1) return afterCurrent;
+  return getFirstUnansweredIndex(session);
+}
+
+function isQuizItemAnswered(session: QuizSessionPayload, itemId: string) {
+  return session.answersJson.some((answer) => answer.itemId === itemId);
+}
+
+function getQuizItemIndex(session: QuizSessionPayload | null, itemId: string) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => item.id === itemId);
+  return idx === -1 ? getFirstUnansweredIndex(session) : idx;
+}
+
+function quizFeedbackStorageKey(problemId: string, sessionId: string) {
+  return `ankify.quiz.pendingFeedback.${problemId}.${sessionId}`;
+}
+
+function storeQuizFeedback(problemId: string, sessionId: string, itemId: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(quizFeedbackStorageKey(problemId, sessionId), itemId);
+}
+
+function clearStoredQuizFeedback(problemId: string, sessionId: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
+}
+
+function getStoredQuizFeedback(problemId: string, session: QuizSessionPayload | null) {
+  if (!session || typeof window === "undefined") return null;
+  const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
+  if (!itemId) return null;
+  const item = session.itemsJson.find((quizItem) => quizItem.id === itemId);
+  const answer = session.answersJson.find((quizAnswer) => quizAnswer.itemId === itemId);
+  if (!item || !answer) {
+    clearStoredQuizFeedback(problemId, session.id);
+    return null;
+  }
+  return { item, answer };
 }
 
 function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {

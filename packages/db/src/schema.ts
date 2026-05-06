@@ -169,6 +169,7 @@ export type QuizItem = {
   answerIndex: number;
   explanation: string;
   source: "statement" | "submission" | "notes" | "card";
+  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
 };
 
 export type QuizAnswer = {

@@ -16,6 +16,14 @@ export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
 export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
 export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
 export const quizItemSourceEnum = z.enum(["statement", "submission", "notes", "card"]);
+export const quizItemScopeEnum = z.enum([
+  "approach",
+  "invariant",
+  "edge_case",
+  "complexity",
+  "implementation",
+  "mistake_review",
+]);
 
 /* Payload sent by the Chrome extension to add or update a problem. */
 export const captureProblemSchema = z.object({
@@ -61,8 +69,10 @@ export const quizItemSchema = z.object({
   answerIndex: z.number().int().min(0).max(3),
   explanation: z.string().min(1),
   source: quizItemSourceEnum,
+  scope: quizItemScopeEnum,
 });
 export type QuizItem = z.infer<typeof quizItemSchema>;
+export type QuizItemScope = z.infer<typeof quizItemScopeEnum>;
 
 export const quizAnswerSchema = z.object({
   itemId: z.string().min(1),
@@ -121,7 +131,7 @@ export const reviewRatingSchema = z.object({
 });
 
 export const quizGenerateRequestSchema = z.object({
-  action: z.enum(["generate", "regenerate"]),
+  action: z.enum(["generate", "regenerate", "nextBatch"]),
 });
 
 export const quizAnswerRequestSchema = z.object({
