@@ -3,11 +3,11 @@
 :root {
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --shadow-color: 0 0 0;
 }
 
 /* ── Dark theme (default) ── */
 :root {
+  color-scheme: dark;
   --bg: #141418;
   --surface: #1c1c21;
   --subtle: #222228;
@@ -30,6 +30,7 @@
 /* ── System light preference ── */
 @media (prefers-color-scheme: light) {
   :root {
+    color-scheme: light;
     --bg: #faf9f7;
     --surface: #ffffff;
     --subtle: #f2f1ef;
@@ -41,7 +42,6 @@
     --accent-soft: #faf6ec;
     --success: #2d8f6d;
     --danger: #c73e55;
-    --shadow-color: 30 30 40;
     --shadow: 0 1px 0 0 rgba(229,227,224,0.6), 0 1px 2px -1px rgba(30,30,40,0.05), 0 4px 8px -4px rgba(30,30,40,0.04);
     --scrollbar-thumb: color-mix(in srgb, var(--muted) 32%, transparent);
     --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 54%, transparent);
@@ -50,6 +50,7 @@
 
 /* ── Explicit overrides — beat the media query via cascade order ── */
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #141418;
   --surface: #1c1c21;
   --subtle: #222228;
@@ -67,6 +68,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #faf9f7;
   --surface: #ffffff;
   --subtle: #f2f1ef;
@@ -255,7 +257,7 @@ label, button, th, .font-ui {
 .popup-nav {
   display: flex;
   gap: 4px;
-  padding: 3px;
+  padding: 4px;
   border-radius: var(--radius-sm);
   background: var(--subtle);
   border: 1px solid var(--border);
@@ -267,10 +269,10 @@ label, button, th, .font-ui {
   background: transparent;
   color: var(--muted);
   font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 650;
-  padding: 6px 8px;
-  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 10px;
+  border-radius: 7px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -294,9 +296,12 @@ label, button, th, .font-ui {
 }
 
 /* When ThisProblemTab renders content, its top-level .stack should also flex-grow */
-.popup-main > .stack {
+.popup-main > .stack,
+.popup-main > .tab-pane {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .popup-muted {
@@ -826,9 +831,12 @@ label, button, th, .font-ui {
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--border);
-  transition: opacity 0.15s ease, transform 0.05s ease;
+  background: transparent;
+  color: var(--fg);
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.08s ease;
 }
 
+.btn:hover:not(:disabled) { background: var(--subtle); }
 .btn:active:not(:disabled) { transform: scale(0.98); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -845,16 +853,10 @@ label, button, th, .font-ui {
   color: var(--fg);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--subtle);
-}
-
 .btn-ghost {
-  background: transparent;
   border-color: transparent;
   color: var(--muted);
   padding: 8px 10px;
-  font-weight: 500;
 }
 
 .btn-ghost:hover:not(:disabled) {
@@ -872,7 +874,7 @@ label, button, th, .font-ui {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.08s ease;
 }
 
 .btn-xs:hover:not(:disabled) {
@@ -880,6 +882,7 @@ label, button, th, .font-ui {
   color: var(--fg);
 }
 
+.btn-xs:active:not(:disabled) { transform: scale(0.97); }
 .btn-xs:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-xs-accent {
@@ -1032,6 +1035,17 @@ label, button, th, .font-ui {
   50% { opacity: 0.35; }
 }
 
+/* ── tab transitions ── */
+
+.tab-pane {
+  animation: tab-in 200ms ease-out;
+}
+
+@keyframes tab-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ── today tab ── */
 
 .today-stats { padding: 16px 18px; }
@@ -1169,23 +1183,9 @@ a:focus-visible {
   border-radius: 6px;
 }
 
-/* ── compact problem shell ── */
-
-.problem-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
-}
+/* ── problem header ── */
 
 .problem-header {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
   min-width: 0;
 }
 
@@ -1193,13 +1193,13 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 }
 
 .problem-title-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -1210,12 +1210,11 @@ a:focus-visible {
 
 .problem-header-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 750;
-  line-height: 1.2;
+  line-height: 1.3;
   letter-spacing: -0.01em;
   min-width: 0;
-  max-width: 17rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1225,93 +1224,35 @@ a:focus-visible {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .problem-header-web:hover {
   background: var(--subtle);
   color: var(--accent-strong);
+  border-color: var(--border);
 }
 
 .problem-header-next {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
 .problem-header .pill {
-  font-size: 9px;
+  font-size: 10px;
   padding: 2px 7px;
   border-radius: 4px;
   letter-spacing: 0.06em;
 }
 
-/* ── problem mode tabs (Study / Manage) ── */
-
-.problem-mode-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--subtle);
-}
-
-.problem-mode-tabs button {
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
-}
-
-.problem-mode-tabs button:hover {
-  color: var(--fg);
-}
-
-.problem-mode-tabs button[data-active="true"] {
-  background: var(--surface);
-  color: var(--fg);
-  box-shadow: var(--shadow);
-}
-
-.study-tabs {
-  display: inline-flex;
-  margin-left: auto;
-  gap: 2px;
-}
-
-.study-tabs button {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 650;
-  padding: 4px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.study-tabs button:hover { color: var(--fg); background: var(--subtle); }
-
-.study-tabs button[data-active="true"] {
-  background: var(--subtle);
-  color: var(--fg);
-}
-
-/* ── review workspace (Card / Notes shared area + flat rating) ── */
+/* ── review workspace: 3-module flex column ── */
 
 .review-workspace {
   display: flex;
@@ -1321,35 +1262,131 @@ a:focus-visible {
   gap: 8px;
 }
 
-.review-stage {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+/* ── Module 1: problem card ── */
+
+.problem-card {
+  flex-shrink: 0;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.review-stage-tabs {
-  flex-shrink: 0;
+.problem-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.problem-card-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.problem-card-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problem-card-tags {
+  margin-top: 5px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 7px 9px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.problem-card-next {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.problem-card-mode {
+  display: flex;
+  border-top: 1px solid var(--border);
+}
+
+.problem-card-mode-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.problem-card-mode-btn + .problem-card-mode-btn {
+  border-left: 1px solid var(--border);
+}
+
+.problem-card-mode-btn:hover {
+  background: var(--subtle);
+  color: var(--fg);
+}
+
+.problem-card-mode-btn.active {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  font-weight: 750;
+}
+
+/* ── Module 2: content card ── */
+
+.content-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.content-card-tabs {
+  flex-shrink: 0;
+  display: flex;
   border-bottom: 1px solid var(--border);
 }
 
-.review-stage-tabs::before {
-  content: "Study";
-  font-family: var(--font-ui);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+.content-card-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
   color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.content-card-tab:hover { color: var(--fg); }
+
+.content-card-tab[data-active="true"] {
+  color: var(--fg);
+  font-weight: 750;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .review-stage-body {
@@ -1364,10 +1401,6 @@ a:focus-visible {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.review-stage-pane.is-hidden {
-  display: none;
 }
 
 .review-empty {
@@ -2069,25 +2102,24 @@ a:focus-visible {
 .card-face-content {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-y: auto;
   word-break: break-word;
-  text-align: center;
+  text-align: left;
   padding: 10px 2px;
 }
 
 .card-face-md {
   max-width: 100%;
-  text-align: center;
+  text-align: left;
 }
 
 .card-face-md ul,
 .card-face-md ol {
-  display: inline-block;
   text-align: left;
 }
 
@@ -2156,7 +2188,7 @@ a:focus-visible {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -2193,12 +2225,13 @@ a:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
-/* ── flat rating row (single line: 4 ratings + Submit) ── */
+/* ── flat rating row (4 ratings + Submit on separate row) ── */
 
 .rate-row {
   display: flex;
   align-items: stretch;
   gap: 5px;
+  margin-bottom: 5px;
 }
 
 .rate-btn-flat {
@@ -2242,12 +2275,21 @@ a:focus-visible {
 }
 
 .rate-submit {
-  flex: 0 0 auto;
-  padding: 0 12px;
-  font-size: 11px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 12px;
   font-weight: 600;
 }
 
-.quick-rate {
+/* ── Module 3: rating card ── */
+
+.rating-card {
   flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
 }
+
+.quick-rate { }

@@ -61,7 +61,7 @@ type State =
   | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
   | { kind: "error"; msg: string };
 
-type NavTab = "today" | "this-problem" | "settings";
+type NavTab = "today" | "problem" | "settings";
 
 type QueueStats = {
   dailyReviewLimit: number;
@@ -340,13 +340,13 @@ export function Popup() {
           <span className="popup-brand-title">ankify</span>
           <span className="popup-brand-tag">LC</span>
         </div>
-        {tab !== "settings" && (
+        {(tab === "today" || tab === "problem") && (
           <button
             type="button"
             className="btn btn-ghost"
             onClick={() => {
-              if (tab === "this-problem") void detect();
-              else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+              if (tab === "today") window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+              else void detect();
             }}
             title="Refresh"
           >
@@ -357,7 +357,7 @@ export function Popup() {
 
       {/* Nav */}
       <nav className="popup-nav">
-        {(["today", "this-problem", "settings"] as NavTab[]).map((t) => (
+        {(["today", "problem", "settings"] as NavTab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -365,7 +365,7 @@ export function Popup() {
             data-active={tab === t}
             onClick={() => setTab(t)}
           >
-            {t === "today" ? "Today" : t === "this-problem" ? "This Problem" : "Settings"}
+            {t === "today" ? "Today" : t === "problem" ? "Problem" : "Settings"}
           </button>
         ))}
       </nav>
@@ -373,32 +373,38 @@ export function Popup() {
       {/* Content */}
       <main className="popup-main">
         {tab === "today" && settings && (
-          <TodayTab
-            settings={settings}
-            onJumpToProblem={() => setTab("this-problem")}
-          />
+          <div className="tab-pane" key="today">
+            <TodayTab
+              settings={settings}
+              onJumpToProblem={() => setTab("problem")}
+            />
+          </div>
         )}
 
-        {tab === "this-problem" && settings && (
-          <ThisProblemTab
-            state={state}
-            settings={settings}
-            captured={captured}
-            onRefresh={detect}
-            onError={(msg) => setState({ kind: "error", msg })}
-          />
+        {tab === "problem" && settings && (
+          <div className="tab-pane" key="problem">
+            <ProblemTab
+              state={state}
+              settings={settings}
+              captured={captured}
+              onRefresh={detect}
+              onError={(msg) => setState({ kind: "error", msg })}
+            />
+          </div>
         )}
 
         {tab === "settings" && settings && (
-          <SettingsTab
-            settings={settings}
-            theme={theme}
-            onThemeChange={setThemePreference}
-            onSave={(next) => {
-              void setSettings(next);
-              setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
-            }}
-          />
+          <div className="tab-pane" key="settings">
+            <SettingsTab
+              settings={settings}
+              theme={theme}
+              onThemeChange={setThemePreference}
+              onSave={(next) => {
+                void setSettings(next);
+                setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
+              }}
+            />
+          </div>
         )}
       </main>
     </div>
@@ -552,26 +558,21 @@ function TodayTab({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <a
-          href={`${settings.apiBaseUrl}/review`}
-          target="_blank"
-          rel="noreferrer"
-          className="hero-link"
-        >
-          Open full review on web ↗
-        </a>
-        <button type="button" className="btn btn-ghost" onClick={() => void load()}>
-          Refresh
-        </button>
-      </div>
+      <a
+        href={`${settings.apiBaseUrl}/review`}
+        target="_blank"
+        rel="noreferrer"
+        className="hero-link"
+      >
+        Open full review on web ↗
+      </a>
     </div>
   );
 }
 
-/* ── ThisProblemTab ── */
+/* ── ProblemTab ── */
 
-function ThisProblemTab({
+function ProblemTab({
   state,
   settings,
   captured,
@@ -589,12 +590,10 @@ function ThisProblemTab({
   onRefresh: () => void;
   onError: (msg: string) => void;
 }) {
-  // Mode lives here so it survives the captured→null→captured cycle on refetch.
-  // Reset only when the *problem* itself changes (different id), not on transient
-  // state churn. Initial mode follows due-ness of the first loaded problem.
   const [mode, setMode] = useState<"review" | "manage">("review");
   const lastProblemIdRef = useRef<string | null>(null);
 
+  // Auto-select mode when problem changes: due → review, otherwise → manage
   useEffect(() => {
     if (!captured) return;
     const newId = captured.problem.id;
@@ -612,7 +611,7 @@ function ThisProblemTab({
       <div className="panel panel-quiet">
         <p className="popup-muted" style={{ margin: 0 }}>
           Open a <strong style={{ color: "var(--fg)" }}>LeetCode problem</strong> tab (URL contains{" "}
-          <span className="popup-code">/problems/</span>) to capture it or review the problem here. The Today tab still works on any page.
+          <span className="popup-code">/problems/</span>) to start reviewing.
         </p>
       </div>
     );
@@ -642,103 +641,63 @@ function ThisProblemTab({
 
   if (!captured) return null;
 
-  return (
-    <ThisProblemContent
-      captured={captured}
+  const { problem, cards, candidates, previews } = captured;
+  const due = isDue(problem.fsrsDue);
+
+  return mode === "review" ? (
+    <ReviewView
+      problem={problem}
+      cards={cards}
+      previews={previews}
       settings={settings}
-      onRefresh={onRefresh}
+      due={due}
       mode={mode}
-      setMode={setMode}
+      onModeChange={setMode}
+      onRefresh={onRefresh}
+      onRated={onRefresh}
+    />
+  ) : (
+    <ManageView
+      problem={problem}
+      cards={cards}
+      candidates={candidates}
+      settings={settings}
+      due={due}
+      mode={mode}
+      onModeChange={setMode}
+      onRefresh={onRefresh}
     />
   );
 }
 
-function ThisProblemContent({
-  captured,
-  settings,
-  onRefresh,
-  mode,
-  setMode,
-}: {
-  captured: {
-    problem: ApiProblem;
-    cards: ApiCard[];
-    candidates: ApiCard[];
-    previews: Previews;
-  };
-  settings: ExtSettings;
-  onRefresh: () => void;
-  mode: "review" | "manage";
-  setMode: (m: "review" | "manage") => void;
-}) {
-  const { problem, cards, candidates, previews } = captured;
-  const due = isDue(problem.fsrsDue);
+/* ── ProblemCard (Module 1: context + mode toggle) ── */
 
-  return (
-    <div className="stack">
-      <div className="problem-shell">
-        <ProblemHeader
-          problem={problem}
-          settings={settings}
-          due={due}
-        />
-
-        <div className="problem-mode-tabs">
-          <button type="button" data-active={mode === "review"} onClick={() => setMode("review")}>
-            Study
-          </button>
-          <button type="button" data-active={mode === "manage"} onClick={() => setMode("manage")}>
-            Manage
-          </button>
-        </div>
-      </div>
-
-      {mode === "review" ? (
-        <ReviewView
-          problem={problem}
-          cards={cards}
-          previews={previews}
-          settings={settings}
-          due={due}
-          onRefresh={onRefresh}
-          onRated={onRefresh}
-          onSwitchToManage={() => setMode("manage")}
-        />
-      ) : (
-        <ManageView
-          problem={problem}
-          cards={cards}
-          candidates={candidates}
-          settings={settings}
-          onRefresh={onRefresh}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ── ProblemHeader (compact) ── */
-
-function ProblemHeader({
+function ProblemCard({
   problem,
   settings,
   due,
+  mode,
+  onModeChange,
 }: {
   problem: ApiProblem;
   settings: ExtSettings;
   due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
 }) {
   return (
-    <div className="problem-header">
-      <div className="problem-header-row">
-        <div className="problem-title-line">
-          <h2 className="hero-title problem-header-title">{problem.title}</h2>
-          <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
-          {due ? (
-            <span className="pill pill-due">due</span>
-          ) : (
-            <span className="problem-header-next">next: {formatInterval(problem.fsrsDue)}</span>
-          )}
+    <div className="problem-card">
+      <div className="problem-card-top">
+        <div className="problem-card-info">
+          <h2 className="problem-card-title">{problem.title}</h2>
+          <div className="problem-card-tags">
+            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
+            {due ? (
+              <span className="pill pill-due">due</span>
+            ) : (
+              <span className="problem-card-next">next: {formatInterval(problem.fsrsDue)}</span>
+            )}
+          </div>
         </div>
         <a
           href={`${settings.apiBaseUrl}/problems/${problem.id}`}
@@ -750,6 +709,22 @@ function ProblemHeader({
         >
           ↗
         </a>
+      </div>
+      <div className="problem-card-mode">
+        <button
+          type="button"
+          className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
+          onClick={() => onModeChange("review")}
+        >
+          Review
+        </button>
+        <button
+          type="button"
+          className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
+          onClick={() => onModeChange("manage")}
+        >
+          Manage
+        </button>
       </div>
     </div>
   );
@@ -763,91 +738,94 @@ function ReviewView({
   previews,
   settings,
   due,
+  mode,
+  onModeChange,
   onRefresh,
   onRated,
-  onSwitchToManage,
 }: {
   problem: ApiProblem;
   cards: ApiCard[];
   previews: Previews;
   settings: ExtSettings;
   due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
   onRefresh: () => void;
   onRated: () => void;
-  onSwitchToManage: () => void;
 }) {
   const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
 
   return (
     <div className="review-workspace">
-      <div className="review-stage">
-        <div className="review-stage-tabs">
-          <div className="study-tabs">
+      {/* Module 1 — problem context */}
+      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+
+      {/* Module 2 — content */}
+      <div className="content-card">
+        <div className="content-card-tabs">
+          {(["quiz", "card", "notes"] as const).map((v) => (
             <button
+              key={v}
               type="button"
-              data-active={view === "quiz"}
-              onClick={() => setView("quiz")}
+              className="content-card-tab"
+              data-active={view === v}
+              onClick={() => setView(v)}
             >
-              Quiz
+              {v === "quiz" ? "Quiz" : v === "card" ? "Cards" : "Notes"}
             </button>
-            <button
-              type="button"
-              data-active={view === "card"}
-              onClick={() => setView("card")}
-            >
-              Card
-            </button>
-            <button
-              type="button"
-              data-active={view === "notes"}
-              onClick={() => setView("notes")}
-            >
-              Notes
-            </button>
-          </div>
+          ))}
         </div>
 
         <div className="review-stage-body">
-          <div className={`review-stage-pane${view === "quiz" ? "" : " is-hidden"}`}>
-            <QuizPanel
-              problem={problem}
-              settings={settings}
-              onRefresh={onRefresh}
-            />
-          </div>
+          {view === "quiz" && (
+            <div className="review-stage-pane tab-pane" key="quiz">
+              <QuizPanel
+                problem={problem}
+                settings={settings}
+                onRefresh={onRefresh}
+              />
+            </div>
+          )}
 
-          <div className={`review-stage-pane${view === "card" ? "" : " is-hidden"}`}>
-            {cards.length === 0 ? (
-              <div className="review-empty">
-                <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
-                  No cards yet — add one to start reviewing.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={onSwitchToManage}
-                >
-                  Add a card
-                </button>
-              </div>
-            ) : (
-              <CardFlipper cards={cards} />
-            )}
-          </div>
+          {view === "card" && (
+            <div className="review-stage-pane tab-pane" key="card">
+              {cards.length === 0 ? (
+                <div className="review-empty">
+                  <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
+                    No cards yet.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => onModeChange("manage")}
+                  >
+                    Go to Manage
+                  </button>
+                </div>
+              ) : (
+                <CardFlipper cards={cards} />
+              )}
+            </div>
+          )}
 
-          <div className={`review-stage-pane${view === "notes" ? "" : " is-hidden"}`}>
-            <NotesPanel problem={problem} settings={settings} />
-          </div>
+          {view === "notes" && (
+            <div className="review-stage-pane tab-pane" key="notes">
+              <NotesPanel problem={problem} settings={settings} />
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Module 3 — rating */}
       {due && (
-        <QuickRate
-          problemId={problem.id}
-          previews={previews}
-          settings={settings}
-          onRated={onRated}
-        />
+        <div className="rating-card">
+          <QuickRate
+            problemId={problem.id}
+            previews={previews}
+            settings={settings}
+            onRated={onRated}
+          />
+        </div>
       )}
     </div>
   );
@@ -1410,16 +1388,24 @@ function ManageView({
   cards,
   candidates,
   settings,
+  due,
+  mode,
+  onModeChange,
   onRefresh,
 }: {
   problem: ApiProblem;
   cards: ApiCard[];
   candidates: ApiCard[];
   settings: ExtSettings;
+  due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
   onRefresh: () => void;
 }) {
   return (
-    <>
+    <div className="stack">
+      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+
       <div className="panel">
         <div className="section-label">Add a card</div>
         <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
@@ -1448,7 +1434,7 @@ function ManageView({
           <CardList cards={cards} settings={settings} onRefresh={onRefresh} />
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1668,15 +1654,15 @@ function QuickRate({
             </button>
           );
         })}
-        <button
-          type="button"
-          className="btn btn-primary rate-submit"
-          disabled={busy}
-          onClick={submit}
-        >
-          {busy ? "…" : "Submit"}
-        </button>
       </div>
+      <button
+        type="button"
+        className="btn btn-primary rate-submit"
+        disabled={busy}
+        onClick={submit}
+      >
+        {busy ? "…" : "Submit"}
+      </button>
 
       {error && <div className="err-banner" style={{ marginTop: 8 }}>{error}</div>}
     </div>

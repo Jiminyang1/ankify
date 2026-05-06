@@ -112,6 +112,7 @@ export function buildAiCardDraftPrompt(args: {
   const system = `你是 LeetCode 复习卡片编辑助手。你的输出会写入一张待确认候选卡，但不会进入复习队列。
 
 核心原则：
+- 卡片内容必须使用简体中文。
 - 用户确认后才会成为正式卡片；你只帮忙生成或按 follow up 改写。
 - 不要凭空发散成标准题解；题目和提交历史只用于理解语境。
 - 只返回 question（正面）和 answer（背面）两个字段。
