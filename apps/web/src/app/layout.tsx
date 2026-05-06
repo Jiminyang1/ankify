@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ankify",
-  description: "Daily LeetCode review with spaced repetition and quizzes",
+  description: "Daily LeetCode review with spaced repetition and Q&A flashcards",
 };
 
 async function getDueCount(): Promise<number> {
@@ -25,12 +25,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen">
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("ankify-theme")||"dark";document.documentElement.setAttribute("data-theme",t);}catch(e){}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("ankify-theme")||"system";if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t)}else{document.documentElement.removeAttribute("data-theme")}}catch(e){}})()`,
           }}
         />
         <ThemeProvider>
           <Nav dueCount={dueCount} />
-          <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
+          <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
         </ThemeProvider>
       </body>
     </html>

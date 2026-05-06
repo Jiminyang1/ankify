@@ -9,7 +9,7 @@ export type SubmissionStatus =
   | "Compile Error"
   | "Other";
 
-export type AiProvider = "anthropic" | "openai" | "deepseek";
+export type AiProvider = "anthropic" | "openai" | "deepseek" | "";
 
 export interface AiProviderSettings {
   provider: AiProvider;

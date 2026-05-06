@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `problems_leetcode_id_unique` ON `problems` (`leetcode_id`);

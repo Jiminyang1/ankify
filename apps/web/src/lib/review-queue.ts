@@ -1,5 +1,6 @@
 import { getDb, schema, type DB } from "@ankify/db";
-import { and, isNull, lte, or, sql } from "drizzle-orm";
+import { and, sql } from "drizzle-orm";
+import { dueProblemCondition } from "./due-problems";
 import { getReviewSettings } from "./settings";
 
 export async function getReviewQueueStatus(db: DB = getDb()) {
@@ -11,12 +12,7 @@ export async function getReviewQueueStatus(db: DB = getDb()) {
   const [totalDueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(
-      and(
-        isNull(schema.problems.archivedAt),
-        or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-      ),
-    );
+    .where(dueProblemCondition(now));
 
   const [doneTodayRow] = await db
     .select({ count: sql<number>`count(*)` })

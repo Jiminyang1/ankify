@@ -12,7 +12,7 @@ type EditForm = {
   answer: string;
 };
 
-export function CardList({ cards, problemId }: { cards: Card[]; problemId: string }) {
+export function CardList({ cards }: { cards: Card[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, startDelete] = useTransition();
@@ -215,7 +215,7 @@ export function CardList({ cards, problemId }: { cards: Card[]; problemId: strin
                       </div>
                     ) : (
                       <>
-                        <p className="mt-3 text-sm font-medium">{c.question}</p>
+                        <Markdown className="mt-3 text-sm font-medium">{c.question}</Markdown>
                         <div className="mt-3 rounded-md bg-success/10 px-3 py-2">
                           <Markdown className="text-sm">{c.answer}</Markdown>
                         </div>

@@ -8,6 +8,48 @@
       "when": 1777562160610,
       "tag": "0000_premium_rogue",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777562160611,
+      "tag": "0001_remove_generating_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1777562160612,
+      "tag": "0002_dedupe_leetcode_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1777955671922,
+      "tag": "0003_shallow_wasp",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1777965937285,
+      "tag": "0004_powerful_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1777994897284,
+      "tag": "0005_ambitious_war_machine",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1778025600000,
+      "tag": "0006_clean_legacy_quiz_sessions",
+      "breakpoints": true
     }
   ]
 }

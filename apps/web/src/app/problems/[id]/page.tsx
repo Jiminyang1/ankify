@@ -125,7 +125,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             </p>
           </Surface>
         ) : (
-          <CardList cards={cards} problemId={problem.id} />
+          <CardList cards={cards} />
         )}
       </section>
 
@@ -203,7 +203,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                 <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{RATING_LABELS[ev.fsrsRating!] ?? ev.fsrsRating}</Pill>
                 <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
                 {ev.fsrsStabilitySnap != null && (
-                  <span className="font-mono text-xs text-muted">
+                  <span className="text-xs text-muted tabular-nums">
                     s{(ev.fsrsStabilitySnap).toFixed(1)} d{(ev.fsrsDifficultySnap ?? 0).toFixed(1)}
                   </span>
                 )}

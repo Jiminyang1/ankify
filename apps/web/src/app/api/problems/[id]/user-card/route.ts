@@ -4,12 +4,6 @@ import { nanoid } from "nanoid";
 import { schemas } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 
-/**
- * POST /api/problems/:id/user-card
- *
- * Saves a manual card as ready. AI candidates are created through
- * /api/problems/:id/ai-cards.
- */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: problemId } = await ctx.params;
   const body = await req.json().catch(() => null);
@@ -24,12 +18,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const d = parsed.data;
   const cardId = nanoid(12);
-  await db.insert(schema.cards).values({
-    id: cardId,
-    problemId,
-    aiStatus: "ready",
-    question: d.question,
-    answer: d.answer,
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.cards).values({
+      id: cardId,
+      problemId,
+      aiStatus: "ready",
+      question: d.question,
+      answer: d.answer,
+    });
+    await tx.insert(schema.reviewEvents).values({
+      id: nanoid(12),
+      problemId,
+      cardId,
+      eventType: "card_created",
+      metadata: { source: "manual" },
+    });
   });
 
   return NextResponse.json({ ok: true, cardId }, { status: 201 });

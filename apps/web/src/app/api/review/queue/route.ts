@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
 /** GET /api/review/queue?limit=20 — today's due problem list + queue stats. */
@@ -32,12 +33,7 @@ export async function GET(req: Request) {
       fsrsLapses: schema.problems.fsrsLapses,
     })
     .from(schema.problems)
-    .where(
-      and(
-        isNull(schema.problems.archivedAt),
-        or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-      ),
-    )
+    .where(dueProblemCondition(now))
     .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`))
     .limit(limit);
 

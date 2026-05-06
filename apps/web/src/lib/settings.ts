@@ -14,7 +14,7 @@ export interface ReviewSettings {
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
-  provider: "" as AiProvider,
+  provider: "",
   model: "",
 };
 
@@ -39,12 +39,12 @@ export async function setAiSettings(value: AiSettings) {
   const next = {
     ...existing,
     ...value,
-    apiKey: value.apiKey || existing.apiKey,
+    apiKey: value.apiKey === undefined ? existing.apiKey : value.apiKey || undefined,
   };
   await db
     .insert(schema.settings)
     .values({ key: KEY_AI, value: next })
-    .onConflictDoUpdate({ target: schema.settings.key, set: { value: next } });
+    .onConflictDoUpdate({ target: schema.settings.key, set: { value: next, updatedAt: new Date() } });
 }
 
 export async function getReviewSettings(): Promise<ReviewSettings> {
@@ -68,7 +68,7 @@ export async function setReviewSettings(value: ReviewSettings) {
   await db
     .insert(schema.settings)
     .values({ key: KEY_REVIEW, value: next })
-    .onConflictDoUpdate({ target: schema.settings.key, set: { value: next } });
+    .onConflictDoUpdate({ target: schema.settings.key, set: { value: next, updatedAt: new Date() } });
 }
 
 function clampDailyLimit(value: unknown) {

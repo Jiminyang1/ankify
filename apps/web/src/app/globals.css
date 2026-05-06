@@ -3,13 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --font-ui: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 /* ── Dark theme (default) ── */
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: 20 20 24;
   --surface: 28 28 33;
   --subtle: 34 34 40;
@@ -29,6 +30,7 @@
 
 /* ── Light theme ── */
 [data-theme="light"] {
+  color-scheme: light;
   --bg: 250 249 247;
   --surface: 255 255 255;
   --subtle: 242 241 239;
@@ -44,6 +46,28 @@
   --medium: 184 150 63;
   --hard: 199 62 85;
   --shadow-color: 30 30 40;
+}
+
+/* ── System light preference ── */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: 250 249 247;
+    --surface: 255 255 255;
+    --subtle: 242 241 239;
+    --fg: 26 26 30;
+    --muted: 110 109 115;
+    --border: 229 227 224;
+    --accent: 184 150 63;
+    --accent-soft: 250 246 236;
+    --success: 45 143 109;
+    --warning: 184 150 63;
+    --danger: 199 62 85;
+    --easy: 45 143 109;
+    --medium: 184 150 63;
+    --hard: 199 62 85;
+    --shadow-color: 30 30 40;
+  }
 }
 
 html,
@@ -94,14 +118,29 @@ body {
   }
 }
 
-/* nicer scrollbars in code blocks */
-pre::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+* {
+  scrollbar-color: rgb(var(--border)) transparent;
+  scrollbar-width: thin;
 }
-pre::-webkit-scrollbar-thumb {
-  background: rgb(var(--border));
-  border-radius: 3px;
+
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--border) / 0.72);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--muted) / 0.8);
 }
 
 /* focus visible on all interactive elements by default */

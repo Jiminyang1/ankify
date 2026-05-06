@@ -9,42 +9,47 @@ import {
 } from "react";
 
 type Theme = "dark" | "light";
+type ThemePreference = "system" | Theme;
 
 const ThemeContext = createContext<{
-  theme: Theme;
-  toggle: () => void;
-  setTheme: (t: Theme) => void;
+  preference: ThemePreference;
+  theme: ThemePreference;
+  setTheme: (t: ThemePreference) => void;
 }>({
-  theme: "dark",
-  toggle: () => {},
+  preference: "system",
+  theme: "system",
   setTheme: () => {},
 });
 
+function applyThemePreference(preference: ThemePreference) {
+  if (preference === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", preference);
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [preference, setPreference] = useState<ThemePreference>("system");
 
   useEffect(() => {
     const stored = localStorage.getItem("ankify-theme");
-    if (stored === "light" || stored === "dark") {
-      setThemeState(stored);
+    if (stored === "system" || stored === "light" || stored === "dark") {
+      setPreference(stored);
     }
   }, []);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("ankify-theme", theme);
-  }, [theme]);
+    applyThemePreference(preference);
+    localStorage.setItem("ankify-theme", preference);
+  }, [preference]);
 
-  const toggle = useCallback(() => {
-    setThemeState((prev) => (prev === "dark" ? "light" : "dark"));
-  }, []);
-
-  const setTheme = useCallback((t: Theme) => {
-    setThemeState(t);
+  const setTheme = useCallback((t: ThemePreference) => {
+    setPreference(t);
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggle, setTheme }}>
+    <ThemeContext.Provider value={{ preference, theme: preference, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { preview, type FsrsCardState } from "@ankify/core";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
 /** Returns the next due problem with FSRS scheduling previews for each rating. */
@@ -16,12 +17,7 @@ export async function GET() {
           await db
             .select()
             .from(schema.problems)
-            .where(
-              and(
-                isNull(schema.problems.archivedAt),
-                or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-              ),
-            )
+            .where(dueProblemCondition(now))
             .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`))
             .limit(1)
         )[0] ?? null

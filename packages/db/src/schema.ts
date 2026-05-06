@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
@@ -46,6 +46,7 @@ export const problems = sqliteTable(
   (t) => ({
     dueIdx: index("problems_fsrs_due_idx").on(t.fsrsDue),
     slugIdx: index("problems_slug_idx").on(t.leetcodeSlug),
+    leetcodeIdIdx: uniqueIndex("problems_leetcode_id_unique").on(t.leetcodeId),
   }),
 );
 
@@ -91,7 +92,7 @@ export const submissions = sqliteTable(
 /* ────────────────────────────────────────────────────────────────────────────
  * cards
  * Flash cards for a problem. Only question (front) and answer (back).
- * AI generation creates generating rows, then candidate rows; user confirms to ready.
+ * AI generation creates candidate rows; user confirms to ready.
  * ──────────────────────────────────────────────────────────────────────────── */
 export const cards = sqliteTable(
   "cards",
@@ -102,11 +103,12 @@ export const cards = sqliteTable(
       .references(() => problems.id, { onDelete: "cascade" }),
     question: text("question").notNull(),
     answer: text("answer").notNull(),
-    aiStatus: text("ai_status", { enum: ["generating", "candidate", "failed", "ready"] })
+    aiStatus: text("ai_status", { enum: ["candidate", "failed", "ready"] })
       .notNull()
       .default("ready"),
     errorMessage: text("error_message"),
     createdAt: ts("created_at"),
+    updatedAt: optTs("updated_at"),
   },
   (t) => ({
     problemIdx: index("cards_problem_idx").on(t.problemId),
@@ -128,6 +130,7 @@ export const reviewEvents = sqliteTable(
       .references(() => problems.id, { onDelete: "cascade" }),
     eventType: text("event_type", {
       enum: [
+        "problem_captured",
         "card_created",
         "submission_imported",
         "self_recall_rated",
@@ -155,6 +158,51 @@ export const reviewEvents = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * quiz_sessions
+ * Per-problem review quiz sessions. V1 keeps quiz items and answers as JSON so
+ * the feature can iterate without normalizing every quiz item into its own row.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type QuizItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  source: "statement" | "submission" | "notes" | "card";
+  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
+};
+
+export type QuizAnswer = {
+  itemId: string;
+  selectedIndex: number;
+  correct: boolean;
+  answeredAt: string;
+};
+
+export const quizSessions = sqliteTable(
+  "quiz_sessions",
+  {
+    id: text("id").primaryKey(),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["active", "completed", "archived"] })
+      .notNull()
+      .default("active"),
+    itemsJson: text("items_json", { mode: "json" }).$type<QuizItem[]>().notNull(),
+    answersJson: text("answers_json", { mode: "json" }).$type<QuizAnswer[]>().notNull().default(sql`(json('[]'))`),
+    score: integer("score"),
+    createdAt: ts("created_at"),
+    updatedAt: optTs("updated_at"),
+    completedAt: optTs("completed_at"),
+  },
+  (t) => ({
+    problemIdx: index("quiz_sessions_problem_idx").on(t.problemId),
+    statusIdx: index("quiz_sessions_status_idx").on(t.status),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * settings
  * Single-row k/v table for V1 (single user, no auth). Holds AI provider choice,
  * API keys (if user prefers DB-stored over env), FSRS params, etc.
@@ -173,4 +221,6 @@ export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
+export type QuizSession = typeof quizSessions.$inferSelect;
+export type NewQuizSession = typeof quizSessions.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;

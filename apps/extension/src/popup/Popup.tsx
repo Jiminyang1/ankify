@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatQuizMarkdown } from "@ankify/core";
 import type { CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
 import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
+import { PopupMarkdown } from "./PopupMarkdown";
 
 type ApiCard = {
   id: string;
-  aiStatus: "generating" | "candidate" | "failed" | "ready";
+  aiStatus: "candidate" | "failed" | "ready";
   errorMessage: string | null;
   question: string;
   answer: string;
@@ -19,9 +21,37 @@ type ApiProblem = {
   fsrsReps: number;
   fsrsLapses: number;
   fsrsStability: number | null;
+  notes: string | null;
 };
 type FsrsRating = 1 | 2 | 3 | 4;
 type Previews = Record<FsrsRating, { due: string }>;
+type ThemePreference = "system" | "light" | "dark";
+type QuizItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  source: "statement" | "submission" | "notes" | "card";
+  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
+};
+type QuizAnswer = {
+  itemId: string;
+  selectedIndex: number;
+  correct: boolean;
+  answeredAt: string;
+};
+type QuizSession = {
+  id: string;
+  problemId: string;
+  status: "active" | "completed" | "archived";
+  itemsJson: QuizItem[];
+  answersJson: QuizAnswer[];
+  score: number | null;
+  createdAt: string;
+  updatedAt: string | null;
+  completedAt: string | null;
+};
 
 type State =
   | { kind: "detecting" }
@@ -31,7 +61,7 @@ type State =
   | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
   | { kind: "error"; msg: string };
 
-type NavTab = "today" | "this-problem" | "settings";
+type NavTab = "today" | "problem" | "settings";
 
 type QueueStats = {
   dailyReviewLimit: number;
@@ -62,6 +92,37 @@ const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
   { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
 ];
 
+const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
+  approach: "Approach",
+  invariant: "Invariant",
+  edge_case: "Edge cases",
+  complexity: "Complexity",
+  implementation: "Implementation",
+  mistake_review: "Mistakes",
+};
+
+const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
+  statement: "Statement",
+  submission: "Submission",
+  notes: "Notes",
+  card: "Card",
+};
+
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
+const PENDING_OPERATION_TTL_MS = 90_000;
+const PENDING_OPERATION_EVENT = "ankify:pending-operation";
+
+type PendingOperation = {
+  id: string;
+  kind: string;
+  startedAt: number;
+};
+
 /* ── helpers ── */
 
 function jsonHeaders(settings: ExtSettings): HeadersInit {
@@ -74,14 +135,71 @@ function authHeaders(settings: ExtSettings): HeadersInit {
   return settings.apiToken ? { "x-ankify-token": settings.apiToken } : {};
 }
 
+function pendingQuizKey(problemId: string) {
+  return `ankify.pending.quiz.${problemId}`;
+}
+
+function pendingAiCardKey(problemId: string) {
+  return `ankify.pending.aiCard.${problemId}`;
+}
+
+function pendingCandidateAiKey(problemId: string, cardId: string) {
+  return `ankify.pending.aiCandidate.${problemId}.${cardId}`;
+}
+
+function readPendingOperation(key: string): PendingOperation | null {
+  const raw = window.sessionStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as PendingOperation;
+    if (!value?.id || !value.kind || !value.startedAt) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    if (Date.now() - value.startedAt > PENDING_OPERATION_TTL_MS) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return value;
+  } catch {
+    window.sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+function writePendingOperation(key: string, kind: string): PendingOperation {
+  const operation: PendingOperation = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    kind,
+    startedAt: Date.now(),
+  };
+  window.sessionStorage.setItem(key, JSON.stringify(operation));
+  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
+  return operation;
+}
+
+function clearPendingOperation(key: string) {
+  window.sessionStorage.removeItem(key);
+  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
+}
+
+function isSessionNewerThanPending(session: QuizSession | null, pending: PendingOperation | null) {
+  if (!session || !pending) return false;
+  return new Date(session.createdAt).getTime() >= pending.startedAt - 1000;
+}
+
+function applyThemePreference(preference: ThemePreference) {
+  if (preference === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", preference);
+  }
+}
+
 function parseSlugFromUrl(url: string | undefined): string | null {
   if (!url) return null;
   const m = url.match(/leetcode\.com\/problems\/([^/?#]+)/);
   return m?.[1] ?? null;
-}
-
-function isGeneratingCandidate(card: ApiCard) {
-  return card.aiStatus === "generating";
 }
 
 function isDue(fsrsDue: string | null): boolean {
@@ -135,7 +253,7 @@ function Collapse({ header, defaultOpen, children }: { header: React.ReactNode; 
         <span className="collapse-chevron">{open ? "▾" : "▸"}</span>
         <span className="collapse-label">{header}</span>
       </button>
-      <div className={`collapse-body${open ? " collapse-body-open" : ""}`}>
+      <div className={`collapse-body scroll-area${open ? " collapse-body-open" : ""}`}>
         <div className="collapse-inner">{children}</div>
       </div>
     </div>
@@ -148,6 +266,23 @@ export function Popup() {
   const [state, setState] = useState<State>({ kind: "detecting" });
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
   const [tab, setTab] = useState<NavTab>("today");
+  const [theme, setTheme] = useState<ThemePreference>("system");
+
+  useEffect(() => {
+    chrome.storage.local.get("ankify.theme").then((r) => {
+      const saved = r["ankify.theme"] as string | undefined;
+      if (saved === "system" || saved === "dark" || saved === "light") {
+        setTheme(saved);
+        applyThemePreference(saved);
+      }
+    });
+  }, []);
+
+  function setThemePreference(next: ThemePreference) {
+    setTheme(next);
+    applyThemePreference(next);
+    chrome.storage.local.set({ "ankify.theme": next });
+  }
 
   useEffect(() => {
     getSettings().then(setLocalSettings);
@@ -195,14 +330,6 @@ export function Popup() {
     };
   }, [settings, detect]);
 
-  /* auto-poll when candidates are generating */
-  useEffect(() => {
-    if (state.kind !== "captured") return;
-    if (!state.candidates.some(isGeneratingCandidate)) return;
-    const t = setInterval(() => void detect(), 2500);
-    return () => clearInterval(t);
-  }, [state, detect]);
-
   const captured = state.kind === "captured" ? state : null;
 
   return (
@@ -213,13 +340,13 @@ export function Popup() {
           <span className="popup-brand-title">ankify</span>
           <span className="popup-brand-tag">LC</span>
         </div>
-        {tab !== "settings" && (
+        {(tab === "today" || tab === "problem") && (
           <button
             type="button"
             className="btn btn-ghost"
             onClick={() => {
-              if (tab === "this-problem") void detect();
-              else window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+              if (tab === "today") window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
+              else void detect();
             }}
             title="Refresh"
           >
@@ -230,7 +357,7 @@ export function Popup() {
 
       {/* Nav */}
       <nav className="popup-nav">
-        {(["today", "this-problem", "settings"] as NavTab[]).map((t) => (
+        {(["today", "problem", "settings"] as NavTab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -238,7 +365,7 @@ export function Popup() {
             data-active={tab === t}
             onClick={() => setTab(t)}
           >
-            {t === "today" ? "Today" : t === "this-problem" ? "This Problem" : "Settings"}
+            {t === "today" ? "Today" : t === "problem" ? "Problem" : "Settings"}
           </button>
         ))}
       </nav>
@@ -246,30 +373,38 @@ export function Popup() {
       {/* Content */}
       <main className="popup-main">
         {tab === "today" && settings && (
-          <TodayTab
-            settings={settings}
-            onJumpToProblem={() => setTab("this-problem")}
-          />
+          <div className="tab-pane" key="today">
+            <TodayTab
+              settings={settings}
+              onJumpToProblem={() => setTab("problem")}
+            />
+          </div>
         )}
 
-        {tab === "this-problem" && settings && (
-          <ThisProblemTab
-            state={state}
-            settings={settings}
-            captured={captured}
-            onRefresh={detect}
-            onError={(msg) => setState({ kind: "error", msg })}
-          />
+        {tab === "problem" && settings && (
+          <div className="tab-pane" key="problem">
+            <ProblemTab
+              state={state}
+              settings={settings}
+              captured={captured}
+              onRefresh={detect}
+              onError={(msg) => setState({ kind: "error", msg })}
+            />
+          </div>
         )}
 
         {tab === "settings" && settings && (
-          <SettingsTab
-            settings={settings}
-            onSave={(next) => {
-              void setSettings(next);
-              setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
-            }}
-          />
+          <div className="tab-pane" key="settings">
+            <SettingsTab
+              settings={settings}
+              theme={theme}
+              onThemeChange={setThemePreference}
+              onSave={(next) => {
+                void setSettings(next);
+                setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
+              }}
+            />
+          </div>
         )}
       </main>
     </div>
@@ -423,26 +558,21 @@ function TodayTab({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <a
-          href={`${settings.apiBaseUrl}/review`}
-          target="_blank"
-          rel="noreferrer"
-          className="hero-link"
-        >
-          Open full review on web ↗
-        </a>
-        <button type="button" className="btn btn-ghost" onClick={() => void load()}>
-          Refresh
-        </button>
-      </div>
+      <a
+        href={`${settings.apiBaseUrl}/review`}
+        target="_blank"
+        rel="noreferrer"
+        className="hero-link"
+      >
+        Open full review on web ↗
+      </a>
     </div>
   );
 }
 
-/* ── ThisProblemTab ── */
+/* ── ProblemTab ── */
 
-function ThisProblemTab({
+function ProblemTab({
   state,
   settings,
   captured,
@@ -460,6 +590,19 @@ function ThisProblemTab({
   onRefresh: () => void;
   onError: (msg: string) => void;
 }) {
+  const [mode, setMode] = useState<"review" | "manage">("review");
+  const lastProblemIdRef = useRef<string | null>(null);
+
+  // Auto-select mode when problem changes: due → review, otherwise → manage
+  useEffect(() => {
+    if (!captured) return;
+    const newId = captured.problem.id;
+    if (lastProblemIdRef.current !== newId) {
+      setMode(isDue(captured.problem.fsrsDue) ? "review" : "manage");
+      lastProblemIdRef.current = newId;
+    }
+  }, [captured]);
+
   if (state.kind === "detecting") return <p className="popup-muted">Connecting…</p>;
   if (state.kind === "loading") return <p className="popup-muted">Syncing <span className="popup-code">{state.slug}</span>…</p>;
 
@@ -468,7 +611,7 @@ function ThisProblemTab({
       <div className="panel panel-quiet">
         <p className="popup-muted" style={{ margin: 0 }}>
           Open a <strong style={{ color: "var(--fg)" }}>LeetCode problem</strong> tab (URL contains{" "}
-          <span className="popup-code">/problems/</span>) to capture it or review the problem here. The Today tab still works on any page.
+          <span className="popup-code">/problems/</span>) to start reviewing.
         </p>
       </div>
     );
@@ -501,61 +644,773 @@ function ThisProblemTab({
   const { problem, cards, candidates, previews } = captured;
   const due = isDue(problem.fsrsDue);
 
+  return mode === "review" ? (
+    <ReviewView
+      problem={problem}
+      cards={cards}
+      previews={previews}
+      settings={settings}
+      due={due}
+      mode={mode}
+      onModeChange={setMode}
+      onRefresh={onRefresh}
+      onRated={onRefresh}
+    />
+  ) : (
+    <ManageView
+      problem={problem}
+      cards={cards}
+      candidates={candidates}
+      settings={settings}
+      due={due}
+      mode={mode}
+      onModeChange={setMode}
+      onRefresh={onRefresh}
+    />
+  );
+}
+
+/* ── ProblemCard (Module 1: context + mode toggle) ── */
+
+function ProblemCard({
+  problem,
+  settings,
+  due,
+  mode,
+  onModeChange,
+}: {
+  problem: ApiProblem;
+  settings: ExtSettings;
+  due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
+}) {
   return (
-    <div className="stack">
-      {/* Problem header */}
-      <div className="panel">
-        <div className="hero-row">
-          <div style={{ minWidth: 0 }}>
-            <h2 className="hero-title">{problem.title}</h2>
-            <div className="hero-meta">
-              <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>{" "}
-              <span className="pill pill-state">{problem.fsrsState}</span>{" "}
-              {due && <span className="pill pill-due">due</span>}
-            </div>
+    <div className="problem-card">
+      <div className="problem-card-top">
+        <div className="problem-card-info">
+          <h2 className="problem-card-title">{problem.title}</h2>
+          <div className="problem-card-tags">
+            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
+            {due ? (
+              <span className="pill pill-due">due</span>
+            ) : (
+              <span className="problem-card-next">next: {formatInterval(problem.fsrsDue)}</span>
+            )}
           </div>
-          <a
-            href={`${settings.apiBaseUrl}/problems/${problem.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="hero-link"
-          >
-            Web ↗
-          </a>
         </div>
-        <div className="hero-stats">
-          <span>Reps: {problem.fsrsReps}</span>
-          <span>Lapses: {problem.fsrsLapses}</span>
-          {problem.fsrsStability != null && (
-            <span>Stability: {problem.fsrsStability.toFixed(1)}d</span>
+        <a
+          href={`${settings.apiBaseUrl}/problems/${problem.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className="problem-header-web"
+          title="Open in web"
+          aria-label="Open in web"
+        >
+          ↗
+        </a>
+      </div>
+      <div className="problem-card-mode">
+        <button
+          type="button"
+          className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
+          onClick={() => onModeChange("review")}
+        >
+          Review
+        </button>
+        <button
+          type="button"
+          className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
+          onClick={() => onModeChange("manage")}
+        >
+          Manage
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── ReviewView ── */
+
+function ReviewView({
+  problem,
+  cards,
+  previews,
+  settings,
+  due,
+  mode,
+  onModeChange,
+  onRefresh,
+  onRated,
+}: {
+  problem: ApiProblem;
+  cards: ApiCard[];
+  previews: Previews;
+  settings: ExtSettings;
+  due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
+  onRefresh: () => void;
+  onRated: () => void;
+}) {
+  const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
+
+  return (
+    <div className="review-workspace">
+      {/* Module 1 — problem context */}
+      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+
+      {/* Module 2 — content */}
+      <div className="content-card">
+        <div className="content-card-tabs">
+          {(["quiz", "card", "notes"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className="content-card-tab"
+              data-active={view === v}
+              onClick={() => setView(v)}
+            >
+              {v === "quiz" ? "Quiz" : v === "card" ? "Cards" : "Notes"}
+            </button>
+          ))}
+        </div>
+
+        <div className="review-stage-body">
+          {view === "quiz" && (
+            <div className="review-stage-pane tab-pane" key="quiz">
+              <QuizPanel
+                problem={problem}
+                settings={settings}
+                onRefresh={onRefresh}
+              />
+            </div>
+          )}
+
+          {view === "card" && (
+            <div className="review-stage-pane tab-pane" key="card">
+              {cards.length === 0 ? (
+                <div className="review-empty">
+                  <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
+                    No cards yet.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => onModeChange("manage")}
+                  >
+                    Go to Manage
+                  </button>
+                </div>
+              ) : (
+                <CardFlipper cards={cards} />
+              )}
+            </div>
+          )}
+
+          {view === "notes" && (
+            <div className="review-stage-pane tab-pane" key="notes">
+              <NotesPanel problem={problem} settings={settings} />
+            </div>
           )}
         </div>
       </div>
 
-      {/* Quick Rate */}
-      <div className="panel">
-        <div className="section-label">Quick Review</div>
-        {due ? (
+      {/* Module 3 — rating */}
+      {due && (
+        <div className="rating-card">
           <QuickRate
             problemId={problem.id}
             previews={previews}
             settings={settings}
-            onRated={onRefresh}
+            onRated={onRated}
           />
-        ) : (
-          <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
-            Next review: <strong style={{ color: "var(--fg)" }}>{formatInterval(problem.fsrsDue)}</strong>
-          </p>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Add card */}
+/* ── QuizPanel ── */
+
+function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; settings: ExtSettings; onRefresh: () => void }) {
+  const [session, setSession] = useState<QuizSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [pendingQuiz, setPendingQuiz] = useState<PendingOperation | null>(null);
+  const [submittingItem, setSubmittingItem] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
+  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [savingMissed, setSavingMissed] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshPendingQuiz = useCallback(() => {
+    const pending = readPendingOperation(pendingQuizKey(problem.id));
+    setPendingQuiz(pending);
+    setGenerating(Boolean(pending));
+    return pending;
+  }, [problem.id]);
+
+  const loadSession = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    setError(null);
+    setFeedback(null);
+    setSavedItemIds(new Set());
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+        headers: authHeaders(settings),
+      });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      const nextSession = json?.session ?? null;
+      const pending = readPendingOperation(pendingQuizKey(problem.id));
+      if (isSessionNewerThanPending(nextSession, pending) && nextSession?.status === "active") {
+        clearPendingOperation(pendingQuizKey(problem.id));
+        setPendingQuiz(null);
+        setGenerating(false);
+      } else {
+        setPendingQuiz(pending);
+        setGenerating(Boolean(pending));
+      }
+      const pendingFeedback = getStoredQuizFeedback(problem.id, nextSession);
+      setSession(nextSession);
+      setFeedback(pendingFeedback);
+      setCurrentIndex(pendingFeedback ? getQuizItemIndex(nextSession, pendingFeedback.item.id) : getFirstUnansweredQuizIndex(nextSession));
+      setSavingMissed(false);
+      setShowResults(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load quiz");
+    } finally {
+      if (!opts?.silent) setLoading(false);
+    }
+  }, [problem.id, settings]);
+
+  useEffect(() => {
+    refreshPendingQuiz();
+    void loadSession();
+  }, [loadSession, refreshPendingQuiz]);
+
+  useEffect(() => {
+    const key = pendingQuizKey(problem.id);
+    const handlePendingChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key && detail.key !== key) return;
+      refreshPendingQuiz();
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id, refreshPendingQuiz]);
+
+  useEffect(() => {
+    if (!pendingQuiz) return;
+    const timer = window.setInterval(() => {
+      const pending = readPendingOperation(pendingQuizKey(problem.id));
+      if (!pending) {
+        setPendingQuiz(null);
+        setGenerating(false);
+        setError("Quiz generation timed out. Try again.");
+        return;
+      }
+      void loadSession({ silent: true });
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [loadSession, pendingQuiz, problem.id]);
+
+  async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
+    const pendingKey = pendingQuizKey(problem.id);
+    const operation = writePendingOperation(pendingKey, action);
+    setPendingQuiz(operation);
+    setGenerating(true);
+    setError(null);
+    setFeedback(null);
+    setShowResults(false);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+        method: "POST",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ action }),
+      });
+      const json = (await res.json().catch(() => null)) as { session?: QuizSession; error?: string } | null;
+      if (!res.ok || !json?.session) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      if (session) clearStoredQuizFeedback(problem.id, session.id);
+      clearStoredQuizFeedback(problem.id, json.session.id);
+      clearPendingOperation(pendingKey);
+      setPendingQuiz(null);
+      setSession(json.session);
+      setSavedItemIds(new Set());
+      setCurrentIndex(getFirstUnansweredQuizIndex(json.session));
+    } catch (e) {
+      clearPendingOperation(pendingKey);
+      setPendingQuiz(null);
+      setError(e instanceof Error ? e.message : "Failed to generate quiz");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function submitAnswer(item: QuizItem, selectedIndex: number) {
+    if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
+    setSubmittingItem(true);
+    setError(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ itemId: item.id, selectedIndex }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        session?: QuizSession;
+        item?: QuizItem;
+        answer?: QuizAnswer;
+        error?: string;
+      } | null;
+      if (!res.ok || !json?.session || !json.item || !json.answer) {
+        throw new Error(json?.error ?? `HTTP ${res.status}`);
+      }
+      setSession(json.session);
+      storeQuizFeedback(problem.id, json.session.id, json.item.id);
+      setFeedback({ item: json.item, answer: json.answer });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to submit answer");
+    } finally {
+      setSubmittingItem(false);
+    }
+  }
+
+  async function saveAsCard(item: QuizItem) {
+    if (!session) return;
+    setSavingItemId(item.id);
+    setError(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
+        method: "POST",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ itemId: item.id }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      setSavedItemIds((prev) => new Set(prev).add(item.id));
+      void onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save card");
+    } finally {
+      setSavingItemId(null);
+    }
+  }
+
+  async function saveMissedAsCards() {
+    if (!session || savingMissed) return;
+    const missedItems = getMissedQuizItems(session).filter((item) => !savedItemIds.has(item.id));
+    if (missedItems.length === 0) return;
+    setSavingMissed(true);
+    try {
+      for (const item of missedItems) {
+        await saveAsCard(item);
+      }
+    } finally {
+      setSavingMissed(false);
+    }
+  }
+
+  function goNext() {
+    if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
+    setFeedback(null);
+    setCurrentIndex(getNextUnansweredQuizIndex(session, currentIndex));
+  }
+
+  function goToQuestion(index: number) {
+    if (!session) return;
+    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
+    setFeedback(null);
+    setCurrentIndex(clampNumber(index, 0, session.itemsJson.length - 1));
+  }
+
+  if (loading) {
+    return <div className="quiz-empty"><p className="popup-muted">Loading quiz...</p></div>;
+  }
+
+  if (pendingQuiz) {
+    return (
+      <div className="quiz-empty">
+        <div className="quiz-pending-bar"><span /></div>
+        <div className="quiz-empty-title">Generating quiz</div>
+        <p className="popup-muted">You can switch to Card or Notes and come back here.</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="quiz-empty">
+        <div className="quiz-empty-kicker">Quiz</div>
+        <div className="quiz-empty-title">No quiz yet</div>
+        <p className="popup-muted">Generate 5 focused questions from this problem, your submissions, notes, and cards.</p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={generating}
+          onClick={() => void generateQuiz("generate")}
+        >
+          {generating ? "Generating..." : "Generate quiz"}
+        </button>
+        {error && <div className="err-banner quiz-error">{error}</div>}
+      </div>
+    );
+  }
+
+  if (session.status === "completed" && !feedback) {
+    const suggested = getSuggestedRating(session.score ?? 0);
+    const missedItems = getMissedQuizItems(session);
+    const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
+    const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
+    const scopeBreakdown = getQuizBreakdown(session, "scope");
+    const sourceBreakdown = getQuizBreakdown(session, "source");
+    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map(formatQuizScope);
+    return (
+      <div className="quiz-panel">
+        <div className="quiz-results scroll-area">
+          <div className="quiz-overview-card">
+            <div className="quiz-overview-main">
+              <div className="quiz-score-card">
+                <div className="quiz-score-value">
+                  {session.score ?? 0}<span>/{session.itemsJson.length}</span>
+                </div>
+                <div className="quiz-score-label">{accuracy}% · {suggested.label}</div>
+              </div>
+              <div className="quiz-overview-copy">
+                <div className="quiz-overview-title">Batch complete</div>
+                <div className="quiz-overview-meta">
+                  {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-inline quiz-next-batch"
+                disabled={generating}
+                onClick={() => void generateQuiz("nextBatch")}
+              >
+                {generating ? "Generating..." : "New Batch"}
+              </button>
+            </div>
+
+            <div className="quiz-overview-rows">
+              <QuizBreakdown label="Scope" items={scopeBreakdown} />
+              <QuizBreakdown label="Source" items={sourceBreakdown} />
+            </div>
+
+            <div className="quiz-missed-row">
+              <div>
+                <span className="quiz-missed-label">Missed</span>
+                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : "None"}</span>
+              </div>
+              <button
+                type="button"
+                className="quiz-missed-save"
+                disabled={unsavedMissedCount === 0 || savingMissed}
+                onClick={() => void saveMissedAsCards()}
+              >
+                {savingMissed ? "Creating..." : unsavedMissedCount === 0 ? "Cards saved" : "Create cards"}
+                {unsavedMissedCount > 0 && !savingMissed && <span>{unsavedMissedCount}</span>}
+              </button>
+            </div>
+          </div>
+
+          <div className="quiz-review-toggle-wrap">
+            <button type="button" className="quiz-review-toggle" onClick={() => setShowResults((value) => !value)}>
+              <span>{showResults ? "Hide Quiz" : "Review Quiz"}</span>
+              <span>{showResults ? "Hide all answers" : "Expand all questions"}</span>
+            </button>
+          </div>
+          {showResults && session.itemsJson.map((item, index) => {
+            const answer = session.answersJson.find((a) => a.itemId === item.id) ?? null;
+            const correctChoice = item.choices[item.answerIndex] ?? "";
+            const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
+            const saved = savedItemIds.has(item.id);
+            const saving = savingItemId === item.id;
+            return (
+              <div key={item.id} className="quiz-result-item">
+                <div className="quiz-result-meta">
+                  <span>Question {index + 1}</span>
+                  <span className={answer?.correct ? "quiz-ok" : "quiz-bad"}>
+                    {answer?.correct ? "Correct" : "Incorrect"}
+                  </span>
+                </div>
+                <div className="quiz-result-tags">
+                  <span>{QUIZ_SOURCE_LABELS[item.source]}</span>
+                  <span>{formatQuizScope(item.scope)}</span>
+                </div>
+                <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
+                {selectedChoice && (
+                  <div className="quiz-result-line">
+                    Your answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
+                  </div>
+                )}
+                <div className="quiz-result-line">
+                  Correct answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
+                </div>
+                <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
+                <button
+                  type="button"
+                  className={`quiz-result-save${saved ? " is-saved" : ""}`}
+                  disabled={saved || saving}
+                  onClick={() => void saveAsCard(item)}
+                >
+                  {saved ? "Saved" : saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {error && <div className="err-banner quiz-error">{error}</div>}
+      </div>
+    );
+  }
+
+  const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
+  if (!item) {
+    return (
+      <div className="quiz-empty">
+        <p className="popup-muted">This quiz has no questions.</p>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={generating}
+          onClick={() => void generateQuiz("regenerate")}
+        >
+          {generating ? "Regenerating..." : "Regenerate quiz"}
+        </button>
+      </div>
+    );
+  }
+
+  const answeredCount = session.answersJson.length;
+  const activeAnswer = session.answersJson.find((answer) => answer.itemId === item.id) ?? null;
+  const activeFeedback = feedback?.item.id === item.id ? feedback : activeAnswer ? { item, answer: activeAnswer } : null;
+  const canGoPrev = currentIndex > 0;
+  const canGoNext = currentIndex < session.itemsJson.length - 1;
+  const progressPct = Math.max(8, (answeredCount / session.itemsJson.length) * 100);
+
+  return (
+    <div className="quiz-panel">
+      <div className="quiz-panel-head">
+        <div>
+          <div className="quiz-head-title">Question {currentIndex + 1} / {session.itemsJson.length}</div>
+          <div className="quiz-head-meta">Answered {answeredCount}/{session.itemsJson.length}</div>
+          <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
+        </div>
+        <div className="quiz-nav-row">
+          <button
+            type="button"
+            className="quiz-link-btn"
+            disabled={!canGoPrev}
+            onClick={() => goToQuestion(currentIndex - 1)}
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            className="quiz-link-btn"
+            disabled={!canGoNext}
+            onClick={() => goToQuestion(currentIndex + 1)}
+          >
+            Next
+          </button>
+          <button
+            type="button"
+            className="quiz-link-btn quiz-link-muted"
+            disabled={generating}
+            onClick={() => void generateQuiz("regenerate")}
+          >
+            Regenerate
+          </button>
+        </div>
+      </div>
+      <div className="quiz-active scroll-area">
+        <div className="quiz-question">
+          <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
+        </div>
+        <div className="quiz-choices">
+          {item.choices.map((choice, index) => {
+            const wasSelected = activeFeedback?.answer.selectedIndex === index;
+            const isCorrect = activeFeedback && item.answerIndex === index;
+            return (
+              <button
+                key={index}
+                type="button"
+                disabled={!!activeFeedback || submittingItem}
+                onClick={() => void submitAnswer(item, index)}
+                className={`quiz-choice${isCorrect ? " is-correct" : ""}${activeFeedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
+              >
+                <span className="quiz-choice-letter">{String.fromCharCode(65 + index)}</span>
+                <PopupMarkdown>{formatQuizMarkdown(choice)}</PopupMarkdown>
+              </button>
+            );
+          })}
+        </div>
+        {activeFeedback ? (
+          <div className={`quiz-feedback${activeFeedback.answer.correct ? " is-correct" : " is-wrong"}`}>
+            <div className="quiz-feedback-head">
+              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? "Correct" : "Wrong"}</div>
+              <span>{QUIZ_SOURCE_LABELS[item.source]} · {formatQuizScope(item.scope)}</span>
+            </div>
+            <div className="quiz-feedback-body">
+              <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
+            </div>
+            <div className="quiz-actions">
+              <button
+                type="button"
+                className="quiz-save-btn"
+                disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                onClick={() => void saveAsCard(item)}
+              >
+                {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save"}
+              </button>
+              <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
+                {session.status === "completed" ? "Results" : "Next"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="quiz-hint-row">
+            <p className="quiz-hint">{submittingItem ? "Checking answer..." : "Click an option to answer, or use Next to skip for now."}</p>
+            {answeredCount < session.itemsJson.length && !canGoNext && (
+              <button type="button" className="quiz-link-btn" onClick={() => goToQuestion(getFirstUnansweredQuizIndex(session))}>
+                First unanswered
+              </button>
+            )}
+          </div>
+        )}
+        {error && <div className="err-banner quiz-error">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+function getFirstUnansweredQuizIndex(session: QuizSession | null) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
+  return idx === -1 ? 0 : idx;
+}
+
+function getNextUnansweredQuizIndex(session: QuizSession, currentIndex: number) {
+  const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
+  if (afterCurrent !== -1) return afterCurrent;
+  return getFirstUnansweredQuizIndex(session);
+}
+
+function isQuizItemAnswered(session: QuizSession, itemId: string) {
+  return session.answersJson.some((answer) => answer.itemId === itemId);
+}
+
+function getQuizItemIndex(session: QuizSession | null, itemId: string) {
+  if (!session) return 0;
+  const idx = session.itemsJson.findIndex((item) => item.id === itemId);
+  return idx === -1 ? getFirstUnansweredQuizIndex(session) : idx;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function quizFeedbackStorageKey(problemId: string, sessionId: string) {
+  return `ankify.quiz.pendingFeedback.${problemId}.${sessionId}`;
+}
+
+function storeQuizFeedback(problemId: string, sessionId: string, itemId: string) {
+  window.sessionStorage.setItem(quizFeedbackStorageKey(problemId, sessionId), itemId);
+}
+
+function clearStoredQuizFeedback(problemId: string, sessionId: string) {
+  window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
+}
+
+function getStoredQuizFeedback(problemId: string, session: QuizSession | null) {
+  if (!session) return null;
+  const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
+  if (!itemId) return null;
+  const item = session.itemsJson.find((quizItem) => quizItem.id === itemId);
+  const answer = session.answersJson.find((quizAnswer) => quizAnswer.itemId === itemId);
+  if (!item || !answer) {
+    clearStoredQuizFeedback(problemId, session.id);
+    return null;
+  }
+  return { item, answer };
+}
+
+function QuizBreakdown({ label, items }: { label: string; items: { label: string; count: number }[] }) {
+  return (
+    <div className="quiz-breakdown-row">
+      <span className="quiz-breakdown-label">{label}</span>
+      <div className="quiz-breakdown">
+        {items.map((item) => (
+          <span key={item.label}>{item.label} <b>{item.count}</b></span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getMissedQuizItems(session: QuizSession) {
+  return session.itemsJson.filter((item) => {
+    const answer = session.answersJson.find((a) => a.itemId === item.id);
+    return answer && !answer.correct;
+  });
+}
+
+function getQuizBreakdown(session: QuizSession, field: "scope" | "source") {
+  const counts = new Map<string, number>();
+  session.itemsJson.forEach((item) => {
+    const key = field === "scope" ? formatQuizScope(item.scope) : QUIZ_SOURCE_LABELS[item.source];
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
+}
+
+function formatQuizScope(scope: QuizItem["scope"]) {
+  return QUIZ_SCOPE_LABELS[scope];
+}
+
+function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {
+  if (score <= 1) return { rating: 1, label: "Again" };
+  if (score === 2) return { rating: 2, label: "Hard" };
+  if (score <= 4) return { rating: 3, label: "Good" };
+  return { rating: 4, label: "Easy" };
+}
+
+/* ── ManageView ── */
+
+function ManageView({
+  problem,
+  cards,
+  candidates,
+  settings,
+  due,
+  mode,
+  onModeChange,
+  onRefresh,
+}: {
+  problem: ApiProblem;
+  cards: ApiCard[];
+  candidates: ApiCard[];
+  settings: ExtSettings;
+  due: boolean;
+  mode: "review" | "manage";
+  onModeChange: (m: "review" | "manage") => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="stack">
+      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+
       <div className="panel">
         <div className="section-label">Add a card</div>
         <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
       </div>
 
-      {/* AI candidates */}
       {candidates.length > 0 && (
         <CandidateList
           problem={problem}
@@ -565,7 +1420,6 @@ function ThisProblemTab({
         />
       )}
 
-      {/* Saved cards */}
       <div>
         <div className="section-label">
           {cards.length} saved card{cards.length === 1 ? "" : "s"}
@@ -580,6 +1434,165 @@ function ThisProblemTab({
           <CardList cards={cards} settings={settings} onRefresh={onRefresh} />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── CardFlipper ── */
+
+function CardFlipper({ cards }: { cards: ApiCard[] }) {
+  const [idx, setIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+
+  // Reset flip when card changes
+  useEffect(() => {
+    setFlipped(false);
+  }, [idx]);
+
+  // Keyboard: Space flips, ←/→ navigates (ignore when typing)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLInputElement ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+      } else if (e.key === "ArrowLeft") {
+        setIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === "ArrowRight") {
+        setIdx((i) => Math.min(cards.length - 1, i + 1));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cards.length]);
+
+  const card = cards[idx];
+  if (!card) return null;
+
+  return (
+    <div className="card-flipper">
+      <div
+        className="card-flipper-stage"
+        onClick={() => setFlipped((f) => !f)}
+        role="button"
+        tabIndex={0}
+        aria-label={flipped ? "Show question" : "Show answer"}
+      >
+        <div className={`card-flipper-inner${flipped ? " is-flipped" : ""}`}>
+          <div className="card-face card-face-front">
+            <div className="card-face-label">Question</div>
+            <div className="card-face-content scroll-area">
+              <PopupMarkdown className="card-face-md">{card.question}</PopupMarkdown>
+            </div>
+            <div className="card-face-hint">Tap or press Space</div>
+          </div>
+          <div className="card-face card-face-back">
+            <div className="card-face-label card-face-label-answer">Answer</div>
+            <div className="card-face-content scroll-area">
+              <PopupMarkdown className="card-face-md">{card.answer}</PopupMarkdown>
+            </div>
+            <div className="card-face-hint">Tap to flip back</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-flipper-nav">
+        <button
+          type="button"
+          className="card-flipper-arrow"
+          disabled={idx === 0}
+          onClick={() => setIdx((i) => Math.max(0, i - 1))}
+          aria-label="Previous card"
+        >
+          ←
+        </button>
+        <span className="card-flipper-pos">
+          {idx + 1} / {cards.length}
+        </span>
+        <button
+          type="button"
+          className="card-flipper-arrow"
+          disabled={idx >= cards.length - 1}
+          onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
+          aria-label="Next card"
+        >
+          →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── NotesPanel (auto-save) ── */
+
+function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+  const [notes, setNotes] = useState(problem.notes ?? "");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const savedRef = useRef(notes);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  async function persist(value: string) {
+    if (value === savedRef.current) return;
+    setStatus("saving");
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ notes: value }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      savedRef.current = value;
+      setStatus("saved");
+      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
+    } catch {
+      setStatus("idle");
+    }
+  }
+
+  function scheduleSave(value: string) {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => void persist(value), 600);
+  }
+
+  function flushSave() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    void persist(notes);
+  }
+
+  return (
+    <div className="notes-panel">
+      <div className="notes-panel-header">
+        <span className="section-label" style={{ margin: 0 }}>Notes</span>
+        <span className={`notes-panel-status${status !== "idle" ? " is-visible" : ""}`}>
+          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+        </span>
+      </div>
+      <textarea
+        className="notes-panel-textarea scroll-area"
+        value={notes}
+        onChange={(e) => {
+          setNotes(e.target.value);
+          scheduleSave(e.target.value);
+        }}
+        onBlur={flushSave}
+        placeholder="What tripped you up, key insights, alternative approaches…"
+      />
     </div>
   );
 }
@@ -624,7 +1637,7 @@ function QuickRate({
 
   return (
     <div className="quick-rate">
-      <div className="rate-grid">
+      <div className="rate-row">
         {RATING_BUTTONS.map((b) => {
           const active = rating === b.rating;
           const interval = formatInterval(previews?.[b.rating]?.due);
@@ -632,28 +1645,26 @@ function QuickRate({
             <button
               key={b.rating}
               type="button"
-              className={`rate-btn${active ? " rate-btn-active" : ""}`}
+              className={`rate-btn rate-btn-flat${active ? " rate-btn-active" : ""}`}
+              title={b.hint}
               onClick={() => setRating(b.rating)}
             >
               <span className="rate-btn-label">{b.label}</span>
               <span className="rate-btn-interval">{interval}</span>
-              <span className="rate-btn-hint">{b.hint}</span>
             </button>
           );
         })}
       </div>
-
-      {error && <div className="err-banner" style={{ marginTop: 10 }}>{error}</div>}
-
       <button
         type="button"
-        className="btn btn-primary"
-        style={{ marginTop: 12, width: "100%" }}
+        className="btn btn-primary rate-submit"
         disabled={busy}
         onClick={submit}
       >
-        {busy ? "Submitting…" : "Submit Rating"}
+        {busy ? "…" : "Submit"}
       </button>
+
+      {error && <div className="err-banner" style={{ marginTop: 8 }}>{error}</div>}
     </div>
   );
 }
@@ -693,9 +1704,13 @@ function CardList({
     <>
       {cards.map((card) => (
         <Collapse key={card.id} header={<span className="card-q-preview">{card.question}</span>}>
+          <div className="card-q-box">
+            <div className="card-q-label">Question</div>
+            <PopupMarkdown>{card.question}</PopupMarkdown>
+          </div>
           <div className="card-a-box">
             <div className="card-a-label">Answer</div>
-            <div className="card-a-text">{card.answer}</div>
+            <PopupMarkdown>{card.answer}</PopupMarkdown>
           </div>
           <button
             type="button"
@@ -725,7 +1740,8 @@ function AddCardForm({
 }) {
   const slug = problem.leetcodeSlug;
   const [mode, setMode] = useState<"manual" | "ai">("ai");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
+  const [pendingAiCard, setPendingAiCard] = useState<PendingOperation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /* manual */
@@ -754,6 +1770,45 @@ function AddCardForm({
     return () => clearTimeout(t);
   }, [rawText, slug, hydrated]);
 
+  const refreshPendingAiCard = useCallback(() => {
+    const pending = readPendingOperation(pendingAiCardKey(problem.id));
+    setPendingAiCard(pending);
+    if (pending?.kind === "auto" || pending?.kind === "note") {
+      setBusy(pending.kind);
+    } else {
+      setBusy((current) => (current === "auto" || current === "note" ? false : current));
+    }
+    return pending;
+  }, [problem.id]);
+
+  useEffect(() => {
+    refreshPendingAiCard();
+  }, [refreshPendingAiCard]);
+
+  useEffect(() => {
+    const key = pendingAiCardKey(problem.id);
+    const handlePendingChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key && detail.key !== key) return;
+      refreshPendingAiCard();
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id, refreshPendingAiCard]);
+
+  useEffect(() => {
+    if (!pendingAiCard) return;
+    const timer = window.setInterval(() => {
+      const pending = readPendingOperation(pendingAiCardKey(problem.id));
+      if (!pending) {
+        setPendingAiCard(null);
+        setBusy((current) => (current === "auto" || current === "note" ? false : current));
+        setError("AI card generation timed out. Try again.");
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [pendingAiCard, problem.id]);
+
   const updateRawText = (v: string) => {
     userEditedRef.current = true;
     setRawText(v.slice(0, 6000));
@@ -767,7 +1822,7 @@ function AddCardForm({
 
   async function handleManualSave() {
     if (!question.trim() || !answer.trim()) return;
-    setBusy(true);
+    setBusy("manual");
     setError(null);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/user-card`, {
@@ -789,23 +1844,34 @@ function AddCardForm({
     }
   }
 
-  async function handleAiGenerate() {
-    if (!rawText.trim()) return;
-    setBusy(true);
+  async function handleAiGenerate(kind: "auto" | "note") {
+    if (kind === "note" && !rawText.trim()) return;
+    const pendingKey = pendingAiCardKey(problem.id);
+    const operation = writePendingOperation(pendingKey, kind);
+    setPendingAiCard(operation);
+    setBusy(kind);
     setError(null);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
-        body: JSON.stringify({ mode: "single", action: "generate", rawText: rawText.trim() }),
+        body: JSON.stringify({
+          mode: "single",
+          action: "generate",
+          ...(kind === "note" ? { rawText: rawText.trim() } : {}),
+        }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
-      await clearLocalDraft();
+      if (kind === "note") await clearLocalDraft();
+      clearPendingOperation(pendingKey);
+      setPendingAiCard(null);
       onAdded();
     } catch (e) {
+      clearPendingOperation(pendingKey);
+      setPendingAiCard(null);
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setBusy(false);
@@ -833,7 +1899,7 @@ function AddCardForm({
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="What do you want to recall?"
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           <label className="field-label">
@@ -844,14 +1910,14 @@ function AddCardForm({
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="The answer you need to remember."
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           {error && <div className="err-banner">{error}</div>}
           <button
             type="button"
             onClick={handleManualSave}
-            disabled={busy || !question.trim() || !answer.trim()}
+            disabled={!!busy || !question.trim() || !answer.trim()}
             className="btn btn-primary"
           >
             {busy ? "Saving…" : "Save card"}
@@ -869,21 +1935,29 @@ function AddCardForm({
               value={rawText}
               onChange={(e) => updateRawText(e.target.value)}
               placeholder="刚做完时的疑惑、坑、想记住的推理…"
-              disabled={busy}
+              disabled={!!busy}
             />
           </label>
           <div className="ai-toolbar">
             <span className="draft-hint">
-              {rawText.length}/6000{rawText.trim() && hydrated ? " · autosaved" : ""}
+              {pendingAiCard ? "Generating candidate…" : `${rawText.length}/6000${rawText.trim() && hydrated ? " · autosaved" : ""}`}
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               {rawText.trim() && (
-                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={busy}>
+                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={!!busy}>
                   Clear
                 </button>
               )}
-              <button type="button" onClick={handleAiGenerate} disabled={!rawText.trim() || busy} className="btn btn-primary">
-                {busy ? "Starting…" : "Generate"}
+              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={!!busy} className="btn btn-ghost">
+                {busy === "auto" ? "Generating…" : "Auto generate"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiGenerate("note")}
+                disabled={!rawText.trim() || !!busy}
+                className="btn btn-primary"
+              >
+                {busy === "note" ? "Generating…" : "Generate from note"}
               </button>
             </div>
           </div>
@@ -911,6 +1985,7 @@ function CandidateList({
   const [local, setLocal] = useState<
     (ApiCard & { instruction: string; busy: string | null; localError: string | null })[]
   >([]);
+  const [pendingVersion, setPendingVersion] = useState(0);
 
   useEffect(() => {
     setLocal((prev) => {
@@ -918,11 +1993,27 @@ function CandidateList({
       return candidates.map((c) => ({
         ...c,
         instruction: prevById.get(c.id)?.instruction ?? "",
-        busy: prevById.get(c.id)?.busy ?? null,
+        busy: readPendingOperation(pendingCandidateAiKey(problem.id, c.id)) ? "followup" : prevById.get(c.id)?.busy ?? null,
         localError: prevById.get(c.id)?.localError ?? null,
       }));
     });
-  }, [candidates]);
+  }, [candidates, pendingVersion, problem.id]);
+
+  useEffect(() => {
+    const handlePendingChange = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+      if (key && !key.startsWith(`ankify.pending.aiCandidate.${problem.id}.`)) return;
+      setPendingVersion((value) => value + 1);
+    };
+    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
+  }, [problem.id]);
+
+  useEffect(() => {
+    if (!local.some((card) => card.busy === "followup")) return;
+    const timer = window.setInterval(() => setPendingVersion((value) => value + 1), 2500);
+    return () => window.clearInterval(timer);
+  }, [local]);
 
   function update(id: string, patch: Record<string, unknown>) {
     setLocal((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -942,17 +2033,18 @@ function CandidateList({
 
   async function runAi(
     card: ApiCard & { instruction: string; busy: string | null; localError: string | null },
-    action: "polish" | "followup",
     instruction?: string,
   ) {
-    update(card.id, { busy: action, localError: null });
+    const pendingKey = pendingCandidateAiKey(problem.id, card.id);
+    writePendingOperation(pendingKey, "followup");
+    update(card.id, { busy: "followup", localError: null });
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({
           mode: "single",
-          action,
+          action: "followup",
           cardId: card.id,
           draft: { question: card.question.trim(), answer: card.answer.trim() },
           instruction,
@@ -962,9 +2054,11 @@ function CandidateList({
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      clearPendingOperation(pendingKey);
       update(card.id, { busy: null, instruction: "" });
       onRefresh();
     } catch (e) {
+      clearPendingOperation(pendingKey);
       update(card.id, { busy: null, localError: e instanceof Error ? e.message : "AI request failed" });
     }
   }
@@ -1003,21 +2097,16 @@ function CandidateList({
         {candidates.length} AI candidate{candidates.length !== 1 ? "s" : ""} — review &amp; confirm
       </div>
       {local.map((c) => {
-        const generating = isGeneratingCandidate(c);
-        const disabled = generating || !!c.busy;
+        const disabled = !!c.busy;
         return (
           <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
             <div
               className="candidate-status"
               style={{
-                color: generating
-                  ? "var(--accent-strong)"
-                  : c.aiStatus === "failed"
-                    ? "var(--danger)"
-                    : "var(--muted)",
+                color: c.aiStatus === "failed" ? "var(--danger)" : "var(--muted)",
               }}
             >
-              {generating ? "Generating…" : c.aiStatus === "failed" ? "Failed" : "Candidate"}
+              {c.aiStatus === "failed" ? "Failed" : "Candidate"}
             </div>
             {c.errorMessage && <div className="err-banner" style={{ marginBottom: 8 }}>{c.errorMessage}</div>}
 
@@ -1053,16 +2142,8 @@ function CandidateList({
                 <button
                   type="button"
                   className="btn-xs"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim()}
-                  onClick={() => runAi(c, "polish")}
-                >
-                  {c.busy === "polish" ? "…" : "Polish"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-xs"
                   disabled={disabled || !c.question.trim() || !c.answer.trim() || !c.instruction.trim()}
-                  onClick={() => runAi(c, "followup", c.instruction)}
+                  onClick={() => runAi(c, c.instruction)}
                 >
                   {c.busy === "followup" ? "…" : "Apply"}
                 </button>
@@ -1189,9 +2270,13 @@ function CaptureView({
 
 function SettingsTab({
   settings,
+  theme,
+  onThemeChange,
   onSave,
 }: {
   settings: ExtSettings;
+  theme: ThemePreference;
+  onThemeChange: (next: ThemePreference) => void;
   onSave: (next: ExtSettings) => void;
 }) {
   const [base, setBase] = useState(settings.apiBaseUrl);
@@ -1200,6 +2285,21 @@ function SettingsTab({
 
   return (
     <div className="settings-stack panel">
+      <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Appearance</strong>
+      <div className="theme-control settings-theme-control" aria-label="Theme">
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            data-active={theme === option.value}
+            onClick={() => onThemeChange(option.value)}
+            aria-pressed={theme === option.value}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Connection</strong>
       <label>
         API base URL

@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { rate, retrievability, schemas, type FsrsCardState } from "@ankify/core";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
-/** Classical FSRS review: user self-rates → FSRS schedules next review. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = schemas.reviewRatingSchema.safeParse(body);
@@ -16,56 +15,75 @@ export async function POST(req: Request) {
   const db = getDb();
   const now = new Date();
 
-  const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
-  if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
+  let nextDue: Date | null = null;
 
-  const state: FsrsCardState = {
-    due: problem.fsrsDue,
-    stability: problem.fsrsStability,
-    difficulty: problem.fsrsDifficulty,
-    elapsedDays: problem.fsrsElapsedDays,
-    scheduledDays: problem.fsrsScheduledDays,
-    reps: problem.fsrsReps,
-    lapses: problem.fsrsLapses,
-    state: problem.fsrsState,
-    lastReview: problem.fsrsLastReview,
-  };
+  await db.transaction(async (tx) => {
+    const [problem] = await tx
+      .select()
+      .from(schema.problems)
+      .where(eq(schema.problems.id, problemId));
 
-  const retrAtReview = retrievability(state);
-  const { next } = rate(state, rating, now);
+    if (!problem) return;
 
-  await db
-    .update(schema.problems)
-    .set({
-      fsrsDue: next.due,
-      fsrsStability: next.stability,
-      fsrsDifficulty: next.difficulty,
-      fsrsElapsedDays: next.elapsedDays,
-      fsrsScheduledDays: next.scheduledDays,
-      fsrsReps: next.reps,
-      fsrsLapses: next.lapses,
-      fsrsState: next.state,
-      fsrsLastReview: next.lastReview,
-      updatedAt: now,
-      ...(notes !== undefined ? { notes } : {}),
-    })
-    .where(eq(schema.problems.id, problemId));
+    const state: FsrsCardState = {
+      due: problem.fsrsDue,
+      stability: problem.fsrsStability,
+      difficulty: problem.fsrsDifficulty,
+      elapsedDays: problem.fsrsElapsedDays,
+      scheduledDays: problem.fsrsScheduledDays,
+      reps: problem.fsrsReps,
+      lapses: problem.fsrsLapses,
+      state: problem.fsrsState,
+      lastReview: problem.fsrsLastReview,
+    };
 
-  await db.insert(schema.reviewEvents).values({
-    id: nanoid(12),
-    problemId,
-    eventType: "self_recall_rated",
-    fsrsRating: rating,
-    fsrsStabilitySnap: next.stability,
-    fsrsDifficultySnap: next.difficulty,
-    fsrsRetrievabilitySnap: retrAtReview,
+    const retrAtReview = retrievability(state);
+    const { next } = rate(state, rating, now);
+
+    await tx
+      .update(schema.problems)
+      .set({
+        fsrsDue: next.due,
+        fsrsStability: next.stability,
+        fsrsDifficulty: next.difficulty,
+        fsrsElapsedDays: next.elapsedDays,
+        fsrsScheduledDays: next.scheduledDays,
+        fsrsReps: next.reps,
+        fsrsLapses: next.lapses,
+        fsrsState: next.state,
+        fsrsLastReview: next.lastReview,
+        updatedAt: now,
+        ...(notes !== undefined ? { notes } : {}),
+      })
+      .where(
+        and(
+          eq(schema.problems.id, problemId),
+          eq(schema.problems.fsrsReps, state.reps),
+        ),
+      );
+
+    await tx.insert(schema.reviewEvents).values({
+      id: nanoid(12),
+      problemId,
+      eventType: "self_recall_rated",
+      fsrsRating: rating,
+      fsrsStabilitySnap: next.stability,
+      fsrsDifficultySnap: next.difficulty,
+      fsrsRetrievabilitySnap: retrAtReview,
+    });
+
+    nextDue = next.due;
   });
+
+  if (nextDue === null) {
+    return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
+  }
 
   const queue = await getReviewQueueStatus(db);
 
   return NextResponse.json({
     ok: true,
-    nextDue: next.due,
+    nextDue,
     queue,
   });
 }

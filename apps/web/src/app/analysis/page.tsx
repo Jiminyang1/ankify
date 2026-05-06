@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, isNull, lte, or, sql } from "drizzle-orm";
+import { isNull, sql } from "drizzle-orm";
 import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
@@ -65,12 +66,7 @@ async function loadAnalysis() {
   const [dueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(
-      and(
-        isNull(schema.problems.archivedAt),
-        or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-      ),
-    );
+    .where(dueProblemCondition(now));
 
   const problems = await db
     .select()
@@ -148,7 +144,8 @@ export default async function AnalysisPage() {
       <Surface className="p-8">
         <h1 className="text-2xl font-semibold">Analysis</h1>
         <p className="mt-2 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code>, then run{" "}
+          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
+          <code className="font-mono">.env</code>, then run{" "}
           <code className="font-mono">pnpm db:migrate</code>.
         </p>
       </Surface>
@@ -202,7 +199,7 @@ export default async function AnalysisPage() {
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <span className="w-10 text-right font-mono text-xs tabular-nums">{c}</span>
+                      <span className="w-10 text-right text-xs tabular-nums">{c}</span>
                     </div>
                   );
                 })}
@@ -222,7 +219,7 @@ export default async function AnalysisPage() {
                         style={{ width: `${b.pct}%` }}
                       />
                     </div>
-                    <span className="w-10 text-right font-mono text-xs tabular-nums">{b.count}</span>
+                    <span className="w-10 text-right text-xs tabular-nums">{b.count}</span>
                   </div>
                 ))}
               </div>
@@ -268,8 +265,8 @@ export default async function AnalysisPage() {
                     <td className="px-4 py-3">
                       <FsrsStatePill state={problem.fsrsState} />
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{Math.round(problem.retrievabilityNow * 100)}%</td>
-                    <td className="px-4 py-3 font-mono tabular-nums">
+                    <td className="px-4 py-3 tabular-nums">{Math.round(problem.retrievabilityNow * 100)}%</td>
+                    <td className="px-4 py-3 tabular-nums">
                       {problem.fsrsStability != null ? `${problem.fsrsStability.toFixed(1)}d` : "-"}
                     </td>
                     <td className="px-4 py-3 text-muted">{formatRelative(problem.fsrsDue)}</td>

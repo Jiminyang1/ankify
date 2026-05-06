@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
 
@@ -25,12 +26,7 @@ async function getHomeData() {
     const dueProblems = await db
       .select()
       .from(schema.problems)
-      .where(
-        and(
-          isNull(schema.problems.archivedAt),
-          or(isNull(schema.problems.fsrsDue), lte(schema.problems.fsrsDue, now)),
-        ),
-      )
+      .where(dueProblemCondition(now))
       .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
       .limit(Math.min(8, queue.remaining));
 
@@ -109,7 +105,8 @@ export default async function HomePage() {
 
       {"error" in data && data.error && (
         <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code>, then run{" "}
+          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
+          <code className="font-mono">.env</code>, then run{" "}
           <code className="font-mono">pnpm db:migrate</code>.
         </div>
       )}
@@ -134,7 +131,7 @@ export default async function HomePage() {
               return (
                 <li key={problem.id}>
                   <Link href={`/problems/${problem.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-subtle sm:grid-cols-[32px_1fr_auto] sm:items-center">
-                    <div className="font-mono text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
+                    <div className="text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{problem.title}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">

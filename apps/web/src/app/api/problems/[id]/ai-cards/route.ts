@@ -1,29 +1,17 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { z } from "zod";
-import { and, desc, eq, inArray, lt, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas, type CardDraft } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getActiveModel } from "@/lib/ai";
-import { buildAiCardBatchPrompt, buildAiCardDraftPrompt } from "@/lib/card-prompt";
+import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 
-const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+export const maxDuration = 60;
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: problemId } = await ctx.params;
   const db = getDb();
-
-  // Recover: mark active generations that timed out as failed.
-  const stuckBefore = new Date(Date.now() - GENERATION_TIMEOUT_MS);
-  await db
-    .update(schema.cards)
-    .set({ aiStatus: "failed", errorMessage: "timeout: generation did not complete" })
-    .where(and(
-      eq(schema.cards.problemId, problemId),
-      eq(schema.cards.aiStatus, "generating"),
-      lt(schema.cards.createdAt, stuckBefore),
-    ));
 
   const candidates = await db
     .select()
@@ -46,59 +34,62 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
   if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
 
-  if (parsed.data.mode === "batch") {
-    const count = parsed.data.count ?? 3;
-    const ids = Array.from({ length: count }, () => nanoid(12));
-    await db.insert(schema.cards).values(
-      ids.map((id, index) => ({
-        id,
-        problemId,
-        aiStatus: "generating" as const,
-        question: `Generating candidate ${index + 1}...`,
-        answer: "",
-      })),
-    );
-    void runBatchGeneration({ problemId, candidateIds: ids, count });
-    return NextResponse.json({ ok: true, cardIds: ids }, { status: 202 });
-  }
-
   if (parsed.data.action === "generate") {
-    const cardId = nanoid(12);
-    await db.insert(schema.cards).values({
-      id: cardId,
-      problemId,
-      aiStatus: "generating",
-      question: parsed.data.rawText.trim().slice(0, 200) || "Generating...",
-      answer: "",
-    });
-    void runSingleGeneration({
-      problemId,
-      cardId,
-      action: "generate",
-      rawText: parsed.data.rawText,
-    });
-    return NextResponse.json({ ok: true, cardIds: [cardId] }, { status: 202 });
+    try {
+      const draft = await generateAiDraft({
+        problemId,
+        action: "generate",
+        rawText: parsed.data.rawText?.trim() || undefined,
+      });
+
+      const cardId = nanoid(12);
+      await db.insert(schema.cards).values({
+        id: cardId,
+        problemId,
+        aiStatus: "candidate",
+        errorMessage: null,
+        question: draft.question,
+        answer: draft.answer,
+      });
+
+      const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, cardId));
+      return NextResponse.json({ ok: true, card });
+    } catch (err) {
+      return aiErrorResponse(err);
+    }
   }
 
   const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, parsed.data.cardId));
   if (!card || card.problemId !== problemId) {
     return NextResponse.json({ error: "card_not_found" }, { status: 404 });
   }
+  if (card.aiStatus === "ready") {
+    return NextResponse.json({ error: "card_is_already_ready" }, { status: 400 });
+  }
 
-  await db
-    .update(schema.cards)
-    .set({ aiStatus: "generating", errorMessage: null, createdAt: new Date() })
-    .where(eq(schema.cards.id, card.id));
+  try {
+    const draft = await generateAiDraft({
+      problemId,
+      action: "followup",
+      draft: parsed.data.draft,
+      instruction: parsed.data.instruction.trim(),
+    });
 
-  void runSingleGeneration({
-    problemId,
-    cardId: card.id,
-    action: parsed.data.action,
-    draft: parsed.data.draft,
-    instruction: parsed.data.instruction,
-  });
+    await db
+      .update(schema.cards)
+      .set({
+        aiStatus: "candidate",
+        errorMessage: null,
+        question: draft.question,
+        answer: draft.answer,
+      })
+      .where(eq(schema.cards.id, card.id));
 
-  return NextResponse.json({ ok: true, cardIds: [card.id] }, { status: 202 });
+    const [updated] = await db.select().from(schema.cards).where(eq(schema.cards.id, card.id));
+    return NextResponse.json({ ok: true, card: updated });
+  } catch (err) {
+    return aiErrorResponse(err);
+  }
 }
 
 async function loadPromptContext(problemId: string) {
@@ -114,35 +105,32 @@ async function loadPromptContext(problemId: string) {
   return { problem, submissions };
 }
 
-async function runSingleGeneration(args: {
+async function generateAiDraft(args: {
   problemId: string;
-  cardId: string;
-  action: "generate" | "polish" | "followup";
+  action: "generate" | "followup";
   rawText?: string;
   draft?: CardDraft;
   instruction?: string;
-}) {
-  const db = getDb();
-  const tag = `[ai-card ${args.problemId} card=${args.cardId}]`;
+}): Promise<CardDraft> {
+  const tag = `[ai-card ${args.problemId}]`;
   const t0 = Date.now();
+  const { problem, submissions } = await loadPromptContext(args.problemId);
+  const { model, settings } = await getActiveModel();
+  const mode = settings.provider === "deepseek" ? "json" : "auto";
+
+  const prompt = buildAiCardDraftPrompt({
+    problem,
+    submissions,
+    action: args.action,
+    rawText: args.rawText,
+    draft: args.draft,
+    instruction: args.instruction,
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const { problem, submissions } = await loadPromptContext(args.problemId);
-    const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, args.cardId));
-    if (!card) throw new Error("card_not_found");
-
-    const { model, settings } = await getActiveModel();
-    const mode = settings.provider === "deepseek" ? "json" : "auto";
-
-    const prompt = buildAiCardDraftPrompt({
-      problem,
-      submissions,
-      action: args.action,
-      rawText: args.rawText,
-      draft: args.draft ?? { question: card.question, answer: card.answer },
-      instruction: args.instruction,
-    });
-
     const { object } = await generateObject({
       model,
       schema: schemas.cardDraftSchema,
@@ -150,86 +138,18 @@ async function runSingleGeneration(args: {
       prompt: prompt.user,
       temperature: 0.35,
       mode,
+      abortSignal: controller.signal,
     });
 
-    await db
-      .update(schema.cards)
-      .set({
-        aiStatus: "candidate",
-        errorMessage: null,
-        question: object.question,
-        answer: object.answer,
-      })
-      .where(eq(schema.cards.id, args.cardId));
-
     console.log(`${tag} ${args.action} generated in ${Date.now() - t0}ms`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error(`${tag} failed after ${Date.now() - t0}ms`, err);
-    await db
-      .update(schema.cards)
-      .set({ aiStatus: "failed", errorMessage: message.slice(0, 1000) })
-      .where(eq(schema.cards.id, args.cardId));
+    return object;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function runBatchGeneration(args: { problemId: string; candidateIds: string[]; count: number }) {
-  const { problemId, candidateIds, count } = args;
-  const db = getDb();
-  const tag = `[ai-card-batch ${problemId}]`;
-  const t0 = Date.now();
-
-  try {
-    const { problem, submissions } = await loadPromptContext(problemId);
-    const existingCards = await db
-      .select({ question: schema.cards.question, answer: schema.cards.answer })
-      .from(schema.cards)
-      .where(and(eq(schema.cards.problemId, problemId), eq(schema.cards.aiStatus, "ready")))
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(40);
-
-    const { model, settings } = await getActiveModel();
-    const mode = settings.provider === "deepseek" ? "json" : "auto";
-
-    const prompt = buildAiCardBatchPrompt({ problem, submissions, existingCards, count });
-
-    const { object } = await generateObject({
-      model,
-      schema: z.object({ candidates: z.array(schemas.cardDraftSchema).min(1).max(8) }),
-      system: prompt.system,
-      prompt: prompt.user,
-      temperature: 0.45,
-      mode,
-    });
-
-    const candidates = object.candidates.slice(0, count);
-    await Promise.all(
-      candidateIds.map((id, index) => {
-        const candidate = candidates[index];
-        if (!candidate) {
-          return db
-            .update(schema.cards)
-            .set({ aiStatus: "failed", errorMessage: "AI returned fewer candidates than requested." })
-            .where(eq(schema.cards.id, id));
-        }
-        return db
-          .update(schema.cards)
-          .set({
-            aiStatus: "candidate",
-            errorMessage: null,
-            question: candidate.question,
-            answer: candidate.answer,
-          })
-          .where(eq(schema.cards.id, id));
-      }),
-    );
-    console.log(`${tag} generated ${candidates.length}/${count} candidates in ${Date.now() - t0}ms`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error(`${tag} failed after ${Date.now() - t0}ms`, err);
-    await db
-      .update(schema.cards)
-      .set({ aiStatus: "failed", errorMessage: message.slice(0, 1000) })
-      .where(inArray(schema.cards.id, candidateIds));
-  }
+function aiErrorResponse(err: unknown) {
+  const message = err instanceof Error ? err.message : "AI request failed";
+  console.error("[ai-card] failed", err);
+  return NextResponse.json({ error: message.slice(0, 1000) }, { status: 500 });
 }
