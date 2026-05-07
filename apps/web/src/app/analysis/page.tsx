@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
 import { dueProblemCondition } from "@/lib/due-problems";
+import { requirePageUser } from "@/lib/auth";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
@@ -53,7 +54,7 @@ function stabilityBuckets(problems: (typeof schema.problems.$inferSelect)[]): St
   return buckets.map((b) => ({ ...b, pct: Math.round((b.count / total) * 100) }));
 }
 
-async function loadAnalysis() {
+async function loadAnalysis(userId: string) {
   const db = getDb();
   const now = new Date();
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -61,17 +62,17 @@ async function loadAnalysis() {
   const [totalRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(isNull(schema.problems.archivedAt));
+    .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt)));
 
   const [dueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(dueProblemCondition(now));
+    .where(dueProblemCondition(userId, now));
 
   const problems = await db
     .select()
     .from(schema.problems)
-    .where(isNull(schema.problems.archivedAt));
+    .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt)));
 
   /* risk table */
   const riskProblems: RiskProblem[] = problems
@@ -92,7 +93,7 @@ async function loadAnalysis() {
       strftime('%Y-%m-%d', occurred_at / 1000, 'unixepoch') as day,
       COUNT(*) as count
     FROM review_events
-    WHERE event_type = 'self_recall_rated' AND occurred_at >= ${thirtyDaysAgo}
+    WHERE user_id = ${userId} AND event_type = 'self_recall_rated' AND occurred_at >= ${thirtyDaysAgo}
     GROUP BY day
     ORDER BY day ASC
   `)) as { day: string; count: number }[];
@@ -136,9 +137,10 @@ async function loadAnalysis() {
 }
 
 export default async function AnalysisPage() {
+  const user = await requirePageUser();
   let data: Awaited<ReturnType<typeof loadAnalysis>>;
   try {
-    data = await loadAnalysis();
+    data = await loadAnalysis(user.id);
   } catch {
     return (
       <Surface className="p-8">

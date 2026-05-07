@@ -1,10 +1,12 @@
+import { requirePageUser } from "@/lib/auth";
 import { getAiSettings, getReviewSettings } from "@/lib/settings";
-import { AiSettingsForm, ReviewSettingsForm } from "./form";
+import { AiSettingsForm, ExtensionConnectionForm, ReviewSettingsForm } from "./form";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [ai, review] = await Promise.all([getAiSettings(), getReviewSettings()]);
+  const user = await requirePageUser();
+  const [ai, review] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id)]);
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -14,13 +16,16 @@ export default async function SettingsPage() {
           initial={{
             provider: ai.provider,
             model: ai.model,
-            hasApiKey: Boolean(ai.apiKey),
+            hasApiKey: Boolean(ai.encryptedApiKey),
           }}
         />
         <p className="mt-3 text-xs text-muted">
-          API keys: stored values override env vars. If left blank, the corresponding{" "}
-          <code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code> / <code>DEEPSEEK_API_KEY</code> env var is used.
+          API keys are encrypted before they are stored. Each user must provide their own provider key.
         </p>
+      </section>
+      <section className="border-t border-border pt-6">
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">Extension connection</h2>
+        <ExtensionConnectionForm />
       </section>
       <section className="border-t border-border pt-6">
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">Review schedule</h2>

@@ -42,3 +42,4 @@ drizzle/meta/_journal.json.bak
 # Extension build
 apps/extension/dist
 apps/extension/.output
+.vercel

@@ -29,10 +29,17 @@ export function loadDbEnv() {
   _envLoaded = true;
 
   const root = repoRoot();
+  const existingEnv = new Map(Object.entries(process.env));
   loadEnvFile(resolve(root, ".env"));
   loadEnvFile(resolve(root, ".env.local"), true);
+  for (const [key, value] of existingEnv) {
+    process.env[key] = value;
+  }
 
   if (!process.env.TURSO_DATABASE_URL && !process.env.LOCAL_DB_PATH) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("TURSO_DATABASE_URL missing: local SQLite fallback is disabled in production");
+    }
     process.env.LOCAL_DB_PATH = resolve(root, "packages/db/local.db");
   }
 }
@@ -50,6 +57,10 @@ function buildClient(): Client {
 
   if (remoteUrl) {
     return createClient({ url: remoteUrl, authToken });
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("TURSO_DATABASE_URL missing: local SQLite fallback is disabled in production");
   }
 
   return createClient({ url: `file:${localDbPath()}` });

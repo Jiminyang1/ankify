@@ -4,6 +4,8 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
+import { BrandLockup } from "./brand";
 import { ThemeToggle } from "./ThemeToggle";
 
 const LINKS = [
@@ -20,16 +22,8 @@ export function Nav({ dueCount }: { dueCount: number }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-        <Link href="/" className="group flex items-center gap-2">
-          <span
-            aria-hidden
-            className="grid h-7 w-7 place-items-center rounded-md bg-accent/15 text-accent ring-1 ring-accent/20"
-          >
-            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-              <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h7A2.5 2.5 0 0 1 14 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 11.5v-7Zm3 .5v6h2V8h2v3h2V5H9v2H7V5H5Z" />
-            </svg>
-          </span>
-          <span className="font-ui text-base font-semibold tracking-tight">ankify</span>
+        <Link href="/" className="group">
+          <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
         {!isLogin && (
@@ -60,7 +54,18 @@ export function Nav({ dueCount }: { dueCount: number }) {
           </div>
         )}
 
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {!isLogin && (
+            <button
+              type="button"
+              onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}
+              className="rounded-md px-3 py-1.5 text-sm text-muted transition hover:bg-subtle hover:text-fg"
+            >
+              Sign out
+            </button>
+          )}
+          <ThemeToggle />
+        </div>
       </nav>
     </header>
   );

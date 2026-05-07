@@ -1,17 +1,27 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { getOptionalPageUser } from "@/lib/auth";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ankify",
   description: "Daily LeetCode review with spaced repetition and Q&A flashcards",
+  icons: {
+    icon: [
+      { url: "/ankify-mark.svg", type: "image/svg+xml" },
+      { url: "/icon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 async function getDueCount(): Promise<number> {
   try {
-    const queue = await getReviewQueueStatus();
+    const user = await getOptionalPageUser();
+    if (!user) return 0;
+    const queue = await getReviewQueueStatus(user.id);
     return queue.dueCount;
   } catch {
     return 0;

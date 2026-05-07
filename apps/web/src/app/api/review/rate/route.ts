@@ -3,9 +3,13 @@ import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { rate, retrievability, schemas, type FsrsCardState } from "@ankify/core";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
 export async function POST(req: Request) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const body = await req.json().catch(() => null);
   const parsed = schemas.reviewRatingSchema.safeParse(body);
   if (!parsed.success) {
@@ -21,7 +25,7 @@ export async function POST(req: Request) {
     const [problem] = await tx
       .select()
       .from(schema.problems)
-      .where(eq(schema.problems.id, problemId));
+      .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)));
 
     if (!problem) return;
 
@@ -58,12 +62,14 @@ export async function POST(req: Request) {
       .where(
         and(
           eq(schema.problems.id, problemId),
+          eq(schema.problems.userId, user.id),
           eq(schema.problems.fsrsReps, state.reps),
         ),
       );
 
     await tx.insert(schema.reviewEvents).values({
       id: nanoid(12),
+      userId: user.id,
       problemId,
       eventType: "self_recall_rated",
       fsrsRating: rating,
@@ -79,7 +85,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
   }
 
-  const queue = await getReviewQueueStatus(db);
+  const queue = await getReviewQueueStatus(user.id, db);
 
   return NextResponse.json({
     ok: true,

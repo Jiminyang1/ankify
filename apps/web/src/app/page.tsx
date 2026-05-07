@@ -1,32 +1,33 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { requirePageUser } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-async function getHomeData() {
+async function getHomeData(userId: string) {
   try {
     const db = getDb();
     const now = new Date();
 
     const [queue, totalRows] = await Promise.all([
-      getReviewQueueStatus(db),
+      getReviewQueueStatus(userId, db),
       db
         .select({ count: sql<number>`count(*)` })
         .from(schema.problems)
-        .where(isNull(schema.problems.archivedAt)),
+        .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt))),
     ]);
     const totalRow = totalRows[0];
 
     const dueProblems = await db
       .select()
       .from(schema.problems)
-      .where(dueProblemCondition(now))
+      .where(dueProblemCondition(userId, now))
       .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
       .limit(Math.min(8, queue.remaining));
 
@@ -36,7 +37,7 @@ async function getHomeData() {
         total: sql<number>`count(*)`,
       })
       .from(schema.cards)
-      .where(eq(schema.cards.aiStatus, "ready"))
+      .where(and(eq(schema.cards.userId, userId), eq(schema.cards.aiStatus, "ready")))
       .groupBy(schema.cards.problemId);
 
     return {
@@ -63,7 +64,8 @@ async function getHomeData() {
 }
 
 export default async function HomePage() {
-  const data = await getHomeData();
+  const user = await requirePageUser();
+  const data = await getHomeData(user.id);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
 

@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
+import { requirePageUser } from "@/lib/auth";
 import { formatAbsolute, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
@@ -16,28 +17,32 @@ const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" |
 export const dynamic = "force-dynamic";
 
 export default async function ProblemDetail({ params }: { params: Promise<{ id: string }> }) {
+  const user = await requirePageUser();
   const { id } = await params;
   const db = getDb();
-  const problemRows = await db.select().from(schema.problems).where(eq(schema.problems.id, id));
+  const problemRows = await db
+    .select()
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, id), eq(schema.problems.userId, user.id)));
   const problem = problemRows[0];
   if (!problem) notFound();
 
   const submissions = await db
     .select()
     .from(schema.submissions)
-    .where(eq(schema.submissions.problemId, id))
+    .where(and(eq(schema.submissions.userId, user.id), eq(schema.submissions.problemId, id)))
     .orderBy(desc(schema.submissions.submittedAt));
 
   const cards = await db
     .select()
     .from(schema.cards)
-    .where(and(eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
+    .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
     .orderBy(desc(schema.cards.createdAt));
 
   const reviewHistory = await db
     .select()
     .from(schema.reviewEvents)
-    .where(and(eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated")))
+    .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated")))
     .orderBy(desc(schema.reviewEvents.occurredAt))
     .limit(20);
 

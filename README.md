@@ -34,7 +34,7 @@ pnpm dev
 pnpm dev:ext
 ```
 
-Fill `.env.local` with either Turso credentials or `LOCAL_DB_PATH`, plus `ANKIFY_API_TOKEN`, `APP_PASSWORD`, and at least one AI provider key if you want card/quiz generation.
+Fill `.env.local` with either Turso credentials or `LOCAL_DB_PATH`, Better Auth/Google OAuth credentials, an email allowlist, and `AI_KEY_ENCRYPTION_SECRET`. AI provider keys are saved per user in Settings and are not read from server env vars.
 
 ## Product Flow
 
@@ -68,7 +68,7 @@ Main tables:
 - `cards`: flashcards and AI candidates, with `ai_status` limited to `candidate | failed | ready`.
 - `quiz_sessions`: active/completed/archived quiz JSON plus scoped items, answers, and score.
 - `review_events`: append-only event log for captures, card creation, imports, and review ratings.
-- `settings`: single-user key/value settings.
+- `settings`: per-user key/value settings.
 
 After schema changes:
 
@@ -85,19 +85,26 @@ Use Turso for production data. Do not deploy with local SQLite on Vercel.
 2. Add these Vercel environment variables for Production and Preview:
    - `TURSO_DATABASE_URL`
    - `TURSO_AUTH_TOKEN`
-   - `ANKIFY_API_TOKEN`
-   - `APP_PASSWORD`
-   - one or more AI keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`
+   - `BETTER_AUTH_SECRET`
+   - `BETTER_AUTH_URL`
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `ANKIFY_ALLOWED_EMAILS`
+   - `AI_KEY_ENCRYPTION_SECRET`
 3. Run migrations against Turso from your machine:
    ```bash
    pnpm db:migrate
    ```
 4. In Vercel, import the repo as a monorepo project with root directory `apps/web`.
 5. Use build command `pnpm build` and install command `pnpm install --frozen-lockfile`.
-6. After deploy, open `/login` and enter `APP_PASSWORD`.
-7. In the Chrome extension settings, set API Base URL to your Vercel URL and API token to `ANKIFY_API_TOKEN`.
+6. Configure Google Cloud OAuth redirect URIs:
+   - local: `http://localhost:3000/api/auth/callback/google`
+   - production: `https://your-domain.com/api/auth/callback/google`
+7. After deploy, open `/login` and sign in with an allowlisted Google email.
+8. In web Settings, save your AI provider/model/API key, then generate an extension API token.
+9. In the Chrome extension settings, set API Base URL to your Vercel URL, paste the generated token, and use Test connection.
 
-The web UI is protected by a signed `APP_PASSWORD` session cookie. The extension uses `x-ankify-token`.
+The web UI uses Better Auth Google sessions. The extension does not perform Google OAuth; it sends the per-user API token as `x-ankify-token`.
 
 ## Verification
 

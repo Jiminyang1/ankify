@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AiProvider } from "@ankify/core";
 
@@ -115,7 +115,7 @@ export function AiSettingsForm({
                 if (e.target.checked) setApiKey("");
               }}
             />
-            Clear stored key and use env var fallback
+            Clear stored key
           </label>
         )}
       </div>
@@ -131,6 +131,142 @@ export function AiSettingsForm({
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </form>
+  );
+}
+
+type ExtensionApiKey = {
+  id: string;
+  name: string | null;
+  start: string | null;
+  prefix: string | null;
+  createdAt: string;
+  lastRequest: string | null;
+  enabled: boolean;
+};
+
+export function ExtensionConnectionForm() {
+  const [keys, setKeys] = useState<ExtensionApiKey[]>([]);
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [name, setName] = useState("Chrome extension");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function loadKeys() {
+    setLoading(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/settings/api-keys", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { apiKeys: ExtensionApiKey[] };
+      setKeys(json.apiKeys ?? []);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to load extension tokens");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadKeys();
+  }, []);
+
+  async function createKey(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    setNewKey(null);
+    try {
+      const res = await fetch("/api/settings/api-keys", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { apiKey: { key: string } };
+      setNewKey(json.apiKey.key);
+      await loadKeys();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to create extension token");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeKey(id: string) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/settings/api-keys/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadKeys();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to revoke extension token");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={createKey} className="flex flex-wrap items-end gap-3">
+        <label className="min-w-64 flex-1 space-y-1">
+          <span className="block text-sm">Token name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md border border-border bg-accent/10 px-4 py-2 text-sm text-accent hover:bg-accent/20 disabled:opacity-50"
+        >
+          Generate token
+        </button>
+      </form>
+
+      {newKey && (
+        <div className="rounded-md border border-accent/30 bg-accent/10 p-3">
+          <p className="text-sm font-medium text-accent">Copy this token now. It is shown only once.</p>
+          <code className="mt-2 block break-all rounded bg-bg p-2 font-mono text-xs">{newKey}</code>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-border">
+        {loading ? (
+          <p className="p-3 text-sm text-muted">Loading tokens...</p>
+        ) : keys.length === 0 ? (
+          <p className="p-3 text-sm text-muted">No extension tokens yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {keys.map((key) => (
+              <li key={key.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
+                <div>
+                  <div className="font-medium">{key.name ?? "Extension token"}</div>
+                  <div className="mt-1 text-xs text-muted">
+                    {key.start ? <code className="font-mono">{key.start}...</code> : "hidden"} · created{" "}
+                    {new Date(key.createdAt).toLocaleDateString()} · last used{" "}
+                    {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : "never"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => revokeKey(key.id)}
+                  disabled={busy}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
+                >
+                  Revoke
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {msg && <p className="text-sm text-muted">{msg}</p>}
+    </div>
   );
 }
 

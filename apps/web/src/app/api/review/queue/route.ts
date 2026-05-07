@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
 /** GET /api/review/queue?limit=20 — today's due problem list + queue stats. */
 export async function GET(req: Request) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const db = getDb();
   const { searchParams } = new URL(req.url);
   const requested = Number(searchParams.get("limit") ?? "20");
   const cap = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 100) : 20;
 
-  const queue = await getReviewQueueStatus(db);
+  const queue = await getReviewQueueStatus(user.id, db);
   const now = new Date();
   const limit = Math.min(cap, queue.remaining);
 
@@ -33,7 +37,7 @@ export async function GET(req: Request) {
       fsrsLapses: schema.problems.fsrsLapses,
     })
     .from(schema.problems)
-    .where(dueProblemCondition(now))
+    .where(dueProblemCondition(user.id, now))
     .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`))
     .limit(limit);
 
@@ -45,7 +49,7 @@ export async function GET(req: Request) {
           total: sql<number>`count(*)`,
         })
         .from(schema.cards)
-        .where(and(eq(schema.cards.aiStatus, "ready"), inArray(schema.cards.problemId, ids)))
+        .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.aiStatus, "ready"), inArray(schema.cards.problemId, ids)))
         .groupBy(schema.cards.problemId)
     : [];
 

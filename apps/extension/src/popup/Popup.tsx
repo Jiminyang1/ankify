@@ -86,10 +86,10 @@ type QueueProblem = {
 type QueueResponse = { queue: QueueStats; problems: QueueProblem[] };
 
 const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
-  { rating: 1, label: "Again", hint: "完全想不起来" },
-  { rating: 2, label: "Hard", hint: "想起一点但不稳" },
-  { rating: 3, label: "Good", hint: "能讲出主要方法" },
-  { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
+  { rating: 1, label: "Again", hint: "Could not recall it" },
+  { rating: 2, label: "Hard", hint: "Partial recall, shaky" },
+  { rating: 3, label: "Good", hint: "Main idea is clear" },
+  { rating: 4, label: "Easy", hint: "Can explain method and pitfalls" },
 ];
 
 const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
@@ -186,6 +186,31 @@ function clearPendingOperation(key: string) {
 function isSessionNewerThanPending(session: QuizSession | null, pending: PendingOperation | null) {
   if (!session || !pending) return false;
   return new Date(session.createdAt).getTime() >= pending.startedAt - 1000;
+}
+
+function PopupBrandMark() {
+  return (
+    <span className="popup-brand-mark" aria-hidden>
+      <svg viewBox="0 0 64 64">
+        <rect x="9" y="27" width="12" height="27" rx="4.5" className="brand-bar brand-bar-left" />
+        <rect x="27" y="20" width="12" height="34" rx="4.5" className="brand-bar brand-bar-mid" />
+        <rect x="45" y="10" width="16" height="50" rx="6" className="brand-bar brand-bar-right" />
+        <circle cx="53" cy="23" r="3" className="brand-dot" />
+      </svg>
+    </span>
+  );
+}
+
+function PopupBrandBanner() {
+  return (
+    <div className="popup-brand" aria-label="ankify spaced repetition">
+      <PopupBrandMark />
+      <span className="popup-brand-copy">
+        <span className="popup-brand-title">ankify<span>.</span></span>
+        <span className="popup-brand-tag">Spaced · Repetition</span>
+      </span>
+    </div>
+  );
 }
 
 function applyThemePreference(preference: ThemePreference) {
@@ -336,10 +361,7 @@ export function Popup() {
     <div className="popup-shell">
       {/* Top bar */}
       <div className="popup-topbar">
-        <div className="popup-brand">
-          <span className="popup-brand-title">ankify</span>
-          <span className="popup-brand-tag">LC</span>
-        </div>
+        <PopupBrandBanner />
         {(tab === "today" || tab === "problem") && (
           <button
             type="button"
@@ -1934,7 +1956,7 @@ function AddCardForm({
               rows={5}
               value={rawText}
               onChange={(e) => updateRawText(e.target.value)}
-              placeholder="刚做完时的疑惑、坑、想记住的推理…"
+              placeholder="Questions, pitfalls, or reasoning you want to remember..."
               disabled={!!busy}
             />
           </label>
@@ -2282,47 +2304,94 @@ function SettingsTab({
   const [base, setBase] = useState(settings.apiBaseUrl);
   const [token, setToken] = useState(settings.apiToken);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [testState, setTestState] = useState<{ kind: "idle" | "loading" | "success" | "error"; message: string }>({
+    kind: "idle",
+    message: "",
+  });
+
+  const normalizedBase = base.trim().replace(/\/+$/, "");
+
+  async function testConnection() {
+    if (!normalizedBase || !token.trim()) {
+      setTestState({ kind: "error", message: "API base URL and token are required." });
+      return;
+    }
+
+    setTestState({ kind: "loading", message: "Checking connection…" });
+    try {
+      const res = await fetch(`${normalizedBase}/api/me`, {
+        headers: token.trim() ? { "x-ankify-token": token.trim() } : {},
+      });
+      const data = (await res.json().catch(() => null)) as { user?: { email?: string }; error?: string } | null;
+      if (!res.ok) {
+        throw new Error(data?.error || `Connection failed (${res.status})`);
+      }
+      setTestState({ kind: "success", message: `Connected as ${data?.user?.email ?? "this user"}.` });
+    } catch (error) {
+      setTestState({ kind: "error", message: error instanceof Error ? error.message : "Connection failed." });
+    }
+  }
 
   return (
-    <div className="settings-stack panel">
-      <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Appearance</strong>
-      <div className="theme-control settings-theme-control" aria-label="Theme">
-        {THEME_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            data-active={theme === option.value}
-            onClick={() => onThemeChange(option.value)}
-            aria-pressed={theme === option.value}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+    <div className="settings-stack">
+      <section className="settings-module panel" aria-labelledby="settings-appearance">
+        <div className="settings-module-head">
+          <strong id="settings-appearance">Appearance</strong>
+          <p>Theme only affects the extension popup.</p>
+        </div>
+        <div className="theme-control settings-theme-control" aria-label="Theme">
+          {THEME_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              data-active={theme === option.value}
+              onClick={() => onThemeChange(option.value)}
+              aria-pressed={theme === option.value}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
-      <strong style={{ fontFamily: "var(--font-ui)", fontSize: 15 }}>Connection</strong>
-      <label>
-        API base URL
-        <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-      <label>
-        API token (ANKIFY_API_TOKEN)
-        <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
-      </label>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => {
-          onSave({ apiBaseUrl: base.trim(), apiToken: token });
-          setSavedFlash(true);
-          setTimeout(() => setSavedFlash(false), 2000);
-        }}
-      >
-        Save settings
-      </button>
-      <p className="popup-muted" style={{ margin: 0, fontSize: 12 }}>
-        {savedFlash ? "Saved." : "Extension sends this token on cross-origin API calls."}
-      </p>
+      <section className="settings-module panel" aria-labelledby="settings-connection">
+        <div className="settings-module-head">
+          <strong id="settings-connection">Connection</strong>
+          <p>Used when the extension talks to the web API.</p>
+        </div>
+        <label>
+          API base URL
+          <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
+        </label>
+        <label>
+          User API token
+          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
+        </label>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              onSave({ apiBaseUrl: normalizedBase, apiToken: token.trim() });
+              setBase(normalizedBase);
+              setToken(token.trim());
+              setSavedFlash(true);
+              setTimeout(() => setSavedFlash(false), 2000);
+            }}
+          >
+            Save connection
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testState.kind === "loading"}>
+            {testState.kind === "loading" ? "Testing…" : "Test connection"}
+          </button>
+          <p className="popup-muted">
+            {savedFlash ? "Saved." : "Create a token in web Settings, then paste it here."}
+          </p>
+        </div>
+        {testState.message ? (
+          <p className={`connection-status connection-status-${testState.kind}`}>{testState.message}</p>
+        ) : null}
+      </section>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   setAiSettings,
   setReviewSettings,
 } from "@/lib/settings";
+import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { schemas } from "@ankify/core";
 
 const settingsSchema = z
@@ -22,30 +23,36 @@ const settingsSchema = z
     },
   );
 
-export async function GET() {
-  const [ai, review] = await Promise.all([getAiSettings(), getReviewSettings()]);
+export async function GET(req: Request) {
+  const user = await getRequestSessionUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const [ai, review] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id)]);
   // Don't leak the key back to the client; just whether one is set
   return NextResponse.json({
-    ai: { provider: ai.provider, model: ai.model, hasApiKey: Boolean(ai.apiKey) },
+    ai: { provider: ai.provider, model: ai.model, hasApiKey: Boolean(ai.encryptedApiKey) },
     review,
   });
 }
 
 export async function POST(req: Request) {
+  const user = await getRequestSessionUser(req);
+  if (!user) return unauthorizedResponse();
+
   const body = await req.json().catch(() => null);
   const parsed = settingsSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
   if (parsed.data.provider && parsed.data.model) {
-    await setAiSettings({
+    await setAiSettings(user.id, {
       provider: parsed.data.provider,
       model: parsed.data.model,
       apiKey: parsed.data.apiKey,
     });
   }
   if (parsed.data.dailyReviewLimit != null) {
-    await setReviewSettings({ dailyReviewLimit: parsed.data.dailyReviewLimit });
+    await setReviewSettings(user.id, { dailyReviewLimit: parsed.data.dailyReviewLimit });
   }
   return NextResponse.json({ ok: true });
 }

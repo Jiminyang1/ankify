@@ -5,24 +5,31 @@ import { nanoid } from "nanoid";
 import { schemas, type CardDraft } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getActiveModel } from "@/lib/ai";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 
 export const maxDuration = 60;
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id: problemId } = await ctx.params;
   const db = getDb();
 
   const candidates = await db
     .select()
     .from(schema.cards)
-    .where(and(eq(schema.cards.problemId, problemId), ne(schema.cards.aiStatus, "ready")))
+    .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problemId), ne(schema.cards.aiStatus, "ready")))
     .orderBy(desc(schema.cards.createdAt));
 
   return NextResponse.json({ ok: true, candidates });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id: problemId } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = schemas.aiCardsRequestSchema.safeParse(body);
@@ -31,12 +38,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const db = getDb();
-  const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
+  const [problem] = await db
+    .select()
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)));
   if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
 
   if (parsed.data.action === "generate") {
     try {
       const draft = await generateAiDraft({
+        userId: user.id,
         problemId,
         action: "generate",
         rawText: parsed.data.rawText?.trim() || undefined,
@@ -45,6 +56,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const cardId = nanoid(12);
       await db.insert(schema.cards).values({
         id: cardId,
+        userId: user.id,
         problemId,
         aiStatus: "candidate",
         errorMessage: null,
@@ -52,14 +64,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         answer: draft.answer,
       });
 
-      const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, cardId));
+      const [card] = await db
+        .select()
+        .from(schema.cards)
+        .where(and(eq(schema.cards.id, cardId), eq(schema.cards.userId, user.id)));
       return NextResponse.json({ ok: true, card });
     } catch (err) {
       return aiErrorResponse(err);
     }
   }
 
-  const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, parsed.data.cardId));
+  const [card] = await db
+    .select()
+    .from(schema.cards)
+    .where(and(eq(schema.cards.id, parsed.data.cardId), eq(schema.cards.userId, user.id)));
   if (!card || card.problemId !== problemId) {
     return NextResponse.json({ error: "card_not_found" }, { status: 404 });
   }
@@ -69,6 +87,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   try {
     const draft = await generateAiDraft({
+      userId: user.id,
       problemId,
       action: "followup",
       draft: parsed.data.draft,
@@ -83,23 +102,29 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         question: draft.question,
         answer: draft.answer,
       })
-      .where(eq(schema.cards.id, card.id));
+      .where(and(eq(schema.cards.id, card.id), eq(schema.cards.userId, user.id)));
 
-    const [updated] = await db.select().from(schema.cards).where(eq(schema.cards.id, card.id));
+    const [updated] = await db
+      .select()
+      .from(schema.cards)
+      .where(and(eq(schema.cards.id, card.id), eq(schema.cards.userId, user.id)));
     return NextResponse.json({ ok: true, card: updated });
   } catch (err) {
     return aiErrorResponse(err);
   }
 }
 
-async function loadPromptContext(problemId: string) {
+async function loadPromptContext(userId: string, problemId: string) {
   const db = getDb();
-  const [problem] = await db.select().from(schema.problems).where(eq(schema.problems.id, problemId));
+  const [problem] = await db
+    .select()
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)));
   if (!problem) throw new Error("problem_not_found");
   const submissions = await db
     .select()
     .from(schema.submissions)
-    .where(eq(schema.submissions.problemId, problemId))
+    .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
     .orderBy(desc(schema.submissions.submittedAt))
     .limit(25);
   return { problem, submissions };
@@ -107,6 +132,7 @@ async function loadPromptContext(problemId: string) {
 
 async function generateAiDraft(args: {
   problemId: string;
+  userId: string;
   action: "generate" | "followup";
   rawText?: string;
   draft?: CardDraft;
@@ -114,8 +140,8 @@ async function generateAiDraft(args: {
 }): Promise<CardDraft> {
   const tag = `[ai-card ${args.problemId}]`;
   const t0 = Date.now();
-  const { problem, submissions } = await loadPromptContext(args.problemId);
-  const { model, settings } = await getActiveModel();
+  const { problem, submissions } = await loadPromptContext(args.userId, args.problemId);
+  const { model, settings } = await getActiveModel(args.userId);
   const mode = settings.provider === "deepseek" ? "json" : "auto";
 
   const prompt = buildAiCardDraftPrompt({

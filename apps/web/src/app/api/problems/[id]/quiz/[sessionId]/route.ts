@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schemas, type QuizAnswer } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; sessionId: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id: problemId, sessionId } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = schemas.quizAnswerRequestSchema.safeParse(body);
@@ -15,7 +19,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
   const [session] = await db
     .select()
     .from(schema.quizSessions)
-    .where(and(eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
+    .where(and(eq(schema.quizSessions.userId, user.id), eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
 
   if (!session || session.status === "archived") {
     return NextResponse.json({ error: "quiz_session_not_found" }, { status: 404 });
@@ -50,9 +54,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
       updatedAt: now,
       completedAt: completed ? now : null,
     })
-    .where(eq(schema.quizSessions.id, session.id));
+    .where(and(eq(schema.quizSessions.id, session.id), eq(schema.quizSessions.userId, user.id)));
 
-  const [updated] = await db.select().from(schema.quizSessions).where(eq(schema.quizSessions.id, session.id));
+  const [updated] = await db
+    .select()
+    .from(schema.quizSessions)
+    .where(and(eq(schema.quizSessions.id, session.id), eq(schema.quizSessions.userId, user.id)));
   return NextResponse.json({
     ok: true,
     answer,

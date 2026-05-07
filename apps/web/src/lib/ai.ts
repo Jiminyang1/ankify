@@ -2,7 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV1 } from "ai";
-import { getAiSettings, type AiSettings } from "./settings";
+import { getAiRuntimeSettings, type AiRuntimeSettings } from "./settings";
 
 const deepseekNonThinkingFetch: typeof fetch = async (input, init) => {
   if (init?.body && typeof init.body === "string") {
@@ -21,38 +21,29 @@ const deepseekNonThinkingFetch: typeof fetch = async (input, init) => {
 
 /**
  * Build a LanguageModelV1 from the current provider settings. The active provider
- * is chosen in the dashboard; the API key is read from settings (DB) first, then
- * the corresponding env var as fallback.
+ * is chosen in the dashboard; the API key is the current user's encrypted key
+ * from settings. Server provider env keys are intentionally not used.
  */
-export async function getActiveModel(): Promise<{ model: LanguageModelV1; settings: AiSettings }> {
-  const settings = await getAiSettings();
-  if (!settings.provider || !settings.model) {
-    throw new Error("AI_NOT_CONFIGURED:请在 Settings 页面设置 AI provider 和 model");
-  }
+export async function getActiveModel(userId: string): Promise<{ model: LanguageModelV1; settings: AiRuntimeSettings }> {
+  const settings = await getAiRuntimeSettings(userId);
   return { model: buildModel(settings), settings };
 }
 
-export function buildModel(settings: AiSettings): LanguageModelV1 {
+export function buildModel(settings: AiRuntimeSettings): LanguageModelV1 {
   switch (settings.provider) {
     case "anthropic": {
-      const apiKey = settings.apiKey || process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing (env or settings)");
-      const client = createAnthropic({ apiKey });
+      const client = createAnthropic({ apiKey: settings.apiKey });
       return client(settings.model);
     }
     case "openai": {
-      const apiKey = settings.apiKey || process.env.OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OPENAI_API_KEY missing (env or settings)");
-      const client = createOpenAI({ apiKey });
+      const client = createOpenAI({ apiKey: settings.apiKey });
       return client(settings.model);
     }
     case "deepseek": {
-      const apiKey = settings.apiKey || process.env.DEEPSEEK_API_KEY;
-      if (!apiKey) throw new Error("DEEPSEEK_API_KEY missing (env or settings)");
       const client = createOpenAICompatible({
         name: "deepseek",
         baseURL: "https://api.deepseek.com/v1",
-        apiKey,
+        apiKey: settings.apiKey,
         // DeepSeek V4 enables thinking mode by default, which adds tens of seconds
         // of reasoning before any structured output. Our card-generation task
         // doesn't need it, so we inject `thinking: { type: "disabled" }` into

@@ -3,8 +3,12 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sessionId: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id: problemId, sessionId } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = schemas.quizSaveCardRequestSchema.safeParse(body);
@@ -16,7 +20,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
   const [session] = await db
     .select()
     .from(schema.quizSessions)
-    .where(and(eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
+    .where(and(eq(schema.quizSessions.userId, user.id), eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
 
   if (!session || session.status === "archived") {
     return NextResponse.json({ error: "quiz_session_not_found" }, { status: 404 });
@@ -32,6 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
   await db.transaction(async (tx) => {
     await tx.insert(schema.cards).values({
       id: cardId,
+      userId: user.id,
       problemId,
       aiStatus: "ready",
       errorMessage: null,
@@ -40,6 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
     });
     await tx.insert(schema.reviewEvents).values({
       id: nanoid(12),
+      userId: user.id,
       problemId,
       cardId,
       eventType: "card_created",
@@ -47,6 +53,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
     });
   });
 
-  const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, cardId));
+  const [card] = await db
+    .select()
+    .from(schema.cards)
+    .where(and(eq(schema.cards.id, cardId), eq(schema.cards.userId, user.id)));
   return NextResponse.json({ ok: true, card });
 }

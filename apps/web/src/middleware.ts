@@ -1,14 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { APP_SESSION_COOKIE, appPasswordConfigured, verifySessionCookieValue } from "@/lib/app-auth";
 
 /**
- * Auth gate for the single-user app.
- *
- * Rule:
- *   - The web UI must have a signed app-password session cookie.
- *   - The Chrome extension can call API routes with `x-ankify-token`.
- *   - In production, a missing `ANKIFY_API_TOKEN` env var is fail-closed.
- *   - In production, a missing `APP_PASSWORD` env var is fail-closed.
+ * Lightweight gate only. API routes and server pages validate the Better Auth
+ * session/API key again before touching data.
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -17,27 +11,14 @@ export async function middleware(req: NextRequest) {
 
   if (isAuthRoute) return NextResponse.next();
 
-  if (!appPasswordConfigured()) {
-    if (process.env.NODE_ENV !== "production") return NextResponse.next();
-    return new NextResponse("server misconfigured: APP_PASSWORD missing", {
-      status: 500,
-    });
-  }
-
-  const expectedToken = process.env.ANKIFY_API_TOKEN;
-  if (isApi && !expectedToken && process.env.NODE_ENV === "production") {
-    return new NextResponse("server misconfigured: ANKIFY_API_TOKEN missing", {
-      status: 500,
-    });
-  }
-
-  const gotToken = req.headers.get("x-ankify-token");
-  if (isApi && expectedToken && gotToken === expectedToken) {
+  if (isApi && req.headers.get("x-ankify-token")) {
     return NextResponse.next();
   }
 
-  const hasSession = await verifySessionCookieValue(req.cookies.get(APP_SESSION_COOKIE)?.value);
-  if (hasSession) {
+  const hasSessionCookie = req.cookies
+    .getAll()
+    .some((cookie) => cookie.name.endsWith("better-auth.session_token"));
+  if (hasSessionCookie) {
     return NextResponse.next();
   }
 

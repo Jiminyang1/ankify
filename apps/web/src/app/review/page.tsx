@@ -49,10 +49,10 @@ const MIN_CONTEXT_WIDTH = 360;
 const MIN_CARD_WIDTH = 360;
 
 const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
-  { rating: 1, label: "Again", hint: "完全想不起来" },
-  { rating: 2, label: "Hard", hint: "想起一点但不稳" },
-  { rating: 3, label: "Good", hint: "能讲出主要方法" },
-  { rating: 4, label: "Easy", hint: "能讲清方法、复杂度和坑" },
+  { rating: 1, label: "Again", hint: "Could not recall it" },
+  { rating: 2, label: "Hard", hint: "Partial recall, shaky" },
+  { rating: 3, label: "Good", hint: "Main idea is clear" },
+  { rating: 4, label: "Easy", hint: "Can explain method and pitfalls" },
 ];
 
 const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
@@ -196,7 +196,7 @@ export default function ReviewPage() {
       setResult((await res.json()) as RateResult);
       setStage("result");
     } catch {
-      setError("网络错误，请重试");
+      setError("Network error. Please try again.");
     }
     setSubmitting(false);
   }, [data?.problem, userFsrsRating, notes]);
@@ -221,7 +221,7 @@ export default function ReviewPage() {
     return (
       <Surface className="p-10 text-center">
         <h1 className="text-2xl font-semibold">Nothing due</h1>
-        <p className="mt-2 text-sm text-muted">今天没有到期题目。</p>
+        <p className="mt-2 text-sm text-muted">No problems are due today.</p>
         <Link href="/problems" className="mt-4 inline-block rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium hover:bg-subtle">
           Browse problems
         </Link>

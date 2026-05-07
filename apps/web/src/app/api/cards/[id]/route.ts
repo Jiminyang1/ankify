@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { schemas } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null);
   const parsed = schemas.updateCardPatchSchema.safeParse(body);
@@ -13,7 +17,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const db = getDb();
-  const [card] = await db.select().from(schema.cards).where(eq(schema.cards.id, id));
+  const [card] = await db
+    .select()
+    .from(schema.cards)
+    .where(and(eq(schema.cards.id, id), eq(schema.cards.userId, user.id)));
   if (!card) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const shouldFireEvent = parsed.data.aiStatus === "ready" && card.aiStatus !== "ready";
@@ -26,11 +33,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         updatedAt: new Date(),
         ...(parsed.data.aiStatus === "ready" ? { errorMessage: null } : {}),
       })
-      .where(eq(schema.cards.id, id));
+      .where(and(eq(schema.cards.id, id), eq(schema.cards.userId, user.id)));
 
     if (shouldFireEvent) {
       await tx.insert(schema.reviewEvents).values({
         id: nanoid(12),
+        userId: user.id,
         problemId: card.problemId,
         cardId: card.id,
         eventType: "card_created",
@@ -39,6 +47,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
   });
 
-  const [updated] = await db.select().from(schema.cards).where(eq(schema.cards.id, id));
+  const [updated] = await db
+    .select()
+    .from(schema.cards)
+    .where(and(eq(schema.cards.id, id), eq(schema.cards.userId, user.id)));
   return NextResponse.json({ ok: true, card: updated });
 }

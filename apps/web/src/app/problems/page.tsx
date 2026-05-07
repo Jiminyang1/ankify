@@ -40,14 +40,41 @@ export default function ProblemsPage() {
   const [filters, setFilters] = useState<FilterState>({ difficulty: "all", state: "all", tag: "", search: "" });
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "due", asc: true });
   const [dueCount, setDueCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      const res = await fetch("/api/problems", { cache: "no-store" });
-      const json = await res.json();
-      setProblems(json.problems ?? []);
-      setDueCount(json.dueCount ?? 0);
+      try {
+        const res = await fetch("/api/problems", { cache: "no-store" });
+        if (res.redirected && new URL(res.url).pathname === "/login") {
+          window.location.assign("/login?next=/problems");
+          return;
+        }
+        if (res.status === 401) {
+          window.location.assign("/login?next=/problems");
+          return;
+        }
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!res.ok || !contentType.includes("application/json")) {
+          throw new Error(`Failed to load problems (${res.status})`);
+        }
+        const json = await res.json();
+        if (!active) return;
+        setProblems(json.problems ?? []);
+        setDueCount(json.dueCount ?? 0);
+      } catch (error) {
+        if (active) {
+          setLoadError(error instanceof Error ? error.message : "Failed to load problems");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
     })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const allTags = useMemo(() => {
@@ -110,6 +137,27 @@ export default function ProblemsPage() {
   const toggleSort = (key: SortKey) => {
     setSort((prev) => (prev.key === key ? { key, asc: !prev.asc } : { key, asc: true }));
   };
+
+  if (loading) {
+    return (
+      <Surface className="p-10 text-center">
+        <h1 className="text-2xl font-semibold">Problems</h1>
+        <p className="mt-3 text-sm text-muted">Loading problems...</p>
+      </Surface>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Surface className="p-10 text-center">
+        <h1 className="text-2xl font-semibold">Problems</h1>
+        <p className="mt-3 text-sm text-danger">{loadError}</p>
+        <Link href="/login?next=/problems" className="mt-4 inline-flex text-sm font-medium text-accent hover:underline">
+          Sign in again
+        </Link>
+      </Surface>
+    );
+  }
 
   if (!problems.length) {
     return (

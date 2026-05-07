@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, isNull, like, sql } from "drizzle-orm";
+import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
 
 /** GET /api/problems?search= — list all problems with card counts, optional title search */
 export async function GET(req: Request) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
   const db = getDb();
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search")?.trim() ?? "";
 
-  const conditions = [isNull(schema.problems.archivedAt)];
+  const conditions = [eq(schema.problems.userId, user.id), isNull(schema.problems.archivedAt)];
   if (search) conditions.push(like(schema.problems.title, `%${search}%`));
 
   const problems = await db
@@ -25,7 +29,7 @@ export async function GET(req: Request) {
       total: sql<number>`count(*)`,
     })
     .from(schema.cards)
-    .where(eq(schema.cards.aiStatus, "ready"))
+    .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.aiStatus, "ready")))
     .groupBy(schema.cards.problemId);
 
   const cardByProblem = new Map(
@@ -40,7 +44,7 @@ export async function GET(req: Request) {
   const [dueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(dueProblemCondition(new Date()));
+    .where(dueProblemCondition(user.id, new Date()));
 
   return NextResponse.json({
     problems: problems.map((p) => {

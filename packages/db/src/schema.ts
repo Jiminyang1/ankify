@@ -1,10 +1,124 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
 
 const optTs = (name: string) => integer(name, { mode: "timestamp_ms" });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Better Auth
+ * Tables are named/exported to match Better Auth's Drizzle adapter models.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const user = sqliteTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
+    image: text("image"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    emailIdx: uniqueIndex("user_email_unique").on(t.email),
+  }),
+);
+
+export const session = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    token: text("token").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    tokenIdx: uniqueIndex("session_token_unique").on(t.token),
+    userIdx: index("session_user_idx").on(t.userId),
+  }),
+);
+
+export const account = sqliteTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    providerId: text("provider_id").notNull(),
+    accountId: text("account_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: optTs("access_token_expires_at"),
+    refreshTokenExpiresAt: optTs("refresh_token_expires_at"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userIdx: index("account_user_idx").on(t.userId),
+    providerAccountIdx: uniqueIndex("account_provider_account_unique").on(t.providerId, t.accountId),
+  }),
+);
+
+export const verification = sqliteTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    identifierIdx: index("verification_identifier_idx").on(t.identifier),
+  }),
+);
+
+export const apikey = sqliteTable(
+  "apikey",
+  {
+    id: text("id").primaryKey(),
+    configId: text("config_id").notNull().default("default"),
+    name: text("name"),
+    start: text("start"),
+    referenceId: text("reference_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    prefix: text("prefix"),
+    key: text("key").notNull(),
+    refillInterval: integer("refill_interval"),
+    refillAmount: integer("refill_amount"),
+    lastRefillAt: optTs("last_refill_at"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    rateLimitEnabled: integer("rate_limit_enabled", { mode: "boolean" }).notNull().default(true),
+    rateLimitTimeWindow: integer("rate_limit_time_window").notNull().default(86_400_000),
+    rateLimitMax: integer("rate_limit_max").notNull().default(1000),
+    requestCount: integer("request_count").notNull().default(0),
+    remaining: integer("remaining"),
+    lastRequest: optTs("last_request"),
+    expiresAt: optTs("expires_at"),
+    permissions: text("permissions"),
+    metadata: text("metadata"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    referenceIdx: index("apikey_reference_idx").on(t.referenceId),
+    keyIdx: uniqueIndex("apikey_key_unique").on(t.key),
+  }),
+);
 
 /* ────────────────────────────────────────────────────────────────────────────
  * problems
@@ -16,7 +130,10 @@ export const problems = sqliteTable(
   "problems",
   {
     id: text("id").primaryKey(),
-    leetcodeSlug: text("leetcode_slug").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    leetcodeSlug: text("leetcode_slug").notNull(),
     leetcodeId: integer("leetcode_id"),
     title: text("title").notNull(),
     difficulty: text("difficulty", { enum: ["Easy", "Medium", "Hard"] }).notNull(),
@@ -44,9 +161,11 @@ export const problems = sqliteTable(
     updatedAt: ts("updated_at"),
   },
   (t) => ({
+    userIdx: index("problems_user_idx").on(t.userId),
     dueIdx: index("problems_fsrs_due_idx").on(t.fsrsDue),
     slugIdx: index("problems_slug_idx").on(t.leetcodeSlug),
-    leetcodeIdIdx: uniqueIndex("problems_leetcode_id_unique").on(t.leetcodeId),
+    userSlugIdx: uniqueIndex("problems_user_slug_unique").on(t.userId, t.leetcodeSlug),
+    userLeetcodeIdIdx: uniqueIndex("problems_user_leetcode_id_unique").on(t.userId, t.leetcodeId),
   }),
 );
 
@@ -59,6 +178,9 @@ export const submissions = sqliteTable(
   "submissions",
   {
     id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
@@ -84,6 +206,7 @@ export const submissions = sqliteTable(
     submittedAt: ts("submitted_at"),
   },
   (t) => ({
+    userIdx: index("submissions_user_idx").on(t.userId),
     problemIdx: index("submissions_problem_idx").on(t.problemId),
     statusIdx: index("submissions_status_idx").on(t.status),
   }),
@@ -98,6 +221,9 @@ export const cards = sqliteTable(
   "cards",
   {
     id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
@@ -111,6 +237,7 @@ export const cards = sqliteTable(
     updatedAt: optTs("updated_at"),
   },
   (t) => ({
+    userIdx: index("cards_user_idx").on(t.userId),
     problemIdx: index("cards_problem_idx").on(t.problemId),
     aiStatusIdx: index("cards_ai_status_idx").on(t.aiStatus),
   }),
@@ -125,6 +252,9 @@ export const reviewEvents = sqliteTable(
   "review_events",
   {
     id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
@@ -151,6 +281,7 @@ export const reviewEvents = sqliteTable(
     occurredAt: ts("occurred_at"),
   },
   (t) => ({
+    userIdx: index("review_events_user_idx").on(t.userId),
     problemIdx: index("review_events_problem_idx").on(t.problemId),
     typeIdx: index("review_events_type_idx").on(t.eventType),
     occurredIdx: index("review_events_occurred_idx").on(t.occurredAt),
@@ -183,6 +314,9 @@ export const quizSessions = sqliteTable(
   "quiz_sessions",
   {
     id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
@@ -197,6 +331,7 @@ export const quizSessions = sqliteTable(
     completedAt: optTs("completed_at"),
   },
   (t) => ({
+    userIdx: index("quiz_sessions_user_idx").on(t.userId),
     problemIdx: index("quiz_sessions_problem_idx").on(t.problemId),
     statusIdx: index("quiz_sessions_status_idx").on(t.status),
   }),
@@ -207,11 +342,21 @@ export const quizSessions = sqliteTable(
  * Single-row k/v table for V1 (single user, no auth). Holds AI provider choice,
  * API keys (if user prefers DB-stored over env), FSRS params, etc.
  * ──────────────────────────────────────────────────────────────────────────── */
-export const settings = sqliteTable("settings", {
-  key: text("key").primaryKey(),
-  value: text("value", { mode: "json" }).$type<unknown>().notNull(),
-  updatedAt: ts("updated_at"),
-});
+export const settings = sqliteTable(
+  "settings",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value", { mode: "json" }).$type<unknown>().notNull(),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.key] }),
+    userIdx: index("settings_user_idx").on(t.userId),
+  }),
+);
 
 export type Problem = typeof problems.$inferSelect;
 export type NewProblem = typeof problems.$inferInsert;
@@ -224,3 +369,8 @@ export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;
+export type User = typeof user.$inferSelect;
+export type Session = typeof session.$inferSelect;
+export type Account = typeof account.$inferSelect;
+export type Verification = typeof verification.$inferSelect;
+export type ApiKey = typeof apikey.$inferSelect;

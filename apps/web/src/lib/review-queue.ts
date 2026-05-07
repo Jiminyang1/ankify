@@ -1,25 +1,26 @@
 import { getDb, schema, type DB } from "@ankify/db";
-import { and, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { dueProblemCondition } from "./due-problems";
 import { getReviewSettings } from "./settings";
 
-export async function getReviewQueueStatus(db: DB = getDb()) {
+export async function getReviewQueueStatus(userId: string, db: DB = getDb()) {
   const now = new Date();
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const review = await getReviewSettings();
+  const review = await getReviewSettings(userId);
 
   const [totalDueRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.problems)
-    .where(dueProblemCondition(now));
+    .where(dueProblemCondition(userId, now));
 
   const [doneTodayRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.reviewEvents)
     .where(
       and(
-        sql`${schema.reviewEvents.eventType} = 'self_recall_rated'`,
+        eq(schema.reviewEvents.userId, userId),
+        eq(schema.reviewEvents.eventType, "self_recall_rated"),
         sql`${schema.reviewEvents.occurredAt} >= ${startOfDay}`,
       ),
     );

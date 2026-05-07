@@ -7,6 +7,18 @@ export default defineManifest({
   version: "0.0.1",
   action: {
     default_title: "ankify",
+    default_icon: {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png",
+    },
+  },
+  icons: {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png",
   },
   side_panel: {
     default_path: "src/popup/index.html",
@@ -17,6 +29,7 @@ export default defineManifest({
     "https://*.leetcode.com/*",
     "http://localhost:3000/*",
     "http://localhost:*/*",
+    "https://*.vercel.app/*",
   ],
   content_scripts: [
     {
