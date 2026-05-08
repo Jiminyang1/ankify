@@ -28,14 +28,18 @@ Monorepo with three layers:
 
 ### `packages/db` - Database layer
 
-- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth tables plus `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, `settings`)
-- `client.ts` has a singleton `getDb()` that picks Turso remote or local SQLite based on env vars; production requires `TURSO_DATABASE_URL`
+- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; Better Auth API-key plugin `apikey`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, `settings`)
+- `client.ts` exposes a singleton `getDb()`. Production requires `TURSO_DATABASE_URL`; `LOCAL_DB_PATH` is a development-only SQLite fallback.
 - `migrate.ts` applies `drizzle/` migrations; run via `pnpm db:migrate`
 - Schema infer types are re-exported (e.g. `Problem`, `Card`, `QuizSession`, `ReviewEvent`, etc.)
 
-**Cards table** (8 columns): `id`, `problemId`, `question` (front), `answer` (back), `aiStatus` (candidate/failed/ready), `errorMessage`, `createdAt`, `updatedAt`. No extra metadata - just Q&A with lifecycle tracking.
+**Business data isolation**: all user-owned tables carry `userId`: `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, and `settings`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
+
+**Cards table** (9 columns): `id`, `userId`, `problemId`, `question` (front), `answer` (back), `aiStatus` (candidate/failed/ready), `errorMessage`, `createdAt`, `updatedAt`. No extra metadata - just Q&A with lifecycle tracking.
 
 **Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
+
+**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key.
 
 ### `packages/core` - Shared business logic
 
@@ -44,9 +48,19 @@ Monorepo with three layers:
 - `schemas.ts`: Zod schemas for capture, card drafts, synchronous AI card generation/follow-up, manual cards, card updates, review rating, quiz generation (`generate | regenerate | nextBatch`), quiz answers, scoped quiz items, and quiz save-as-card
 - `quiz-format.ts`: small Markdown formatter that wraps complexity expressions, DP states, and code-like variables in inline code before rendering quiz text.
 
-### `apps/web` - Next.js 15 App Router
+### `apps/web` - Next.js 16 App Router
+
+- **Auth and isolation**:
+  - Better Auth handles Google OAuth through `/api/auth/[...all]`.
+  - Production is fail-closed without `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, Google credentials, `ANKIFY_ALLOWED_EMAILS`, and `AI_KEY_ENCRYPTION_SECRET`.
+  - Signup/login is email allowlist based through `ANKIFY_ALLOWED_EMAILS`.
+  - Middleware is only a lightweight redirect/CORS gate. Server pages must call `requirePageUser()`, API routes that accept web sessions or extension tokens must call `getRequestUser()`, and session-only routes such as settings and API-token management must call `getRequestSessionUser()`.
+  - Every business query must be scoped by the current `userId`, including raw SQL dashboard queries.
+  - Extension requests authenticate with Better Auth API keys sent as `x-ankify-token`; the extension does not run Google OAuth.
 
 - **API routes** under `src/app/api/`:
+  - `auth/[...all]/` - Better Auth route handler for Google OAuth sessions and auth callbacks.
+  - `me/` - returns the current authenticated user for either a web session or extension API token; used by extension Test connection.
   - `capture/` - extension hits this to upsert problems + submissions. Idempotent by `leetcodeSlug`, stores `leetcodeId` when present, and seeds FSRS state for new problems.
   - `problems/` - list problems with card counts. Supports `?search=` for title search.
   - `problems/[id]/` - PATCH notes (`{ notes }`) for autosave from review.
@@ -59,16 +73,19 @@ Monorepo with three layers:
   - `cards/` - DELETE one or more cards by id.
   - `cards/[id]/` - PATCH edits question/answer or confirms a candidate card (`aiStatus: "ready"`).
   - `review/next/` - returns next due problem with FSRS previews (via `preview()`), ready cards, submissions, and notes. A due problem does not need ready cards because Quiz can start review.
+  - `review/queue/` - returns today's due queue for the extension Today tab.
   - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`.
-  - `settings/` - GET/POST AI provider/model/key + daily review limit. No prompt customization.
-- **`src/middleware.ts`**: lightweight auth gate. Web pages require a Better Auth session cookie; API routes and server pages must still call `requirePageUser()`/`getRequestUser()` for real session or API-key auth. Extension requests use per-user Better Auth API keys sent as `x-ankify-token`.
+  - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization; extension tokens cannot mutate settings.
+  - `settings/api-keys/` - session-only list/create extension API tokens. Newly created tokens are shown once.
+  - `settings/api-keys/[keyId]/` - session-only revoke extension API tokens.
+- **`src/middleware.ts`**: lightweight auth gate and Chrome-extension CORS preflight handler. Web pages require a Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data. Extension requests use per-user Better Auth API keys sent as `x-ankify-token`.
 - **`src/lib/`**:
   - `ai.ts`: loads AI provider/model from DB, builds `LanguageModelV1`. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
   - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.
   - `quiz-prompt.ts`: builds Chinese 5-question quiz prompts from problem title/difficulty/slug/tags/statement, notes, ready cards, recent submissions, failed submission details, and recent completed quiz history. Prompts require scoped items and at least one complexity question.
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
-  - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`.
+  - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. Server env provider keys are intentionally not used as runtime fallbacks.
 - **Pages**:
   - `/` - home: due queue, progress, daily stats
   - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes
@@ -82,11 +99,12 @@ Monorepo with three layers:
 - **Content script** (`content/leetcode.ts`): scrapes LeetCode problem pages via their GraphQL endpoint - fetches problem metadata, recent submissions, and submission details (code, status, failures). Falls back from `questionSubmissionList` to legacy `submissionList`.
 - **Background** (`background/index.ts`): minimal service worker, satisfies MV3 lifecycle.
 - **Popup** (`popup/`):
-  - Top nav: `Today`, `This Problem`, `Settings`.
+  - Top nav: `Today`, `Problem`, `Settings`.
   - Theme control: `System`, `Light`, `Dark`.
-  - `This Problem` has compact `Review` / `Manage` modes.
+  - `Problem` has compact `Review` / `Manage` modes.
   - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation is synchronous; if the user switches tabs while generation is pending, the Quiz tab shows pending state until the session appears. Completed quizzes can create a new batch and bulk-create cards for missed items.
   - `Manage` contains manual card creation, synchronous AI candidate generation/follow-up/confirm/discard, pending-state preservation for in-flight AI calls, and existing card management.
+  - `Settings` stores API base URL and the per-user API token. Test connection calls `/api/me` and shows the token owner's email.
   - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
 
@@ -95,8 +113,9 @@ Monorepo with three layers:
 ### Capture (extension)
 
 1. Open a LeetCode problem page and click the extension popup.
-2. If the problem is unknown, "Capture this problem" reads page data via the content script and POSTs to `/api/capture`.
-3. If the problem is known, the popup shows Review/Manage with the current FSRS due state, ready cards, candidates, submissions, notes, and quiz session.
+2. The extension sends the configured `x-ankify-token`; API routes resolve it to a Better Auth user session.
+3. If the problem is unknown, "Capture this problem" reads page data via the content script and POSTs to `/api/capture`.
+4. If the problem is known, the popup shows Review/Manage with the current FSRS due state, ready cards, candidates, submissions, notes, and quiz session.
 
 ### Card creation
 
@@ -126,7 +145,9 @@ There is no AI-card batch generation, background card generation, polling, `poli
 
 ## Key Design Decisions
 
-- **Single-user V1**: password-gated web UI, token-gated extension API; `settings` table is a k/v store.
+- **Multi-user deployment**: Better Auth Google OAuth, email allowlist, and per-user data isolation across all business tables.
+- **Extension auth is token-based**: users generate/revoke per-user API tokens in Web Settings; the extension stores API base URL + token and sends `x-ankify-token`.
+- **User-owned AI keys**: server env provider keys are not runtime fallbacks. Users save provider/model/key in Settings, and keys are encrypted before storage.
 - **Problem-level scheduling**: FSRS state lives directly on the `problems` row. Cards and quizzes support recall, but only the problem gets scheduled.
 - **Cards are simple**: `question`, `answer`, lifecycle fields only. No explanation/rationale/source fields on the card row.
 - **AI card generation is user-gated**: AI card generation creates `candidate`; only confirmed cards become `ready`.

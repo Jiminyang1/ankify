@@ -1,17 +1,19 @@
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
-import type { AiProvider } from "@ankify/core";
+import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
 
 export interface AiSettings {
   provider: AiProvider;
   model: string;
+  reasoningMode: AiReasoningMode;
   encryptedApiKey?: EncryptedSecret;
 }
 
 export interface AiRuntimeSettings {
   provider: AiProvider;
   model: string;
+  reasoningMode: AiReasoningMode;
   apiKey: string;
 }
 
@@ -22,6 +24,7 @@ export interface ReviewSettings {
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   provider: "",
   model: "",
+  reasoningMode: "fast",
 };
 
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
@@ -39,7 +42,11 @@ export async function getAiSettings(userId: string): Promise<AiSettings> {
     .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_AI)));
   const row = rows[0];
   if (!row) return DEFAULT_AI_SETTINGS;
-  return { ...DEFAULT_AI_SETTINGS, ...(row.value as Partial<AiSettings>) };
+  const value = { ...DEFAULT_AI_SETTINGS, ...(row.value as Partial<AiSettings>) };
+  return {
+    ...value,
+    reasoningMode: value.reasoningMode === "thinking" ? "thinking" : "fast",
+  };
 }
 
 export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSettings> {
@@ -53,13 +60,14 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
   return {
     provider: settings.provider,
     model: settings.model,
+    reasoningMode: settings.reasoningMode,
     apiKey: decryptSecret(settings.encryptedApiKey),
   };
 }
 
 export async function setAiSettings(
   userId: string,
-  value: { provider: AiProvider; model: string; apiKey?: string },
+  value: { provider: AiProvider; model: string; reasoningMode?: AiReasoningMode; apiKey?: string },
 ) {
   const db = getDb();
   const existing = await getAiSettings(userId);
@@ -67,6 +75,7 @@ export async function setAiSettings(
     ...existing,
     provider: value.provider,
     model: value.model,
+    reasoningMode: value.reasoningMode ?? existing.reasoningMode,
     encryptedApiKey:
       value.apiKey === undefined
         ? existing.encryptedApiKey

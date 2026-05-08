@@ -20,6 +20,8 @@ export async function POST(req: Request) {
   const now = new Date();
 
   let nextDue: Date | null = null;
+  let problemMissing = false;
+  let raceConflict = false;
 
   await db.transaction(async (tx) => {
     const [problem] = await tx
@@ -27,7 +29,10 @@ export async function POST(req: Request) {
       .from(schema.problems)
       .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)));
 
-    if (!problem) return;
+    if (!problem) {
+      problemMissing = true;
+      return;
+    }
 
     const state: FsrsCardState = {
       due: problem.fsrsDue,
@@ -44,7 +49,7 @@ export async function POST(req: Request) {
     const retrAtReview = retrievability(state);
     const { next } = rate(state, rating, now);
 
-    await tx
+    const updated = await tx
       .update(schema.problems)
       .set({
         fsrsDue: next.due,
@@ -65,7 +70,13 @@ export async function POST(req: Request) {
           eq(schema.problems.userId, user.id),
           eq(schema.problems.fsrsReps, state.reps),
         ),
-      );
+      )
+      .returning({ id: schema.problems.id });
+
+    if (updated.length === 0) {
+      raceConflict = true;
+      return;
+    }
 
     await tx.insert(schema.reviewEvents).values({
       id: nanoid(12),
@@ -81,8 +92,11 @@ export async function POST(req: Request) {
     nextDue = next.due;
   });
 
-  if (nextDue === null) {
+  if (problemMissing) {
     return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
+  }
+  if (raceConflict) {
+    return NextResponse.json({ error: "fsrs_race_conflict" }, { status: 409 });
   }
 
   const queue = await getReviewQueueStatus(user.id, db);

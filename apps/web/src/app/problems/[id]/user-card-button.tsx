@@ -16,8 +16,14 @@ type Candidate = Card & {
   busy: "followup" | "confirm" | "discard" | null;
 };
 
+const CARD_GENERATION_TARGET_SECONDS = 60;
+
 function hydrateCandidate(card: Card): Candidate {
   return { ...card, instruction: "", localError: null, busy: null };
+}
+
+function apiErrorMessage(json: { error?: string; message?: string }, fallback: string) {
+  return json.message ?? json.error ?? fallback;
 }
 
 export function UserCardButton({
@@ -40,6 +46,10 @@ export function UserCardButton({
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateIndex, setCandidateIndex] = useState(0);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
+  const [candidateBusyStartedAt, setCandidateBusyStartedAt] = useState<Record<string, number>>({});
+  const generatingAi = busy === "auto" || busy === "note";
+  const generationElapsedSeconds = useElapsedSeconds(generatingAi, generationStartedAt);
 
   useEffect(() => setMounted(true), []);
 
@@ -112,8 +122,8 @@ export function UserCardButton({
           answer: answer.trim(),
         }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
       resetManual();
       setOpen(false);
       router.refresh();
@@ -127,6 +137,7 @@ export function UserCardButton({
   async function startAiGenerate(kind: "auto" | "note") {
     if (kind === "note" && !rawText.trim()) return;
     setBusy(kind);
+    setGenerationStartedAt(Date.now());
     setError(null);
     setMode("ai");
     try {
@@ -139,8 +150,8 @@ export function UserCardButton({
           ...(kind === "note" ? { rawText: rawText.trim() } : {}),
         }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; card?: Card };
+      if (!res.ok) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
       const card = json.card as Card | undefined;
       if (card) {
         setCandidates((prev) => [hydrateCandidate(card), ...prev.filter((c) => c.id !== card.id)]);
@@ -153,6 +164,7 @@ export function UserCardButton({
       setError(e instanceof Error ? e.message : "AI request failed");
     } finally {
       setBusy(null);
+      setGenerationStartedAt(null);
     }
   }
 
@@ -162,6 +174,7 @@ export function UserCardButton({
 
   async function runCandidateAi(candidate: Candidate) {
     setCandidateState(candidate.id, { busy: "followup", localError: null });
+    setCandidateBusyStartedAt((prev) => ({ ...prev, [candidate.id]: Date.now() }));
     try {
       const res = await fetch(`/api/problems/${problemId}/ai-cards`, {
         method: "POST",
@@ -177,8 +190,8 @@ export function UserCardButton({
           instruction: candidate.instruction.trim(),
         }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; card?: Card };
+      if (!res.ok) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
       const card = json.card as Card | undefined;
       if (card) {
         setCandidateState(candidate.id, { ...card, instruction: "", busy: null, localError: null });
@@ -190,6 +203,12 @@ export function UserCardButton({
       setCandidateState(candidate.id, {
         busy: null,
         localError: e instanceof Error ? e.message : "AI request failed",
+      });
+    } finally {
+      setCandidateBusyStartedAt((prev) => {
+        const next = { ...prev };
+        delete next[candidate.id];
+        return next;
       });
     }
   }
@@ -248,6 +267,8 @@ export function UserCardButton({
 
   const currentCandidate = candidates[candidateIndex] ?? null;
   const candidateCount = candidates.length;
+  const currentCandidateStartedAt = currentCandidate ? (candidateBusyStartedAt[currentCandidate.id] ?? null) : null;
+  const currentCandidateElapsedSeconds = useElapsedSeconds(currentCandidate?.busy === "followup", currentCandidateStartedAt);
 
   const modal =
     open &&
@@ -361,6 +382,7 @@ export function UserCardButton({
                         </button>
                       </div>
                     </div>
+                    {generatingAi && <CardGenerationTimer elapsedSeconds={generationElapsedSeconds} />}
                   </Surface>
 
                   {error && <p className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger">{error}</p>}
@@ -380,6 +402,7 @@ export function UserCardButton({
                       onFollowup={() => runCandidateAi(currentCandidate)}
                       onConfirm={() => confirmCandidate(currentCandidate)}
                       onDiscard={() => discardCandidate(currentCandidate)}
+                      followupElapsedSeconds={currentCandidateElapsedSeconds}
                     />
                   ) : null}
                 </div>
@@ -407,6 +430,35 @@ export function UserCardButton({
         ) : null}
       </button>
       {modal}
+    </div>
+  );
+}
+
+function useElapsedSeconds(active: boolean, startedAt: number | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!active || !startedAt) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active, startedAt]);
+  if (!active || !startedAt) return 0;
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
+}
+
+function formatElapsedSeconds(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function CardGenerationTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted tabular-nums">
+      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+      <span>
+        Generating {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+      </span>
     </div>
   );
 }
@@ -457,6 +509,7 @@ function CandidateReview({
   onFollowup,
   onConfirm,
   onDiscard,
+  followupElapsedSeconds,
 }: {
   candidate: Candidate;
   index: number;
@@ -467,6 +520,7 @@ function CandidateReview({
   onFollowup: () => void;
   onConfirm: () => void;
   onDiscard: () => void;
+  followupElapsedSeconds: number;
 }) {
   const disabled = !!candidate.busy;
   return (
@@ -539,6 +593,7 @@ function CandidateReview({
             {candidate.busy === "followup" ? "Applying..." : "Apply follow up"}
           </button>
         </div>
+        {candidate.busy === "followup" && <CardGenerationTimer elapsedSeconds={followupElapsedSeconds} />}
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">

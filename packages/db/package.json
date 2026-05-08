@@ -12,7 +12,9 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "migrate:prod": "ANKIFY_PROFILE=production tsx src/migrate.ts",
     "studio": "drizzle-kit studio",
+    "studio:prod": "ANKIFY_PROFILE=production drizzle-kit studio",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

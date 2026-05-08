@@ -5,10 +5,13 @@ import { nanoid } from "nanoid";
 import { schemas, type QuizItem } from "@ankify/core";
 import { getDb, schema, type QuizSession } from "@ankify/db";
 import { getActiveModel } from "@/lib/ai";
+import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildQuizPrompt } from "@/lib/quiz-prompt";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
+
+const QUIZ_GENERATION_TIMEOUT_MS = 115_000;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
@@ -151,7 +154,8 @@ async function generateQuizItems(userId: string, problemId: string, history: Qui
   const mode = settings.provider === "deepseek" ? "json" : "auto";
   const prompt = buildQuizPrompt({ problem, cards, submissions, history });
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45_000);
+  const timer = setTimeout(() => controller.abort(), QUIZ_GENERATION_TIMEOUT_MS);
+  const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";
 
   try {
     const { object } = await generateObject({
@@ -159,7 +163,7 @@ async function generateQuizItems(userId: string, problemId: string, history: Qui
       schema: schemas.quizDraftSchema,
       system: prompt.system,
       prompt: prompt.user,
-      temperature: 0.3,
+      ...(!usesDeepSeekThinking ? { temperature: 0.3 } : {}),
       mode,
       abortSignal: controller.signal,
     });
@@ -187,7 +191,9 @@ function validateScopeCoverage(items: QuizItem[]) {
 }
 
 function quizErrorResponse(err: unknown) {
-  const message = err instanceof Error ? err.message : "Quiz generation failed";
-  console.error("[quiz] failed", err);
-  return NextResponse.json({ error: message.slice(0, 1000) }, { status: 500 });
+  return aiRouteErrorResponse(err, {
+    label: "Quiz generation",
+    timeoutMs: QUIZ_GENERATION_TIMEOUT_MS,
+    logPrefix: "[quiz] failed",
+  });
 }

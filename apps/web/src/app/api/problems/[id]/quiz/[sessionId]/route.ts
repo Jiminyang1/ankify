@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { schemas, type QuizAnswer } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
@@ -40,12 +40,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
     correct: parsed.data.selectedIndex === item.answerIndex,
     answeredAt: new Date().toISOString(),
   };
+  const expectedLen = session.answersJson.length;
   const answers = [...session.answersJson, answer];
   const completed = answers.length === session.itemsJson.length;
   const score = completed ? answers.filter((a) => a.correct).length : null;
   const now = new Date();
 
-  await db
+  // CAS on answersJson length so concurrent PATCHes can't silently overwrite
+  // each other's appended answer.
+  const updated = await db
     .update(schema.quizSessions)
     .set({
       answersJson: answers,
@@ -54,9 +57,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
       updatedAt: now,
       completedAt: completed ? now : null,
     })
-    .where(and(eq(schema.quizSessions.id, session.id), eq(schema.quizSessions.userId, user.id)));
+    .where(
+      and(
+        eq(schema.quizSessions.id, session.id),
+        eq(schema.quizSessions.userId, user.id),
+        sql`json_array_length(${schema.quizSessions.answersJson}) = ${expectedLen}`,
+      ),
+    )
+    .returning({ id: schema.quizSessions.id });
 
-  const [updated] = await db
+  if (updated.length === 0) {
+    return NextResponse.json({ error: "quiz_answer_conflict" }, { status: 409 });
+  }
+
+  const [refreshed] = await db
     .select()
     .from(schema.quizSessions)
     .where(and(eq(schema.quizSessions.id, session.id), eq(schema.quizSessions.userId, user.id)));
@@ -65,6 +79,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
     answer,
     item,
     completed,
-    session: updated,
+    session: refreshed,
   });
 }

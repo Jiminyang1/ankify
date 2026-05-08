@@ -15,7 +15,9 @@
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @ankify/db generate",
     "db:migrate": "pnpm --filter @ankify/db migrate",
-    "db:studio": "pnpm --filter @ankify/db studio"
+    "db:migrate:prod": "pnpm --filter @ankify/db migrate:prod",
+    "db:studio": "pnpm --filter @ankify/db studio",
+    "db:studio:prod": "pnpm --filter @ankify/db studio:prod"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

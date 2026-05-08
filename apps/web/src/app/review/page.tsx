@@ -188,6 +188,12 @@ export default function ReviewPage() {
           notes,
         }),
       });
+      if (res.status === 409) {
+        setError("This problem was rated in another window. Reloading…");
+        setSubmitting(false);
+        await loadNext();
+        return;
+      }
       if (!res.ok) {
         setError((await res.json().catch(() => ({}))).error ?? "rate_failed");
         setSubmitting(false);
@@ -199,7 +205,7 @@ export default function ReviewPage() {
       setError("Network error. Please try again.");
     }
     setSubmitting(false);
-  }, [data?.problem, userFsrsRating, notes]);
+  }, [data?.problem, userFsrsRating, notes, loadNext]);
 
   const handleQuizCardSaved = useCallback((card: Card) => {
     setData((current) => {
@@ -536,6 +542,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
   const [session, setSession] = useState<QuizSessionPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [submittingItem, setSubmittingItem] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
@@ -544,6 +551,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
   const [savingMissed, setSavingMissed] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const generationElapsedSeconds = useElapsedSeconds(generating, generationStartedAt);
 
   const loadSession = useCallback(async () => {
     setLoading(true);
@@ -574,6 +582,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
 
   async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
     setGenerating(true);
+    setGenerationStartedAt(Date.now());
     setError(null);
     setFeedback(null);
     setShowResults(false);
@@ -583,8 +592,12 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload; error?: string } | null;
-      if (!res.ok || !json?.session) throw new Error(json?.error ?? "Failed to generate quiz");
+      const json = (await res.json().catch(() => null)) as {
+        session?: QuizSessionPayload;
+        error?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !json?.session) throw new Error(apiErrorMessage(json, "Failed to generate quiz"));
       if (session) clearStoredQuizFeedback(problemId, session.id);
       clearStoredQuizFeedback(problemId, json.session.id);
       setSession(json.session);
@@ -594,6 +607,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
       setError(e instanceof Error ? e.message : "Failed to generate quiz");
     } finally {
       setGenerating(false);
+      setGenerationStartedAt(null);
     }
   }
 
@@ -607,6 +621,11 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ itemId: item.id, selectedIndex }),
       });
+      if (res.status === 409) {
+        setError("Quiz state changed in another window. Reloading…");
+        await loadSession();
+        return;
+      }
       const json = (await res.json().catch(() => null)) as {
         session?: QuizSessionPayload;
         item?: QuizItem;
@@ -690,6 +709,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
           <p className="mt-2 text-sm leading-relaxed text-muted">
             The request is still running. You can review Cards, Submissions, or Notes and come back here.
           </p>
+          <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-3 justify-center" />
         </div>
       </div>
     );
@@ -754,6 +774,8 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
                 {generating ? "Generating..." : "New batch"}
               </button>
             </div>
+            {generating && <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-3" />}
+            {error && <p className="mt-3 text-xs text-danger">{error}</p>}
 
             <div className="mt-4 space-y-2 border-t border-border pt-3">
               <QuizBreakdown label="Scope" items={scopeBreakdown} />
@@ -879,6 +901,7 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
             </button>
           </div>
         </div>
+        {generating && <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-2" />}
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
@@ -981,6 +1004,37 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
       </div>
     </div>
   );
+}
+
+function QuizGenerationTimer({ elapsedSeconds, className }: { elapsedSeconds: number; className?: string }) {
+  return (
+    <div className={cn("flex items-center gap-2 text-xs text-muted tabular-nums", className)}>
+      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+      <span>Generating {formatElapsedSeconds(elapsedSeconds)} / 02:00</span>
+    </div>
+  );
+}
+
+function useElapsedSeconds(active: boolean, startedAt: number | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!active || !startedAt) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active, startedAt]);
+  if (!active || !startedAt) return 0;
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
+}
+
+function formatElapsedSeconds(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function apiErrorMessage(json: { error?: string; message?: string } | null, fallback: string) {
+  return json?.message ?? json?.error ?? fallback;
 }
 
 function QuizResultItem({

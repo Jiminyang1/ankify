@@ -838,6 +838,24 @@ label, button, th, .font-ui {
   color: var(--muted);
 }
 
+.operation-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.operation-timer::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
 .toolbar-actions {
   display: flex;
   align-items: center;
@@ -1559,6 +1577,13 @@ a:focus-visible {
   border-radius: inherit;
   background: var(--accent);
   animation: quiz-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.quiz-pending-timer {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes quiz-pulse {

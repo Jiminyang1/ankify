@@ -5,10 +5,13 @@ import { nanoid } from "nanoid";
 import { schemas, type CardDraft } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getActiveModel } from "@/lib/ai";
+import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 
 export const maxDuration = 60;
+
+const AI_CARD_GENERATION_TIMEOUT_MS = 55_000;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
@@ -143,6 +146,7 @@ async function generateAiDraft(args: {
   const { problem, submissions } = await loadPromptContext(args.userId, args.problemId);
   const { model, settings } = await getActiveModel(args.userId);
   const mode = settings.provider === "deepseek" ? "json" : "auto";
+  const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";
 
   const prompt = buildAiCardDraftPrompt({
     problem,
@@ -154,7 +158,7 @@ async function generateAiDraft(args: {
   });
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  const timer = setTimeout(() => controller.abort(), AI_CARD_GENERATION_TIMEOUT_MS);
 
   try {
     const { object } = await generateObject({
@@ -162,7 +166,7 @@ async function generateAiDraft(args: {
       schema: schemas.cardDraftSchema,
       system: prompt.system,
       prompt: prompt.user,
-      temperature: 0.35,
+      ...(!usesDeepSeekThinking ? { temperature: 0.35 } : {}),
       mode,
       abortSignal: controller.signal,
     });
@@ -175,7 +179,9 @@ async function generateAiDraft(args: {
 }
 
 function aiErrorResponse(err: unknown) {
-  const message = err instanceof Error ? err.message : "AI request failed";
-  console.error("[ai-card] failed", err);
-  return NextResponse.json({ error: message.slice(0, 1000) }, { status: 500 });
+  return aiRouteErrorResponse(err, {
+    label: "AI card generation",
+    timeoutMs: AI_CARD_GENERATION_TIMEOUT_MS,
+    logPrefix: "[ai-card] failed",
+  });
 }

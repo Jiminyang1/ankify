@@ -16,6 +16,7 @@ export default async function SettingsPage() {
           initial={{
             provider: ai.provider,
             model: ai.model,
+            reasoningMode: ai.reasoningMode,
             hasApiKey: Boolean(ai.encryptedApiKey),
           }}
         />

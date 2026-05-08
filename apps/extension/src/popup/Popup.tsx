@@ -11,6 +11,11 @@ type ApiCard = {
   question: string;
   answer: string;
 };
+type LocalCandidate = ApiCard & {
+  instruction: string;
+  busy: string | null;
+  localError: string | null;
+};
 type ApiProblem = {
   id: string;
   leetcodeSlug: string;
@@ -114,7 +119,9 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-const PENDING_OPERATION_TTL_MS = 90_000;
+const QUIZ_PENDING_TTL_MS = 125_000;
+const AI_CARD_PENDING_TTL_MS = 65_000;
+const CARD_GENERATION_TARGET_SECONDS = 60;
 const PENDING_OPERATION_EVENT = "ankify:pending-operation";
 
 type PendingOperation = {
@@ -133,6 +140,35 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 
 function authHeaders(settings: ExtSettings): HeadersInit {
   return settings.apiToken ? { "x-ankify-token": settings.apiToken } : {};
+}
+
+/* Per-field caps mirror packages/core/src/schemas.ts captureProblemSchema. */
+const CAPTURE_LIMITS = {
+  descriptionMd: 200_000,
+  code: 200_000,
+  output: 50_000,
+  errorMessage: 10_000,
+  submissions: 50,
+} as const;
+
+function clip(value: string | undefined, max: number): string | undefined {
+  if (value == null) return value;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function trimCapturePayload(p: CapturedProblem): CapturedProblem {
+  return {
+    ...p,
+    descriptionMd: clip(p.descriptionMd, CAPTURE_LIMITS.descriptionMd),
+    submissions: p.submissions.slice(0, CAPTURE_LIMITS.submissions).map((s) => ({
+      ...s,
+      code: clip(s.code, CAPTURE_LIMITS.code) ?? "",
+      failedTestcase: clip(s.failedTestcase, CAPTURE_LIMITS.output),
+      expectedOutput: clip(s.expectedOutput, CAPTURE_LIMITS.output),
+      actualOutput: clip(s.actualOutput, CAPTURE_LIMITS.output),
+      errorMessage: clip(s.errorMessage, CAPTURE_LIMITS.errorMessage),
+    })),
+  };
 }
 
 function pendingQuizKey(problemId: string) {
@@ -156,7 +192,7 @@ function readPendingOperation(key: string): PendingOperation | null {
       window.sessionStorage.removeItem(key);
       return null;
     }
-    if (Date.now() - value.startedAt > PENDING_OPERATION_TTL_MS) {
+    if (Date.now() - value.startedAt > pendingOperationTtlMs(key)) {
       window.sessionStorage.removeItem(key);
       return null;
     }
@@ -165,6 +201,10 @@ function readPendingOperation(key: string): PendingOperation | null {
     window.sessionStorage.removeItem(key);
     return null;
   }
+}
+
+function pendingOperationTtlMs(key: string) {
+  return key.startsWith("ankify.pending.quiz.") ? QUIZ_PENDING_TTL_MS : AI_CARD_PENDING_TTL_MS;
 }
 
 function writePendingOperation(key: string, kind: string): PendingOperation {
@@ -186,6 +226,41 @@ function clearPendingOperation(key: string) {
 function isSessionNewerThanPending(session: QuizSession | null, pending: PendingOperation | null) {
   if (!session || !pending) return false;
   return new Date(session.createdAt).getTime() >= pending.startedAt - 1000;
+}
+
+function useElapsedSeconds(active: boolean, startedAt: number | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!active || !startedAt) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active, startedAt]);
+  if (!active || !startedAt) return 0;
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
+}
+
+function formatElapsedSeconds(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function apiErrorMessage(json: { error?: string; message?: string } | null, fallback: string) {
+  return json?.message ?? json?.error ?? fallback;
+}
+
+function mergeCandidatePendingState(
+  card: ApiCard,
+  previous: LocalCandidate | undefined,
+  problemId: string,
+): Pick<LocalCandidate, "instruction" | "busy" | "localError"> {
+  const pending = readPendingOperation(pendingCandidateAiKey(problemId, card.id));
+  return {
+    instruction: previous?.instruction ?? "",
+    busy: pending ? "followup" : previous?.busy === "followup" ? null : previous?.busy ?? null,
+    localError: previous?.localError ?? null,
+  };
 }
 
 function PopupBrandMark() {
@@ -453,8 +528,8 @@ function TodayTab({
         headers: authHeaders(settings),
       });
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
+        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
       }
       setData((await res.json()) as QueueResponse);
     } catch (e) {
@@ -868,6 +943,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   const [savingMissed, setSavingMissed] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingElapsedSeconds = useElapsedSeconds(Boolean(pendingQuiz), pendingQuiz?.startedAt ?? null);
 
   const refreshPendingQuiz = useCallback(() => {
     const pending = readPendingOperation(pendingQuizKey(problem.id));
@@ -955,8 +1031,12 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         headers: jsonHeaders(settings),
         body: JSON.stringify({ action }),
       });
-      const json = (await res.json().catch(() => null)) as { session?: QuizSession; error?: string } | null;
-      if (!res.ok || !json?.session) throw new Error(json?.error ?? `HTTP ${res.status}`);
+      const json = (await res.json().catch(() => null)) as {
+        session?: QuizSession;
+        error?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !json?.session) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
       if (session) clearStoredQuizFeedback(problem.id, session.id);
       clearStoredQuizFeedback(problem.id, json.session.id);
       clearPendingOperation(pendingKey);
@@ -983,6 +1063,11 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         headers: jsonHeaders(settings),
         body: JSON.stringify({ itemId: item.id, selectedIndex }),
       });
+      if (res.status === 409) {
+        setError("Quiz state changed elsewhere. Reloading…");
+        await loadSession({ silent: true });
+        return;
+      }
       const json = (await res.json().catch(() => null)) as {
         session?: QuizSession;
         item?: QuizItem;
@@ -1061,6 +1146,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         <div className="quiz-pending-bar"><span /></div>
         <div className="quiz-empty-title">Generating quiz</div>
         <p className="popup-muted">You can switch to Card or Notes and come back here.</p>
+        <div className="quiz-pending-timer">Generating {formatElapsedSeconds(pendingElapsedSeconds)} / 02:00</div>
       </div>
     );
   }
@@ -1645,6 +1731,11 @@ function QuickRate({
         headers: jsonHeaders(settings),
         body: JSON.stringify({ problemId, rating }),
       });
+      if (res.status === 409) {
+        setError("Already rated in another window. Refreshing…");
+        onRated();
+        return;
+      }
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
@@ -1774,6 +1865,7 @@ function AddCardForm({
   const [rawText, setRawText] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const userEditedRef = useRef(false);
+  const pendingAiCardElapsedSeconds = useElapsedSeconds(Boolean(pendingAiCard), pendingAiCard?.startedAt ?? null);
 
   useEffect(() => {
     userEditedRef.current = false;
@@ -1853,8 +1945,8 @@ function AddCardForm({
         body: JSON.stringify({ mode: "manual", question: question.trim(), answer: answer.trim() }),
       });
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
+        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
       }
       setQuestion("");
       setAnswer("");
@@ -1884,8 +1976,8 @@ function AddCardForm({
         }),
       });
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
+        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
       }
       if (kind === "note") await clearLocalDraft();
       clearPendingOperation(pendingKey);
@@ -1983,6 +2075,11 @@ function AddCardForm({
               </button>
             </div>
           </div>
+          {pendingAiCard && (
+            <div className="operation-timer">
+              Generating {formatElapsedSeconds(pendingAiCardElapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+            </div>
+          )}
 
           {error && <div className="err-banner">{error}</div>}
         </div>
@@ -2004,9 +2101,7 @@ function CandidateList({
   settings: ExtSettings;
   onRefresh: () => void;
 }) {
-  const [local, setLocal] = useState<
-    (ApiCard & { instruction: string; busy: string | null; localError: string | null })[]
-  >([]);
+  const [local, setLocal] = useState<LocalCandidate[]>([]);
   const [pendingVersion, setPendingVersion] = useState(0);
 
   useEffect(() => {
@@ -2014,9 +2109,7 @@ function CandidateList({
       const prevById = new Map(prev.map((c) => [c.id, c]));
       return candidates.map((c) => ({
         ...c,
-        instruction: prevById.get(c.id)?.instruction ?? "",
-        busy: readPendingOperation(pendingCandidateAiKey(problem.id, c.id)) ? "followup" : prevById.get(c.id)?.busy ?? null,
-        localError: prevById.get(c.id)?.localError ?? null,
+        ...mergeCandidatePendingState(c, prevById.get(c.id), problem.id),
       }));
     });
   }, [candidates, pendingVersion, problem.id]);
@@ -2033,7 +2126,7 @@ function CandidateList({
 
   useEffect(() => {
     if (!local.some((card) => card.busy === "followup")) return;
-    const timer = window.setInterval(() => setPendingVersion((value) => value + 1), 2500);
+    const timer = window.setInterval(() => setPendingVersion((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [local]);
 
@@ -2054,7 +2147,7 @@ function CandidateList({
   }
 
   async function runAi(
-    card: ApiCard & { instruction: string; busy: string | null; localError: string | null },
+    card: LocalCandidate,
     instruction?: string,
   ) {
     const pendingKey = pendingCandidateAiKey(problem.id, card.id);
@@ -2073,8 +2166,8 @@ function CandidateList({
         }),
       });
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
+        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
       }
       clearPendingOperation(pendingKey);
       update(card.id, { busy: null, instruction: "" });
@@ -2120,6 +2213,8 @@ function CandidateList({
       </div>
       {local.map((c) => {
         const disabled = !!c.busy;
+        const pending = readPendingOperation(pendingCandidateAiKey(problem.id, c.id));
+        const elapsedSeconds = pending ? Math.max(0, Math.floor((Date.now() - pending.startedAt) / 1000)) : 0;
         return (
           <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
             <div
@@ -2181,6 +2276,11 @@ function CandidateList({
                   ×
                 </button>
               </div>
+              {c.busy === "followup" && (
+                <div className="operation-timer">
+                  Applying {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+                </div>
+              )}
             </div>
             {c.localError && <div className="err-banner" style={{ marginTop: 6 }}>{c.localError}</div>}
           </div>
@@ -2232,7 +2332,7 @@ function CaptureView({
       const res = await fetch(`${settings.apiBaseUrl}/api/capture`, {
         method: "POST",
         headers: jsonHeaders(settings),
-        body: JSON.stringify(preview),
+        body: JSON.stringify(trimCapturePayload(preview)),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;

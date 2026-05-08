@@ -10,10 +10,12 @@ export type SubmissionStatus =
   | "Other";
 
 export type AiProvider = "anthropic" | "openai" | "deepseek" | "";
+export type AiReasoningMode = "fast" | "thinking";
 
 export interface AiProviderSettings {
   provider: AiProvider;
   model: string;
+  reasoningMode?: AiReasoningMode;
 }
 
 /* FSRS rating: 1=Again, 2=Hard, 3=Good, 4=Easy */

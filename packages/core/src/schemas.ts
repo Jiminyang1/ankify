@@ -13,6 +13,7 @@ export const submissionStatusEnum = z.enum([
 ]);
 
 export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
+export const aiReasoningModeEnum = z.enum(["fast", "thinking"]);
 export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
 export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
 export const quizItemSourceEnum = z.enum(["statement", "submission", "notes", "card"]);
@@ -27,38 +28,39 @@ export const quizItemScopeEnum = z.enum([
 
 /* Payload sent by the Chrome extension to add or update a problem. */
 export const captureProblemSchema = z.object({
-  leetcodeSlug: z.string().min(1),
+  leetcodeSlug: z.string().min(1).max(256),
   leetcodeId: z.number().int().optional(),
-  title: z.string().min(1),
+  title: z.string().min(1).max(512),
   difficulty: difficultyEnum,
-  url: z.string().url(),
-  descriptionMd: z.string().optional(),
-  topicTags: z.array(z.string()).default([]),
-  similarSlugs: z.array(z.string()).default([]),
-  notes: z.string().optional(),
+  url: z.string().url().max(2048),
+  descriptionMd: z.string().max(200_000).optional(),
+  topicTags: z.array(z.string().max(64)).max(64).default([]),
+  similarSlugs: z.array(z.string().max(256)).max(64).default([]),
+  notes: z.string().max(50_000).optional(),
   submissions: z
     .array(
       z.object({
-        language: z.string(),
-        code: z.string(),
+        language: z.string().max(64),
+        code: z.string().max(200_000),
         status: submissionStatusEnum,
         runtimeMs: z.number().int().optional(),
         memoryKb: z.number().int().optional(),
-        failedTestcase: z.string().optional(),
-        expectedOutput: z.string().optional(),
-        actualOutput: z.string().optional(),
-        errorMessage: z.string().optional(),
+        failedTestcase: z.string().max(50_000).optional(),
+        expectedOutput: z.string().max(50_000).optional(),
+        actualOutput: z.string().max(50_000).optional(),
+        errorMessage: z.string().max(10_000).optional(),
         submittedAt: z.string().datetime().optional(),
       }),
     )
+    .max(50)
     .default([]),
 });
 export type CaptureProblemInput = z.infer<typeof captureProblemSchema>;
 
 /** A flash card: question (front) and answer (back). */
 export const cardDraftSchema = z.object({
-  question: z.string().min(1),
-  answer: z.string().min(1),
+  question: z.string().min(1).max(10_000),
+  answer: z.string().min(1).max(50_000),
 });
 export type CardDraft = z.infer<typeof cardDraftSchema>;
 
@@ -96,7 +98,7 @@ export const aiCardsRequestSchema = z.union([
   z.object({
     mode: z.literal("single"),
     action: z.literal("followup"),
-    cardId: z.string().min(1),
+    cardId: z.string().min(1).max(64),
     draft: cardDraftSchema,
     instruction: z.string().min(1).max(4000),
   }),
@@ -105,8 +107,8 @@ export const aiCardsRequestSchema = z.union([
 /** POST /api/problems/:id/user-card — saves a manual card directly as ready. */
 export const userCardManualCreateSchema = z.object({
   mode: z.literal("manual"),
-  question: z.string().min(1),
-  answer: z.string().min(1),
+  question: z.string().min(1).max(10_000),
+  answer: z.string().min(1).max(50_000),
 });
 
 export type AiCardsRequestInput = z.infer<typeof aiCardsRequestSchema>;
@@ -116,8 +118,8 @@ export type UserCardManualCreateInput = z.infer<typeof userCardManualCreateSchem
 export const updateCardPatchSchema = z
   .object({
     aiStatus: z.literal("ready").optional(),
-    question: z.string().min(1).optional(),
-    answer: z.string().min(1).optional(),
+    question: z.string().min(1).max(10_000).optional(),
+    answer: z.string().min(1).max(50_000).optional(),
   })
   .strict()
   .refine((o) => Object.keys(o).length > 0, { message: "empty_patch" });
@@ -125,9 +127,14 @@ export const updateCardPatchSchema = z
 export const fsrsRatingSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 
 export const reviewRatingSchema = z.object({
-  problemId: z.string(),
+  problemId: z.string().min(1).max(64),
   rating: fsrsRatingSchema,
-  notes: z.string().optional(),
+  notes: z.string().max(50_000).optional(),
+});
+
+/** PATCH /api/problems/:id — autosave notes from review. */
+export const problemNotesPatchSchema = z.object({
+  notes: z.string().max(50_000),
 });
 
 export const quizGenerateRequestSchema = z.object({

@@ -13,6 +13,7 @@ const settingsSchema = z
   .object({
     provider: schemas.aiProviderEnum.optional(),
     model: z.string().min(1).optional(),
+    reasoningMode: schemas.aiReasoningModeEnum.optional(),
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
   })
@@ -30,7 +31,12 @@ export async function GET(req: Request) {
   const [ai, review] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id)]);
   // Don't leak the key back to the client; just whether one is set
   return NextResponse.json({
-    ai: { provider: ai.provider, model: ai.model, hasApiKey: Boolean(ai.encryptedApiKey) },
+    ai: {
+      provider: ai.provider,
+      model: ai.model,
+      reasoningMode: ai.reasoningMode,
+      hasApiKey: Boolean(ai.encryptedApiKey),
+    },
     review,
   });
 }
@@ -48,6 +54,7 @@ export async function POST(req: Request) {
     await setAiSettings(user.id, {
       provider: parsed.data.provider,
       model: parsed.data.model,
+      reasoningMode: parsed.data.reasoningMode,
       apiKey: parsed.data.apiKey,
     });
   }

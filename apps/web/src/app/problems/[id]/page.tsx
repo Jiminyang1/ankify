@@ -10,6 +10,7 @@ import { requirePageUser } from "@/lib/auth";
 import { formatAbsolute, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
+import { DeleteProblemButton } from "./delete-problem-button";
 
 const RATING_LABELS: Record<number, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -89,6 +90,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
           >
             Analysis
           </Link>
+          <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
         </div>
       </header>
 
