@@ -9,9 +9,9 @@ import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildQuizPrompt } from "@/lib/quiz-prompt";
 
-export const maxDuration = 120;
+export const maxDuration = 180;
 
-const QUIZ_GENERATION_TIMEOUT_MS = 115_000;
+const QUIZ_GENERATION_TIMEOUT_MS = 175_000;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
@@ -99,6 +99,29 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 }
 
+/** DELETE /api/problems/:id/quiz
+ *  Wipes every quiz session row (active / completed / archived) for this
+ *  problem so the next `generate` / `nextBatch` runs with a clean prompt and
+ *  no history leakage. */
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const { id: problemId } = await ctx.params;
+  const db = getDb();
+  const [problem] = await db
+    .select({ id: schema.problems.id })
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)));
+  if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
+
+  const result = await db
+    .delete(schema.quizSessions)
+    .where(and(eq(schema.quizSessions.userId, user.id), eq(schema.quizSessions.problemId, problemId)));
+
+  return NextResponse.json({ ok: true, deleted: result.rowsAffected ?? null });
+}
+
 async function getCurrentQuizSession(userId: string, problemId: string): Promise<QuizSession | null> {
   const db = getDb();
   const [session] = await db
@@ -168,13 +191,27 @@ async function generateQuizItems(userId: string, problemId: string, history: Qui
       abortSignal: controller.signal,
     });
 
-    const items = object.items.map((item, index) => ({
-      ...item,
-      id: `q${index + 1}`,
-      choices: item.choices.map((choice) => choice.trim()),
-      question: item.question.trim(),
-      explanation: item.explanation.trim(),
-    }));
+    // The model emits the correct option as literal text (`correctAnswer`),
+    // not an integer index — eliminates off-by-one errors. Zod's refine
+    // already guarantees correctAnswer matches one of the choices after
+    // trimming; we mirror the same trim here to compute the stored index.
+    const items: QuizItem[] = object.items.map((item, index) => {
+      const choices = item.choices.map((choice) => choice.trim());
+      const target = item.correctAnswer.trim();
+      const answerIndex = choices.indexOf(target);
+      if (answerIndex < 0) {
+        throw new Error(`quiz_correct_answer_not_in_choices (item ${index + 1})`);
+      }
+      return {
+        id: `q${index + 1}`,
+        question: item.question.trim(),
+        choices,
+        answerIndex,
+        explanation: item.explanation.trim(),
+        source: item.source,
+        scope: item.scope,
+      };
+    });
     validateScopeCoverage(items);
     console.log(`${tag} generated in ${Date.now() - t0}ms`);
     return items;

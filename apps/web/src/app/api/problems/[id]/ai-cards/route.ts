@@ -9,9 +9,9 @@ import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 
-export const maxDuration = 60;
+export const maxDuration = 180;
 
-const AI_CARD_GENERATION_TIMEOUT_MS = 55_000;
+const AI_CARD_GENERATION_TIMEOUT_MS = 175_000;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);

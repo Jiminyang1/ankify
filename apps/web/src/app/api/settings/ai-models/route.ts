@@ -5,7 +5,7 @@ import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { getAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
 
-export const maxDuration = 15;
+export const maxDuration = 180;
 
 const requestSchema = z.object({
   provider: schemas.aiProviderEnum,
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
+  const timer = setTimeout(() => controller.abort(), 175_000);
 
   try {
     const models = await listModels(provider, apiKey, controller.signal);
@@ -169,7 +169,7 @@ function classifyListError(err: unknown): { code: string; message: string } {
   }
   const raw = err instanceof Error ? err.message : String(err);
   if (raw.toLowerCase().includes("aborted")) {
-    return { code: "timeout", message: "Provider did not respond within 10 seconds." };
+    return { code: "timeout", message: "Provider did not respond within 3 minutes." };
   }
   return { code: "network", message: raw.slice(0, 300) };
 }

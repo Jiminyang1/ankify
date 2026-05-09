@@ -78,7 +78,7 @@ Monorepo with three layers:
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization; extension tokens cannot mutate settings.
   - `settings/api-keys/` - session-only list/create extension API tokens. Newly created tokens are shown once.
   - `settings/api-keys/[keyId]/` - session-only revoke extension API tokens.
-- **`src/middleware.ts`**: lightweight auth gate and Chrome-extension CORS preflight handler. Web pages require a Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data. Extension requests use per-user Better Auth API keys sent as `x-ankify-token`.
+- **`src/proxy.ts`**: lightweight auth gate and Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages require a Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data. Extension requests use per-user Better Auth API keys sent as `x-ankify-token`.
 - **`src/lib/`**:
   - `ai.ts`: loads AI provider/model from DB, builds `LanguageModelV1`. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
   - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.

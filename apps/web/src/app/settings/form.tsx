@@ -146,6 +146,9 @@ export function AiSettingsForm({
   const models: ModelEntry[] = live ?? presets.map((id) => ({ id }));
   const modelsSourceLabel = live ? `${live.length} from provider` : `${presets.length} suggestions`;
 
+  /** Whether the current model value doesn't match any listed option. */
+  const isCustomModel = !models.some((m) => m.id === model);
+
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
@@ -182,17 +185,34 @@ export function AiSettingsForm({
             </button>
           </div>
         </div>
-        <input
-          list="model-presets"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
+        <select
+          value={isCustomModel ? "__custom__" : model}
+          onChange={(e) => {
+            if (e.target.value === "__custom__") {
+              setModel("");
+            } else {
+              setModel(e.target.value);
+            }
+          }}
+          autoComplete="off"
           className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
-        />
-        <datalist id="model-presets">
+        >
           {models.map((m) => (
-            <option key={m.id} value={m.id} label={m.label} />
+            <option key={m.id} value={m.id}>
+              {m.id}{m.label ? ` — ${m.label}` : ""}
+            </option>
           ))}
-        </datalist>
+          <option value="__custom__">Other...</option>
+        </select>
+        {isCustomModel && (
+          <input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="Enter model name..."
+            autoComplete="off"
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
+          />
+        )}
         {modelsError && (
           <p className="text-xs text-danger">Could not load models: {modelsError}</p>
         )}

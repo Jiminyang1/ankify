@@ -71,6 +71,38 @@ const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
   card: "Card",
 };
 
+/** Per-problem notes draft persisted in localStorage. `dirty` means the value
+ *  hasn't been confirmed by the server yet — the editor uses it on mount to
+ *  recover from refresh / crash without losing keystrokes. */
+type NotesDraft = { value: string; dirty: boolean; ts: number };
+
+function notesDraftKey(problemId: string) {
+  return `ankify.notes-draft.${problemId}`;
+}
+
+function readNotesDraft(problemId: string): NotesDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(notesDraftKey(problemId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as NotesDraft;
+    if (typeof parsed?.value !== "string" || typeof parsed?.dirty !== "boolean") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: NotesDraft = { value, dirty, ts: Date.now() };
+    window.localStorage.setItem(notesDraftKey(problemId), JSON.stringify(payload));
+  } catch {
+    // localStorage can throw on quota / private mode — typing should never break
+  }
+}
+
 export default function ReviewPage() {
   const [data, setData] = useState<ReviewPayload | null>(null);
   const [stage, setStage] = useState<Stage>("loading");
@@ -346,7 +378,13 @@ function ReviewHeader({
   }
 
   return (
-    <header className="flex flex-wrap items-center gap-2">
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 className="max-w-[32rem] truncate text-lg font-semibold tracking-tight">
+        {problem.leetcodeId != null && (
+          <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
+        )}
+        {problem.title}
+      </h1>
       <DifficultyPill difficulty={problem.difficulty} />
       <FsrsStatePill state={problem.fsrsState} />
       {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
@@ -385,11 +423,10 @@ function StatementPanel({
 }) {
   return (
     <Surface className="flex h-full min-h-[420px] flex-col overflow-hidden lg:min-h-0">
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted">Question statement</span>
-          <span className="truncate text-xs text-muted">{problem.title}</span>
-        </div>
+      <div className="shrink-0 border-b border-border px-4 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
+          Question statement
+        </span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
@@ -611,6 +648,28 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
     }
   }
 
+  async function resetHistory() {
+    if (typeof window !== "undefined" && !window.confirm("Delete all quiz history for this problem? Past sessions cannot be recovered.")) {
+      return;
+    }
+    setError(null);
+    try {
+      const res = await fetch(`/api/problems/${problemId}/quiz`, { method: "DELETE" });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error ?? `HTTP ${res.status}`);
+      }
+      if (session) clearStoredQuizFeedback(problemId, session.id);
+      setSession(null);
+      setSavedItemIds(new Set());
+      setFeedback(null);
+      setCurrentIndex(0);
+      setShowResults(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reset quiz history");
+    }
+  }
+
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
     if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
     setSubmittingItem(true);
@@ -765,14 +824,25 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
                   {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={generating}
-                onClick={() => void generateQuiz("nextBatch")}
-                className="rounded-md bg-accent px-3.5 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
-              >
-                {generating ? "Generating..." : "New batch"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={generating}
+                  onClick={() => void resetHistory()}
+                  title="Delete every quiz session for this problem so the next batch is generated without history context"
+                  className="rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                >
+                  Reset history
+                </button>
+                <button
+                  type="button"
+                  disabled={generating}
+                  onClick={() => void generateQuiz("nextBatch")}
+                  className="rounded-md bg-accent px-3.5 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+                >
+                  {generating ? "Generating..." : "New batch"}
+                </button>
+              </div>
             </div>
             {generating && <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-3" />}
             {error && <p className="mt-3 text-xs text-danger">{error}</p>}
@@ -898,6 +968,15 @@ function QuizPanel({ problemId, onCardSaved }: { problemId: string; onCardSaved:
               className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-50"
             >
               Regenerate
+            </button>
+            <button
+              type="button"
+              disabled={generating}
+              onClick={() => void resetHistory()}
+              title="Delete every quiz session for this problem so the next batch is generated without history context"
+              className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+            >
+              Reset history
             </button>
           </div>
         </div>
@@ -1357,32 +1436,58 @@ function NotesEditor({
   const savedRef = useRef(notes);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Local-first persistence: every keystroke writes synchronously to
+  // localStorage so typing never blocks on network and unsaved drafts survive
+  // refresh / crash. Server PATCH runs on a longer debounce; on success we
+  // mark the draft as in-sync. On mount we restore any dirty draft for this
+  // problem and re-fire a save so the server catches up.
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
+  useEffect(() => {
+    savedRef.current = notes;
+    const draft = readNotesDraft(problemId);
+    if (draft && draft.dirty && draft.value !== notes) {
+      setNotes(draft.value);
+      void persist(draft.value);
+    } else if (draft && !draft.dirty && draft.value !== notes) {
+      // Server value diverged from last-synced draft (e.g. edited from another
+      // device). Trust the server and reset the local marker.
+      writeNotesDraft(problemId, notes, false);
+    }
+    // We only re-run when the active problem changes; subsequent typing flows
+    // through onChange below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problemId]);
+
   async function persist(value: string) {
     if (value === savedRef.current) return;
     setStatus("saving");
     try {
-      await fetch(`/api/problems/${problemId}`, {
+      const res = await fetch(`/api/problems/${problemId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ notes: value }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       savedRef.current = value;
+      writeNotesDraft(problemId, value, false);
       setStatus("saved");
       setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
     } catch {
+      // Leave the draft marked dirty so the next change retries.
       setStatus("idle");
     }
   }
 
-  function scheduleSave(value: string) {
+  function handleChange(value: string) {
+    setNotes(value);
+    writeNotesDraft(problemId, value, true);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => persist(value), 600);
+    timerRef.current = setTimeout(() => persist(value), 1500);
   }
 
   function flushSave() {
@@ -1403,10 +1508,7 @@ function NotesEditor({
             <textarea
               ref={textareaRef}
               value={notes}
-              onChange={(e) => {
-                setNotes(e.target.value);
-                scheduleSave(e.target.value);
-              }}
+              onChange={(e) => handleChange(e.target.value)}
               onFocus={() => setEditing(true)}
               onBlur={() => {
                 setEditing(false);

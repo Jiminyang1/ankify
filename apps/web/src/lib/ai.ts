@@ -27,8 +27,24 @@ const deepseekNonThinkingFetch: typeof fetch = async (input, init) => {
   return fetch(input, init);
 };
 
+/** OpenAI-compatible providers we ship as known presets. The "preset" is just
+ *  a baseURL + a few opt-in quirks (e.g. DeepSeek's non-standard `thinking`
+ *  field). Adding a new openai-compatible endpoint (Gemini, Groq, Together,
+ *  OpenRouter, local Ollama …) is one entry here. */
+const OPENAI_COMPATIBLE_PRESETS: Record<
+  "deepseek",
+  { name: string; baseURL: string; supportsThinkingToggle: boolean }
+> = {
+  deepseek: {
+    name: "deepseek",
+    baseURL: "https://api.deepseek.com/v1",
+    supportsThinkingToggle: true,
+  },
+};
+
 export interface BuildModelOptions {
-  /** If true and provider is DeepSeek, force-disable thinking mode for this client. */
+  /** If true and the provider supports a thinking-toggle, force-disable
+   *  thinking for this client (probes, latency-sensitive paths). */
   disableThinking?: boolean;
 }
 
@@ -41,32 +57,36 @@ type BuildModelSettings = Omit<AiRuntimeSettings, "reasoningMode"> & {
  * is chosen in the dashboard; the API key is the current user's encrypted key
  * from settings. Server provider env keys are intentionally not used.
  */
-export async function getActiveModel(userId: string): Promise<{ model: LanguageModelV1; settings: AiRuntimeSettings }> {
+export async function getActiveModel(userId: string, opts: BuildModelOptions = {}): Promise<{ model: LanguageModelV1; settings: AiRuntimeSettings }> {
   const settings = await getAiRuntimeSettings(userId);
-  return { model: buildModel(settings), settings };
+  return { model: buildModel(settings, opts), settings };
 }
 
 export function buildModel(settings: BuildModelSettings, opts: BuildModelOptions = {}): LanguageModelV1 {
-  switch (settings.provider) {
-    case "anthropic": {
-      const client = createAnthropic({ apiKey: settings.apiKey });
-      return client(settings.model);
-    }
-    case "openai": {
-      const client = createOpenAI({ apiKey: settings.apiKey });
-      return client(settings.model);
-    }
-    case "deepseek": {
-      const disableThinking = opts.disableThinking ?? settings.reasoningMode !== "thinking";
-      const client = createOpenAICompatible({
-        name: "deepseek",
-        baseURL: "https://api.deepseek.com/v1",
-        apiKey: settings.apiKey,
-        ...(disableThinking ? { fetch: deepseekNonThinkingFetch } : {}),
-      });
-      return client(settings.model);
-    }
-    default:
-      throw new Error(`unsupported AI provider: ${settings.provider || "(none)"}`);
+  if (settings.provider === "anthropic") {
+    const client = createAnthropic({ apiKey: settings.apiKey });
+    return client(settings.model);
   }
+  if (settings.provider === "openai") {
+    // Native OpenAI client — opt into provider-specific niceties (strict tool
+    // use, response_format=json_schema, etc.) that the generic compat client
+    // doesn't expose.
+    const client = createOpenAI({ apiKey: settings.apiKey });
+    return client(settings.model);
+  }
+  // OpenAI-compatible providers (DeepSeek today; Gemini/Groq/etc. later).
+  const preset = OPENAI_COMPATIBLE_PRESETS[settings.provider as keyof typeof OPENAI_COMPATIBLE_PRESETS];
+  if (preset) {
+    const disableThinking = preset.supportsThinkingToggle
+      ? (opts.disableThinking ?? settings.reasoningMode !== "thinking")
+      : false;
+    const client = createOpenAICompatible({
+      name: preset.name,
+      baseURL: preset.baseURL,
+      apiKey: settings.apiKey,
+      ...(disableThinking ? { fetch: deepseekNonThinkingFetch } : {}),
+    });
+    return client(settings.model);
+  }
+  throw new Error(`unsupported AI provider: ${settings.provider || "(none)"}`);
 }

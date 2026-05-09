@@ -64,6 +64,8 @@ export const cardDraftSchema = z.object({
 });
 export type CardDraft = z.infer<typeof cardDraftSchema>;
 
+/** Storage / API shape for a quiz item — uses `answerIndex` so the rest of
+ *  the app can index `choices[answerIndex]` cheaply. */
 export const quizItemSchema = z.object({
   id: z.string().min(1),
   question: z.string().min(1),
@@ -84,8 +86,50 @@ export const quizAnswerSchema = z.object({
 });
 export type QuizAnswer = z.infer<typeof quizAnswerSchema>;
 
+/** AI-generation contract for a single quiz item. Differs from the storage
+ *  shape on purpose: identifies the correct option as literal text rather
+ *  than an integer index — eliminates the off-by-one errors that plagued the
+ *  index-based schema. The server maps `correctAnswer` → `answerIndex` via
+ *  `choices.indexOf` before persisting.
+ *
+ *  No internal "reasoning" field: when DeepSeek thinking mode is on the model
+ *  already CoTs via the separate `reasoning_content` response field (which we
+ *  discard); when thinking is off the model goes directly to the answer. A
+ *  schema-level reasoning field would just bill double for content nobody
+ *  reads. */
+export const quizDraftItemSchema = z
+  .object({
+    question: z.string().min(1).describe("The question text shown to the user."),
+    choices: z.array(z.string().min(1)).length(4).describe("Exactly 4 plausible options."),
+    correctAnswer: z
+      .string()
+      .min(1)
+      .describe("The exact text of the correct option, character-for-character identical to one of the choices entries."),
+    explanation: z
+      .string()
+      .min(1)
+      .describe("Concise rationale shown to the user after they answer."),
+    source: quizItemSourceEnum.describe(
+      "Which input material this question is grounded in: 'statement' (problem statement), 'submission' (the user's submitted code), 'notes' (the user's saved notes), or 'card' (an existing flashcard). NOT a category of question type — that is `scope`.",
+    ),
+    scope: quizItemScopeEnum.describe(
+      "What pedagogical dimension this question tests: 'approach', 'invariant', 'edge_case', 'complexity', 'implementation', or 'mistake_review'. NOT where the content came from — that is `source`.",
+    ),
+  })
+  .refine(
+    (item) => {
+      const norm = (s: string) => s.trim();
+      return item.choices.map(norm).includes(norm(item.correctAnswer));
+    },
+    {
+      message: "correctAnswer must exactly match one of the choices (after trimming)",
+      path: ["correctAnswer"],
+    },
+  );
+export type QuizDraftItem = z.infer<typeof quizDraftItemSchema>;
+
 export const quizDraftSchema = z.object({
-  items: z.array(quizItemSchema).length(5),
+  items: z.array(quizDraftItemSchema).length(5),
 });
 export type QuizDraft = z.infer<typeof quizDraftSchema>;
 

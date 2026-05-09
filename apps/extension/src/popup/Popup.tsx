@@ -19,6 +19,7 @@ type LocalCandidate = ApiCard & {
 type ApiProblem = {
   id: string;
   leetcodeSlug: string;
+  leetcodeId: number | null;
   title: string;
   difficulty: "Easy" | "Medium" | "Hard";
   fsrsState: "new" | "learning" | "review" | "relearning";
@@ -65,6 +66,18 @@ type State =
   | { kind: "not-saved"; slug: string }
   | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
   | { kind: "error"; msg: string };
+
+// Pinned reference to the most recent successful capture. Survives across tab
+// switches so the popup can keep showing the last problem (with a "jump back"
+// banner) when the active tab isn't on a LeetCode problem.
+type Sticky = {
+  slug: string;
+  tabId: number | null;
+  problem: ApiProblem;
+  cards: ApiCard[];
+  candidates: ApiCard[];
+  previews: Previews;
+};
 
 type NavTab = "today" | "problem" | "settings";
 
@@ -280,10 +293,7 @@ function PopupBrandBanner() {
   return (
     <div className="popup-brand" aria-label="ankify spaced repetition">
       <PopupBrandMark />
-      <span className="popup-brand-copy">
-        <span className="popup-brand-title">ankify<span>.</span></span>
-        <span className="popup-brand-tag">Spaced · Repetition</span>
-      </span>
+      <span className="popup-brand-title">ankify<span>.</span></span>
     </div>
   );
 }
@@ -364,6 +374,7 @@ function Collapse({ header, defaultOpen, children }: { header: React.ReactNode; 
 
 export function Popup() {
   const [state, setState] = useState<State>({ kind: "detecting" });
+  const [sticky, setSticky] = useState<Sticky | null>(null);
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
   const [tab, setTab] = useState<NavTab>("today");
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -388,39 +399,79 @@ export function Popup() {
     getSettings().then(setLocalSettings);
   }, []);
 
-  const detect = useCallback(async () => {
-    if (!settings) return;
-    setState({ kind: "detecting" });
-    try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const slug = parseSlugFromUrl(activeTab?.url);
+  // Tracks the slug we last initiated a detect for. Auto-triggered detects
+  // (tab activation / URL update) skip when the slug hasn't changed so the
+  // popup doesn't tear itself down to the "detecting" / "loading" placeholder
+  // mid-action. The user-facing Refresh button passes `force: true` to bypass.
+  const currentSlugRef = useRef<string | null>(null);
+  const hasDetectedOnceRef = useRef(false);
+
+  const detect = useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!settings) return;
+      const force = opts?.force ?? false;
+
+      let activeUrl: string | undefined;
+      let activeTabId: number | null = null;
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        activeUrl = activeTab?.url;
+        activeTabId = activeTab?.id ?? null;
+      } catch {
+        // tab query can fail if the popup is closing; treat as no slug
+      }
+      const slug = parseSlugFromUrl(activeUrl);
+
+      // Skip when this isn't the first detect, slug hasn't changed, and the
+      // caller didn't explicitly force a refresh. Avoids tearing the UI down
+      // every time LeetCode fires a "complete" tab event.
+      if (!force && hasDetectedOnceRef.current && slug === currentSlugRef.current) {
+        return;
+      }
+      hasDetectedOnceRef.current = true;
+      currentSlugRef.current = slug;
+
       if (!slug) {
         setState({ kind: "off-page" });
         return;
       }
+
       setState({ kind: "loading", slug });
-      const data = await fetchProblemBySlug(settings, slug);
-      if (data === "not_captured") {
-        setState({ kind: "not-saved", slug });
-      } else {
-        setState({ kind: "captured", ...data });
+      try {
+        const data = await fetchProblemBySlug(settings, slug);
+        // User navigated away while we were fetching: discard the result.
+        if (currentSlugRef.current !== slug) return;
+        if (data === "not_captured") {
+          setState({ kind: "not-saved", slug });
+        } else {
+          setState({ kind: "captured", ...data });
+          // Pin the latest captured problem so we can keep showing it if the
+          // user switches to a non-LeetCode tab next.
+          setSticky({ slug, tabId: activeTabId, ...data });
+        }
+      } catch (e) {
+        if (currentSlugRef.current !== slug) return;
+        setState({ kind: "error", msg: e instanceof Error ? e.message : "Unknown error" });
       }
-    } catch (e) {
-      setState({ kind: "error", msg: e instanceof Error ? e.message : "Unknown error" });
-    }
-  }, [settings]);
+    },
+    [settings],
+  );
 
   useEffect(() => {
     if (settings) void detect();
   }, [settings, detect]);
 
-  /* Side Panel persists across tab changes — re-detect when active tab changes or url updates. */
+  /* Side Panel persists across tab changes — re-detect on tab swap or real
+   * URL change. We deliberately ignore `info.status === "complete"` because
+   * LeetCode's SPA fires it on every internal load even when the slug is
+   * unchanged, and the slug-equality guard inside `detect()` would skip the
+   * work anyway — listening to `info.url` keeps the listener noise low too. */
   useEffect(() => {
     if (!settings) return;
     const onActivated = () => void detect();
     const onUpdated = (_tabId: number, info: chrome.tabs.TabChangeInfo, t: chrome.tabs.Tab) => {
       if (!t.active) return;
-      if (info.url || info.status === "complete") void detect();
+      if (info.url) void detect();
     };
     chrome.tabs.onActivated.addListener(onActivated);
     chrome.tabs.onUpdated.addListener(onUpdated);
@@ -431,6 +482,33 @@ export function Popup() {
   }, [settings, detect]);
 
   const captured = state.kind === "captured" ? state : null;
+
+  // Jump back to the LeetCode tab where the sticky problem was last seen.
+  // Falls back to any open tab on that slug if the original tab is gone, or
+  // opens a fresh tab as a last resort. Force-detect after to refresh.
+  const jumpToSticky = useCallback(async () => {
+    if (!sticky) return;
+    const targetUrl = `https://leetcode.com/problems/${sticky.slug}/`;
+    try {
+      if (sticky.tabId != null) {
+        const tab = await chrome.tabs.get(sticky.tabId).catch(() => null);
+        if (tab) {
+          await chrome.tabs.update(sticky.tabId, { active: true });
+          if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+          return;
+        }
+      }
+      const matches = await chrome.tabs.query({ url: `*://leetcode.com/problems/${sticky.slug}/*` });
+      if (matches.length > 0 && matches[0]?.id != null) {
+        await chrome.tabs.update(matches[0].id, { active: true });
+        if (matches[0].windowId != null) await chrome.windows.update(matches[0].windowId, { focused: true });
+        return;
+      }
+      await chrome.tabs.create({ url: targetUrl });
+    } catch {
+      // chrome.tabs.update can reject if the tab was just closed mid-call; ignore
+    }
+  }, [sticky]);
 
   return (
     <div className="popup-shell">
@@ -443,7 +521,7 @@ export function Popup() {
             className="btn btn-ghost"
             onClick={() => {
               if (tab === "today") window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
-              else void detect();
+              else void detect({ force: true });
             }}
             title="Refresh"
           >
@@ -484,7 +562,9 @@ export function Popup() {
               state={state}
               settings={settings}
               captured={captured}
-              onRefresh={detect}
+              sticky={sticky}
+              onJumpToSticky={jumpToSticky}
+              onRefresh={() => detect({ force: true })}
               onError={(msg) => setState({ kind: "error", msg })}
             />
           </div>
@@ -673,6 +753,8 @@ function ProblemTab({
   state,
   settings,
   captured,
+  sticky,
+  onJumpToSticky,
   onRefresh,
   onError,
 }: {
@@ -684,26 +766,33 @@ function ProblemTab({
     candidates: ApiCard[];
     previews: Previews;
   } | null;
+  sticky: Sticky | null;
+  onJumpToSticky: () => void;
   onRefresh: () => void;
   onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"review" | "manage">("review");
   const lastProblemIdRef = useRef<string | null>(null);
 
+  // When the active tab has no slug but we have a sticky pin from earlier,
+  // keep showing that problem instead of the bare "off-page" placeholder.
+  const isStickyView = state.kind === "off-page" && sticky !== null;
+  const displayCaptured = captured ?? (isStickyView ? sticky : null);
+
   // Auto-select mode when problem changes: due → review, otherwise → manage
   useEffect(() => {
-    if (!captured) return;
-    const newId = captured.problem.id;
+    if (!displayCaptured) return;
+    const newId = displayCaptured.problem.id;
     if (lastProblemIdRef.current !== newId) {
-      setMode(isDue(captured.problem.fsrsDue) ? "review" : "manage");
+      setMode(isDue(displayCaptured.problem.fsrsDue) ? "review" : "manage");
       lastProblemIdRef.current = newId;
     }
-  }, [captured]);
+  }, [displayCaptured]);
 
   if (state.kind === "detecting") return <p className="popup-muted">Connecting…</p>;
   if (state.kind === "loading") return <p className="popup-muted">Syncing <span className="popup-code">{state.slug}</span>…</p>;
 
-  if (state.kind === "off-page") {
+  if (state.kind === "off-page" && !sticky) {
     return (
       <div className="panel panel-quiet">
         <p className="popup-muted" style={{ margin: 0 }}>
@@ -736,12 +825,24 @@ function ProblemTab({
     );
   }
 
-  if (!captured) return null;
+  if (!displayCaptured) return null;
 
-  const { problem, cards, candidates, previews } = captured;
+  const { problem, cards, candidates, previews } = displayCaptured;
   const due = isDue(problem.fsrsDue);
 
-  return mode === "review" ? (
+  return (
+    <>
+      {isStickyView && (
+        <div className="sticky-banner">
+          <span className="sticky-banner-text">
+            Active tab isn’t on <span className="popup-code">{problem.title}</span>.
+          </span>
+          <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
+            Open it
+          </button>
+        </div>
+      )}
+      {mode === "review" ? (
     <ReviewView
       problem={problem}
       cards={cards}
@@ -764,6 +865,8 @@ function ProblemTab({
       onModeChange={setMode}
       onRefresh={onRefresh}
     />
+  )}
+    </>
   );
 }
 
@@ -786,7 +889,12 @@ function ProblemCard({
     <div className="problem-card">
       <div className="problem-card-top">
         <div className="problem-card-info">
-          <h2 className="problem-card-title">{problem.title}</h2>
+          <h2 className="problem-card-title">
+            {problem.leetcodeId != null && (
+              <span className="problem-card-num">{problem.leetcodeId}. </span>
+            )}
+            {problem.title}
+          </h2>
           <div className="problem-card-tags">
             <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
             {due ? (
@@ -1053,6 +1161,33 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     }
   }
 
+  async function resetHistory() {
+    if (!window.confirm("Delete all quiz history for this problem? Past sessions cannot be recovered.")) {
+      return;
+    }
+    setError(null);
+    try {
+      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+        method: "DELETE",
+        headers: authHeaders(settings),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error ?? `HTTP ${res.status}`);
+      }
+      if (session) clearStoredQuizFeedback(problem.id, session.id);
+      clearPendingOperation(pendingQuizKey(problem.id));
+      setPendingQuiz(null);
+      setSession(null);
+      setSavedItemIds(new Set());
+      setFeedback(null);
+      setCurrentIndex(0);
+      setShowResults(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reset quiz history");
+    }
+  }
+
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
     if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
     setSubmittingItem(true);
@@ -1195,14 +1330,25 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                   {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary btn-inline quiz-next-batch"
-                disabled={generating}
-                onClick={() => void generateQuiz("nextBatch")}
-              >
-                {generating ? "Generating..." : "New Batch"}
-              </button>
+              <div className="quiz-overview-actions">
+                <button
+                  type="button"
+                  className="quiz-link-btn quiz-link-muted"
+                  disabled={generating}
+                  onClick={() => void resetHistory()}
+                  title="Delete every quiz session for this problem"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-inline quiz-next-batch"
+                  disabled={generating}
+                  onClick={() => void generateQuiz("nextBatch")}
+                >
+                  {generating ? "Generating..." : "New Batch"}
+                </button>
+              </div>
             </div>
 
             <div className="quiz-overview-rows">
@@ -1334,6 +1480,15 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
             onClick={() => void generateQuiz("regenerate")}
           >
             Regenerate
+          </button>
+          <button
+            type="button"
+            className="quiz-link-btn quiz-link-muted"
+            disabled={generating}
+            onClick={() => void resetHistory()}
+            title="Delete every quiz session for this problem"
+          >
+            Reset
           </button>
         </div>
       </div>
@@ -1638,12 +1793,52 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
   );
 }
 
-/* ── NotesPanel (auto-save) ── */
+/* ── NotesPanel (local-first auto-save) ── */
+
+type NotesDraft = { value: string; dirty: boolean; ts: number };
+
+function notesDraftKey(problemId: string) {
+  return `ankify.notes-draft.${problemId}`;
+}
+
+function readNotesDraft(problemId: string): NotesDraft | null {
+  try {
+    const raw = window.localStorage.getItem(notesDraftKey(problemId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as NotesDraft;
+    if (typeof parsed?.value !== "string" || typeof parsed?.dirty !== "boolean") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
+  try {
+    const payload: NotesDraft = { value, dirty, ts: Date.now() };
+    window.localStorage.setItem(notesDraftKey(problemId), JSON.stringify(payload));
+  } catch {
+    // localStorage can fail on quota; never block typing
+  }
+}
 
 function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
-  const [notes, setNotes] = useState(problem.notes ?? "");
+  // Initial value: always prefer the local snapshot when it exists. It's the
+  // most recent text the user saw, whether or not it's been synced — `dirty`
+  // is for *syncing* decisions, not for *display* decisions. Falling back to
+  // `problem.notes` would show a stale prop (last fetched at popup-detect
+  // time) every time the tab is switched away and back.
+  const [notes, setNotes] = useState(() => {
+    const draft = readNotesDraft(problem.id);
+    if (draft) return draft.value;
+    return problem.notes ?? "";
+  });
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const savedRef = useRef(notes);
+  // Tracks the last value we believe the server has. Initialized from the
+  // freshly-fetched `problem.notes` prop (not from `notes`, which may be a
+  // local-only draft that was never confirmed). Updated on every successful
+  // PATCH so the dirty-detection logic stays accurate.
+  const savedRef = useRef(problem.notes ?? "");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -1651,6 +1846,19 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
+
+  // If the popup picked up a dirty draft on mount whose value diverges from
+  // what the server returned, re-sync once so the server catches up. Compare
+  // against the live `problem.notes` prop (best signal for the server's
+  // current state) rather than savedRef.
+  useEffect(() => {
+    const draft = readNotesDraft(problem.id);
+    const serverValue = problem.notes ?? "";
+    if (draft?.dirty && draft.value !== serverValue) {
+      void persist(draft.value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problem.id]);
 
   async function persist(value: string) {
     if (value === savedRef.current) return;
@@ -1663,16 +1871,20 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       savedRef.current = value;
+      writeNotesDraft(problem.id, value, false);
       setStatus("saved");
       setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
     } catch {
+      // Stay dirty so the next change retries.
       setStatus("idle");
     }
   }
 
-  function scheduleSave(value: string) {
+  function handleChange(value: string) {
+    setNotes(value);
+    writeNotesDraft(problem.id, value, true);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void persist(value), 600);
+    timerRef.current = setTimeout(() => void persist(value), 1500);
   }
 
   function flushSave() {
@@ -1694,10 +1906,7 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
       <textarea
         className="notes-panel-textarea scroll-area"
         value={notes}
-        onChange={(e) => {
-          setNotes(e.target.value);
-          scheduleSave(e.target.value);
-        }}
+        onChange={(e) => handleChange(e.target.value)}
         onBlur={flushSave}
         placeholder="What tripped you up, key insights, alternative approaches…"
       />
@@ -1767,15 +1976,17 @@ function QuickRate({
             </button>
           );
         })}
+        <button
+          type="button"
+          className="btn btn-primary rate-submit-inline"
+          disabled={busy}
+          onClick={submit}
+          aria-label="Submit rating"
+          title="Submit rating"
+        >
+          {busy ? "…" : "→"}
+        </button>
       </div>
-      <button
-        type="button"
-        className="btn btn-primary rate-submit"
-        disabled={busy}
-        onClick={submit}
-      >
-        {busy ? "…" : "Submit"}
-      </button>
 
       {error && <div className="err-banner" style={{ marginTop: 8 }}>{error}</div>}
     </div>
@@ -2366,7 +2577,12 @@ function CaptureView({
     <div className="panel">
       <div className="hero-row">
         <div style={{ minWidth: 0 }}>
-          <h2 className="hero-title">{preview.title}</h2>
+          <h2 className="hero-title">
+            {preview.leetcodeId != null && (
+              <span className="problem-card-num">{preview.leetcodeId}. </span>
+            )}
+            {preview.title}
+          </h2>
           <div className="hero-meta">
             {preview.difficulty} · {preview.topicTags.slice(0, 4).join(", ")}
           </div>

@@ -7,7 +7,7 @@ import { buildModel } from "@/lib/ai";
 import { getAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
 
-export const maxDuration = 30;
+export const maxDuration = 180;
 
 const testRequestSchema = z.object({
   provider: schemas.aiProviderEnum.optional(),
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   const t0 = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
+  const timer = setTimeout(() => controller.abort(), 175_000);
 
   try {
     // Probe is short and structured — disable DeepSeek thinking for this call
@@ -96,7 +96,7 @@ function classifyAiError(err: unknown): { code: string; message: string } {
   const lower = raw.toLowerCase();
 
   if (lower.includes("aborted") || lower.includes("timeout")) {
-    return { code: "timeout", message: "Provider did not respond within 15 seconds." };
+    return { code: "timeout", message: "Provider did not respond within 3 minutes." };
   }
   if (lower.includes("401") || lower.includes("unauthorized") || lower.includes("invalid api key") || lower.includes("authentication")) {
     return { code: "invalid_api_key", message: "API key was rejected by the provider." };

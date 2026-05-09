@@ -19,7 +19,7 @@ function withApiCors(req: NextRequest, res: NextResponse) {
  * Lightweight gate only. API routes and server pages validate the Better Auth
  * session/API key again before touching data.
  */
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
   const isAuthRoute = pathname === "/login" || pathname.startsWith("/api/auth/");

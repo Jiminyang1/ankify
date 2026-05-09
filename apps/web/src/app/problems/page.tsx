@@ -279,7 +279,12 @@ export default function ProblemsPage() {
                         href={`/problems/${p.id}`}
                         className="block font-medium hover:text-accent transition-colors"
                       >
-                        <div className="truncate max-w-[300px]">{p.title}</div>
+                        <div className="truncate max-w-[320px]">
+                          {p.leetcodeId != null && (
+                            <span className="text-muted tabular-nums">{p.leetcodeId}. </span>
+                          )}
+                          {p.title}
+                        </div>
                         {p.topicTags.length > 0 && (
                           <p className="mt-0.5 truncate text-[11px] text-muted">
                             {p.topicTags.map((t) => `#${t}`).join("  ")}

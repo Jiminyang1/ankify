@@ -183,14 +183,14 @@ label, button, th, .font-ui {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-bottom: 8px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
 
 .popup-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -198,8 +198,8 @@ label, button, th, .font-ui {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 45px;
-  height: 36px;
+  width: 28px;
+  height: 22px;
   color: var(--accent-strong);
 }
 
@@ -224,33 +224,17 @@ label, button, th, .font-ui {
   fill: #141418;
 }
 
-.popup-brand-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
 .popup-brand-title {
   font-family: var(--font-mono);
   color: var(--fg);
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 900;
   line-height: 1;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.04em;
 }
 
 .popup-brand-title span {
   color: var(--accent-strong);
-}
-
-.popup-brand-tag {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
 }
 
 .theme-control {
@@ -974,6 +958,26 @@ label, button, th, .font-ui {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
+/* ── sticky off-page banner ── */
+
+.sticky-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.sticky-banner-text {
+  flex: 1;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 /* ── capture ── */
 
 .capture-meta {
@@ -1413,6 +1417,12 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.problem-card-num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
 .problem-card-tags {
   margin-top: 5px;
   display: flex;
@@ -1752,6 +1762,13 @@ a:focus-visible {
 .quiz-next-batch {
   flex-shrink: 0;
   padding-inline: 11px;
+}
+
+.quiz-overview-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .quiz-overview-rows {
@@ -2346,13 +2363,12 @@ a:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
-/* ── flat rating row (4 ratings + Submit on separate row) ── */
+/* ── flat rating row (4 ratings + inline Submit, single row) ── */
 
 .rate-row {
   display: flex;
   align-items: stretch;
   gap: 5px;
-  margin-bottom: 5px;
 }
 
 .rate-btn-flat {
@@ -2395,11 +2411,18 @@ a:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.rate-submit {
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
+/* Inline arrow button that submits the chosen rating, sits at the right
+ * edge of the rate-row so the whole panel is one line. */
+.rate-submit-inline {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 6px;
 }
 
 /* ── Module 3: rating card ── */

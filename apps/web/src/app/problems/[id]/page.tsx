@@ -64,7 +64,12 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               </span>
             ))}
           </div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">{problem.title}</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+            {problem.leetcodeId != null && (
+              <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
+            )}
+            {problem.title}
+          </h1>
           <a
             href={problem.url}
             target="_blank"
