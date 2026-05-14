@@ -40,6 +40,7 @@ export const captureProblemSchema = z.object({
   submissions: z
     .array(
       z.object({
+        leetcodeSubmissionId: z.string().max(64).optional(),
         language: z.string().max(64),
         code: z.string().max(200_000),
         status: submissionStatusEnum,

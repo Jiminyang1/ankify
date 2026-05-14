@@ -10,6 +10,7 @@ export type SubmissionStatus =
   | "Other";
 
 export interface CapturedSubmission {
+  leetcodeSubmissionId?: string;
   language: string;
   code: string;
   status: SubmissionStatus;

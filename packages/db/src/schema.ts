@@ -184,6 +184,7 @@ export const submissions = sqliteTable(
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
+    leetcodeSubmissionId: text("leetcode_submission_id"),
     language: text("language").notNull(),
     code: text("code").notNull(),
     status: text("status", {
@@ -209,6 +210,11 @@ export const submissions = sqliteTable(
     userIdx: index("submissions_user_idx").on(t.userId),
     problemIdx: index("submissions_problem_idx").on(t.problemId),
     statusIdx: index("submissions_status_idx").on(t.status),
+    userProblemLeetcodeSubmissionIdx: uniqueIndex("submissions_user_problem_lc_submission_unique").on(
+      t.userId,
+      t.problemId,
+      t.leetcodeSubmissionId,
+    ),
   }),
 );
 

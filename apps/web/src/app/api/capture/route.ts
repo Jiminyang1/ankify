@@ -45,12 +45,14 @@ export async function POST(req: Request) {
   const existingProblem = existing[0];
   let problemId = existingProblem?.id;
   let created = false;
+  let importedSubmissions = 0;
 
   const submissionRows = input.submissions.map((s) => {
     const submittedAt = s.submittedAt ? new Date(s.submittedAt) : new Date();
     return {
       id: nanoid(12),
       problemId: "",
+      leetcodeSubmissionId: s.leetcodeSubmissionId,
       language: s.language,
       code: s.code,
       status: s.status,
@@ -111,32 +113,52 @@ export async function POST(req: Request) {
         .where(and(eq(schema.problems.id, problemId!), eq(schema.problems.userId, user.id)));
     }
 
-    // Dedup submissions inside the transaction
+    // Dedup submissions inside the transaction. Prefer LeetCode's stable
+    // submission id, then collapse exact repeated code submissions.
     const existingSubmissions = await tx
       .select({
+        leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId,
         language: schema.submissions.language,
         code: schema.submissions.code,
         status: schema.submissions.status,
-        submittedAt: schema.submissions.submittedAt,
       })
       .from(schema.submissions)
       .where(and(eq(schema.submissions.problemId, problemId!), eq(schema.submissions.userId, user.id)));
+
+    const normalizedCode = (code: string) =>
+      code
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .join("\n")
+        .trim();
 
     const submissionKey = (s: {
       language: string;
       code: string;
       status: string;
-      submittedAt: Date | null;
-    }) => `${s.language}\x00${s.status}\x00${(s.submittedAt?.valueOf() ?? 0)}\x00${s.code}`;
+    }) => `${s.language}\x00${s.status}\x00${normalizedCode(s.code)}`;
 
-    const seen = new Set(existingSubmissions.map(submissionKey));
+    const seenLeetcodeIds = new Set(
+      existingSubmissions.map((s) => s.leetcodeSubmissionId).filter((id): id is string => Boolean(id)),
+    );
+    const seenSubmissionKeys = new Set(existingSubmissions.map(submissionKey));
     const pid = problemId!;
-    const newRows = submissionRows
-      .map((row) => ({ ...row, userId: user.id, problemId: pid }))
-      .filter((row) => !seen.has(submissionKey(row)));
+    const newRows: Array<(typeof submissionRows)[number] & { userId: string; problemId: string }> = [];
+    for (const row of submissionRows.map((submission) => ({ ...submission, userId: user.id, problemId: pid }))) {
+      if (row.leetcodeSubmissionId && seenLeetcodeIds.has(row.leetcodeSubmissionId)) continue;
+
+      const key = submissionKey(row);
+      if (seenSubmissionKeys.has(key)) continue;
+
+      newRows.push(row);
+      if (row.leetcodeSubmissionId) seenLeetcodeIds.add(row.leetcodeSubmissionId);
+      seenSubmissionKeys.add(key);
+    }
 
     if (newRows.length > 0) {
       await tx.insert(schema.submissions).values(newRows);
+      importedSubmissions = newRows.length;
       await tx.insert(schema.reviewEvents).values(
         newRows.map((row) => ({
           id: nanoid(12),
@@ -152,5 +174,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     problemId,
     created,
+    importedSubmissions,
   });
 }

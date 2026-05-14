@@ -57,6 +57,13 @@
       "when": 1778078031070,
       "tag": "0007_friendly_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1778739069631,
+      "tag": "0008_demonic_greymalkin",
+      "breakpoints": true
     }
   ]
 }

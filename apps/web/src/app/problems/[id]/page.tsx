@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
+import { HighlightedCode } from "@/components/ui/highlighted-code";
 import { requirePageUser } from "@/lib/auth";
 import { formatAbsolute, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
@@ -183,9 +184,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                           {s.errorMessage}
                         </div>
                       )}
-                      <pre className="max-h-64 overflow-auto px-4 py-3 font-mono text-xs leading-relaxed">
-                        {s.code}
-                      </pre>
+                      <HighlightedCode code={s.code} language={s.language} className="max-h-64" />
                     </Surface>
                   </li>
                 );

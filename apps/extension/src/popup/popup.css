@@ -1349,13 +1349,20 @@ a:focus-visible {
   font-size: 13px;
   text-decoration: none;
   border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.problem-header-web:hover {
+.problem-header-web:hover:not(:disabled) {
   background: var(--subtle);
   color: var(--accent-strong);
   border-color: var(--border);
+}
+
+.problem-header-web:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .problem-header-next {
@@ -1397,6 +1404,33 @@ a:focus-visible {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
+}
+
+.problem-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.problem-card-sync {
+  margin: 0 12px 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.problem-card-sync-success {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 25%, var(--border));
+}
+
+.problem-card-sync-error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--border));
 }
 
 .problem-card-info {

@@ -58,6 +58,11 @@ type QuizSession = {
   updatedAt: string | null;
   completedAt: string | null;
 };
+type CaptureResult = {
+  problemId: string;
+  created: boolean;
+  importedSubmissions: number;
+};
 
 type State =
   | { kind: "detecting" }
@@ -182,6 +187,31 @@ function trimCapturePayload(p: CapturedProblem): CapturedProblem {
       errorMessage: clip(s.errorMessage, CAPTURE_LIMITS.errorMessage),
     })),
   };
+}
+
+async function readActiveProblem(): Promise<CapturedProblem> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error("No active tab.");
+  const resp = (await chrome.tabs.sendMessage(tab.id, {
+    type: "capture_current_problem",
+  })) as ContentResponse;
+  if (resp.type !== "captured") {
+    throw new Error(resp.type === "error" ? resp.message : "Unexpected response");
+  }
+  return resp.data;
+}
+
+async function saveCapturedProblem(settings: ExtSettings, problem: CapturedProblem): Promise<CaptureResult> {
+  const res = await fetch(`${settings.apiBaseUrl}/api/capture`, {
+    method: "POST",
+    headers: jsonHeaders(settings),
+    body: JSON.stringify(trimCapturePayload(problem)),
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(j?.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as CaptureResult;
 }
 
 function pendingQuizKey(problemId: string) {
@@ -772,6 +802,11 @@ function ProblemTab({
   onError: (msg: string) => void;
 }) {
   const [mode, setMode] = useState<"review" | "manage">("review");
+  const [syncState, setSyncState] = useState<{
+    busy: boolean;
+    message: string | null;
+    tone: "success" | "error";
+  }>({ busy: false, message: null, tone: "success" });
   const lastProblemIdRef = useRef<string | null>(null);
 
   // When the active tab has no slug but we have a sticky pin from earlier,
@@ -785,9 +820,40 @@ function ProblemTab({
     const newId = displayCaptured.problem.id;
     if (lastProblemIdRef.current !== newId) {
       setMode(isDue(displayCaptured.problem.fsrsDue) ? "review" : "manage");
+      setSyncState({ busy: false, message: null, tone: "success" });
       lastProblemIdRef.current = newId;
     }
   }, [displayCaptured]);
+
+  async function syncLatestSubmissions() {
+    if (!displayCaptured || syncState.busy) return;
+
+    setSyncState({ busy: true, message: null, tone: "success" });
+    try {
+      const capturedProblem = await readActiveProblem();
+      if (capturedProblem.leetcodeSlug !== displayCaptured.problem.leetcodeSlug) {
+        throw new Error(`Active tab is ${capturedProblem.leetcodeSlug}, not ${displayCaptured.problem.leetcodeSlug}.`);
+      }
+      const result = await saveCapturedProblem(settings, capturedProblem);
+      setSyncState({
+        busy: false,
+        message:
+          result.importedSubmissions === 1
+            ? "Synced 1 new submission."
+            : result.importedSubmissions > 1
+              ? `Synced ${result.importedSubmissions} new submissions.`
+              : "Already up to date.",
+        tone: "success",
+      });
+      onRefresh();
+    } catch (e) {
+      setSyncState({
+        busy: false,
+        message: e instanceof Error ? e.message : "Sync failed.",
+        tone: "error",
+      });
+    }
+  }
 
   if (state.kind === "detecting") return <p className="popup-muted">Connecting…</p>;
   if (state.kind === "loading") return <p className="popup-muted">Syncing <span className="popup-code">{state.slug}</span>…</p>;
@@ -851,6 +917,11 @@ function ProblemTab({
       due={due}
       mode={mode}
       onModeChange={setMode}
+      onSync={syncLatestSubmissions}
+      syncBusy={syncState.busy}
+      syncMessage={syncState.message}
+      syncTone={syncState.tone}
+      canSync={!isStickyView}
       onRefresh={onRefresh}
       onRated={onRefresh}
     />
@@ -863,6 +934,11 @@ function ProblemTab({
       due={due}
       mode={mode}
       onModeChange={setMode}
+      onSync={syncLatestSubmissions}
+      syncBusy={syncState.busy}
+      syncMessage={syncState.message}
+      syncTone={syncState.tone}
+      canSync={!isStickyView}
       onRefresh={onRefresh}
     />
   )}
@@ -878,12 +954,22 @@ function ProblemCard({
   due,
   mode,
   onModeChange,
+  onSync,
+  syncBusy,
+  syncMessage,
+  syncTone,
+  canSync,
 }: {
   problem: ApiProblem;
   settings: ExtSettings;
   due: boolean;
   mode: "review" | "manage";
   onModeChange: (m: "review" | "manage") => void;
+  onSync: () => void;
+  syncBusy: boolean;
+  syncMessage: string | null;
+  syncTone: "success" | "error";
+  canSync: boolean;
 }) {
   return (
     <div className="problem-card">
@@ -904,17 +990,30 @@ function ProblemCard({
             )}
           </div>
         </div>
-        <a
-          href={`${settings.apiBaseUrl}/problems/${problem.id}`}
-          target="_blank"
-          rel="noreferrer"
-          className="problem-header-web"
-          title="Open in web"
-          aria-label="Open in web"
-        >
-          ↗
-        </a>
+        <div className="problem-card-actions">
+          <button
+            type="button"
+            className="problem-header-web"
+            title="Sync latest LeetCode submissions"
+            aria-label="Sync latest LeetCode submissions"
+            disabled={!canSync || syncBusy}
+            onClick={onSync}
+          >
+            {syncBusy ? "…" : "↻"}
+          </button>
+          <a
+            href={`${settings.apiBaseUrl}/problems/${problem.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="problem-header-web"
+            title="Open in web"
+            aria-label="Open in web"
+          >
+            ↗
+          </a>
+        </div>
       </div>
+      {syncMessage && <div className={`problem-card-sync problem-card-sync-${syncTone}`}>{syncMessage}</div>}
       <div className="problem-card-mode">
         <button
           type="button"
@@ -945,6 +1044,11 @@ function ReviewView({
   due,
   mode,
   onModeChange,
+  onSync,
+  syncBusy,
+  syncMessage,
+  syncTone,
+  canSync,
   onRefresh,
   onRated,
 }: {
@@ -955,6 +1059,11 @@ function ReviewView({
   due: boolean;
   mode: "review" | "manage";
   onModeChange: (m: "review" | "manage") => void;
+  onSync: () => void;
+  syncBusy: boolean;
+  syncMessage: string | null;
+  syncTone: "success" | "error";
+  canSync: boolean;
   onRefresh: () => void;
   onRated: () => void;
 }) {
@@ -963,7 +1072,18 @@ function ReviewView({
   return (
     <div className="review-workspace">
       {/* Module 1 — problem context */}
-      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+      <ProblemCard
+        problem={problem}
+        settings={settings}
+        due={due}
+        mode={mode}
+        onModeChange={onModeChange}
+        onSync={onSync}
+        syncBusy={syncBusy}
+        syncMessage={syncMessage}
+        syncTone={syncTone}
+        canSync={canSync}
+      />
 
       {/* Module 2 — content */}
       <div className="content-card">
@@ -1654,6 +1774,11 @@ function ManageView({
   due,
   mode,
   onModeChange,
+  onSync,
+  syncBusy,
+  syncMessage,
+  syncTone,
+  canSync,
   onRefresh,
 }: {
   problem: ApiProblem;
@@ -1663,11 +1788,27 @@ function ManageView({
   due: boolean;
   mode: "review" | "manage";
   onModeChange: (m: "review" | "manage") => void;
+  onSync: () => void;
+  syncBusy: boolean;
+  syncMessage: string | null;
+  syncTone: "success" | "error";
+  canSync: boolean;
   onRefresh: () => void;
 }) {
   return (
     <div className="stack">
-      <ProblemCard problem={problem} settings={settings} due={due} mode={mode} onModeChange={onModeChange} />
+      <ProblemCard
+        problem={problem}
+        settings={settings}
+        due={due}
+        mode={mode}
+        onModeChange={onModeChange}
+        onSync={onSync}
+        syncBusy={syncBusy}
+        syncMessage={syncMessage}
+        syncTone={syncTone}
+        canSync={canSync}
+      />
 
       <div className="panel">
         <div className="section-label">Add a card</div>
@@ -2520,15 +2661,7 @@ function CaptureView({
   async function readPage() {
     setBusy(true);
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id) throw new Error("No active tab.");
-      const resp = (await chrome.tabs.sendMessage(tab.id, {
-        type: "capture_current_problem",
-      })) as ContentResponse;
-      if (resp.type !== "captured") {
-        throw new Error(resp.type === "error" ? resp.message : "Unexpected response");
-      }
-      setPreview(resp.data);
+      setPreview(await readActiveProblem());
     } catch (e) {
       onError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -2540,15 +2673,7 @@ function CaptureView({
     if (!preview) return;
     setBusy(true);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/capture`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify(trimCapturePayload(preview)),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
-      }
+      await saveCapturedProblem(settings, preview);
       onCaptured();
     } catch (e) {
       onError(e instanceof Error ? e.message : "Unknown error");

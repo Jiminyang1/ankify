@@ -17,6 +17,7 @@ import { formatQuizMarkdown, type FsrsRating, type QuizAnswer, type QuizItem } f
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
+import { HighlightedCode } from "@/components/ui/highlighted-code";
 import { cn, formatInterval } from "@/lib/utils";
 
 type ReviewPayload = {
@@ -1625,9 +1626,11 @@ function SubmissionExplorer({
             </div>
           )}
 
-          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre px-4 py-3 font-mono text-xs leading-6">
-            {selectedSubmission.code}
-          </pre>
+          <HighlightedCode
+            code={selectedSubmission.code}
+            language={selectedSubmission.language}
+            className="min-h-0 flex-1"
+          />
         </div>
       </div>
     </div>

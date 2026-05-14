@@ -204,7 +204,7 @@ export async function captureCurrent(): Promise<CapturedProblem> {
   const q = await fetchProblem(slug);
   if (!q) throw new Error("Problem not found");
 
-  const recent = await fetchRecentSubmissions(slug, 5);
+  const recent = await fetchRecentSubmissions(slug, 20);
   console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
 
   const submissions: CapturedSubmission[] = [];
@@ -216,6 +216,7 @@ export async function captureCurrent(): Promise<CapturedProblem> {
         continue;
       }
       submissions.push({
+        leetcodeSubmissionId: s.id,
         language: d.lang.verboseName || d.lang.name,
         code: d.code,
         status: normaliseStatus(d.statusDisplay ?? s.statusDisplay),

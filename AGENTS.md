@@ -12,7 +12,9 @@ pnpm db:generate            # drizzle-kit generate (after schema changes)
 pnpm db:migrate             # apply migrations to local/remote Turso
 pnpm db:studio              # drizzle-kit studio (browse DB in browser)
 
-pnpm dev                    # Next.js web app on :3000
+pnpm dev                    # apply local DB migrations, then start Next.js web app on :3000
+pnpm dev:web                # same as pnpm dev
+pnpm dev:all                # apply local DB migrations, then run web + extension watch together
 pnpm dev:ext                # Chrome extension build in watch mode
 
 pnpm typecheck              # run tsc --noEmit across all packages

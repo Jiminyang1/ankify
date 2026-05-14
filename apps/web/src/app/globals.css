@@ -151,3 +151,19 @@ a:focus-visible,
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+.highlighted-code .shiki {
+  margin: 0;
+  min-width: 100%;
+  width: max-content;
+  background: transparent !important;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5rem;
+  tab-size: 2;
+}
+
+.highlighted-code code {
+  font-family: inherit;
+}

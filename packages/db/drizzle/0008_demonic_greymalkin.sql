@@ -1,0 +1,2 @@
+ALTER TABLE `submissions` ADD `leetcode_submission_id` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `submissions_user_problem_lc_submission_unique` ON `submissions` (`user_id`,`problem_id`,`leetcode_submission_id`);
