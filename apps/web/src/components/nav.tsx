@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { BrandLockup } from "./brand";
@@ -16,9 +17,32 @@ const LINKS = [
   { href: "/settings", label: "Settings" },
 ] as const;
 
-export function Nav({ dueCount }: { dueCount: number }) {
+export function Nav() {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
+  const [dueCount, setDueCount] = useState(0);
+
+  useEffect(() => {
+    if (isLogin) return;
+    let cancelled = false;
+
+    async function loadDueCount() {
+      try {
+        const res = await fetch("/api/review/queue?limit=0", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { queue?: { dueCount?: number } };
+        if (!cancelled) setDueCount(json.queue?.dueCount ?? 0);
+      } catch {
+        if (!cancelled) setDueCount(0);
+      }
+    }
+
+    void loadDueCount();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLogin, pathname]);
+
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">

@@ -7,6 +7,7 @@ import type { Card } from "@ankify/db";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Mode = "manual" | "ai";
@@ -295,14 +296,9 @@ export function UserCardButton({
               </span>
               <h3 className="truncate text-base font-semibold">{problemTitle}</h3>
             </div>
-            <button
-              type="button"
-              onClick={closePanel}
-              disabled={!!busy}
-              className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-subtle hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button variant="ghost" size="sm" onClick={closePanel} disabled={!!busy} className="text-muted">
               Close
-            </button>
+            </Button>
           </div>
 
           <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
@@ -333,22 +329,17 @@ export function UserCardButton({
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
                     {error && <span className="mr-auto text-xs text-danger">{error}</span>}
-                    <button
-                      type="button"
-                      disabled={!!busy}
-                      onClick={closePanel}
-                      className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-subtle disabled:opacity-50"
-                    >
+                    <Button size="sm" disabled={!!busy} onClick={closePanel}>
                       Cancel
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
                       disabled={!!busy || !question.trim() || !answer.trim()}
                       onClick={saveManualCard}
-                      className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
                     >
                       {busy === "save" ? "Saving..." : "Save card"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
@@ -364,22 +355,16 @@ export function UserCardButton({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs text-muted">{rawText.length}/6000</span>
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={!!busy}
-                          onClick={() => startAiGenerate("auto")}
-                          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
-                        >
+                        <Button variant="primary" size="sm" disabled={!!busy} onClick={() => startAiGenerate("auto")}>
                           {busy === "auto" ? "Generating..." : "Auto generate"}
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          size="sm"
                           disabled={!!busy || !rawText.trim()}
                           onClick={() => startAiGenerate("note")}
-                          className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
                         >
                           {busy === "note" ? "Generating..." : "Generate from note"}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                     {generatingAi && <CardGenerationTimer elapsedSeconds={generationElapsedSeconds} />}
@@ -416,19 +401,19 @@ export function UserCardButton({
 
   return (
     <div className="relative">
-      <button
-        type="button"
+      <Button
+        variant="primary"
         onClick={() => {
           setOpen(true);
           void loadCandidates().catch((e) => setError(e instanceof Error ? e.message : "Could not load candidates"));
         }}
-        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-card hover:opacity-90"
       >
-        New
+        <span aria-hidden className="text-base leading-none">+</span>
+        Add card
         {candidateCount > 0 ? (
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{candidateCount}</span>
         ) : null}
-      </button>
+      </Button>
       {modal}
     </div>
   );
@@ -535,22 +520,12 @@ function CandidateReview({
           </span>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={index === 0}
-            onClick={onPrev}
-            className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-subtle disabled:opacity-40"
-          >
+          <Button size="sm" disabled={index === 0} onClick={onPrev} className="px-2 py-1">
             Prev
-          </button>
-          <button
-            type="button"
-            disabled={index >= count - 1}
-            onClick={onNext}
-            className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-subtle disabled:opacity-40"
-          >
+          </Button>
+          <Button size="sm" disabled={index >= count - 1} onClick={onNext} className="px-2 py-1">
             Next
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -584,36 +559,30 @@ function CandidateReview({
           rows={2}
         />
         <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
+          <Button
+            size="sm"
             disabled={disabled || !candidate.question.trim() || !candidate.answer.trim() || !candidate.instruction.trim()}
             onClick={onFollowup}
-            className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
           >
             {candidate.busy === "followup" ? "Applying..." : "Apply follow up"}
-          </button>
+          </Button>
         </div>
         {candidate.busy === "followup" && <CardGenerationTimer elapsedSeconds={followupElapsedSeconds} />}
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
         {candidate.localError && <span className="mr-auto text-xs text-danger">{candidate.localError}</span>}
-        <button
-          type="button"
-          disabled={disabled && candidate.busy !== "discard"}
-          onClick={onDiscard}
-          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
-        >
+        <Button size="sm" disabled={disabled && candidate.busy !== "discard"} onClick={onDiscard}>
           {candidate.busy === "discard" ? "Discarding..." : "Discard"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
           disabled={disabled || !candidate.question.trim() || !candidate.answer.trim()}
           onClick={onConfirm}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
         >
           {candidate.busy === "confirm" ? "Confirming..." : "Confirm"}
-        </button>
+        </Button>
       </div>
     </Surface>
   );

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { getOptionalPageUser } from "@/lib/auth";
-import { getReviewQueueStatus } from "@/lib/review-queue";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,19 +15,7 @@ export const metadata: Metadata = {
   },
 };
 
-async function getDueCount(): Promise<number> {
-  try {
-    const user = await getOptionalPageUser();
-    if (!user) return 0;
-    const queue = await getReviewQueueStatus(user.id);
-    return queue.dueCount;
-  } catch {
-    return 0;
-  }
-}
-
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const dueCount = await getDueCount();
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen">
@@ -39,7 +25,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           }}
         />
         <ThemeProvider>
-          <Nav dueCount={dueCount} />
+          <Nav />
           <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
         </ThemeProvider>
       </body>

@@ -15,6 +15,7 @@ export default {
         "accent-soft": "rgb(var(--accent-soft) / <alpha-value>)",
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
+        "warning-soft": "rgb(var(--warning-soft) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
         easy: "rgb(var(--easy) / <alpha-value>)",
         medium: "rgb(var(--medium) / <alpha-value>)",

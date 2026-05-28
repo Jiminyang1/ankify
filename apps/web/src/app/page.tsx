@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { buttonClasses } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { requirePageUser } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
@@ -31,14 +33,23 @@ async function getHomeData(userId: string) {
       .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
       .limit(Math.min(8, queue.remaining));
 
-    const cardStats = await db
-      .select({
-        problemId: schema.cards.problemId,
-        total: sql<number>`count(*)`,
-      })
-      .from(schema.cards)
-      .where(and(eq(schema.cards.userId, userId), eq(schema.cards.aiStatus, "ready")))
-      .groupBy(schema.cards.problemId);
+    const dueProblemIds = dueProblems.map((problem) => problem.id);
+    const cardStats = dueProblemIds.length
+      ? await db
+          .select({
+            problemId: schema.cards.problemId,
+            total: sql<number>`count(*)`,
+          })
+          .from(schema.cards)
+          .where(
+            and(
+              eq(schema.cards.userId, userId),
+              eq(schema.cards.aiStatus, "ready"),
+              inArray(schema.cards.problemId, dueProblemIds),
+            ),
+          )
+          .groupBy(schema.cards.problemId)
+      : [];
 
     return {
       totalProblems: totalRow?.count ?? 0,
@@ -89,12 +100,10 @@ export default async function HomePage() {
             </div>
             <Link
               href={hasDue ? "/review" : "/problems"}
-              className="inline-flex items-center justify-center rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:opacity-90"
+              className={buttonClasses({ variant: "primary", className: "px-5 py-2.5" })}
             >
               {hasDue ? "Start session" : "Open deck"}
-              <span className="ml-2" aria-hidden>
-                -&gt;
-              </span>
+              <span aria-hidden>-&gt;</span>
             </Link>
           </div>
 
@@ -160,14 +169,15 @@ export default async function HomePage() {
         </section>
       ) : (
         !("error" in data && data.error) && (
-          <Surface className="p-8 text-center">
-            <Pill tone={allDone ? "success" : "accent"}>{allDone ? "clear" : "empty deck"}</Pill>
-            <p className="mt-3 text-lg font-medium">
-              {allDone ? "No reviews are due." : "Capture a LeetCode problem to start."}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              {allDone ? "The next session appears when a problem becomes due." : "Use the extension from a LeetCode problem page."}
-            </p>
+          <Surface className="p-4">
+            <EmptyState
+              title={allDone ? "No reviews are due" : "Capture a LeetCode problem to start"}
+              description={
+                allDone
+                  ? "The next session appears when a problem becomes due."
+                  : "Use the extension from a LeetCode problem page."
+              }
+            />
           </Surface>
         )
       )}

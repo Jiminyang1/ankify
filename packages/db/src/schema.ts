@@ -164,6 +164,7 @@ export const problems = sqliteTable(
     userIdx: index("problems_user_idx").on(t.userId),
     dueIdx: index("problems_fsrs_due_idx").on(t.fsrsDue),
     slugIdx: index("problems_slug_idx").on(t.leetcodeSlug),
+    userArchivedDueIdx: index("problems_user_archived_due_idx").on(t.userId, t.archivedAt, t.fsrsDue),
     userSlugIdx: uniqueIndex("problems_user_slug_unique").on(t.userId, t.leetcodeSlug),
     userLeetcodeIdIdx: uniqueIndex("problems_user_leetcode_id_unique").on(t.userId, t.leetcodeId),
   }),
@@ -246,6 +247,7 @@ export const cards = sqliteTable(
     userIdx: index("cards_user_idx").on(t.userId),
     problemIdx: index("cards_problem_idx").on(t.problemId),
     aiStatusIdx: index("cards_ai_status_idx").on(t.aiStatus),
+    userStatusProblemIdx: index("cards_user_status_problem_idx").on(t.userId, t.aiStatus, t.problemId),
   }),
 );
 
@@ -291,6 +293,7 @@ export const reviewEvents = sqliteTable(
     problemIdx: index("review_events_problem_idx").on(t.problemId),
     typeIdx: index("review_events_type_idx").on(t.eventType),
     occurredIdx: index("review_events_occurred_idx").on(t.occurredAt),
+    userTypeOccurredIdx: index("review_events_user_type_occurred_idx").on(t.userId, t.eventType, t.occurredAt),
   }),
 );
 

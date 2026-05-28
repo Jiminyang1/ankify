@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import { Button } from "@/components/ui/button";
+import { Input, Select } from "@/components/ui/field";
 
 /** Fallback model lists shown until the user clicks "Refresh". After
  *  refresh, the live `/v1/models` response from the provider replaces these.
@@ -152,8 +154,9 @@ export function AiSettingsForm({
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
-        <label className="block text-sm">Provider</label>
-        <select
+        <label className="block text-sm" htmlFor="ai-provider">Provider</label>
+        <Select
+          id="ai-provider"
           value={provider}
           onChange={(e) => {
             const p = e.target.value as typeof provider;
@@ -161,31 +164,31 @@ export function AiSettingsForm({
             const first = MODEL_PRESETS[p]?.[0];
             if (first) setModel(first);
           }}
-          className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm"
         >
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI</option>
           <option value="deepseek">DeepSeek</option>
-        </select>
+        </Select>
       </div>
 
       <div className="space-y-1">
         <div className="flex items-baseline justify-between gap-3">
-          <label className="block text-sm">Model</label>
+          <label className="block text-sm" htmlFor="ai-model">Model</label>
           <div className="flex items-center gap-2 text-xs text-muted">
             <span>{modelsSourceLabel}</span>
-            <button
-              type="button"
+            <Button
+              size="sm"
               onClick={refreshModels}
               disabled={refreshingModels || !canRefreshModels}
               title={!canRefreshModels ? "Set a provider and an API key first" : undefined}
-              className="rounded-md border border-border bg-bg px-2 py-0.5 text-xs hover:bg-subtle disabled:opacity-50"
+              className="px-2 py-0.5"
             >
               {refreshingModels ? "Refreshing…" : live ? "Refresh" : "Load from provider"}
-            </button>
+            </Button>
           </div>
         </div>
-        <select
+        <Select
+          id="ai-model"
           value={isCustomModel ? "__custom__" : model}
           onChange={(e) => {
             if (e.target.value === "__custom__") {
@@ -195,7 +198,7 @@ export function AiSettingsForm({
             }
           }}
           autoComplete="off"
-          className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
+          className="font-mono"
         >
           {models.map((m) => (
             <option key={m.id} value={m.id}>
@@ -203,14 +206,15 @@ export function AiSettingsForm({
             </option>
           ))}
           <option value="__custom__">Other...</option>
-        </select>
+        </Select>
         {isCustomModel && (
-          <input
+          <Input
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="Enter model name..."
             autoComplete="off"
-            className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
+            aria-label="Custom model name"
+            className="font-mono"
           />
         )}
         {modelsError && (
@@ -252,16 +256,17 @@ export function AiSettingsForm({
       </div>
 
       <div className="space-y-1">
-        <label className="block text-sm">
+        <label className="block text-sm" htmlFor="ai-api-key">
           API key {initial.hasApiKey && <span className="text-muted">(currently set; leave blank to keep)</span>}
         </label>
-        <input
+        <Input
+          id="ai-api-key"
           type="password"
           value={apiKey}
           disabled={clearApiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="sk-…"
-          className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm"
+          className="font-mono"
         />
         {initial.hasApiKey && (
           <label className="mt-2 flex items-center gap-2 text-xs text-muted">
@@ -279,22 +284,16 @@ export function AiSettingsForm({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-md border border-border bg-accent/10 px-4 py-2 text-accent hover:bg-accent/20 disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           onClick={testConnection}
           disabled={testing || !canTest}
           title={!canTest ? "Set provider, model, and an API key first" : undefined}
-          className="rounded-md border border-border bg-bg px-4 py-2 text-sm hover:bg-subtle disabled:opacity-50"
         >
           {testing ? "Testing…" : "Test connection"}
-        </button>
+        </Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
 
@@ -399,19 +398,11 @@ export function ExtensionConnectionForm() {
       <form onSubmit={createKey} className="flex flex-wrap items-end gap-3">
         <label className="min-w-64 flex-1 space-y-1">
           <span className="block text-sm">Token name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm"
-          />
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-md border border-border bg-accent/10 px-4 py-2 text-sm text-accent hover:bg-accent/20 disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={busy}>
           Generate token
-        </button>
+        </Button>
       </form>
 
       {newKey && (
@@ -438,14 +429,9 @@ export function ExtensionConnectionForm() {
                     {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : "never"}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => revokeKey(key.id)}
-                  disabled={busy}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
-                >
+                <Button size="sm" onClick={() => revokeKey(key.id)} disabled={busy}>
                   Revoke
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -486,14 +472,15 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
-        <label className="block text-sm">Daily review limit</label>
-        <input
+        <label className="block text-sm" htmlFor="daily-review-limit">Daily review limit</label>
+        <Input
+          id="daily-review-limit"
           type="number"
           min={1}
           max={100}
           value={dailyReviewLimit}
           onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
-          className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm tabular-nums"
+          className="tabular-nums"
         />
         <p className="text-xs text-muted">
           Caps how many due problems enter today&apos;s review queue. Extra due problems roll over.
@@ -501,13 +488,9 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
       </div>
 
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-md border border-border bg-accent/10 px-4 py-2 text-accent hover:bg-accent/20 disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={saving}>
           {saving ? "Saving…" : "Save review settings"}
-        </button>
+        </Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </form>

@@ -20,7 +20,8 @@
   --accent: 212 168 83;
   --accent-soft: 42 38 28;
   --success: 76 175 145;
-  --warning: 212 168 83;
+  --warning: 232 146 64;
+  --warning-soft: 48 36 22;
   --danger: 224 85 106;
   --easy: 76 175 145;
   --medium: 212 168 83;
@@ -31,16 +32,17 @@
 /* ── Light theme ── */
 [data-theme="light"] {
   color-scheme: light;
-  --bg: 250 249 247;
+  --bg: 245 244 241;
   --surface: 255 255 255;
-  --subtle: 242 241 239;
+  --subtle: 237 236 232;
   --fg: 26 26 30;
-  --muted: 110 109 115;
-  --border: 229 227 224;
+  --muted: 102 101 107;
+  --border: 217 214 208;
   --accent: 184 150 63;
   --accent-soft: 250 246 236;
   --success: 45 143 109;
-  --warning: 184 150 63;
+  --warning: 192 110 28;
+  --warning-soft: 252 243 232;
   --danger: 199 62 85;
   --easy: 45 143 109;
   --medium: 184 150 63;
@@ -52,16 +54,17 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg: 250 249 247;
+    --bg: 245 244 241;
     --surface: 255 255 255;
-    --subtle: 242 241 239;
+    --subtle: 237 236 232;
     --fg: 26 26 30;
-    --muted: 110 109 115;
-    --border: 229 227 224;
+    --muted: 102 101 107;
+    --border: 217 214 208;
     --accent: 184 150 63;
     --accent-soft: 250 246 236;
     --success: 45 143 109;
-    --warning: 184 150 63;
+    --warning: 192 110 28;
+    --warning-soft: 252 243 232;
     --danger: 199 62 85;
     --easy: 45 143 109;
     --medium: 184 150 63;

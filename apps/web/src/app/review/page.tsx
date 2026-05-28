@@ -17,7 +17,9 @@ import { formatQuizMarkdown, type FsrsRating, type QuizAnswer, type QuizItem } f
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
-import { HighlightedCode } from "@/components/ui/highlighted-code";
+import { SubmissionList } from "@/components/submission-list";
+import { useNotesAutosave } from "@/lib/notes-autosave";
+import { SaveStatus } from "@/components/ui/save-status";
 import { cn, formatInterval } from "@/lib/utils";
 
 type ReviewPayload = {
@@ -72,45 +74,12 @@ const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
   card: "Card",
 };
 
-/** Per-problem notes draft persisted in localStorage. `dirty` means the value
- *  hasn't been confirmed by the server yet — the editor uses it on mount to
- *  recover from refresh / crash without losing keystrokes. */
-type NotesDraft = { value: string; dirty: boolean; ts: number };
-
-function notesDraftKey(problemId: string) {
-  return `ankify.notes-draft.${problemId}`;
-}
-
-function readNotesDraft(problemId: string): NotesDraft | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(notesDraftKey(problemId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as NotesDraft;
-    if (typeof parsed?.value !== "string" || typeof parsed?.dirty !== "boolean") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    const payload: NotesDraft = { value, dirty, ts: Date.now() };
-    window.localStorage.setItem(notesDraftKey(problemId), JSON.stringify(payload));
-  } catch {
-    // localStorage can throw on quota / private mode — typing should never break
-  }
-}
-
 export default function ReviewPage() {
   const [data, setData] = useState<ReviewPayload | null>(null);
   const [stage, setStage] = useState<Stage>("loading");
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating>(3);
   const [notes, setNotes] = useState("");
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("quiz");
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [cardIdx, setCardIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [result, setResult] = useState<RateResult | null>(null);
@@ -119,17 +88,19 @@ export default function ReviewPage() {
   const [splitPercent, setSplitPercent] = useState(58);
   const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
 
-  const loadNext = useCallback(async () => {
+  const loadNext = useCallback(async (targetId?: string | null) => {
     setStage("loading");
     setUserFsrsRating(3);
     setNotes("");
     setWorkspaceTab("quiz");
-    setSelectedSubmissionId(null);
     setCardIdx(0);
     setFlipped(false);
     setResult(null);
     setError(null);
-    const res = await fetch("/api/review/next", { cache: "no-store" });
+    const url = targetId
+      ? `/api/review/next?problemId=${encodeURIComponent(targetId)}`
+      : "/api/review/next";
+    const res = await fetch(url, { cache: "no-store" });
     if (res.redirected && new URL(res.url).pathname === "/login") {
       window.location.assign("/login?next=/review");
       return;
@@ -149,7 +120,12 @@ export default function ReviewPage() {
   }, []);
 
   useEffect(() => {
-    void loadNext();
+    // Allow deep-linking a specific problem to review ahead of schedule
+    // (?problemId=…). Consume the param once, then strip it so a refresh or
+    // "Next" falls back to the normal due queue.
+    const target = new URLSearchParams(window.location.search).get("problemId");
+    void loadNext(target);
+    if (target) window.history.replaceState(null, "", "/review");
   }, [loadNext]);
 
   const getSplitBounds = useCallback(() => {
@@ -327,8 +303,6 @@ export default function ReviewPage() {
                 flipped={flipped}
                 setFlipped={setFlipped}
                 submissions={submissions}
-                selectedSubmissionId={selectedSubmissionId}
-                onSelectSubmission={setSelectedSubmissionId}
                 notes={notes}
                 setNotes={setNotes}
                 problemId={problem.id}
@@ -349,7 +323,7 @@ export default function ReviewPage() {
           </div>
           <button
             type="button"
-            onClick={loadNext}
+            onClick={() => loadNext()}
             className="mt-6 inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-card hover:opacity-90"
           >
             Next
@@ -461,8 +435,6 @@ function WorkspacePanel({
   flipped,
   setFlipped,
   submissions,
-  selectedSubmissionId,
-  onSelectSubmission,
   notes,
   setNotes,
   problemId,
@@ -477,8 +449,6 @@ function WorkspacePanel({
   flipped: boolean;
   setFlipped: Dispatch<SetStateAction<boolean>>;
   submissions: Submission[];
-  selectedSubmissionId: string | null;
-  onSelectSubmission: (id: string) => void;
   notes: string;
   setNotes: (value: string) => void;
   problemId: string;
@@ -529,12 +499,14 @@ function WorkspacePanel({
           />
         </div>
 
-        <div className={cn("h-full", activeTab !== "submissions" && "hidden")}>
-          <SubmissionExplorer
-            submissions={submissions}
-            selectedSubmissionId={selectedSubmissionId}
-            onSelectSubmission={onSelectSubmission}
-          />
+        <div className={cn("h-full overflow-y-auto p-4", activeTab !== "submissions" && "hidden")}>
+          {submissions.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-center">
+              <p className="text-sm text-muted">No submissions captured.</p>
+            </div>
+          ) : (
+            <SubmissionList submissions={submissions} />
+          )}
         </div>
 
         <div className={cn("h-full", activeTab !== "notes" && "hidden")}>
@@ -1432,72 +1404,11 @@ function NotesEditor({
   problemId: string;
 }) {
   const [editing, setEditing] = useState(false);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const savedRef = useRef(notes);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Local-first persistence: every keystroke writes synchronously to
-  // localStorage so typing never blocks on network and unsaved drafts survive
-  // refresh / crash. Server PATCH runs on a longer debounce; on success we
-  // mark the draft as in-sync. On mount we restore any dirty draft for this
-  // problem and re-fire a save so the server catches up.
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    savedRef.current = notes;
-    const draft = readNotesDraft(problemId);
-    if (draft && draft.dirty && draft.value !== notes) {
-      setNotes(draft.value);
-      void persist(draft.value);
-    } else if (draft && !draft.dirty && draft.value !== notes) {
-      // Server value diverged from last-synced draft (e.g. edited from another
-      // device). Trust the server and reset the local marker.
-      writeNotesDraft(problemId, notes, false);
-    }
-    // We only re-run when the active problem changes; subsequent typing flows
-    // through onChange below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [problemId]);
-
-  async function persist(value: string) {
-    if (value === savedRef.current) return;
-    setStatus("saving");
-    try {
-      const res = await fetch(`/api/problems/${problemId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ notes: value }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      savedRef.current = value;
-      writeNotesDraft(problemId, value, false);
-      setStatus("saved");
-      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
-    } catch {
-      // Leave the draft marked dirty so the next change retries.
-      setStatus("idle");
-    }
-  }
-
-  function handleChange(value: string) {
-    setNotes(value);
-    writeNotesDraft(problemId, value, true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => persist(value), 1500);
-  }
-
-  function flushSave() {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    persist(notes);
-  }
+  const { status, handleChange, flush, retry } = useNotesAutosave({
+    problemId,
+    value: notes,
+    setValue: setNotes,
+  });
 
   const showTextarea = editing || !notes.trim();
 
@@ -1507,13 +1418,12 @@ function NotesEditor({
         <div className="relative flex h-full min-h-[20rem] flex-col rounded-lg border border-border bg-subtle p-3 transition-colors focus-within:border-accent/40">
           {showTextarea ? (
             <textarea
-              ref={textareaRef}
               value={notes}
               onChange={(e) => handleChange(e.target.value)}
               onFocus={() => setEditing(true)}
               onBlur={() => {
                 setEditing(false);
-                flushSave();
+                flush();
               }}
               placeholder="Markdown notes — what to remember, what changed, open questions..."
               className="min-h-0 flex-1 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50 focus:outline-none focus:ring-0"
@@ -1527,14 +1437,7 @@ function NotesEditor({
               <Markdown>{notes}</Markdown>
             </div>
           )}
-          <div
-            className={cn(
-              "pointer-events-none absolute right-3 top-3 text-[10px] text-muted tabular-nums transition-opacity",
-              status === "idle" ? "opacity-0" : "opacity-70",
-            )}
-          >
-            {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
-          </div>
+          <SaveStatus status={status} onRetry={retry} className="absolute right-3 top-3" />
         </div>
       </div>
     </div>
@@ -1548,112 +1451,6 @@ function Summary({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
-}
-
-function SubmissionExplorer({
-  submissions,
-  selectedSubmissionId,
-  onSelectSubmission,
-}: {
-  submissions: Submission[];
-  selectedSubmissionId: string | null;
-  onSelectSubmission: (id: string) => void;
-}) {
-  if (submissions.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center p-5 text-center">
-        <p className="text-sm text-muted">No submissions captured.</p>
-      </div>
-    );
-  }
-
-  const selectedSubmission = submissions.find((submission) => submission.id === selectedSubmissionId) ?? submissions[0];
-  if (!selectedSubmission) return null;
-
-  const passed = selectedSubmission.status === "Accepted";
-
-  return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 overflow-x-auto border-b border-border p-3">
-        <div className="flex gap-2">
-          {submissions.map((submission, index) => {
-            const active = submission.id === selectedSubmission.id;
-            return (
-              <button
-                key={submission.id}
-                type="button"
-                onClick={() => onSelectSubmission(submission.id)}
-                className={cn(
-                  "min-w-[180px] shrink-0 rounded-lg border px-3 py-2 text-left transition",
-                  active ? "border-accent bg-accent-soft/25" : "border-border bg-surface hover:bg-subtle",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Pill tone={submission.status === "Accepted" ? "success" : "danger"}>
-                    {submission.status}
-                  </Pill>
-                  <span className="text-xs text-muted tabular-nums">#{submissions.length - index}</span>
-                </div>
-                <div className="mt-1 truncate text-xs text-muted">
-                  {submission.language}
-                  {submission.runtimeMs != null && ` · ${submission.runtimeMs} ms`}
-                  {submission.memoryKb != null && ` · ${formatMemory(submission.memoryKb)}`}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden p-4">
-        <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="shrink-0 border-b border-border bg-subtle/50 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Pill tone={passed ? "success" : "danger"}>{selectedSubmission.status}</Pill>
-              <span className="font-mono text-muted">{selectedSubmission.language}</span>
-              {selectedSubmission.runtimeMs != null && <span className="text-muted">{selectedSubmission.runtimeMs} ms</span>}
-              {selectedSubmission.memoryKb != null && <span className="text-muted">{formatMemory(selectedSubmission.memoryKb)}</span>}
-              <span className="ml-auto text-muted">{formatSubmissionDate(selectedSubmission.submittedAt)}</span>
-            </div>
-          </div>
-
-          {(selectedSubmission.errorMessage || selectedSubmission.failedTestcase || selectedSubmission.expectedOutput || selectedSubmission.actualOutput) && (
-            <div className="shrink-0 space-y-2 border-b border-border bg-danger/5 px-4 py-3 text-xs">
-              <SubmissionDetail label="Error" value={selectedSubmission.errorMessage} />
-              <SubmissionDetail label="Failed testcase" value={selectedSubmission.failedTestcase} />
-              <SubmissionDetail label="Expected" value={selectedSubmission.expectedOutput} />
-              <SubmissionDetail label="Actual" value={selectedSubmission.actualOutput} />
-            </div>
-          )}
-
-          <HighlightedCode
-            code={selectedSubmission.code}
-            language={selectedSubmission.language}
-            className="min-h-0 flex-1"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SubmissionDetail({ label, value }: { label: string; value: string | null }) {
-  if (!value) return null;
-  return (
-    <div>
-      <span className="font-medium uppercase tracking-wide text-muted">{label}</span>
-      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-fg">{value}</pre>
-    </div>
-  );
-}
-
-function formatMemory(memoryKb: number) {
-  return `${(memoryKb / 1024).toFixed(1)} MB`;
-}
-
-function formatSubmissionDate(value: Submission["submittedAt"]) {
-  if (!value) return "No timestamp";
-  return new Date(value).toLocaleString();
 }
 
 function clamp(value: number, min: number, max: number) {

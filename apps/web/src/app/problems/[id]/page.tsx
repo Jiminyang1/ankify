@@ -1,17 +1,20 @@
 import Link from "next/link";
-import type { Route } from "next";
 import { notFound } from "next/navigation";
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq } from "drizzle-orm";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
-import { HighlightedCode } from "@/components/ui/highlighted-code";
+import { SubmissionList } from "@/components/submission-list";
+import { buttonClasses } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ProblemWorkspace, type WorkspacePanel } from "./problem-workspace";
 import { requirePageUser } from "@/lib/auth";
-import { formatAbsolute, formatRelative } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
 import { DeleteProblemButton } from "./delete-problem-button";
+import { NotesEditor } from "./notes-editor";
 
 const RATING_LABELS: Record<number, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -29,237 +32,190 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const problem = problemRows[0];
   if (!problem) notFound();
 
-  const submissions = await db
-    .select()
-    .from(schema.submissions)
-    .where(and(eq(schema.submissions.userId, user.id), eq(schema.submissions.problemId, id)))
-    .orderBy(desc(schema.submissions.submittedAt));
-
-  const cards = await db
-    .select()
-    .from(schema.cards)
-    .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
-    .orderBy(desc(schema.cards.createdAt));
-
-  const reviewHistory = await db
-    .select()
-    .from(schema.reviewEvents)
-    .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated")))
-    .orderBy(desc(schema.reviewEvents.occurredAt))
-    .limit(20);
+  const [submissions, cards, reviewHistory] = await Promise.all([
+    db
+      .select()
+      .from(schema.submissions)
+      .where(and(eq(schema.submissions.userId, user.id), eq(schema.submissions.problemId, id)))
+      .orderBy(desc(schema.submissions.submittedAt)),
+    db
+      .select()
+      .from(schema.cards)
+      .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
+      .orderBy(desc(schema.cards.createdAt)),
+    db
+      .select()
+      .from(schema.reviewEvents)
+      .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated")))
+      .orderBy(desc(schema.reviewEvents.occurredAt))
+      .limit(20),
+  ]);
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= Date.now();
 
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <DifficultyPill difficulty={problem.difficulty} />
-            <FsrsStatePill state={problem.fsrsState} />
-            {isDue && problem.fsrsReps > 0 && <Pill tone="accent">due</Pill>}
-            {problem.topicTags.slice(0, 4).map((t) => (
-              <span key={t} className="text-xs text-muted">
-                #{t}
+  const statementPanel = problem.descriptionMd ? (
+    <Markdown>{problem.descriptionMd}</Markdown>
+  ) : (
+    <EmptyState
+      title="No statement captured"
+      description="The problem statement is pulled in when you capture from LeetCode."
+    />
+  );
+
+  const cardsPanel =
+    cards.length === 0 ? (
+      <EmptyState
+        title="No cards yet"
+        description="Capture what confused you on this problem — write it yourself, or let AI structure a draft into a flashcard."
+        action={
+          <UserCardButton
+            problemId={problem.id}
+            problemTitle={problem.title}
+            problemDescription={problem.descriptionMd}
+          />
+        }
+      />
+    ) : (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted">
+            {cards.length} saved card{cards.length === 1 ? "" : "s"}
+          </p>
+          <UserCardButton
+            problemId={problem.id}
+            problemTitle={problem.title}
+            problemDescription={problem.descriptionMd}
+          />
+        </div>
+        <CardList cards={cards} />
+      </div>
+    );
+
+  const submissionsPanel =
+    submissions.length === 0 ? (
+      <EmptyState title="No submissions yet" description="Submissions captured from LeetCode will appear here." />
+    ) : (
+      <SubmissionList submissions={submissions} />
+    );
+
+  const historyPanel =
+    reviewHistory.length === 0 ? (
+      <EmptyState title="No reviews yet" description="Your recall ratings show up here once you start reviewing." />
+    ) : (
+      <ul className="divide-y divide-border">
+        {reviewHistory.map((ev) => (
+          <li key={ev.id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
+            <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{RATING_LABELS[ev.fsrsRating!] ?? ev.fsrsRating}</Pill>
+            <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
+            {ev.fsrsStabilitySnap != null && (
+              <span className="text-xs text-muted tabular-nums">
+                s{ev.fsrsStabilitySnap.toFixed(1)} d{(ev.fsrsDifficultySnap ?? 0).toFixed(1)}
               </span>
-            ))}
-          </div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-            {problem.leetcodeId != null && (
-              <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
             )}
-            {problem.title}
-          </h1>
-          <a
-            href={problem.url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-sm text-muted hover:text-accent"
-          >
-            Open on LeetCode <span aria-hidden>↗</span>
-          </a>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {(isDue || problem.fsrsReps === 0) && (
-            <Link
-              href="/review"
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-card hover:opacity-90"
-            >
-              Review now
-              <span aria-hidden>→</span>
-            </Link>
-          )}
-          <Link
-            href={"/analysis" as Route}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium hover:bg-subtle"
-          >
-            Analysis
-          </Link>
-          <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
-        </div>
-      </header>
+          </li>
+        ))}
+      </ul>
+    );
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <FsrsStat label="Due" value={isDue ? "now" : formatRelative(problem.fsrsDue)} accent={isDue} />
-        <FsrsStat label="Reviews" value={
-          <>
-            {problem.fsrsReps}
-            {problem.fsrsLapses > 0 && <span className="text-danger"> · {problem.fsrsLapses}↓</span>}
-          </>
-        } hint="reps · lapses" />
-        <FsrsStat label="Last reviewed" value={formatRelative(problem.fsrsLastReview)} />
-        <FsrsStat label="Cards" value={cards.length} hint={cards.length === 0 ? undefined : "Saved"} />
-      </section>
+  const notesPanel = <NotesEditor problemId={problem.id} initialNotes={problem.notes ?? ""} />;
 
-      <section>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Cards</h2>
-            <p className="mt-1 text-xs text-muted">
-              {cards.length === 0
-                ? "Capture your thoughts: confusions, lessons, edge cases you want to remember."
-                : `${cards.length} saved card${cards.length === 1 ? "" : "s"}`}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <UserCardButton
-              problemId={problem.id}
-              problemTitle={problem.title}
-              problemDescription={problem.descriptionMd}
-            />
-          </div>
-        </div>
+  const panels: WorkspacePanel[] = [
+    { id: "statement", label: "Statement", node: statementPanel },
+    { id: "cards", label: "Cards", count: cards.length, node: cardsPanel },
+    { id: "submissions", label: "Submissions", count: submissions.length, node: submissionsPanel },
+    { id: "history", label: "History", count: reviewHistory.length, node: historyPanel },
+    { id: "notes", label: "Notes", node: notesPanel },
+  ];
 
-        {cards.length === 0 ? (
-          <Surface className="mt-4 p-8 text-center">
-            <p className="text-sm text-muted">
-              No cards yet. Click <span className="font-medium">+ My card</span> to write down what just confused you, and AI will structure it.
-            </p>
-          </Surface>
-        ) : (
-          <CardList cards={cards} />
-        )}
-      </section>
-
-      {/* Submissions */}
-      <section>
-        {submissions.length === 0 ? (
-          <>
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-lg font-semibold">Submissions</h2>
-              <span className="text-xs text-muted">0 captured</span>
+  return (
+    <div className="mx-auto max-w-6xl">
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+        {/* Identity + scheduling — the "what am I managing" rail */}
+        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <Surface className="p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <DifficultyPill difficulty={problem.difficulty} />
+              <FsrsStatePill state={problem.fsrsState} />
+              {isDue && problem.fsrsReps > 0 && <Pill tone="accent">due</Pill>}
             </div>
-            <p className="mt-3 text-sm text-muted">No submissions yet.</p>
-          </>
-        ) : (
-          <details className="group rounded-xl border border-border bg-surface shadow-card">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <h2 className="text-lg font-semibold">Submissions</h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  {submissions.length} captured · latest {formatAbsolute(submissions[0]!.submittedAt)}
-                </p>
+            <h1 className="mt-3 text-xl font-semibold leading-snug tracking-tight">
+              {problem.leetcodeId != null && (
+                <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
+              )}
+              {problem.title}
+            </h1>
+            {problem.topicTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">
+                {problem.topicTags.slice(0, 6).map((t) => (
+                  <span key={t}>#{t}</span>
+                ))}
               </div>
-              <span className="text-xs font-medium text-accent group-open:hidden">Expand</span>
-              <span className="hidden text-xs font-medium text-muted group-open:inline">Collapse</span>
-            </summary>
-            <ul className="space-y-3 border-t border-border p-4">
-              {submissions.map((s) => {
-                const passed = s.status === "Accepted";
-                return (
-                  <li key={s.id}>
-                    <Surface className="overflow-hidden">
-                      <div className="flex items-center justify-between gap-2 border-b border-border bg-subtle/50 px-4 py-2 text-xs">
-                        <div className="flex items-center gap-3">
-                          <Pill tone={passed ? "success" : "danger"}>{s.status}</Pill>
-                          <span className="font-mono text-muted">{s.language}</span>
-                          {s.runtimeMs != null && <span className="text-muted">{s.runtimeMs} ms</span>}
-                          {s.memoryKb != null && <span className="text-muted">{(s.memoryKb / 1024).toFixed(1)} MB</span>}
-                        </div>
-                        <span className="text-muted">{formatAbsolute(s.submittedAt)}</span>
-                      </div>
-                      {s.errorMessage && (
-                        <div className="border-b border-border bg-danger/5 px-4 py-2 text-xs text-danger">
-                          {s.errorMessage}
-                        </div>
-                      )}
-                      <HighlightedCode code={s.code} language={s.language} className="max-h-64" />
-                    </Surface>
-                  </li>
-                );
-              })}
-            </ul>
-          </details>
-        )}
-      </section>
-
-      {/* Problem statement */}
-      {problem.descriptionMd && (
-        <section>
-          <h2 className="text-lg font-semibold">Problem statement</h2>
-          <Surface className="mt-3 p-5">
-            <Markdown>{problem.descriptionMd}</Markdown>
+            )}
+            <a
+              href={problem.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex items-center gap-1 text-sm text-muted hover:text-accent"
+            >
+              Open on LeetCode <span aria-hidden>↗</span>
+            </a>
           </Surface>
-        </section>
-      )}
 
-      {/* Review history */}
-      {reviewHistory.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold">Review history</h2>
-          <div className="mt-3 space-y-1.5">
-            {reviewHistory.map((ev) => (
-              <div key={ev.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm">
-                <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{RATING_LABELS[ev.fsrsRating!] ?? ev.fsrsRating}</Pill>
-                <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
-                {ev.fsrsStabilitySnap != null && (
-                  <span className="text-xs text-muted tabular-nums">
-                    s{(ev.fsrsStabilitySnap).toFixed(1)} d{(ev.fsrsDifficultySnap ?? 0).toFixed(1)}
-                  </span>
-                )}
-              </div>
-            ))}
+          <Surface className="overflow-hidden">
+            <div className="border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted">
+              Scheduling
+            </div>
+            <dl className="divide-y divide-border">
+              <MetaRow label="Due" value={isDue ? "now" : formatRelative(problem.fsrsDue)} accent={isDue} />
+              <MetaRow
+                label="Reviews"
+                value={
+                  <>
+                    {problem.fsrsReps}
+                    {problem.fsrsLapses > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-danger">
+                        {problem.fsrsLapses} lapse{problem.fsrsLapses === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </>
+                }
+              />
+              <MetaRow label="Last reviewed" value={formatRelative(problem.fsrsLastReview)} />
+              <MetaRow label="Cards" value={cards.length} />
+            </dl>
+          </Surface>
+
+          <div className="flex gap-2">
+            <Link
+              href={`/review?problemId=${problem.id}`}
+              className={buttonClasses({ variant: "primary", className: "flex-1" })}
+            >
+              {isDue || problem.fsrsReps === 0 ? "Review" : "Review ahead"}
+            </Link>
+            <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
           </div>
-        </section>
-      )}
+        </aside>
 
-      {/* Notes */}
-      {problem.notes && (
-        <section>
-          <h2 className="text-lg font-semibold">Your notes</h2>
-          <Surface className="mt-3 p-5">
-            <Markdown>{problem.notes}</Markdown>
-          </Surface>
-        </section>
-      )}
+        {/* Content workspace — one panel at a time, like a console */}
+        <ProblemWorkspace defaultTab="statement" panels={panels} />
+      </div>
     </div>
   );
 }
 
-function FsrsStat({
+function MetaRow({
   label,
   value,
-  hint,
   accent,
 }: {
   label: string;
   value: React.ReactNode;
-  hint?: string;
   accent?: boolean;
 }) {
   return (
-    <div
-      className={
-        "rounded-lg border border-border bg-surface p-3 " +
-        (accent ? "border-accent/30 bg-accent-soft/40" : "")
-      }
-    >
-      <div className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className={"mt-0.5 text-lg font-semibold tabular-nums " + (accent ? "text-accent" : "")}>
-        {value}
-      </div>
-      {hint && <div className="mt-0.5 text-[11px] text-muted">{hint}</div>}
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+      <dt className="text-muted">{label}</dt>
+      <dd className={cn("font-medium tabular-nums", accent && "text-accent")}>{value}</dd>
     </div>
   );
 }

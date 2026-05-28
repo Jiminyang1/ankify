@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import type { Card } from "@ankify/db";
 import { Markdown } from "@/components/ui/markdown";
 import { Surface } from "@/components/ui/surface";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/field";
 
 type EditForm = {
   id: string;
@@ -88,7 +90,7 @@ export function CardList({ cards }: { cards: Card[] }) {
   const selectedCount = selected.size;
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="space-y-3">
       <Surface className="flex flex-wrap items-center gap-3 px-3 py-2">
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input
@@ -106,8 +108,9 @@ export function CardList({ cards }: { cards: Card[] }) {
         </label>
 
         {selectedCount > 0 && (
-          <button
-            type="button"
+          <Button
+            variant="danger"
+            size="sm"
             disabled={deleting}
             onClick={() =>
               deleteIds(
@@ -115,10 +118,10 @@ export function CardList({ cards }: { cards: Card[] }) {
                 `Delete ${selectedCount} card${selectedCount === 1 ? "" : "s"}? This cannot be undone.`,
               )
             }
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/15 disabled:opacity-50"
+            className="ml-auto"
           >
             {deleting ? "Deleting…" : `Delete ${selectedCount}`}
-          </button>
+          </Button>
         )}
       </Surface>
 
@@ -178,39 +181,34 @@ export function CardList({ cards }: { cards: Card[] }) {
                       <div className="mt-3 space-y-3">
                         <label className="block text-[11px] font-medium uppercase tracking-wide text-muted">
                           Question
-                          <textarea
+                          <Textarea
                             value={editForm.question}
                             onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
                             rows={3}
-                            className="mt-1 w-full resize-y rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/40"
+                            className="mt-1"
                           />
                         </label>
                         <label className="block text-[11px] font-medium uppercase tracking-wide text-muted">
                           Answer
-                          <textarea
+                          <Textarea
                             value={editForm.answer}
                             onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })}
                             rows={4}
-                            className="mt-1 w-full resize-y rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/40"
+                            className="mt-1"
                           />
                         </label>
                         <div className="flex justify-end gap-2 pt-1">
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => setEditForm(null)}
-                            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
-                          >
+                          <Button size="sm" disabled={saving} onClick={() => setEditForm(null)}>
                             Discard
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
                             disabled={saving || !editForm.question.trim() || !editForm.answer.trim()}
                             onClick={saveEdit}
-                            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-card hover:opacity-90 disabled:opacity-50"
                           >
                             {saving ? "Saving…" : "Save changes"}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     ) : (

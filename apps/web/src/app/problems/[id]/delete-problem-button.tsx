@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export function DeleteProblemButton({
   problemId,
@@ -89,22 +90,16 @@ export function DeleteProblemButton({
             )}
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-            <button
-              type="button"
-              onClick={close}
-              disabled={busy}
-              className="inline-flex items-center rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:bg-subtle disabled:opacity-50"
-            >
+            <Button onClick={close} disabled={busy}>
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               onClick={confirmDelete}
               disabled={busy}
-              className="inline-flex items-center rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-white shadow-card hover:opacity-90 disabled:opacity-50"
+              className="border-transparent bg-danger text-white shadow-card hover:opacity-90"
             >
               {busy ? "Deleting…" : "Delete forever"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>,
@@ -113,13 +108,13 @@ export function DeleteProblemButton({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-danger hover:bg-danger/10"
+        className="text-danger hover:bg-danger/10"
+        aria-label={`Delete ${problemTitle}`}
       >
         Delete
-      </button>
+      </Button>
       {modal}
     </>
   );

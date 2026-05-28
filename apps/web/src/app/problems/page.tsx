@@ -6,6 +6,8 @@ import type { Problem } from "@ankify/db";
 import type { LeetCodeDifficulty } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
+import { Input, Select } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn, formatRelative } from "@/lib/utils";
 
 type ProblemWithCards = Problem & { cardTotal: number };
@@ -201,35 +203,38 @@ export default function ProblemsPage() {
         </div>
 
         {/* State filter */}
-        <select
+        <Select
+          aria-label="Filter by FSRS state"
           value={filters.state}
           onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value as FilterState["state"] }))}
-          className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="w-auto"
         >
           {STATE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-        </select>
+        </Select>
 
         {/* Tag filter */}
-        <select
+        <Select
+          aria-label="Filter by tag"
           value={filters.tag}
           onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))}
-          className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="w-auto"
         >
           <option value="">All tags</option>
           {allTags.map((tag) => (
             <option key={tag} value={tag}>{tag}</option>
           ))}
-        </select>
+        </Select>
 
         {/* Search */}
-        <input
-          type="text"
+        <Input
+          type="search"
+          aria-label="Search problems by title"
           value={filters.search}
           onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           placeholder="Search..."
-          className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-fg placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="w-auto"
         />
       </div>
 
@@ -246,24 +251,30 @@ export default function ProblemsPage() {
                   { key: "reps", label: "Reps", className: "hidden md:table-cell" },
                   { key: "drills", label: "Drills", className: "hidden md:table-cell" },
                   { key: "state", label: "State", className: "hidden sm:table-cell" },
-                ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => (
-                  <th
-                    key={col.key}
-                    className={cn(
-                      "px-4 py-2.5 font-medium",
-                      col.className,
-                      col.key !== "state" && "cursor-pointer hover:text-fg select-none",
-                    )}
-                    onClick={col.key !== "state" ? () => toggleSort(col.key as SortKey) : undefined}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      {col.label}
-                      {sort.key === col.key && (
-                        <span className="text-[9px]">{sort.asc ? "▲" : "▼"}</span>
+                ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => {
+                  const sortable = col.key !== "state";
+                  const isSorted = sort.key === col.key;
+                  return (
+                    <th
+                      key={col.key}
+                      className={cn("px-4 py-2.5 font-medium", col.className)}
+                      aria-sort={isSorted ? (sort.asc ? "ascending" : "descending") : undefined}
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(col.key as SortKey)}
+                          className="inline-flex select-none items-center gap-1 font-medium uppercase tracking-wide transition hover:text-fg"
+                        >
+                          {col.label}
+                          {isSorted && <span className="text-[9px]">{sort.asc ? "▲" : "▼"}</span>}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">{col.label}</span>
                       )}
-                    </span>
-                  </th>
-                ))}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -325,7 +336,10 @@ export default function ProblemsPage() {
         </div>
 
         {filtered.length === 0 && (
-          <p className="px-4 py-8 text-center text-sm text-muted">No problems match the current filters.</p>
+          <EmptyState
+            title="No matches"
+            description="No problems match the current filters. Try clearing the search or tag filter."
+          />
         )}
       </Surface>
     </div>

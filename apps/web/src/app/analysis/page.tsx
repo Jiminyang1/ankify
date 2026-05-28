@@ -8,6 +8,7 @@ import { dueProblemCondition } from "@/lib/due-problems";
 import { requirePageUser } from "@/lib/auth";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
+import { InfoTip } from "@/components/ui/info-tip";
 import { formatRelative } from "@/lib/utils";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -112,6 +113,9 @@ async function loadAnalysis(userId: string) {
   const totalLapses = reviewed.reduce((s, p) => s + p.fsrsLapses, 0);
   const lapseRate = totalReps > 0 ? Math.round((totalLapses / totalReps) * 100) : null;
 
+  /* problems whose recall has slipped below 70% */
+  const atRiskCount = reviewed.filter((p) => retrievability(toFsrsState(p), now) < 0.7).length;
+
   /* stability distribution */
   const stabilityDist = stabilityBuckets(problems);
 
@@ -126,8 +130,10 @@ async function loadAnalysis(userId: string) {
   return {
     totalProblems: totalRow?.count ?? 0,
     dueCount: dueRow?.count ?? 0,
+    reviewedCount: reviewed.length,
     memoryScore,
     lapseRate,
+    atRiskCount,
     riskProblems,
     dailyReviews,
     stabilityDist,
@@ -135,6 +141,60 @@ async function loadAnalysis(userId: string) {
     burden7d,
   };
 }
+
+/** Red → gold → green by how durable the memory is. */
+const STABILITY_BAR_COLOR: Record<string, string> = {
+  New: "bg-border",
+  "< 1d": "bg-danger/70",
+  "1—7d": "bg-warning/70",
+  "7—30d": "bg-success/45",
+  "30d+": "bg-success/85",
+};
+
+/** Low recall reads red, mid reads gold, healthy stays neutral. */
+function recallToneClass(pct: number): string {
+  if (pct < 50) return "font-medium text-danger";
+  if (pct < 70) return "font-medium text-warning";
+  return "text-fg";
+}
+
+type Headline = { text: string; tone: "default" | "accent" | "success" | "danger" };
+
+function buildHeadline(data: Awaited<ReturnType<typeof loadAnalysis>>): Headline {
+  const mem = data.memoryScore != null ? `${data.memoryScore}%` : "—";
+  if (data.totalProblems === 0) {
+    return { text: "Capture a few LeetCode problems to start tracking your memory.", tone: "default" };
+  }
+  if (data.reviewedCount === 0) {
+    return {
+      text: `${data.totalProblems} problem${data.totalProblems === 1 ? "" : "s"} captured, none reviewed yet. Start a session to build your memory data.`,
+      tone: "accent",
+    };
+  }
+  if (data.atRiskCount > 0) {
+    return {
+      text:
+        data.atRiskCount === 1
+          ? "1 problem is slipping below 70% recall — review it before it fades."
+          : `${data.atRiskCount} problems are slipping below 70% recall — review them before they fade.`,
+      tone: "danger",
+    };
+  }
+  if (data.dueCount > 0) {
+    return {
+      text: `${data.dueCount} problem${data.dueCount === 1 ? " is" : "s are"} due. Your memory is holding strong at ${mem}.`,
+      tone: "accent",
+    };
+  }
+  return { text: `All caught up. Your memory is holding strong at ${mem}.`, tone: "success" };
+}
+
+const HEADLINE_TONE: Record<Headline["tone"], string> = {
+  default: "border-border bg-subtle text-fg",
+  accent: "border-accent/20 bg-accent-soft/40 text-fg",
+  success: "border-success/30 bg-success/5 text-fg",
+  danger: "border-danger/30 bg-danger/5 text-fg",
+};
 
 export default async function AnalysisPage() {
   const user = await requirePageUser();
@@ -154,36 +214,135 @@ export default async function AnalysisPage() {
     );
   }
 
+  const headline = buildHeadline(data);
+  const totalStates =
+    data.stateCounts.new + data.stateCounts.learning + data.stateCounts.review + data.stateCounts.relearning;
+  const memTone =
+    data.memoryScore == null ? "default" : data.memoryScore >= 80 ? "success" : data.memoryScore < 60 ? "danger" : "default";
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Analysis</h1>
-          <p className="mt-1 text-sm text-muted">Memory health from FSRS data.</p>
+          <p className="mt-1 text-sm text-muted">
+            How well your reviews are sticking, based on the FSRS memory model.
+          </p>
         </div>
         <Link href="/" className="text-sm font-medium text-accent hover:underline">
           Back to today
         </Link>
       </header>
 
+      {/* Plain-language summary */}
+      <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${HEADLINE_TONE[headline.tone]}`}>
+        {headline.text}
+      </div>
+
       {/* Top stats */}
-      <section className="grid gap-3 sm:grid-cols-5">
-        <Stat label="Total" value={data.totalProblems} />
-        <Stat label="Memory" value={data.memoryScore != null ? `${data.memoryScore}%` : "-"} />
-        <Stat label="Lapse rate" value={data.lapseRate != null ? `${data.lapseRate}%` : "-"} tone={data.lapseRate != null && data.lapseRate > 25 ? "danger" : "default"} />
-        <Stat label="Due now" value={data.dueCount} tone={data.dueCount > 0 ? "accent" : "default"} />
-        <Stat label="Next 7d" value={data.burden7d} />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat
+          label="Memory"
+          value={data.memoryScore != null ? `${data.memoryScore}%` : "—"}
+          hint="avg recall, reviewed problems"
+          info="Retrievability — the FSRS estimate of how likely you are to correctly recall a problem right now. Shown as the average across every problem you've reviewed."
+          tone={memTone}
+        />
+        <Stat
+          label="Lapse rate"
+          value={data.lapseRate != null ? `${data.lapseRate}%` : "—"}
+          hint="reviews you forgot"
+          info="A lapse is a review you rated Again (forgot). This is the share of all your reviews that were lapses — lower is better."
+          tone={data.lapseRate != null && data.lapseRate > 25 ? "danger" : "default"}
+        />
+        <Stat
+          label="Due now"
+          value={data.dueCount}
+          hint="ready to review"
+          tone={data.dueCount > 0 ? "accent" : "default"}
+        />
+        <Stat
+          label="Next 7d"
+          value={data.burden7d}
+          hint="coming this week"
+          info="Problems scheduled to come due within the next 7 days — a preview of your upcoming review workload."
+        />
+        <Stat label="Total" value={data.totalProblems} hint="problems in your deck" />
+      </section>
+
+      {/* Risk table — what to act on */}
+      <section>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">Needs attention</h2>
+          <p className="mt-1 text-sm text-muted">
+            Most likely to be forgotten — ranked by recall chance, difficulty, and past lapses.
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            <span className="font-medium text-fg">Retrievability</span> = chance you&apos;d recall it now ·{" "}
+            <span className="font-medium text-fg">Stability</span> = days until recall drops to 90%
+          </p>
+        </div>
+        {data.riskProblems.length === 0 ? (
+          <Surface className="p-6 text-sm text-muted">No reviewed problems yet.</Surface>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border bg-subtle text-[11px] uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Problem</th>
+                  <th className="px-4 py-2 font-medium">State</th>
+                  <th className="px-4 py-2 font-medium">Retrievability</th>
+                  <th className="px-4 py-2 font-medium">Stability</th>
+                  <th className="px-4 py-2 font-medium">Due</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {data.riskProblems.map((problem) => {
+                  const recall = Math.round(problem.retrievabilityNow * 100);
+                  return (
+                    <tr key={problem.id} className="align-top">
+                      <td className="px-4 py-3">
+                        <Link href={`/problems/${problem.id}`} className="font-medium hover:text-accent">
+                          {problem.title}
+                        </Link>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <DifficultyPill difficulty={problem.difficulty} />
+                          {problem.fsrsLapses > 0 && (
+                            <Pill tone="danger">
+                              {problem.fsrsLapses} lapse{problem.fsrsLapses === 1 ? "" : "s"}
+                            </Pill>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <FsrsStatePill state={problem.fsrsState} />
+                      </td>
+                      <td className={`px-4 py-3 tabular-nums ${recallToneClass(recall)}`}>{recall}%</td>
+                      <td className="px-4 py-3 tabular-nums">
+                        {problem.fsrsStability != null ? `${problem.fsrsStability.toFixed(1)}d` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-muted">{formatRelative(problem.fsrsDue)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {/* Memory breakdown */}
-      {(data.stateCounts.new + data.stateCounts.learning + data.stateCounts.review + data.stateCounts.relearning) > 0 && (
+      {totalStates > 0 && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold">State · Stability</h2>
+          <h2 className="mb-3 text-lg font-semibold">Memory breakdown</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {/* State distribution */}
             <Surface className="p-4">
-              <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">State</div>
-              <div className="space-y-2">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">State</div>
+              <p className="mt-1 text-xs text-muted">
+                Where each problem sits in its learning cycle: new → learning → review → relearning.
+              </p>
+              <div className="mt-3 space-y-2">
                 {[
                   { key: "new" as const, label: "New" },
                   { key: "learning" as const, label: "Learning" },
@@ -210,14 +369,17 @@ export default async function AnalysisPage() {
 
             {/* Stability buckets */}
             <Surface className="p-4">
-              <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Stability</div>
-              <div className="space-y-2">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Stability</div>
+              <p className="mt-1 text-xs text-muted">
+                How durable each memory is — days until recall drops to 90%. Higher buckets are stronger.
+              </p>
+              <div className="mt-3 space-y-2">
                 {data.stabilityDist.map((b) => (
                   <div key={b.label} className="flex items-center gap-3 text-sm">
                     <span className="w-16 text-muted">{b.label}</span>
                     <div className="h-3 flex-1 overflow-hidden rounded-full bg-subtle">
                       <div
-                        className="h-full rounded-full bg-accent/60 transition-all"
+                        className={`h-full rounded-full transition-all ${STABILITY_BAR_COLOR[b.label] ?? "bg-accent/60"}`}
                         style={{ width: `${b.pct}%` }}
                       />
                     </div>
@@ -229,56 +391,6 @@ export default async function AnalysisPage() {
           </div>
         </section>
       )}
-
-      {/* Risk table */}
-      <section>
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold">Memory risk</h2>
-          <p className="mt-1 text-sm text-muted">
-            Sorted by low retrievability, high difficulty, and repeated lapses.
-          </p>
-        </div>
-        {data.riskProblems.length === 0 ? (
-          <Surface className="p-6 text-sm text-muted">No problems yet.</Surface>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border bg-subtle text-[11px] uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Problem</th>
-                  <th className="px-4 py-2 font-medium">State</th>
-                  <th className="px-4 py-2 font-medium">Retrievability</th>
-                  <th className="px-4 py-2 font-medium">Stability</th>
-                  <th className="px-4 py-2 font-medium">Due</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {data.riskProblems.map((problem) => (
-                  <tr key={problem.id} className="align-top">
-                    <td className="px-4 py-3">
-                      <Link href={`/problems/${problem.id}`} className="font-medium hover:text-accent">
-                        {problem.title}
-                      </Link>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        <DifficultyPill difficulty={problem.difficulty} />
-                        {problem.fsrsLapses > 0 && <Pill tone="danger">{problem.fsrsLapses} lapse{problem.fsrsLapses === 1 ? "" : "s"}</Pill>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <FsrsStatePill state={problem.fsrsState} />
-                    </td>
-                    <td className="px-4 py-3 tabular-nums">{Math.round(problem.retrievabilityNow * 100)}%</td>
-                    <td className="px-4 py-3 tabular-nums">
-                      {problem.fsrsStability != null ? `${problem.fsrsStability.toFixed(1)}d` : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-muted">{formatRelative(problem.fsrsDue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
       <DashboardCharts dailyReviews={data.dailyReviews} />
 
