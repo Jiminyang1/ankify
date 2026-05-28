@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
@@ -28,6 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Nav />
           <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
