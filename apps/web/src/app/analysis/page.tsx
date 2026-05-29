@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
@@ -36,50 +36,91 @@ function toFsrsState(problem: typeof schema.problems.$inferSelect): FsrsCardStat
   };
 }
 
-function stabilityBuckets(problems: (typeof schema.problems.$inferSelect)[]): StabilityBucket[] {
-  const buckets = [
-    { label: "New", min: -Infinity, max: 0, count: 0 },
-    { label: "< 1d", min: 0.01, max: 1, count: 0 },
-    { label: "1—7d", min: 1, max: 7, count: 0 },
-    { label: "7—30d", min: 7, max: 30, count: 0 },
-    { label: "30d+", min: 30, max: Infinity, count: 0 },
-  ];
-  for (const p of problems) {
-    if (p.fsrsReps === 0) { buckets[0]!.count++; continue; }
-    const s = p.fsrsStability ?? 0;
-    for (const b of buckets) {
-      if (s > b.min && s <= b.max) { b.count++; break; }
-    }
-  }
-  const total = problems.length || 1;
-  return buckets.map((b) => ({ ...b, pct: Math.round((b.count / total) * 100) }));
-}
+const STABILITY_BUCKET_LABELS = ["New", "< 1d", "1—7d", "7—30d", "30d+"] as const;
 
 async function loadAnalysis(userId: string) {
   const db = getDb();
   const now = new Date();
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const nowMs = now.getTime();
+  const thirtyDaysAgo = nowMs - 30 * 24 * 60 * 60 * 1000;
+  const nextWeekMs = nowMs + 7 * 24 * 60 * 60 * 1000;
 
-  const [totalRow] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(schema.problems)
-    .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt)));
+  const reps = schema.problems.fsrsReps;
+  const stability = sql`coalesce(${schema.problems.fsrsStability}, 0)`;
+  const owns = and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt));
 
-  const [dueRow] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(schema.problems)
-    .where(dueProblemCondition(userId, now));
+  // Everything that doesn't need the FSRS retrievability curve is aggregated in
+  // SQL — counts, sums, stability buckets, 7-day burden — so we never pull the
+  // whole deck into memory just to reduce it. retrievability() is a JS-only
+  // curve computation, and new (reps=0) cards always sit at r=1 with ~0 risk,
+  // so the per-row JS pass runs over reviewed problems only.
+  const [aggRows, stateRows, dueRow, dailyReviews, reviewedProblems] = await Promise.all([
+    db
+      .select({
+        total: sql<number>`count(*)`,
+        totalReps: sql<number>`coalesce(sum(case when ${reps} > 0 then ${reps} else 0 end), 0)`,
+        totalLapses: sql<number>`coalesce(sum(case when ${reps} > 0 then ${schema.problems.fsrsLapses} else 0 end), 0)`,
+        burden7d: sql<number>`coalesce(sum(case when ${reps} > 0 and ${schema.problems.fsrsDue} is not null and ${schema.problems.fsrsDue} <= ${nextWeekMs} then 1 else 0 end), 0)`,
+        bNew: sql<number>`coalesce(sum(case when ${reps} = 0 then 1 else 0 end), 0)`,
+        bLt1: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 0.01 and ${stability} <= 1 then 1 else 0 end), 0)`,
+        b1to7: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 1 and ${stability} <= 7 then 1 else 0 end), 0)`,
+        b7to30: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 7 and ${stability} <= 30 then 1 else 0 end), 0)`,
+        b30plus: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 30 then 1 else 0 end), 0)`,
+      })
+      .from(schema.problems)
+      .where(owns),
+    db
+      .select({ state: schema.problems.fsrsState, count: sql<number>`count(*)` })
+      .from(schema.problems)
+      .where(owns)
+      .groupBy(schema.problems.fsrsState),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.problems)
+      .where(dueProblemCondition(userId, now)),
+    db.all(sql`
+      SELECT
+        strftime('%Y-%m-%d', occurred_at / 1000, 'unixepoch') as day,
+        COUNT(*) as count
+      FROM review_events
+      WHERE user_id = ${userId} AND event_type = 'self_recall_rated' AND occurred_at >= ${thirtyDaysAgo}
+      GROUP BY day
+      ORDER BY day ASC
+    `) as Promise<{ day: string; count: number }[]>,
+    db
+      .select()
+      .from(schema.problems)
+      .where(and(owns, gt(schema.problems.fsrsReps, 0))),
+  ]);
 
-  const problems = await db
-    .select()
-    .from(schema.problems)
-    .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt)));
+  const agg = aggRows[0];
+  const total = agg?.total ?? 0;
 
-  /* risk table */
-  const riskProblems: RiskProblem[] = problems
-    .map((problem) => {
-      const state = toFsrsState(problem);
-      const r = retrievability(state, now);
+  /* lapse rate */
+  const totalReps = agg?.totalReps ?? 0;
+  const lapseRate = totalReps > 0 ? Math.round(((agg?.totalLapses ?? 0) / totalReps) * 100) : null;
+
+  /* stability distribution — counts come from SQL, percent is over the deck */
+  const bucketCounts = [agg?.bNew ?? 0, agg?.bLt1 ?? 0, agg?.b1to7 ?? 0, agg?.b7to30 ?? 0, agg?.b30plus ?? 0];
+  const bucketDenom = total || 1;
+  const stabilityDist: StabilityBucket[] = STABILITY_BUCKET_LABELS.map((label, i) => ({
+    label,
+    count: bucketCounts[i]!,
+    pct: Math.round((bucketCounts[i]! / bucketDenom) * 100),
+  }));
+
+  /* state counts */
+  const stateCounts = { new: 0, learning: 0, review: 0, relearning: 0 };
+  for (const row of stateRows) stateCounts[row.state] = row.count;
+
+  /* per-reviewed-problem retrievability — computed once, reused below */
+  const reviewed = reviewedProblems.map((problem) => ({
+    problem,
+    r: retrievability(toFsrsState(problem), now),
+  }));
+
+  const riskProblems: RiskProblem[] = reviewed
+    .map(({ problem, r }) => {
       const lapsePenalty = Math.min(problem.fsrsLapses, 4) * 0.08;
       const difficulty = problem.fsrsDifficulty ?? 0;
       const riskScore = (1 - r) + difficulty / 20 + lapsePenalty;
@@ -88,48 +129,17 @@ async function loadAnalysis(userId: string) {
     .sort((a, b) => b.riskScore - a.riskScore)
     .slice(0, 8);
 
-  /* daily review counts */
-  const dailyReviews = (await db.all(sql`
-    SELECT
-      strftime('%Y-%m-%d', occurred_at / 1000, 'unixepoch') as day,
-      COUNT(*) as count
-    FROM review_events
-    WHERE user_id = ${userId} AND event_type = 'self_recall_rated' AND occurred_at >= ${thirtyDaysAgo}
-    GROUP BY day
-    ORDER BY day ASC
-  `)) as { day: string; count: number }[];
-
-  /* memory score — average retrievability across reviewed problems */
-  const reviewed = problems.filter((p) => p.fsrsReps > 0);
   const memoryScore =
     reviewed.length > 0
-      ? Math.round(
-          (reviewed.reduce((sum, p) => sum + retrievability(toFsrsState(p), now), 0) / reviewed.length) * 100,
-        )
+      ? Math.round((reviewed.reduce((sum, x) => sum + x.r, 0) / reviewed.length) * 100)
       : null;
 
-  /* lapse rate */
-  const totalReps = reviewed.reduce((s, p) => s + p.fsrsReps, 0);
-  const totalLapses = reviewed.reduce((s, p) => s + p.fsrsLapses, 0);
-  const lapseRate = totalReps > 0 ? Math.round((totalLapses / totalReps) * 100) : null;
-
   /* problems whose recall has slipped below 70% */
-  const atRiskCount = reviewed.filter((p) => retrievability(toFsrsState(p), now) < 0.7).length;
-
-  /* stability distribution */
-  const stabilityDist = stabilityBuckets(problems);
-
-  /* state counts */
-  const stateCounts = { new: 0, learning: 0, review: 0, relearning: 0 };
-  for (const p of problems) stateCounts[p.fsrsState]++;
-
-  /* burden — expected reviews in next 7 days */
-  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const burden7d = reviewed.filter((p) => p.fsrsDue && p.fsrsDue <= nextWeek).length;
+  const atRiskCount = reviewed.filter((x) => x.r < 0.7).length;
 
   return {
-    totalProblems: totalRow?.count ?? 0,
-    dueCount: dueRow?.count ?? 0,
+    totalProblems: total,
+    dueCount: dueRow[0]?.count ?? 0,
     reviewedCount: reviewed.length,
     memoryScore,
     lapseRate,
@@ -138,7 +148,7 @@ async function loadAnalysis(userId: string) {
     dailyReviews,
     stabilityDist,
     stateCounts,
-    burden7d,
+    burden7d: agg?.burden7d ?? 0,
   };
 }
 

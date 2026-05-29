@@ -8,6 +8,7 @@ import { getActiveModel } from "@/lib/ai";
 import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
+import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const maxDuration = 180;
 
@@ -32,6 +33,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
+
+  const limit = checkRateLimit(`ai:${user.id}`, RATE_LIMITS.ai);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
   const { id: problemId } = await ctx.params;
   const body = await req.json().catch(() => null);

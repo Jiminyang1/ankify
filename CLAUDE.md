@@ -66,7 +66,8 @@ Monorepo with three layers:
 - **Auth and isolation**:
   - Better Auth handles Google OAuth through `/api/auth/[...all]`.
   - Production is fail-closed without `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, Google credentials, `ANKIFY_ALLOWED_EMAILS`, and `AI_KEY_ENCRYPTION_SECRET`.
-  - Signup/login is email allowlist based through `ANKIFY_ALLOWED_EMAILS`.
+  - Signup/login is email allowlist based through `ANKIFY_ALLOWED_EMAILS`, enforced both at user-create (Better Auth `databaseHooks.user.create.before`) and on every session check (`getUserFromHeaders`).
+  - `ANKIFY_OPEN_SIGNUP="true"` switches to open signup: any Google account may sign in, `ANKIFY_ALLOWED_EMAILS` is ignored, and the production requirement for it is lifted. Leave unset/`false` to keep the allowlist gate.
   - Middleware is only a lightweight redirect/CORS gate. Server pages must call `requirePageUser()`, API routes that accept web sessions or extension tokens must call `getRequestUser()`, and session-only routes such as settings and API-token management must call `getRequestSessionUser()`.
   - Every business query must be scoped by the current `userId`, including raw SQL dashboard queries.
   - Extension requests authenticate with Better Auth API keys sent as `x-ankify-token`; the extension does not run Google OAuth.
@@ -101,6 +102,7 @@ Monorepo with three layers:
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. Server env provider keys are intentionally not used as runtime fallbacks.
+  - `rate-limit.ts`: abuse floor for the web-session paths (extension token paths already have Better Auth's API-key rate limit). Best-effort in-memory fixed-window limiter keyed by `userId` — `RATE_LIMITS.ai` (20/min, applied to AI card + quiz generation) and `RATE_LIMITS.capture` (60/min). Per-instance, resets on cold start, so it's a guardrail not a hard global cap. The hard, DB-enforced cap is `MAX_PROBLEMS_PER_USER` (2000 non-archived problems), checked in `/api/capture` only when creating a brand-new problem. Both matter most under `ANKIFY_OPEN_SIGNUP`.
 - **Pages**:
   - `/` - home: due queue, progress, daily stats
   - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes

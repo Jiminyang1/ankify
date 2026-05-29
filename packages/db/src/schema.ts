@@ -161,9 +161,10 @@ export const problems = sqliteTable(
     updatedAt: ts("updated_at"),
   },
   (t) => ({
+    // userId-scoped composite indexes below cover every query path. A bare
+    // (fsrsDue) or (leetcodeSlug) index is never used on its own — every query
+    // filters by userId first — so they only added write overhead.
     userIdx: index("problems_user_idx").on(t.userId),
-    dueIdx: index("problems_fsrs_due_idx").on(t.fsrsDue),
-    slugIdx: index("problems_slug_idx").on(t.leetcodeSlug),
     userArchivedDueIdx: index("problems_user_archived_due_idx").on(t.userId, t.archivedAt, t.fsrsDue),
     userSlugIdx: uniqueIndex("problems_user_slug_unique").on(t.userId, t.leetcodeSlug),
     userLeetcodeIdIdx: uniqueIndex("problems_user_leetcode_id_unique").on(t.userId, t.leetcodeId),

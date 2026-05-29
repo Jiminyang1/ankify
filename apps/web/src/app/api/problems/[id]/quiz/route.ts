@@ -8,6 +8,7 @@ import { getActiveModel } from "@/lib/ai";
 import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildQuizPrompt } from "@/lib/quiz-prompt";
+import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const maxDuration = 180;
 
@@ -54,6 +55,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (parsed.data.action === "nextBatch" && current?.status !== "completed") {
     return NextResponse.json({ error: "quiz_session_not_completed" }, { status: 400 });
   }
+
+  // Past the cached/early-return paths — everything below calls the LLM.
+  const limit = checkRateLimit(`ai:${user.id}`, RATE_LIMITS.ai);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
   try {
     const history = parsed.data.action === "nextBatch" ? await getRecentCompletedQuizSessions(user.id, problemId) : [];

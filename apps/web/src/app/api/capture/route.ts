@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { schemas, emptyCardState } from "@ankify/core";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { MAX_PROBLEMS_PER_USER, RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
+
+  const limit = checkRateLimit(`capture:${user.id}`, RATE_LIMITS.capture);
+  if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
   const body = await req.json().catch(() => null);
   const parsed = schemas.captureProblemSchema.safeParse(body);
@@ -46,6 +50,24 @@ export async function POST(req: Request) {
   let problemId = existingProblem?.id;
   let created = false;
   let importedSubmissions = 0;
+
+  // Hard per-user cap on new problems (abuse floor for open signup). Only gates
+  // brand-new captures — re-capturing an existing problem stays allowed.
+  if (!existingProblem) {
+    const [{ count } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.problems)
+      .where(and(eq(schema.problems.userId, user.id), isNull(schema.problems.archivedAt)));
+    if (count >= MAX_PROBLEMS_PER_USER) {
+      return NextResponse.json(
+        {
+          error: "problem_limit_reached",
+          message: `You've reached the limit of ${MAX_PROBLEMS_PER_USER} problems. Archive or delete some to capture more.`,
+        },
+        { status: 403 },
+      );
+    }
+  }
 
   const submissionRows = input.submissions.map((s) => {
     const submittedAt = s.submittedAt ? new Date(s.submittedAt) : new Date();
