@@ -27,7 +27,18 @@ export function allowedEmails() {
     .filter(Boolean);
 }
 
+/**
+ * Open-signup mode: any Google account may sign up and use the app. Enables a
+ * public deployment without maintaining an email allowlist. When on, it also
+ * lifts the production requirement for ANKIFY_ALLOWED_EMAILS.
+ */
+export function isOpenSignup() {
+  const flag = (process.env.ANKIFY_OPEN_SIGNUP ?? "").trim().toLowerCase();
+  return flag === "true" || flag === "1" || flag === "yes";
+}
+
 export function isAllowedEmail(email: string | null | undefined) {
+  if (isOpenSignup()) return Boolean(email);
   const allowlist = allowedEmails();
   if (allowlist.length === 0) return process.env.NODE_ENV !== "production";
   return Boolean(email && allowlist.includes(email.toLowerCase()));
@@ -39,7 +50,7 @@ export function ensureAuthConfigured() {
   requiredEnv("GOOGLE_CLIENT_ID");
   requiredEnv("GOOGLE_CLIENT_SECRET");
   requiredEnv("AI_KEY_ENCRYPTION_SECRET");
-  if (process.env.NODE_ENV === "production" && allowedEmails().length === 0) {
+  if (process.env.NODE_ENV === "production" && !isOpenSignup() && allowedEmails().length === 0) {
     throw new Error("ANKIFY_ALLOWED_EMAILS missing");
   }
 }
