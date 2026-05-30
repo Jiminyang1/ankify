@@ -188,10 +188,6 @@ label, button, th, .font-ui {
   background: var(--subtle);
 }
 
-.settings-theme-control {
-  align-self: stretch;
-}
-
 .settings-theme-control button {
   flex: 1;
   padding: 8px 10px;
@@ -1028,12 +1024,6 @@ label, button, th, .font-ui {
   gap: 4px;
 }
 
-.settings-module-head-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-}
-
 .settings-module-head p {
   margin: 0;
   color: var(--muted);
@@ -1043,10 +1033,66 @@ label, button, th, .font-ui {
 
 .language-control {
   flex-shrink: 0;
+  gap: 4px;
+  padding: 4px;
 }
 
 .language-control button {
-  min-width: 32px;
+  min-width: 42px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.settings-preference-row .settings-theme-control {
+  gap: 4px;
+  padding: 4px;
+}
+
+.settings-preference-row .settings-theme-control button {
+  min-width: 56px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.settings-preference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-preference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 72%, var(--bg));
+}
+
+.settings-preference-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-preference-copy span {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-preference-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.settings-field-group {
+  display: grid;
+  gap: 10px;
 }
 
 .settings-stack label {

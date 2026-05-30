@@ -286,7 +286,9 @@ const EXT_I18N = {
     },
     settings: {
       appearance: "Appearance",
-      appearanceHelp: "Theme only affects the extension popup.",
+      appearanceHelp: "Language and theme for this extension.",
+      languageHelp: "Interface language",
+      themeHelp: "Popup color mode",
       connection: "Connection",
       connectionHelp: "Used when the extension talks to the web API.",
       apiBaseUrl: "API base URL",
@@ -462,7 +464,9 @@ const EXT_I18N = {
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
     settings: {
       appearance: "外观",
-      appearanceHelp: "主题只影响扩展弹窗。",
+      appearanceHelp: "扩展里的语言和主题。",
+      languageHelp: "界面语言",
+      themeHelp: "弹窗颜色模式",
       connection: "连接",
       connectionHelp: "扩展与 Web API 通信时使用。",
       apiBaseUrl: "API base URL",
@@ -3125,37 +3129,49 @@ function SettingsTab({
   return (
     <div className="settings-stack">
       <section className="settings-module panel" aria-labelledby="settings-appearance">
-        <div className="settings-module-head settings-module-head-row">
-          <div>
-            <strong id="settings-appearance">{t.settings.appearance}</strong>
-            <p>{t.settings.appearanceHelp}</p>
-          </div>
-          <div className="theme-control language-control" aria-label={t.language.label}>
-            {(["en", "zh"] as const).map((language) => (
-              <button
-                key={language}
-                type="button"
-                data-active={settings.language === language}
-                onClick={() => onSave({ language })}
-                aria-pressed={settings.language === language}
-              >
-                {t.language[language]}
-              </button>
-            ))}
-          </div>
+        <div className="settings-module-head">
+          <strong id="settings-appearance">{t.settings.appearance}</strong>
+          <p>{t.settings.appearanceHelp}</p>
         </div>
-        <div className="theme-control settings-theme-control" aria-label={t.theme.label}>
-          {THEME_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              data-active={theme === option.value}
-              onClick={() => onThemeChange(option.value)}
-              aria-pressed={theme === option.value}
-            >
-              {t.theme[option.key]}
-            </button>
-          ))}
+        <div className="settings-preference-list">
+          <div className="settings-preference-row">
+            <div className="settings-preference-copy">
+              <span>{t.language.label}</span>
+              <p>{t.settings.languageHelp}</p>
+            </div>
+            <div className="theme-control language-control" aria-label={t.language.label}>
+              {(["en", "zh"] as const).map((language) => (
+                <button
+                  key={language}
+                  type="button"
+                  data-active={settings.language === language}
+                  onClick={() => onSave({ language })}
+                  aria-pressed={settings.language === language}
+                >
+                  {t.language[language]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-preference-row">
+            <div className="settings-preference-copy">
+              <span>{t.theme.label}</span>
+              <p>{t.settings.themeHelp}</p>
+            </div>
+            <div className="theme-control settings-theme-control" aria-label={t.theme.label}>
+              {THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  data-active={theme === option.value}
+                  onClick={() => onThemeChange(option.value)}
+                  aria-pressed={theme === option.value}
+                >
+                  {t.theme[option.key]}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -3164,14 +3180,16 @@ function SettingsTab({
           <strong id="settings-connection">{t.settings.connection}</strong>
           <p>{t.settings.connectionHelp}</p>
         </div>
-        <label>
-          {t.settings.apiBaseUrl}
-          <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
-        </label>
-        <label>
-          {t.settings.apiToken}
-          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
-        </label>
+        <div className="settings-field-group">
+          <label>
+            {t.settings.apiBaseUrl}
+            <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
+          </label>
+          <label>
+            {t.settings.apiToken}
+            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
+          </label>
+        </div>
         <div className="settings-actions">
           <button
             type="button"

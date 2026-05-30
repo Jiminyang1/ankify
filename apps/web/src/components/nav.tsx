@@ -91,8 +91,12 @@ export function Nav() {
               {t.nav.signOut}
             </button>
           )}
-          <LanguageToggle />
-          <ThemeToggle />
+          {isLogin && (
+            <>
+              <LanguageToggle />
+              <ThemeToggle />
+            </>
+          )}
         </div>
       </nav>
     </header>

@@ -458,12 +458,7 @@ function WorkspacePanel({
   return (
     <Surface className="flex h-full min-h-[620px] flex-col overflow-hidden lg:min-h-0">
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted">{t.review.workspace}</span>
-          <span className="text-xs text-muted">{t.review.workspaceHint}</span>
-        </div>
-
-        <div className="mt-3 flex rounded-lg bg-subtle p-1">
+        <div className="flex rounded-lg bg-subtle p-1">
           {tabs.map((tab) => (
             <ReviewTabButton
               key={tab.id}

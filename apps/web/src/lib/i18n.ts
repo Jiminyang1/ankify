@@ -118,6 +118,10 @@ export const translations = {
     },
     settings: {
       title: "Settings",
+      appearance: "Appearance",
+      appearanceHelp: "Language and theme for the web app.",
+      languageHelp: "Interface language",
+      themeHelp: "Color mode",
       aiProvider: "AI provider",
       extensionConnection: "Extension connection",
       reviewSchedule: "Review schedule",
@@ -421,6 +425,10 @@ export const translations = {
     },
     settings: {
       title: "设置",
+      appearance: "外观",
+      appearanceHelp: "Web 应用里的语言和主题。",
+      languageHelp: "界面语言",
+      themeHelp: "颜色模式",
       aiProvider: "AI 提供商",
       extensionConnection: "扩展连接",
       reviewSchedule: "复习计划",

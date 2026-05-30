@@ -3,9 +3,34 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import { LanguageToggle } from "@/components/LanguageToggle";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
+
+export function AppearanceSettingsForm() {
+  const { t } = useLanguage();
+
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-fg">{t.language.label}</div>
+          <p className="mt-1 text-xs text-muted">{t.settings.languageHelp}</p>
+        </div>
+        <LanguageToggle className="w-fit" size="md" />
+      </div>
+      <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-fg">{t.theme.label}</div>
+          <p className="mt-1 text-xs text-muted">{t.settings.themeHelp}</p>
+        </div>
+        <ThemeToggle className="w-fit" size="md" />
+      </div>
+    </div>
+  );
+}
 
 /** Fallback model lists shown until the user clicks "Refresh". After
  *  refresh, the live `/v1/models` response from the provider replaces these.
@@ -55,12 +80,13 @@ export function AiSettingsForm({
   });
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const showGenerationMode = provider === "deepseek";
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMsg(null);
-    const body: Record<string, unknown> = { provider, model, reasoningMode };
+    const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast" };
     if (clearApiKey) body.apiKey = "";
     else if (apiKey) body.apiKey = apiKey;
     try {
@@ -165,6 +191,7 @@ export function AiSettingsForm({
             setProvider(p);
             const first = MODEL_PRESETS[p]?.[0];
             if (first) setModel(first);
+            if (p !== "deepseek") setReasoningMode("fast");
           }}
         >
           <option value="anthropic">Anthropic (Claude)</option>
@@ -224,38 +251,40 @@ export function AiSettingsForm({
         )}
       </div>
 
-      <div className="space-y-1">
-        <label className="block text-sm">{t.settings.generationMode}</label>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setReasoningMode("fast")}
-            className={
-              "rounded-md border px-3 py-2 text-sm transition " +
-              (reasoningMode === "fast"
-                ? "border-accent/40 bg-accent-soft text-accent"
-                : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
-            }
-          >
-            {t.settings.fast}
-          </button>
-          <button
-            type="button"
-            onClick={() => setReasoningMode("thinking")}
-            className={
-              "rounded-md border px-3 py-2 text-sm transition " +
-              (reasoningMode === "thinking"
-                ? "border-accent/40 bg-accent-soft text-accent"
-                : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
-            }
-          >
-            {t.settings.thinking}
-          </button>
+      {showGenerationMode && (
+        <div className="space-y-1">
+          <label className="block text-sm">{t.settings.generationMode}</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setReasoningMode("fast")}
+              className={
+                "rounded-md border px-3 py-2 text-sm transition " +
+                (reasoningMode === "fast"
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
+              }
+            >
+              {t.settings.fast}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReasoningMode("thinking")}
+              className={
+                "rounded-md border px-3 py-2 text-sm transition " +
+                (reasoningMode === "thinking"
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
+              }
+            >
+              {t.settings.thinking}
+            </button>
+          </div>
+          <p className="text-xs text-muted">
+            {t.settings.deepseekOnly}
+          </p>
         </div>
-        <p className="text-xs text-muted">
-          {t.settings.deepseekOnly}
-        </p>
-      </div>
+      )}
 
       <div className="space-y-1">
         <label className="block text-sm" htmlFor="ai-api-key">
