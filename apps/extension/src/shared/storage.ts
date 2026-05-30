@@ -1,6 +1,6 @@
 import type { ExtSettings } from "./messages";
 
-const KEY = "ankify.settings";
+export const SETTINGS_KEY = "ankify.settings";
 /** Map LeetCode slug → unsent draft text for "+ my card" (survives popup close). */
 const CARD_DRAFTS_KEY = "ankify.cardDrafts";
 
@@ -8,18 +8,19 @@ const DEFAULTS: ExtSettings = {
   apiBaseUrl: "http://localhost:3000",
   apiToken: "",
   language: "en",
+  resetCodeOnProblemOpen: false,
 };
 
 const MAX_DRAFT_KEYS = 48;
 
 export async function getSettings(): Promise<ExtSettings> {
-  const r = await chrome.storage.local.get(KEY);
-  return { ...DEFAULTS, ...(r[KEY] as Partial<ExtSettings> | undefined) };
+  const r = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...DEFAULTS, ...(r[SETTINGS_KEY] as Partial<ExtSettings> | undefined) };
 }
 
 export async function setSettings(s: Partial<ExtSettings>) {
   const current = await getSettings();
-  await chrome.storage.local.set({ [KEY]: { ...current, ...s } });
+  await chrome.storage.local.set({ [SETTINGS_KEY]: { ...current, ...s } });
 }
 
 export async function getCardDraft(slug: string): Promise<string> {

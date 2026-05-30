@@ -1,5 +1,8 @@
 import type { ContentRequest, ContentResponse } from "../shared/messages";
 import { captureCurrent } from "./leetcode";
+import { startAutoResetCodeOnProblemPages } from "./reset-code";
+
+startAutoResetCodeOnProblemPages();
 
 chrome.runtime.onMessage.addListener(
   (msg: ContentRequest, _sender, sendResponse: (r: ContentResponse) => void) => {

@@ -48,4 +48,5 @@ export interface ExtSettings {
   apiBaseUrl: string;
   apiToken: string;
   language: "en" | "zh";
+  resetCodeOnProblemOpen: boolean;
 }
