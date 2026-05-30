@@ -6,9 +6,9 @@ import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
 import { dueProblemCondition } from "@/lib/due-problems";
 import { requirePageUser } from "@/lib/auth";
+import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
-import { InfoTip } from "@/components/ui/info-tip";
 import { formatRelative } from "@/lib/utils";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -170,33 +170,21 @@ function recallToneClass(pct: number): string {
 
 type Headline = { text: string; tone: "default" | "accent" | "success" | "danger" };
 
-function buildHeadline(data: Awaited<ReturnType<typeof loadAnalysis>>): Headline {
+function buildHeadline(data: Awaited<ReturnType<typeof loadAnalysis>>, t: Awaited<ReturnType<typeof getRequestTranslations>>): Headline {
   const mem = data.memoryScore != null ? `${data.memoryScore}%` : "—";
   if (data.totalProblems === 0) {
-    return { text: "Capture a few LeetCode problems to start tracking your memory.", tone: "default" };
+    return { text: t.analysis.headlines.empty, tone: "default" };
   }
   if (data.reviewedCount === 0) {
-    return {
-      text: `${data.totalProblems} problem${data.totalProblems === 1 ? "" : "s"} captured, none reviewed yet. Start a session to build your memory data.`,
-      tone: "accent",
-    };
+    return { text: t.analysis.headlines.noneReviewed(data.totalProblems), tone: "accent" };
   }
   if (data.atRiskCount > 0) {
-    return {
-      text:
-        data.atRiskCount === 1
-          ? "1 problem is slipping below 70% recall — review it before it fades."
-          : `${data.atRiskCount} problems are slipping below 70% recall — review them before they fade.`,
-      tone: "danger",
-    };
+    return { text: t.analysis.headlines.atRisk(data.atRiskCount), tone: "danger" };
   }
   if (data.dueCount > 0) {
-    return {
-      text: `${data.dueCount} problem${data.dueCount === 1 ? " is" : "s are"} due. Your memory is holding strong at ${mem}.`,
-      tone: "accent",
-    };
+    return { text: t.analysis.headlines.due(data.dueCount, mem), tone: "accent" };
   }
-  return { text: `All caught up. Your memory is holding strong at ${mem}.`, tone: "success" };
+  return { text: t.analysis.headlines.caughtUp(mem), tone: "success" };
 }
 
 const HEADLINE_TONE: Record<Headline["tone"], string> = {
@@ -208,23 +196,22 @@ const HEADLINE_TONE: Record<Headline["tone"], string> = {
 
 export default async function AnalysisPage() {
   const user = await requirePageUser();
+  const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
   let data: Awaited<ReturnType<typeof loadAnalysis>>;
   try {
     data = await loadAnalysis(user.id);
   } catch {
     return (
       <Surface className="p-8">
-        <h1 className="text-2xl font-semibold">Analysis</h1>
+        <h1 className="text-2xl font-semibold">{t.analysis.title}</h1>
         <p className="mt-2 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
-          <code className="font-mono">.env</code>, then run{" "}
-          <code className="font-mono">pnpm db:migrate</code>.
+          {t.common.databaseNotInitialized}
         </p>
       </Surface>
     );
   }
 
-  const headline = buildHeadline(data);
+  const headline = buildHeadline(data, t);
   const totalStates =
     data.stateCounts.new + data.stateCounts.learning + data.stateCounts.review + data.stateCounts.relearning;
   const memTone =
@@ -234,13 +221,13 @@ export default async function AnalysisPage() {
     <div className="space-y-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Analysis</h1>
+          <h1 className="text-2xl font-semibold">{t.analysis.title}</h1>
           <p className="mt-1 text-sm text-muted">
-            How well your reviews are sticking, based on the FSRS memory model.
+            {t.analysis.subtitle}
           </p>
         </div>
         <Link href="/" className="text-sm font-medium text-accent hover:underline">
-          Back to today
+          {t.analysis.backToday}
         </Link>
       </header>
 
@@ -252,58 +239,57 @@ export default async function AnalysisPage() {
       {/* Top stats */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat
-          label="Memory"
+          label={t.analysis.memory}
           value={data.memoryScore != null ? `${data.memoryScore}%` : "—"}
-          hint="avg recall, reviewed problems"
-          info="Retrievability — the FSRS estimate of how likely you are to correctly recall a problem right now. Shown as the average across every problem you've reviewed."
+          hint={t.analysis.memoryHint}
+          info={t.analysis.memoryInfo}
           tone={memTone}
         />
         <Stat
-          label="Lapse rate"
+          label={t.analysis.lapseRate}
           value={data.lapseRate != null ? `${data.lapseRate}%` : "—"}
-          hint="reviews you forgot"
-          info="A lapse is a review you rated Again (forgot). This is the share of all your reviews that were lapses — lower is better."
+          hint={t.analysis.lapseHint}
+          info={t.analysis.lapseInfo}
           tone={data.lapseRate != null && data.lapseRate > 25 ? "danger" : "default"}
         />
         <Stat
-          label="Due now"
+          label={t.home.dueNow}
           value={data.dueCount}
-          hint="ready to review"
+          hint={t.analysis.due}
           tone={data.dueCount > 0 ? "accent" : "default"}
         />
         <Stat
-          label="Next 7d"
+          label={t.analysis.next7d}
           value={data.burden7d}
-          hint="coming this week"
-          info="Problems scheduled to come due within the next 7 days — a preview of your upcoming review workload."
+          hint={t.analysis.next7dHint}
+          info={t.analysis.next7dInfo}
         />
-        <Stat label="Total" value={data.totalProblems} hint="problems in your deck" />
+        <Stat label="Total" value={data.totalProblems} hint={t.analysis.totalHint} />
       </section>
 
       {/* Risk table — what to act on */}
       <section>
         <div className="mb-3">
-          <h2 className="text-lg font-semibold">Needs attention</h2>
+          <h2 className="text-lg font-semibold">{t.analysis.needsAttention}</h2>
           <p className="mt-1 text-sm text-muted">
-            Most likely to be forgotten — ranked by recall chance, difficulty, and past lapses.
+            {t.analysis.riskDescription}
           </p>
           <p className="mt-1 text-xs text-muted">
-            <span className="font-medium text-fg">Retrievability</span> = chance you&apos;d recall it now ·{" "}
-            <span className="font-medium text-fg">Stability</span> = days until recall drops to 90%
+            {t.analysis.riskLegend}
           </p>
         </div>
         {data.riskProblems.length === 0 ? (
-          <Surface className="p-6 text-sm text-muted">No reviewed problems yet.</Surface>
+          <Surface className="p-6 text-sm text-muted">{t.analysis.noReviewed}</Surface>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border bg-subtle text-[11px] uppercase tracking-wide text-muted">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Problem</th>
-                  <th className="px-4 py-2 font-medium">State</th>
-                  <th className="px-4 py-2 font-medium">Retrievability</th>
-                  <th className="px-4 py-2 font-medium">Stability</th>
-                  <th className="px-4 py-2 font-medium">Due</th>
+                  <th className="px-4 py-2 font-medium">{t.analysis.problem}</th>
+                  <th className="px-4 py-2 font-medium">{t.analysis.state}</th>
+                  <th className="px-4 py-2 font-medium">{t.analysis.retrievability}</th>
+                  <th className="px-4 py-2 font-medium">{t.analysis.stability}</th>
+                  <th className="px-4 py-2 font-medium">{t.analysis.due}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -316,16 +302,16 @@ export default async function AnalysisPage() {
                           {problem.title}
                         </Link>
                         <div className="mt-1 flex flex-wrap gap-1.5">
-                          <DifficultyPill difficulty={problem.difficulty} />
+                          <DifficultyPill difficulty={problem.difficulty} language={language} />
                           {problem.fsrsLapses > 0 && (
                             <Pill tone="danger">
-                              {problem.fsrsLapses} lapse{problem.fsrsLapses === 1 ? "" : "s"}
+                              {t.common.lapses(problem.fsrsLapses)}
                             </Pill>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <FsrsStatePill state={problem.fsrsState} />
+                        <FsrsStatePill state={problem.fsrsState} language={language} />
                       </td>
                       <td className={`px-4 py-3 tabular-nums ${recallToneClass(recall)}`}>{recall}%</td>
                       <td className="px-4 py-3 tabular-nums">
@@ -344,20 +330,20 @@ export default async function AnalysisPage() {
       {/* Memory breakdown */}
       {totalStates > 0 && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold">Memory breakdown</h2>
+          <h2 className="mb-3 text-lg font-semibold">{t.analysis.memoryBreakdown}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {/* State distribution */}
             <Surface className="p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">State</div>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">{t.analysis.state}</div>
               <p className="mt-1 text-xs text-muted">
-                Where each problem sits in its learning cycle: new → learning → review → relearning.
+                {t.analysis.stateDescription}
               </p>
               <div className="mt-3 space-y-2">
                 {[
-                  { key: "new" as const, label: "New" },
-                  { key: "learning" as const, label: "Learning" },
-                  { key: "review" as const, label: "Review" },
-                  { key: "relearning" as const, label: "Relearning" },
+                  { key: "new" as const, label: t.fsrs.new },
+                  { key: "learning" as const, label: t.fsrs.learning },
+                  { key: "review" as const, label: t.fsrs.review },
+                  { key: "relearning" as const, label: t.fsrs.relearning },
                 ].map((st) => {
                   const c = data.stateCounts[st.key];
                   const pct = data.totalProblems > 0 ? Math.round((c / data.totalProblems) * 100) : 0;
@@ -379,9 +365,9 @@ export default async function AnalysisPage() {
 
             {/* Stability buckets */}
             <Surface className="p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Stability</div>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">{t.analysis.stability}</div>
               <p className="mt-1 text-xs text-muted">
-                How durable each memory is — days until recall drops to 90%. Higher buckets are stronger.
+                {t.analysis.stabilityDescription}
               </p>
               <div className="mt-3 space-y-2">
                 {data.stabilityDist.map((b) => (
@@ -406,7 +392,7 @@ export default async function AnalysisPage() {
 
       {isDev && (
         <section className="border-t border-border pt-6">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Dev tools</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{t.analysis.devTools}</h2>
           <div className="mt-3">
             <DevResetButton />
           </div>

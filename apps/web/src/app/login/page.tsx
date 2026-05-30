@@ -1,6 +1,7 @@
 import { Surface } from "@/components/ui/surface";
 import { BrandLockup } from "@/components/brand";
 import { isOpenSignup } from "@/lib/auth";
+import { getRequestTranslations } from "@/lib/i18n-server";
 import { GoogleSignInButton } from "./google-button";
 
 export const dynamic = "force-dynamic";
@@ -18,18 +19,19 @@ export default async function LoginPage({
   const params = await searchParams;
   const next = cleanNext(params.next);
   const openSignup = isOpenSignup();
+  const t = await getRequestTranslations();
 
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-sm items-center">
       <Surface className="w-full p-6">
         <BrandLockup size="md" showTag />
-        <h1 className="mt-5 text-xl font-semibold">Unlock ankify</h1>
+        <h1 className="mt-5 text-xl font-semibold">{t.login.title}</h1>
         <p className="mt-2 text-sm text-muted">
-          {openSignup ? "Sign in with your Google account." : "Sign in with an allowlisted Google account."}
+          {openSignup ? t.login.openSignup : t.login.allowlist}
         </p>
         {params.error && (
           <p className="mt-3 text-sm text-danger">
-            {openSignup ? "Sign-in failed. Please try again." : "Sign-in failed or this email is not allowed."}
+            {openSignup ? t.login.failedOpen : t.login.failedAllowlist}
           </p>
         )}
         <GoogleSignInButton next={next} />

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 
@@ -32,6 +33,7 @@ export function AiSettingsForm({
   };
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [provider, setProvider] = useState(initial.provider);
   const [model, setModel] = useState(initial.model);
   const [reasoningMode, setReasoningMode] = useState(initial.reasoningMode);
@@ -68,12 +70,12 @@ export function AiSettingsForm({
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setMsg("Saved.");
+      setMsg(t.common.saved);
       setApiKey("");
       setClearApiKey(false);
       router.refresh();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Failed to save");
+      setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
     } finally {
       setSaving(false);
     }
@@ -104,7 +106,7 @@ export function AiSettingsForm({
         setTestResult({ kind: "err", message: json.message || json.code });
       }
     } catch (e) {
-      setTestResult({ kind: "err", message: e instanceof Error ? e.message : "Network error" });
+      setTestResult({ kind: "err", message: e instanceof Error ? e.message : t.settings.networkError });
     } finally {
       setTesting(false);
     }
@@ -137,7 +139,7 @@ export function AiSettingsForm({
         setModelsError(json.message || json.code);
       }
     } catch (e) {
-      setModelsError(e instanceof Error ? e.message : "Network error");
+      setModelsError(e instanceof Error ? e.message : t.settings.networkError);
     } finally {
       setRefreshingModels(false);
     }
@@ -146,7 +148,7 @@ export function AiSettingsForm({
   const live = liveModels[provider];
   const presets = MODEL_PRESETS[provider] ?? [];
   const models: ModelEntry[] = live ?? presets.map((id) => ({ id }));
-  const modelsSourceLabel = live ? `${live.length} from provider` : `${presets.length} suggestions`;
+  const modelsSourceLabel = live ? t.settings.fromProvider(live.length) : t.settings.suggestions(presets.length);
 
   /** Whether the current model value doesn't match any listed option. */
   const isCustomModel = !models.some((m) => m.id === model);
@@ -154,7 +156,7 @@ export function AiSettingsForm({
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
-        <label className="block text-sm" htmlFor="ai-provider">Provider</label>
+        <label className="block text-sm" htmlFor="ai-provider">{t.settings.provider}</label>
         <Select
           id="ai-provider"
           value={provider}
@@ -173,17 +175,17 @@ export function AiSettingsForm({
 
       <div className="space-y-1">
         <div className="flex items-baseline justify-between gap-3">
-          <label className="block text-sm" htmlFor="ai-model">Model</label>
+          <label className="block text-sm" htmlFor="ai-model">{t.settings.model}</label>
           <div className="flex items-center gap-2 text-xs text-muted">
             <span>{modelsSourceLabel}</span>
             <Button
               size="sm"
               onClick={refreshModels}
               disabled={refreshingModels || !canRefreshModels}
-              title={!canRefreshModels ? "Set a provider and an API key first" : undefined}
+              title={!canRefreshModels ? t.settings.setProviderKeyFirst : undefined}
               className="px-2 py-0.5"
             >
-              {refreshingModels ? "Refreshing…" : live ? "Refresh" : "Load from provider"}
+              {refreshingModels ? t.settings.refreshing : live ? t.settings.refresh : t.settings.loadFromProvider}
             </Button>
           </div>
         </div>
@@ -205,25 +207,25 @@ export function AiSettingsForm({
               {m.id}{m.label ? ` — ${m.label}` : ""}
             </option>
           ))}
-          <option value="__custom__">Other...</option>
+          <option value="__custom__">{t.settings.other}</option>
         </Select>
         {isCustomModel && (
           <Input
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="Enter model name..."
+            placeholder={t.settings.enterModel}
             autoComplete="off"
-            aria-label="Custom model name"
+            aria-label={t.settings.customModelAria}
             className="font-mono"
           />
         )}
         {modelsError && (
-          <p className="text-xs text-danger">Could not load models: {modelsError}</p>
+          <p className="text-xs text-danger">{t.settings.couldNotLoadModels(modelsError)}</p>
         )}
       </div>
 
       <div className="space-y-1">
-        <label className="block text-sm">Generation mode</label>
+        <label className="block text-sm">{t.settings.generationMode}</label>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -235,7 +237,7 @@ export function AiSettingsForm({
                 : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
             }
           >
-            Fast
+            {t.settings.fast}
           </button>
           <button
             type="button"
@@ -247,17 +249,17 @@ export function AiSettingsForm({
                 : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
             }
           >
-            Thinking
+            {t.settings.thinking}
           </button>
         </div>
         <p className="text-xs text-muted">
-          DeepSeek only. Fast avoids reasoning latency; Thinking may take up to two minutes.
+          {t.settings.deepseekOnly}
         </p>
       </div>
 
       <div className="space-y-1">
         <label className="block text-sm" htmlFor="ai-api-key">
-          API key {initial.hasApiKey && <span className="text-muted">(currently set; leave blank to keep)</span>}
+          {t.settings.apiKey} {initial.hasApiKey && <span className="text-muted">{t.settings.apiKeySet}</span>}
         </label>
         <Input
           id="ai-api-key"
@@ -278,21 +280,21 @@ export function AiSettingsForm({
                 if (e.target.checked) setApiKey("");
               }}
             />
-            Clear stored key
+            {t.settings.clearStoredKey}
           </label>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="primary" disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? t.common.saving : t.common.save}
         </Button>
         <Button
           onClick={testConnection}
           disabled={testing || !canTest}
-          title={!canTest ? "Set provider, model, and an API key first" : undefined}
+          title={!canTest ? t.settings.setAiFirst : undefined}
         >
-          {testing ? "Testing…" : "Test connection"}
+          {testing ? t.settings.testing : t.settings.testConnection}
         </Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
@@ -308,7 +310,7 @@ export function AiSettingsForm({
         >
           {testResult.kind === "ok" ? (
             <>
-              ✓ Connected to <span className="font-mono">{testResult.model}</span>
+              {t.settings.connectedTo} <span className="font-mono">{testResult.model}</span>
               <span className="text-muted"> · {testResult.latencyMs} ms</span>
             </>
           ) : (
@@ -331,6 +333,7 @@ type ExtensionApiKey = {
 };
 
 export function ExtensionConnectionForm() {
+  const { t } = useLanguage();
   const [keys, setKeys] = useState<ExtensionApiKey[]>([]);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [name, setName] = useState("Chrome extension");
@@ -397,40 +400,40 @@ export function ExtensionConnectionForm() {
     <div className="space-y-4">
       <form onSubmit={createKey} className="flex flex-wrap items-end gap-3">
         <label className="min-w-64 flex-1 space-y-1">
-          <span className="block text-sm">Token name</span>
+          <span className="block text-sm">{t.settings.tokenName}</span>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         <Button type="submit" variant="primary" disabled={busy}>
-          Generate token
+          {t.settings.generateToken}
         </Button>
       </form>
 
       {newKey && (
         <div className="rounded-md border border-accent/30 bg-accent/10 p-3">
-          <p className="text-sm font-medium text-accent">Copy this token now. It is shown only once.</p>
+          <p className="text-sm font-medium text-accent">{t.settings.copyTokenNow}</p>
           <code className="mt-2 block break-all rounded bg-bg p-2 font-mono text-xs">{newKey}</code>
         </div>
       )}
 
       <div className="rounded-lg border border-border">
         {loading ? (
-          <p className="p-3 text-sm text-muted">Loading tokens...</p>
+          <p className="p-3 text-sm text-muted">{t.settings.loadingTokens}</p>
         ) : keys.length === 0 ? (
-          <p className="p-3 text-sm text-muted">No extension tokens yet.</p>
+          <p className="p-3 text-sm text-muted">{t.settings.noTokens}</p>
         ) : (
           <ul className="divide-y divide-border">
             {keys.map((key) => (
               <li key={key.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
                 <div>
-                  <div className="font-medium">{key.name ?? "Extension token"}</div>
+                  <div className="font-medium">{key.name ?? t.settings.extensionToken}</div>
                   <div className="mt-1 text-xs text-muted">
-                    {key.start ? <code className="font-mono">{key.start}...</code> : "hidden"} · created{" "}
-                    {new Date(key.createdAt).toLocaleDateString()} · last used{" "}
-                    {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : "never"}
+                    {key.start ? <code className="font-mono">{key.start}...</code> : t.settings.hidden} · {t.settings.created}{" "}
+                    {new Date(key.createdAt).toLocaleDateString()} · {t.settings.lastUsed}{" "}
+                    {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : t.settings.never}
                   </div>
                 </div>
                 <Button size="sm" onClick={() => revokeKey(key.id)} disabled={busy}>
-                  Revoke
+                  {t.settings.revoke}
                 </Button>
               </li>
             ))}
@@ -445,6 +448,7 @@ export function ExtensionConnectionForm() {
 
 export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number } }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [dailyReviewLimit, setDailyReviewLimit] = useState(initial.dailyReviewLimit);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -460,10 +464,10 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         body: JSON.stringify({ dailyReviewLimit }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setMsg("Saved.");
+      setMsg(t.common.saved);
       router.refresh();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Failed to save");
+      setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
     } finally {
       setSaving(false);
     }
@@ -472,7 +476,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
-        <label className="block text-sm" htmlFor="daily-review-limit">Daily review limit</label>
+        <label className="block text-sm" htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
         <Input
           id="daily-review-limit"
           type="number"
@@ -483,13 +487,13 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
           className="tabular-nums"
         />
         <p className="text-xs text-muted">
-          Caps how many due problems enter today&apos;s review queue. Extra due problems roll over.
+          {t.settings.dailyReviewHelp}
         </p>
       </div>
 
       <div className="flex items-center gap-3">
         <Button type="submit" variant="primary" disabled={saving}>
-          {saving ? "Saving…" : "Save review settings"}
+          {saving ? t.common.saving : t.settings.saveReviewSettings}
         </Button>
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>

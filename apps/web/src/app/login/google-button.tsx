@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { useLanguage } from "@/components/LanguageProvider";
 
 export function GoogleSignInButton({ next }: { next: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useLanguage();
 
   async function signIn() {
     setPending(true);
@@ -15,7 +17,7 @@ export function GoogleSignInButton({ next }: { next: string }) {
       callbackURL: next,
     });
     if (result.error) {
-      setError(result.error.message ?? "Google sign-in failed");
+      setError(result.error.message ?? t.login.googleFailed);
       setPending(false);
     }
   }
@@ -28,7 +30,7 @@ export function GoogleSignInButton({ next }: { next: string }) {
         disabled={pending}
         className="w-full rounded-md border border-border bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
       >
-        {pending ? "Redirecting..." : "Continue with Google"}
+        {pending ? t.login.redirecting : t.login.continueGoogle}
       </button>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>

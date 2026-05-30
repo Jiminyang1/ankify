@@ -8,19 +8,22 @@ import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 import { BrandLockup } from "./brand";
 import { ThemeToggle } from "./ThemeToggle";
+import { LanguageToggle } from "./LanguageToggle";
+import { useLanguage } from "./LanguageProvider";
 
 const LINKS = [
-  { href: "/", label: "Today" },
-  { href: "/review", label: "Review" },
-  { href: "/problems", label: "Problems" },
-  { href: "/analysis", label: "Analysis" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", key: "today" },
+  { href: "/review", key: "review" },
+  { href: "/problems", key: "problems" },
+  { href: "/analysis", key: "analysis" },
+  { href: "/settings", key: "settings" },
 ] as const;
 
 export function Nav() {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
   const [dueCount, setDueCount] = useState(0);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (isLogin) return;
@@ -66,7 +69,7 @@ export function Nav() {
                       : "text-muted hover:bg-subtle hover:text-fg",
                   )}
                 >
-                  {l.label}
+                  {t.nav[l.key]}
                   {showBadge && (
                     <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
                       {dueCount > 99 ? "99+" : dueCount}
@@ -85,9 +88,10 @@ export function Nav() {
               onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}
               className="rounded-md px-3 py-1.5 text-sm text-muted transition hover:bg-subtle hover:text-fg"
             >
-              Sign out
+              {t.nav.signOut}
             </button>
           )}
+          <LanguageToggle />
           <ThemeToggle />
         </div>
       </nav>

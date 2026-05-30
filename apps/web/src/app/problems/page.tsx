@@ -8,6 +8,7 @@ import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatRelative } from "@/lib/utils";
 
 type ProblemWithCards = Problem & { cardTotal: number };
@@ -19,25 +20,10 @@ type FilterState = {
   search: string;
 };
 
-const DIFFICULTY_OPTIONS: { value: FilterState["difficulty"]; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "Easy", label: "Easy" },
-  { value: "Medium", label: "Medium" },
-  { value: "Hard", label: "Hard" },
-];
-
-const STATE_OPTIONS: { value: FilterState["state"]; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "due", label: "Due" },
-  { value: "new", label: "New" },
-  { value: "learning", label: "Learning" },
-  { value: "review", label: "Review" },
-  { value: "relearning", label: "Relearning" },
-];
-
 type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
 
 export default function ProblemsPage() {
+  const { language, t } = useLanguage();
   const [problems, setProblems] = useState<ProblemWithCards[]>([]);
   const [filters, setFilters] = useState<FilterState>({ difficulty: "all", state: "all", tag: "", search: "" });
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "due", asc: true });
@@ -140,11 +126,26 @@ export default function ProblemsPage() {
     setSort((prev) => (prev.key === key ? { key, asc: !prev.asc } : { key, asc: true }));
   };
 
+  const difficultyOptions: { value: FilterState["difficulty"]; label: string }[] = [
+    { value: "all", label: t.problems.all },
+    { value: "Easy", label: t.difficulty.Easy },
+    { value: "Medium", label: t.difficulty.Medium },
+    { value: "Hard", label: t.difficulty.Hard },
+  ];
+  const stateOptions: { value: FilterState["state"]; label: string }[] = [
+    { value: "all", label: t.problems.all },
+    { value: "due", label: t.problems.due },
+    { value: "new", label: t.fsrs.new },
+    { value: "learning", label: t.fsrs.learning },
+    { value: "review", label: t.fsrs.review },
+    { value: "relearning", label: t.fsrs.relearning },
+  ];
+
   if (loading) {
     return (
       <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">Problems</h1>
-        <p className="mt-3 text-sm text-muted">Loading problems...</p>
+        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
+        <p className="mt-3 text-sm text-muted">{t.problems.loading}</p>
       </Surface>
     );
   }
@@ -152,10 +153,10 @@ export default function ProblemsPage() {
   if (loadError) {
     return (
       <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">Problems</h1>
+        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
         <p className="mt-3 text-sm text-danger">{loadError}</p>
         <Link href="/login?next=/problems" className="mt-4 inline-flex text-sm font-medium text-accent hover:underline">
-          Sign in again
+          {t.problems.signInAgain}
         </Link>
       </Surface>
     );
@@ -164,11 +165,11 @@ export default function ProblemsPage() {
   if (!problems.length) {
     return (
       <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">Problems</h1>
-        <Pill tone="accent" className="mt-3">empty</Pill>
-        <p className="mt-3 text-lg font-medium">No problems yet.</p>
+        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
+        <Pill tone="accent" className="mt-3">{t.common.empty}</Pill>
+        <p className="mt-3 text-lg font-medium">{t.problems.noProblems}</p>
         <p className="mt-1 text-sm text-muted">
-          Use the Chrome extension on a LeetCode problem to add your first one.
+          {t.problems.addFirst}
         </p>
       </Surface>
     );
@@ -177,9 +178,9 @@ export default function ProblemsPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Problems</h1>
+        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
         <p className="mt-1 text-sm text-muted">
-          {filtered.length} of {problems.length} · <span className="text-accent">{dueCount} due</span>
+          {t.problems.summary(filtered.length, problems.length, dueCount)}
         </p>
       </header>
 
@@ -187,7 +188,7 @@ export default function ProblemsPage() {
       <div className="flex flex-wrap items-center gap-3">
         {/* Difficulty tabs */}
         <div className="flex rounded-lg border border-border bg-subtle p-0.5">
-          {DIFFICULTY_OPTIONS.map((o) => (
+          {difficultyOptions.map((o) => (
             <button
               key={o.value}
               type="button"
@@ -204,24 +205,24 @@ export default function ProblemsPage() {
 
         {/* State filter */}
         <Select
-          aria-label="Filter by FSRS state"
+          aria-label={t.problems.filterStateAria}
           value={filters.state}
           onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value as FilterState["state"] }))}
           className="w-auto"
         >
-          {STATE_OPTIONS.map((o) => (
+          {stateOptions.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </Select>
 
         {/* Tag filter */}
         <Select
-          aria-label="Filter by tag"
+          aria-label={t.problems.filterTagAria}
           value={filters.tag}
           onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))}
           className="w-auto"
         >
-          <option value="">All tags</option>
+          <option value="">{t.problems.allTags}</option>
           {allTags.map((tag) => (
             <option key={tag} value={tag}>{tag}</option>
           ))}
@@ -230,10 +231,10 @@ export default function ProblemsPage() {
         {/* Search */}
         <Input
           type="search"
-          aria-label="Search problems by title"
+          aria-label={t.problems.searchAria}
           value={filters.search}
           onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-          placeholder="Search..."
+          placeholder={t.problems.search}
           className="w-auto"
         />
       </div>
@@ -245,12 +246,12 @@ export default function ProblemsPage() {
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted">
                 {([
-                  { key: "title", label: "Title", className: "" },
-                  { key: "difficulty", label: "Diff", className: "hidden sm:table-cell" },
-                  { key: "due", label: "Due", className: "" },
-                  { key: "reps", label: "Reps", className: "hidden md:table-cell" },
-                  { key: "drills", label: "Drills", className: "hidden md:table-cell" },
-                  { key: "state", label: "State", className: "hidden sm:table-cell" },
+                  { key: "title", label: t.problems.titleCol, className: "" },
+                  { key: "difficulty", label: t.problems.diffCol, className: "hidden sm:table-cell" },
+                  { key: "due", label: t.problems.due, className: "" },
+                  { key: "reps", label: t.problems.repsCol, className: "hidden md:table-cell" },
+                  { key: "drills", label: t.problems.drillsCol, className: "hidden md:table-cell" },
+                  { key: "state", label: t.problems.stateCol, className: "hidden sm:table-cell" },
                 ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => {
                   const sortable = col.key !== "state";
                   const isSorted = sort.key === col.key;
@@ -304,7 +305,7 @@ export default function ProblemsPage() {
                       </Link>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5">
-                      <DifficultyPill difficulty={p.difficulty} />
+                      <DifficultyPill difficulty={p.difficulty} language={language} />
                     </td>
                     <td className="px-4 py-2.5">
                       <span
@@ -313,7 +314,7 @@ export default function ProblemsPage() {
                           isDue ? "text-accent font-medium" : "text-muted",
                         )}
                       >
-                        {isDue && p.fsrsReps > 0 ? "now" : formatRelative(p.fsrsDue)}
+                        {isDue && p.fsrsReps > 0 ? t.common.now : formatRelative(p.fsrsDue)}
                       </span>
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
@@ -326,7 +327,7 @@ export default function ProblemsPage() {
                       </span>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5">
-                      <FsrsStatePill state={p.fsrsState} />
+                      <FsrsStatePill state={p.fsrsState} language={language} />
                     </td>
                   </tr>
                 );
@@ -337,8 +338,8 @@ export default function ProblemsPage() {
 
         {filtered.length === 0 && (
           <EmptyState
-            title="No matches"
-            description="No problems match the current filters. Try clearing the search or tag filter."
+            title={t.problems.noMatches}
+            description={t.problems.noMatchesDescription}
           />
         )}
       </Surface>

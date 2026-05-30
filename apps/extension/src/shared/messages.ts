@@ -47,4 +47,5 @@ export type ContentResponse =
 export interface ExtSettings {
   apiBaseUrl: string;
   apiToken: string;
+  language: "en" | "zh";
 }

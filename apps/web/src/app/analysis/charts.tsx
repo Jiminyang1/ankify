@@ -10,25 +10,27 @@ import {
   YAxis,
   type TooltipProps,
 } from "recharts";
+import { useLanguage } from "@/components/LanguageProvider";
 
 export function DashboardCharts({
   dailyReviews,
 }: {
   dailyReviews: { day: string; count: number }[];
 }) {
+  const { t } = useLanguage();
   const total = dailyReviews.reduce((sum, d) => sum + d.count, 0);
   const activeDays = dailyReviews.filter((d) => d.count > 0).length;
   const avgPerActiveDay = activeDays > 0 ? Math.round((total / activeDays) * 10) / 10 : 0;
 
   return (
     <ChartFrame
-      title="Review activity"
-      subtitle="Problems you rated each day over the last 30 days."
-      meta={total > 0 ? `${total} reviews · ${avgPerActiveDay}/active day` : undefined}
+      title={t.analysis.reviewActivity}
+      subtitle={t.analysis.activitySubtitle}
+      meta={total > 0 ? t.analysis.activityMeta(total, avgPerActiveDay) : undefined}
     >
       {total === 0 ? (
         <div className="flex h-[200px] items-center justify-center text-sm text-muted">
-          No reviews in the last 30 days.
+          {t.analysis.noRecentReviews}
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={220}>

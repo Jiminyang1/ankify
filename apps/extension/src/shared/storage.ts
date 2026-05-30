@@ -7,6 +7,7 @@ const CARD_DRAFTS_KEY = "ankify.cardDrafts";
 const DEFAULTS: ExtSettings = {
   apiBaseUrl: "http://localhost:3000",
   apiToken: "",
+  language: "en",
 };
 
 const MAX_DRAFT_KEYS = 48;

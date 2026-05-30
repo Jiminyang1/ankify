@@ -32,6 +32,7 @@ type ApiProblem = {
 type FsrsRating = 1 | 2 | 3 | 4;
 type Previews = Record<FsrsRating, { due: string }>;
 type ThemePreference = "system" | "light" | "dark";
+type Language = ExtSettings["language"];
 type QuizItem = {
   id: string;
   question: string;
@@ -108,33 +109,413 @@ type QueueProblem = {
 };
 type QueueResponse = { queue: QueueStats; problems: QueueProblem[] };
 
-const RATING_BUTTONS: { rating: FsrsRating; label: string; hint: string }[] = [
-  { rating: 1, label: "Again", hint: "Could not recall it" },
-  { rating: 2, label: "Hard", hint: "Partial recall, shaky" },
-  { rating: 3, label: "Good", hint: "Main idea is clear" },
-  { rating: 4, label: "Easy", hint: "Can explain method and pitfalls" },
-];
+const EXT_I18N = {
+  en: {
+    nav: { today: "Today", problem: "Problem", settings: "Settings" },
+    common: {
+      refresh: "Refresh",
+      retry: "Retry",
+      loadingQueue: "Loading today's queue...",
+      due: "due",
+      leftToday: "left today",
+      reviewsToday: "reviews today",
+      openFullReview: "Open full review on web ↗",
+      cards: (count: number) => `${count} card${count === 1 ? "" : "s"}`,
+      lapses: (count: number) => `${count} lapse${count === 1 ? "" : "s"}`,
+      submissions: (count: number) => `${count} submissions`,
+      acceptedFailed: (accepted: number, failed: number) => `(${accepted} accepted, ${failed} failed)`,
+      unknownError: "Unknown error",
+    },
+    difficulty: { Easy: "Easy", Medium: "Medium", Hard: "Hard" },
+    fsrs: { new: "new", learning: "learning", review: "review", relearning: "relearning" },
+    theme: { label: "Theme", system: "System", light: "Light", dark: "Dark" },
+    language: { label: "Language", en: "EN", zh: "中" },
+    rating: {
+      again: "Again",
+      hard: "Hard",
+      good: "Good",
+      easy: "Easy",
+      hints: {
+        again: "Could not recall it",
+        hard: "Partial recall, shaky",
+        good: "Main idea is clear",
+        easy: "Can explain method and pitfalls",
+      },
+    },
+    today: {
+      limitReached: "Daily limit reached. Take a break.",
+      allCaughtUp: "All caught up - nothing due right now.",
+      noQueue: "No problems in queue.",
+      dueNow: "Due now",
+      stability: "stability",
+    },
+    problem: {
+      connecting: "Connecting...",
+      syncing: (slug: string) => `Syncing ${slug}...`,
+      offPage: "Open a LeetCode problem tab (URL contains /problems/) to start reviewing.",
+      activeTabNotOn: (title: string) => `Active tab isn't on ${title}.`,
+      openIt: "Open it",
+      review: "Review",
+      manage: "Manage",
+      syncTitle: "Sync latest LeetCode submissions",
+      openWeb: "Open in web",
+      syncOne: "Synced 1 new submission.",
+      syncMany: (count: number) => `Synced ${count} new submissions.`,
+      upToDate: "Already up to date.",
+      syncFailed: "Sync failed.",
+      next: "next:",
+    },
+    review: {
+      quiz: "Quiz",
+      cards: "Cards",
+      notes: "Notes",
+      noCards: "No cards yet.",
+      goManage: "Go to Manage",
+      submitRating: "Submit rating",
+      alreadyRated: "Already rated in another window. Refreshing...",
+      rateFailed: "Rate failed",
+    },
+    quiz: {
+      loading: "Loading quiz...",
+      generating: "Generating quiz",
+      switchHint: "You can switch to Card or Notes and come back here.",
+      noQuiz: "No quiz yet",
+      noQuizBody: "Generate 5 focused questions from this problem, your submissions, notes, and cards.",
+      generate: "Generate quiz",
+      pendingTimer: (elapsed: string) => `Generating ${elapsed} / 02:00`,
+      timedOut: "Quiz generation timed out. Try again.",
+      failedLoad: "Failed to load quiz",
+      failedGenerate: "Failed to generate quiz",
+      resetConfirm: "Delete all quiz history for this problem? Past sessions cannot be recovered.",
+      failedReset: "Failed to reset quiz history",
+      changed: "Quiz state changed elsewhere. Reloading...",
+      failedSubmit: "Failed to submit answer",
+      failedSave: "Failed to save card",
+      batchComplete: "Batch complete",
+      noMisses: "No misses",
+      missed: (count: number) => `${count} missed`,
+      coverageBalanced: "coverage balanced",
+      reset: "Reset",
+      newBatch: "New Batch",
+      scope: "Scope",
+      source: "Source",
+      missedLabel: "Missed",
+      none: "None",
+      creating: "Creating...",
+      cardsSaved: "Cards saved",
+      createCards: "Create cards",
+      hideQuiz: "Hide Quiz",
+      reviewQuiz: "Review Quiz",
+      hideAnswers: "Hide all answers",
+      expandQuestions: "Expand all questions",
+      noQuestions: "This quiz has no questions.",
+      regenerate: "Regenerate",
+      regenerating: "Regenerating...",
+      question: (current: number, total: number) => `Question ${current} / ${total}`,
+      answered: (answered: number, total: number) => `Answered ${answered}/${total}`,
+      prev: "Prev",
+      next: "Next",
+      correct: "Correct",
+      wrong: "Wrong",
+      incorrect: "Incorrect",
+      saved: "Saved",
+      saving: "Saving...",
+      save: "Save",
+      results: "Results",
+      checking: "Checking answer...",
+      answerHint: "Click an option to answer, or use Next to skip for now.",
+      firstUnanswered: "First unanswered",
+      yourAnswer: "Your answer:",
+      correctAnswer: "Correct answer:",
+      scopes: {
+        approach: "Approach",
+        invariant: "Invariant",
+        edge_case: "Edge cases",
+        complexity: "Complexity",
+        implementation: "Implementation",
+        mistake_review: "Mistakes",
+      },
+      sources: { statement: "Statement", submission: "Submission", notes: "Notes", card: "Card" },
+    },
+    cards: {
+      add: "Add a card",
+      savedCount: (count: number) => `${count} saved card${count === 1 ? "" : "s"}`,
+      noSaved: "No saved cards yet.",
+      question: "Question",
+      answer: "Answer",
+      deleteConfirm: "Delete this card?",
+      deleteFailed: "Delete failed",
+      delete: "Delete",
+      aiFromNotes: "AI from notes",
+      manual: "Manual Q&A",
+      questionPlaceholder: "What do you want to recall?",
+      answerPlaceholder: "The answer you need to remember.",
+      saveCard: "Save card",
+      yourNotes: "Your notes",
+      notesPlaceholder: "Questions, pitfalls, or reasoning you want to remember...",
+      generatingCandidate: "Generating candidate...",
+      autosaved: "autosaved",
+      clear: "Clear",
+      autoGenerate: "Auto generate",
+      generateFromNote: "Generate from note",
+      timedOut: "AI card generation timed out. Try again.",
+      candidateCount: (count: number) => `${count} AI candidate${count === 1 ? "" : "s"} - review & confirm`,
+      failed: "Failed",
+      candidate: "Candidate",
+      followupPlaceholder: "Follow up instruction (optional)",
+      apply: "Apply",
+      confirm: "Confirm",
+      applying: "Applying",
+      aiFailed: "AI request failed",
+      confirmFailed: "Confirm failed",
+      discardFailed: "Discard failed",
+    },
+    capture: {
+      notInDeck: "Not in your deck",
+      notCaptured: (slug: string) => `Problem ${slug} hasn't been captured.`,
+      reading: "Reading...",
+      captureThis: "Capture this problem",
+      add: "Add to ankify",
+      saving: "Saving...",
+      back: "Back",
+    },
+    notes: {
+      title: "Notes",
+      saving: "Saving...",
+      saved: "Saved",
+      placeholder: "What tripped you up, key insights, alternative approaches...",
+    },
+    settings: {
+      appearance: "Appearance",
+      appearanceHelp: "Theme only affects the extension popup.",
+      connection: "Connection",
+      connectionHelp: "Used when the extension talks to the web API.",
+      apiBaseUrl: "API base URL",
+      apiToken: "User API token",
+      saveConnection: "Save connection",
+      testConnection: "Test connection",
+      testing: "Testing...",
+      saved: "Saved.",
+      tokenHint: "Create a token in web Settings, then paste it here.",
+      required: "API base URL and token are required.",
+      checking: "Checking connection...",
+      connectedAs: (email: string) => `Connected as ${email}.`,
+      thisUser: "this user",
+      failed: "Connection failed.",
+    },
+  },
+  zh: {
+    nav: { today: "今日", problem: "题目", settings: "设置" },
+    common: {
+      refresh: "刷新",
+      retry: "重试",
+      loadingQueue: "正在加载今日队列...",
+      due: "到期",
+      leftToday: "今日剩余",
+      reviewsToday: "今日复习",
+      openFullReview: "在 Web 打开完整复习 ↗",
+      cards: (count: number) => `${count} 张卡片`,
+      lapses: (count: number) => `${count} 次遗忘`,
+      submissions: (count: number) => `${count} 次提交`,
+      acceptedFailed: (accepted: number, failed: number) => `（${accepted} 通过，${failed} 失败）`,
+      unknownError: "未知错误",
+    },
+    difficulty: { Easy: "简单", Medium: "中等", Hard: "困难" },
+    fsrs: { new: "新题", learning: "学习中", review: "复习", relearning: "重新学习" },
+    theme: { label: "主题", system: "系统", light: "浅色", dark: "深色" },
+    language: { label: "语言", en: "EN", zh: "中" },
+    rating: {
+      again: "忘记",
+      hard: "困难",
+      good: "良好",
+      easy: "简单",
+      hints: { again: "完全想不起来", hard: "部分想起但不稳", good: "主思路清楚", easy: "能讲清方法和坑点" },
+    },
+    today: {
+      limitReached: "已达到每日上限，休息一下吧。",
+      allCaughtUp: "全部跟上了，现在没有到期题。",
+      noQueue: "队列里没有题目。",
+      dueNow: "当前到期",
+      stability: "稳定性",
+    },
+    problem: {
+      connecting: "连接中...",
+      syncing: (slug: string) => `同步 ${slug}...`,
+      offPage: "打开一个 LeetCode 题目页（URL 包含 /problems/）开始复习。",
+      activeTabNotOn: (title: string) => `当前标签页不是 ${title}。`,
+      openIt: "打开它",
+      review: "复习",
+      manage: "管理",
+      syncTitle: "同步最新 LeetCode 提交",
+      openWeb: "在 Web 打开",
+      syncOne: "已同步 1 次新提交。",
+      syncMany: (count: number) => `已同步 ${count} 次新提交。`,
+      upToDate: "已经是最新。",
+      syncFailed: "同步失败。",
+      next: "下次：",
+    },
+    review: {
+      quiz: "测验",
+      cards: "卡片",
+      notes: "笔记",
+      noCards: "还没有卡片。",
+      goManage: "去管理",
+      submitRating: "提交评分",
+      alreadyRated: "已在另一个窗口评分，正在刷新...",
+      rateFailed: "评分失败",
+    },
+    quiz: {
+      loading: "正在加载测验...",
+      generating: "正在生成测验",
+      switchHint: "你可以先切到卡片或笔记，稍后回到这里。",
+      noQuiz: "还没有测验",
+      noQuizBody: "根据这道题、提交、笔记和卡片生成 5 道聚焦问题。",
+      generate: "生成测验",
+      pendingTimer: (elapsed: string) => `生成中 ${elapsed} / 02:00`,
+      timedOut: "测验生成超时，请重试。",
+      failedLoad: "加载测验失败",
+      failedGenerate: "生成测验失败",
+      resetConfirm: "删除这道题的所有测验历史？过去的 session 无法恢复。",
+      failedReset: "重置测验历史失败",
+      changed: "测验状态已在其他地方变化，正在重新加载...",
+      failedSubmit: "提交答案失败",
+      failedSave: "保存卡片失败",
+      batchComplete: "本批完成",
+      noMisses: "没有错题",
+      missed: (count: number) => `错 ${count} 题`,
+      coverageBalanced: "覆盖均衡",
+      reset: "重置",
+      newBatch: "新一批",
+      scope: "范围",
+      source: "来源",
+      missedLabel: "错题",
+      none: "无",
+      creating: "创建中...",
+      cardsSaved: "卡片已保存",
+      createCards: "创建卡片",
+      hideQuiz: "隐藏测验",
+      reviewQuiz: "回看测验",
+      hideAnswers: "隐藏全部答案",
+      expandQuestions: "展开全部问题",
+      noQuestions: "这个测验没有问题。",
+      regenerate: "重新生成",
+      regenerating: "重新生成中...",
+      question: (current: number, total: number) => `第 ${current} / ${total} 题`,
+      answered: (answered: number, total: number) => `已答 ${answered}/${total}`,
+      prev: "上题",
+      next: "下题",
+      correct: "正确",
+      wrong: "错误",
+      incorrect: "错误",
+      saved: "已保存",
+      saving: "保存中...",
+      save: "保存",
+      results: "结果",
+      checking: "正在检查答案...",
+      answerHint: "点击选项作答，或用下题暂时跳过。",
+      firstUnanswered: "第一道未答题",
+      yourAnswer: "你的答案：",
+      correctAnswer: "正确答案：",
+      scopes: { approach: "思路", invariant: "不变量", edge_case: "边界情况", complexity: "复杂度", implementation: "实现", mistake_review: "错因复盘" },
+      sources: { statement: "题目", submission: "提交", notes: "笔记", card: "卡片" },
+    },
+    cards: {
+      add: "添加卡片",
+      savedCount: (count: number) => `${count} 张已保存卡片`,
+      noSaved: "还没有已保存卡片。",
+      question: "问题",
+      answer: "答案",
+      deleteConfirm: "删除这张卡片？",
+      deleteFailed: "删除失败",
+      delete: "删除",
+      aiFromNotes: "AI 从笔记生成",
+      manual: "手动 Q&A",
+      questionPlaceholder: "你想回忆什么？",
+      answerPlaceholder: "需要记住的答案。",
+      saveCard: "保存卡片",
+      yourNotes: "你的笔记",
+      notesPlaceholder: "想记住的问题、坑点或推理过程...",
+      generatingCandidate: "正在生成候选卡片...",
+      autosaved: "已自动保存",
+      clear: "清空",
+      autoGenerate: "自动生成",
+      generateFromNote: "从笔记生成",
+      timedOut: "AI 卡片生成超时，请重试。",
+      candidateCount: (count: number) => `${count} 张 AI 候选卡片 - 检查并确认`,
+      failed: "失败",
+      candidate: "候选",
+      followupPlaceholder: "后续修改指令（可选）",
+      apply: "应用",
+      confirm: "确认",
+      applying: "应用中",
+      aiFailed: "AI 请求失败",
+      confirmFailed: "确认失败",
+      discardFailed: "丢弃失败",
+    },
+    capture: {
+      notInDeck: "不在你的题库中",
+      notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
+      reading: "读取中...",
+      captureThis: "捕获这道题",
+      add: "添加到 ankify",
+      saving: "保存中...",
+      back: "返回",
+    },
+    notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
+    settings: {
+      appearance: "外观",
+      appearanceHelp: "主题只影响扩展弹窗。",
+      connection: "连接",
+      connectionHelp: "扩展与 Web API 通信时使用。",
+      apiBaseUrl: "API base URL",
+      apiToken: "用户 API token",
+      saveConnection: "保存连接",
+      testConnection: "测试连接",
+      testing: "测试中...",
+      saved: "已保存。",
+      tokenHint: "在 Web 设置中创建 token，然后粘贴到这里。",
+      required: "需要 API base URL 和 token。",
+      checking: "正在检查连接...",
+      connectedAs: (email: string) => `已连接为 ${email}。`,
+      thisUser: "此用户",
+      failed: "连接失败。",
+    },
+  },
+} as const;
 
-const QUIZ_SCOPE_LABELS: Record<QuizItem["scope"], string> = {
-  approach: "Approach",
-  invariant: "Invariant",
-  edge_case: "Edge cases",
-  complexity: "Complexity",
-  implementation: "Implementation",
-  mistake_review: "Mistakes",
-};
+function getExtText(settings: ExtSettings) {
+  return EXT_I18N[settings.language === "zh" ? "zh" : "en"];
+}
 
-const QUIZ_SOURCE_LABELS: Record<QuizItem["source"], string> = {
-  statement: "Statement",
-  submission: "Submission",
-  notes: "Notes",
-  card: "Card",
-};
+function getRatingButtons(t: ReturnType<typeof getExtText>): { rating: FsrsRating; label: string; hint: string }[] {
+  return [
+    { rating: 1, label: t.rating.again, hint: t.rating.hints.again },
+    { rating: 2, label: t.rating.hard, hint: t.rating.hints.hard },
+    { rating: 3, label: t.rating.good, hint: t.rating.hints.good },
+    { rating: 4, label: t.rating.easy, hint: t.rating.hints.easy },
+  ];
+}
 
-const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
+function difficultyLabel(difficulty: ApiProblem["difficulty"] | CapturedProblem["difficulty"], t: ReturnType<typeof getExtText>) {
+  return t.difficulty[difficulty];
+}
+
+function fsrsLabel(state: ApiProblem["fsrsState"], t: ReturnType<typeof getExtText>) {
+  return t.fsrs[state];
+}
+
+function quizScopeLabel(scope: QuizItem["scope"], t: ReturnType<typeof getExtText>) {
+  return t.quiz.scopes[scope];
+}
+
+function quizSourceLabel(source: QuizItem["source"], t: ReturnType<typeof getExtText>) {
+  return t.quiz.sources[source];
+}
+
+const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" }[] = [
+  { value: "system", key: "system" },
+  { value: "light", key: "light" },
+  { value: "dark", key: "dark" },
 ];
 
 const QUIZ_PENDING_TTL_MS = 125_000;
@@ -425,6 +806,11 @@ export function Popup() {
     chrome.storage.local.set({ "ankify.theme": next });
   }
 
+  function saveLocalSettings(next: Partial<ExtSettings>) {
+    void setSettings(next);
+    setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
+  }
+
   useEffect(() => {
     getSettings().then(setLocalSettings);
   }, []);
@@ -481,7 +867,7 @@ export function Popup() {
         }
       } catch (e) {
         if (currentSlugRef.current !== slug) return;
-        setState({ kind: "error", msg: e instanceof Error ? e.message : "Unknown error" });
+        setState({ kind: "error", msg: e instanceof Error ? e.message : getExtText(settings).common.unknownError });
       }
     },
     [settings],
@@ -512,6 +898,7 @@ export function Popup() {
   }, [settings, detect]);
 
   const captured = state.kind === "captured" ? state : null;
+  const text = settings ? getExtText(settings) : EXT_I18N.en;
 
   // Jump back to the LeetCode tab where the sticky problem was last seen.
   // Falls back to any open tab on that slug if the original tab is gone, or
@@ -553,24 +940,24 @@ export function Popup() {
               if (tab === "today") window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
               else void detect({ force: true });
             }}
-            title="Refresh"
+            title={text.common.refresh}
           >
-            Refresh
+            {text.common.refresh}
           </button>
         )}
       </div>
 
       {/* Nav */}
       <nav className="popup-nav">
-        {(["today", "problem", "settings"] as NavTab[]).map((t) => (
+        {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
           <button
-            key={t}
+            key={navTab}
             type="button"
             className="popup-nav-tab"
-            data-active={tab === t}
-            onClick={() => setTab(t)}
+            data-active={tab === navTab}
+            onClick={() => setTab(navTab)}
           >
-            {t === "today" ? "Today" : t === "problem" ? "Problem" : "Settings"}
+            {text.nav[navTab]}
           </button>
         ))}
       </nav>
@@ -606,10 +993,7 @@ export function Popup() {
               settings={settings}
               theme={theme}
               onThemeChange={setThemePreference}
-              onSave={(next) => {
-                void setSettings(next);
-                setLocalSettings((prev) => (prev ? { ...prev, ...next } : prev));
-              }}
+              onSave={saveLocalSettings}
             />
           </div>
         )}
@@ -627,6 +1011,7 @@ function TodayTab({
   settings: ExtSettings;
   onJumpToProblem: () => void;
 }) {
+  const t = getExtText(settings);
   const [data, setData] = useState<QueueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -643,7 +1028,7 @@ function TodayTab({
       }
       setData((await res.json()) as QueueResponse);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load queue");
+      setError(e instanceof Error ? e.message : t.quiz.failedLoad);
     } finally {
       setLoading(false);
     }
@@ -678,18 +1063,18 @@ function TodayTab({
       }
       onJumpToProblem();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not open tab");
+      setError(e instanceof Error ? e.message : t.common.unknownError);
     }
   }
 
-  if (loading && !data) return <p className="popup-muted">Loading today’s queue…</p>;
+  if (loading && !data) return <p className="popup-muted">{t.common.loadingQueue}</p>;
 
   if (error) {
     return (
       <div className="stack">
         <div className="err-banner">{error}</div>
         <button type="button" className="btn btn-primary" onClick={() => void load()}>
-          Retry
+          {t.common.retry}
         </button>
       </div>
     );
@@ -710,16 +1095,16 @@ function TodayTab({
               {queue.doneToday}
               <span className="today-stats-num-soft"> / {limit || "∞"}</span>
             </div>
-            <div className="today-stats-label">reviews today</div>
+            <div className="today-stats-label">{t.common.reviewsToday}</div>
           </div>
           <div className="today-stats-side">
             <div>
               <span className="today-stats-pillval">{queue.dueCount}</span>
-              <span className="today-stats-pilllabel"> due</span>
+              <span className="today-stats-pilllabel"> {t.common.due}</span>
             </div>
             <div>
               <span className="today-stats-pillval">{queue.remaining}</span>
-              <span className="today-stats-pilllabel"> left today</span>
+              <span className="today-stats-pilllabel"> {t.common.leftToday}</span>
             </div>
           </div>
         </div>
@@ -734,15 +1119,15 @@ function TodayTab({
         <div className="panel panel-quiet">
           <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
             {queue.remaining === 0
-              ? "🎉 Daily limit reached. Take a break."
+              ? t.today.limitReached
               : queue.totalDue === 0
-                ? "All caught up — nothing due right now."
-                : "No problems in queue."}
+                ? t.today.allCaughtUp
+                : t.today.noQueue}
           </p>
         </div>
       ) : (
         <div className="problem-list">
-          <div className="section-label">Due now</div>
+          <div className="section-label">{t.today.dueNow}</div>
           {problems.map((p) => (
             <button
               key={p.id}
@@ -752,13 +1137,13 @@ function TodayTab({
             >
               <div className="problem-list-item-row">
                 <span className="problem-list-item-title">{p.title}</span>
-                <span className={`pill pill-${p.difficulty.toLowerCase()}`}>{p.difficulty}</span>
+                <span className={`pill pill-${p.difficulty.toLowerCase()}`}>{difficultyLabel(p.difficulty, t)}</span>
               </div>
               <div className="problem-list-item-meta">
-                <span className="pill pill-state">{p.fsrsState}</span>
-                <span>{p.cardCount} card{p.cardCount === 1 ? "" : "s"}</span>
-                {p.fsrsStability != null && <span>stability {p.fsrsStability.toFixed(1)}d</span>}
-                {p.fsrsLapses > 0 && <span>{p.fsrsLapses} lapse{p.fsrsLapses === 1 ? "" : "s"}</span>}
+                <span className="pill pill-state">{fsrsLabel(p.fsrsState, t)}</span>
+                <span>{t.common.cards(p.cardCount)}</span>
+                {p.fsrsStability != null && <span>{t.today.stability} {p.fsrsStability.toFixed(1)}d</span>}
+                {p.fsrsLapses > 0 && <span>{t.common.lapses(p.fsrsLapses)}</span>}
               </div>
             </button>
           ))}
@@ -771,7 +1156,7 @@ function TodayTab({
         rel="noreferrer"
         className="hero-link"
       >
-        Open full review on web ↗
+        {t.common.openFullReview}
       </a>
     </div>
   );
@@ -801,6 +1186,7 @@ function ProblemTab({
   onRefresh: () => void;
   onError: (msg: string) => void;
 }) {
+  const t = getExtText(settings);
   const [mode, setMode] = useState<"review" | "manage">("review");
   const [syncState, setSyncState] = useState<{
     busy: boolean;
@@ -839,31 +1225,30 @@ function ProblemTab({
         busy: false,
         message:
           result.importedSubmissions === 1
-            ? "Synced 1 new submission."
+            ? t.problem.syncOne
             : result.importedSubmissions > 1
-              ? `Synced ${result.importedSubmissions} new submissions.`
-              : "Already up to date.",
+              ? t.problem.syncMany(result.importedSubmissions)
+              : t.problem.upToDate,
         tone: "success",
       });
       onRefresh();
     } catch (e) {
       setSyncState({
         busy: false,
-        message: e instanceof Error ? e.message : "Sync failed.",
+        message: e instanceof Error ? e.message : t.problem.syncFailed,
         tone: "error",
       });
     }
   }
 
-  if (state.kind === "detecting") return <p className="popup-muted">Connecting…</p>;
-  if (state.kind === "loading") return <p className="popup-muted">Syncing <span className="popup-code">{state.slug}</span>…</p>;
+  if (state.kind === "detecting") return <p className="popup-muted">{t.problem.connecting}</p>;
+  if (state.kind === "loading") return <p className="popup-muted">{t.problem.syncing(state.slug)}</p>;
 
   if (state.kind === "off-page" && !sticky) {
     return (
       <div className="panel panel-quiet">
         <p className="popup-muted" style={{ margin: 0 }}>
-          Open a <strong style={{ color: "var(--fg)" }}>LeetCode problem</strong> tab (URL contains{" "}
-          <span className="popup-code">/problems/</span>) to start reviewing.
+          {t.problem.offPage}
         </p>
       </div>
     );
@@ -874,7 +1259,7 @@ function ProblemTab({
       <div className="stack">
         <div className="err-banner">{state.msg}</div>
         <button type="button" onClick={onRefresh} className="btn btn-primary">
-          Retry
+          {t.common.retry}
         </button>
       </div>
     );
@@ -901,10 +1286,10 @@ function ProblemTab({
       {isStickyView && (
         <div className="sticky-banner">
           <span className="sticky-banner-text">
-            Active tab isn’t on <span className="popup-code">{problem.title}</span>.
+            {t.problem.activeTabNotOn(problem.title)}
           </span>
           <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
-            Open it
+            {t.problem.openIt}
           </button>
         </div>
       )}
@@ -971,6 +1356,7 @@ function ProblemCard({
   syncTone: "success" | "error";
   canSync: boolean;
 }) {
+  const t = getExtText(settings);
   return (
     <div className="problem-card">
       <div className="problem-card-top">
@@ -982,11 +1368,11 @@ function ProblemCard({
             {problem.title}
           </h2>
           <div className="problem-card-tags">
-            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</span>
+            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{difficultyLabel(problem.difficulty, t)}</span>
             {due ? (
-              <span className="pill pill-due">due</span>
+              <span className="pill pill-due">{t.common.due}</span>
             ) : (
-              <span className="problem-card-next">next: {formatInterval(problem.fsrsDue)}</span>
+              <span className="problem-card-next">{t.problem.next} {formatInterval(problem.fsrsDue)}</span>
             )}
           </div>
         </div>
@@ -994,8 +1380,8 @@ function ProblemCard({
           <button
             type="button"
             className="problem-header-web"
-            title="Sync latest LeetCode submissions"
-            aria-label="Sync latest LeetCode submissions"
+            title={t.problem.syncTitle}
+            aria-label={t.problem.syncTitle}
             disabled={!canSync || syncBusy}
             onClick={onSync}
           >
@@ -1006,8 +1392,8 @@ function ProblemCard({
             target="_blank"
             rel="noreferrer"
             className="problem-header-web"
-            title="Open in web"
-            aria-label="Open in web"
+            title={t.problem.openWeb}
+            aria-label={t.problem.openWeb}
           >
             ↗
           </a>
@@ -1020,14 +1406,14 @@ function ProblemCard({
           className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
           onClick={() => onModeChange("review")}
         >
-          Review
+          {t.problem.review}
         </button>
         <button
           type="button"
           className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
           onClick={() => onModeChange("manage")}
         >
-          Manage
+          {t.problem.manage}
         </button>
       </div>
     </div>
@@ -1067,6 +1453,7 @@ function ReviewView({
   onRefresh: () => void;
   onRated: () => void;
 }) {
+  const t = getExtText(settings);
   const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
 
   return (
@@ -1096,7 +1483,7 @@ function ReviewView({
               data-active={view === v}
               onClick={() => setView(v)}
             >
-              {v === "quiz" ? "Quiz" : v === "card" ? "Cards" : "Notes"}
+              {v === "quiz" ? t.review.quiz : v === "card" ? t.review.cards : t.review.notes}
             </button>
           ))}
         </div>
@@ -1117,14 +1504,14 @@ function ReviewView({
               {cards.length === 0 ? (
                 <div className="review-empty">
                   <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
-                    No cards yet.
+                    {t.review.noCards}
                   </p>
                   <button
                     type="button"
                     className="btn btn-primary"
                     onClick={() => onModeChange("manage")}
                   >
-                    Go to Manage
+                    {t.review.goManage}
                   </button>
                 </div>
               ) : (
@@ -1159,6 +1546,7 @@ function ReviewView({
 /* ── QuizPanel ── */
 
 function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; settings: ExtSettings; onRefresh: () => void }) {
+  const t = getExtText(settings);
   const [session, setSession] = useState<QuizSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -1208,7 +1596,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       setSavingMissed(false);
       setShowResults(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load quiz");
+      setError(e instanceof Error ? e.message : t.quiz.failedLoad);
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -1237,7 +1625,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       if (!pending) {
         setPendingQuiz(null);
         setGenerating(false);
-        setError("Quiz generation timed out. Try again.");
+        setError(t.quiz.timedOut);
         return;
       }
       void loadSession({ silent: true });
@@ -1275,14 +1663,14 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     } catch (e) {
       clearPendingOperation(pendingKey);
       setPendingQuiz(null);
-      setError(e instanceof Error ? e.message : "Failed to generate quiz");
+      setError(e instanceof Error ? e.message : t.quiz.failedGenerate);
     } finally {
       setGenerating(false);
     }
   }
 
   async function resetHistory() {
-    if (!window.confirm("Delete all quiz history for this problem? Past sessions cannot be recovered.")) {
+    if (!window.confirm(t.quiz.resetConfirm)) {
       return;
     }
     setError(null);
@@ -1304,7 +1692,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       setCurrentIndex(0);
       setShowResults(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reset quiz history");
+      setError(e instanceof Error ? e.message : t.quiz.failedReset);
     }
   }
 
@@ -1319,7 +1707,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         body: JSON.stringify({ itemId: item.id, selectedIndex }),
       });
       if (res.status === 409) {
-        setError("Quiz state changed elsewhere. Reloading…");
+        setError(t.quiz.changed);
         await loadSession({ silent: true });
         return;
       }
@@ -1336,7 +1724,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       storeQuizFeedback(problem.id, json.session.id, json.item.id);
       setFeedback({ item: json.item, answer: json.answer });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to submit answer");
+      setError(e instanceof Error ? e.message : t.quiz.failedSubmit);
     } finally {
       setSubmittingItem(false);
     }
@@ -1357,7 +1745,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       setSavedItemIds((prev) => new Set(prev).add(item.id));
       void onRefresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save card");
+      setError(e instanceof Error ? e.message : t.quiz.failedSave);
     } finally {
       setSavingItemId(null);
     }
@@ -1392,16 +1780,16 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   }
 
   if (loading) {
-    return <div className="quiz-empty"><p className="popup-muted">Loading quiz...</p></div>;
+    return <div className="quiz-empty"><p className="popup-muted">{t.quiz.loading}</p></div>;
   }
 
   if (pendingQuiz) {
     return (
       <div className="quiz-empty">
         <div className="quiz-pending-bar"><span /></div>
-        <div className="quiz-empty-title">Generating quiz</div>
-        <p className="popup-muted">You can switch to Card or Notes and come back here.</p>
-        <div className="quiz-pending-timer">Generating {formatElapsedSeconds(pendingElapsedSeconds)} / 02:00</div>
+        <div className="quiz-empty-title">{t.quiz.generating}</div>
+        <p className="popup-muted">{t.quiz.switchHint}</p>
+        <div className="quiz-pending-timer">{t.quiz.pendingTimer(formatElapsedSeconds(pendingElapsedSeconds))}</div>
       </div>
     );
   }
@@ -1409,16 +1797,16 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   if (!session) {
     return (
       <div className="quiz-empty">
-        <div className="quiz-empty-kicker">Quiz</div>
-        <div className="quiz-empty-title">No quiz yet</div>
-        <p className="popup-muted">Generate 5 focused questions from this problem, your submissions, notes, and cards.</p>
+        <div className="quiz-empty-kicker">{t.review.quiz}</div>
+        <div className="quiz-empty-title">{t.quiz.noQuiz}</div>
+        <p className="popup-muted">{t.quiz.noQuizBody}</p>
         <button
           type="button"
           className="btn btn-primary"
           disabled={generating}
           onClick={() => void generateQuiz("generate")}
         >
-          {generating ? "Generating..." : "Generate quiz"}
+          {generating ? t.quiz.generating : t.quiz.generate}
         </button>
         {error && <div className="err-banner quiz-error">{error}</div>}
       </div>
@@ -1426,13 +1814,13 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   }
 
   if (session.status === "completed" && !feedback) {
-    const suggested = getSuggestedRating(session.score ?? 0);
+    const suggested = getSuggestedRating(session.score ?? 0, t);
     const missedItems = getMissedQuizItems(session);
     const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
     const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
-    const scopeBreakdown = getQuizBreakdown(session, "scope");
-    const sourceBreakdown = getQuizBreakdown(session, "source");
-    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map(formatQuizScope);
+    const scopeBreakdown = getQuizBreakdown(session, "scope", t);
+    const sourceBreakdown = getQuizBreakdown(session, "source", t);
+    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map((scope) => quizScopeLabel(scope, t));
     return (
       <div className="quiz-panel">
         <div className="quiz-results scroll-area">
@@ -1445,9 +1833,9 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 <div className="quiz-score-label">{accuracy}% · {suggested.label}</div>
               </div>
               <div className="quiz-overview-copy">
-                <div className="quiz-overview-title">Batch complete</div>
+                <div className="quiz-overview-title">{t.quiz.batchComplete}</div>
                 <div className="quiz-overview-meta">
-                  {missedItems.length === 0 ? "No misses" : `${missedItems.length} missed`} · coverage balanced
+                  {missedItems.length === 0 ? t.quiz.noMisses : t.quiz.missed(missedItems.length)} · {t.quiz.coverageBalanced}
                 </div>
               </div>
               <div className="quiz-overview-actions">
@@ -1456,9 +1844,9 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                   className="quiz-link-btn quiz-link-muted"
                   disabled={generating}
                   onClick={() => void resetHistory()}
-                  title="Delete every quiz session for this problem"
+                  title={t.quiz.resetConfirm}
                 >
-                  Reset
+                  {t.quiz.reset}
                 </button>
                 <button
                   type="button"
@@ -1466,20 +1854,20 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                   disabled={generating}
                   onClick={() => void generateQuiz("nextBatch")}
                 >
-                  {generating ? "Generating..." : "New Batch"}
+                  {generating ? t.quiz.generating : t.quiz.newBatch}
                 </button>
               </div>
             </div>
 
             <div className="quiz-overview-rows">
-              <QuizBreakdown label="Scope" items={scopeBreakdown} />
-              <QuizBreakdown label="Source" items={sourceBreakdown} />
+              <QuizBreakdown label={t.quiz.scope} items={scopeBreakdown} />
+              <QuizBreakdown label={t.quiz.source} items={sourceBreakdown} />
             </div>
 
             <div className="quiz-missed-row">
               <div>
-                <span className="quiz-missed-label">Missed</span>
-                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : "None"}</span>
+                <span className="quiz-missed-label">{t.quiz.missedLabel}</span>
+                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : t.quiz.none}</span>
               </div>
               <button
                 type="button"
@@ -1487,7 +1875,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 disabled={unsavedMissedCount === 0 || savingMissed}
                 onClick={() => void saveMissedAsCards()}
               >
-                {savingMissed ? "Creating..." : unsavedMissedCount === 0 ? "Cards saved" : "Create cards"}
+                {savingMissed ? t.quiz.creating : unsavedMissedCount === 0 ? t.quiz.cardsSaved : t.quiz.createCards}
                 {unsavedMissedCount > 0 && !savingMissed && <span>{unsavedMissedCount}</span>}
               </button>
             </div>
@@ -1495,8 +1883,8 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
 
           <div className="quiz-review-toggle-wrap">
             <button type="button" className="quiz-review-toggle" onClick={() => setShowResults((value) => !value)}>
-              <span>{showResults ? "Hide Quiz" : "Review Quiz"}</span>
-              <span>{showResults ? "Hide all answers" : "Expand all questions"}</span>
+              <span>{showResults ? t.quiz.hideQuiz : t.quiz.reviewQuiz}</span>
+              <span>{showResults ? t.quiz.hideAnswers : t.quiz.expandQuestions}</span>
             </button>
           </div>
           {showResults && session.itemsJson.map((item, index) => {
@@ -1508,23 +1896,23 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
             return (
               <div key={item.id} className="quiz-result-item">
                 <div className="quiz-result-meta">
-                  <span>Question {index + 1}</span>
+                  <span>{t.quiz.question(index + 1, session.itemsJson.length)}</span>
                   <span className={answer?.correct ? "quiz-ok" : "quiz-bad"}>
-                    {answer?.correct ? "Correct" : "Incorrect"}
+                    {answer?.correct ? t.quiz.correct : t.quiz.incorrect}
                   </span>
                 </div>
                 <div className="quiz-result-tags">
-                  <span>{QUIZ_SOURCE_LABELS[item.source]}</span>
-                  <span>{formatQuizScope(item.scope)}</span>
+                  <span>{quizSourceLabel(item.source, t)}</span>
+                  <span>{quizScopeLabel(item.scope, t)}</span>
                 </div>
                 <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
                 {selectedChoice && (
                   <div className="quiz-result-line">
-                    Your answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
+                    {t.quiz.yourAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
                   </div>
                 )}
                 <div className="quiz-result-line">
-                  Correct answer: <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
+                  {t.quiz.correctAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
                 </div>
                 <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
                 <button
@@ -1533,7 +1921,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                   disabled={saved || saving}
                   onClick={() => void saveAsCard(item)}
                 >
-                  {saved ? "Saved" : saving ? "Saving..." : "Save"}
+                  {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
                 </button>
               </div>
             );
@@ -1548,14 +1936,14 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   if (!item) {
     return (
       <div className="quiz-empty">
-        <p className="popup-muted">This quiz has no questions.</p>
+        <p className="popup-muted">{t.quiz.noQuestions}</p>
         <button
           type="button"
           className="btn btn-primary"
           disabled={generating}
           onClick={() => void generateQuiz("regenerate")}
         >
-          {generating ? "Regenerating..." : "Regenerate quiz"}
+          {generating ? t.quiz.regenerating : t.quiz.regenerate}
         </button>
       </div>
     );
@@ -1572,8 +1960,8 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     <div className="quiz-panel">
       <div className="quiz-panel-head">
         <div>
-          <div className="quiz-head-title">Question {currentIndex + 1} / {session.itemsJson.length}</div>
-          <div className="quiz-head-meta">Answered {answeredCount}/{session.itemsJson.length}</div>
+          <div className="quiz-head-title">{t.quiz.question(currentIndex + 1, session.itemsJson.length)}</div>
+          <div className="quiz-head-meta">{t.quiz.answered(answeredCount, session.itemsJson.length)}</div>
           <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
         </div>
         <div className="quiz-nav-row">
@@ -1583,7 +1971,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
             disabled={!canGoPrev}
             onClick={() => goToQuestion(currentIndex - 1)}
           >
-            Prev
+            {t.quiz.prev}
           </button>
           <button
             type="button"
@@ -1591,7 +1979,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
             disabled={!canGoNext}
             onClick={() => goToQuestion(currentIndex + 1)}
           >
-            Next
+            {t.quiz.next}
           </button>
           <button
             type="button"
@@ -1599,16 +1987,16 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
             disabled={generating}
             onClick={() => void generateQuiz("regenerate")}
           >
-            Regenerate
+            {t.quiz.regenerate}
           </button>
           <button
             type="button"
             className="quiz-link-btn quiz-link-muted"
             disabled={generating}
             onClick={() => void resetHistory()}
-            title="Delete every quiz session for this problem"
+            title={t.quiz.resetConfirm}
           >
-            Reset
+            {t.quiz.reset}
           </button>
         </div>
       </div>
@@ -1637,8 +2025,8 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         {activeFeedback ? (
           <div className={`quiz-feedback${activeFeedback.answer.correct ? " is-correct" : " is-wrong"}`}>
             <div className="quiz-feedback-head">
-              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? "Correct" : "Wrong"}</div>
-              <span>{QUIZ_SOURCE_LABELS[item.source]} · {formatQuizScope(item.scope)}</span>
+              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? t.quiz.correct : t.quiz.wrong}</div>
+              <span>{quizSourceLabel(item.source, t)} · {quizScopeLabel(item.scope, t)}</span>
             </div>
             <div className="quiz-feedback-body">
               <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
@@ -1650,19 +2038,19 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 disabled={savedItemIds.has(item.id) || savingItemId === item.id}
                 onClick={() => void saveAsCard(item)}
               >
-                {savedItemIds.has(item.id) ? "Saved" : savingItemId === item.id ? "Saving..." : "Save"}
+                {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
               </button>
               <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
-                {session.status === "completed" ? "Results" : "Next"}
+                {session.status === "completed" ? t.quiz.results : t.quiz.next}
               </button>
             </div>
           </div>
         ) : (
           <div className="quiz-hint-row">
-            <p className="quiz-hint">{submittingItem ? "Checking answer..." : "Click an option to answer, or use Next to skip for now."}</p>
+            <p className="quiz-hint">{submittingItem ? t.quiz.checking : t.quiz.answerHint}</p>
             {answeredCount < session.itemsJson.length && !canGoNext && (
               <button type="button" className="quiz-link-btn" onClick={() => goToQuestion(getFirstUnansweredQuizIndex(session))}>
-                First unanswered
+                {t.quiz.firstUnanswered}
               </button>
             )}
           </div>
@@ -1744,24 +2132,20 @@ function getMissedQuizItems(session: QuizSession) {
   });
 }
 
-function getQuizBreakdown(session: QuizSession, field: "scope" | "source") {
+function getQuizBreakdown(session: QuizSession, field: "scope" | "source", t: ReturnType<typeof getExtText>) {
   const counts = new Map<string, number>();
   session.itemsJson.forEach((item) => {
-    const key = field === "scope" ? formatQuizScope(item.scope) : QUIZ_SOURCE_LABELS[item.source];
+    const key = field === "scope" ? quizScopeLabel(item.scope, t) : quizSourceLabel(item.source, t);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   });
   return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
 }
 
-function formatQuizScope(scope: QuizItem["scope"]) {
-  return QUIZ_SCOPE_LABELS[scope];
-}
-
-function getSuggestedRating(score: number): { rating: FsrsRating; label: string } {
-  if (score <= 1) return { rating: 1, label: "Again" };
-  if (score === 2) return { rating: 2, label: "Hard" };
-  if (score <= 4) return { rating: 3, label: "Good" };
-  return { rating: 4, label: "Easy" };
+function getSuggestedRating(score: number, t: ReturnType<typeof getExtText>): { rating: FsrsRating; label: string } {
+  if (score <= 1) return { rating: 1, label: t.rating.again };
+  if (score === 2) return { rating: 2, label: t.rating.hard };
+  if (score <= 4) return { rating: 3, label: t.rating.good };
+  return { rating: 4, label: t.rating.easy };
 }
 
 /* ── ManageView ── */
@@ -1795,6 +2179,7 @@ function ManageView({
   canSync: boolean;
   onRefresh: () => void;
 }) {
+  const t = getExtText(settings);
   return (
     <div className="stack">
       <ProblemCard
@@ -1811,7 +2196,7 @@ function ManageView({
       />
 
       <div className="panel">
-        <div className="section-label">Add a card</div>
+        <div className="section-label">{t.cards.add}</div>
         <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
       </div>
 
@@ -1826,12 +2211,12 @@ function ManageView({
 
       <div>
         <div className="section-label">
-          {cards.length} saved card{cards.length === 1 ? "" : "s"}
+          {t.cards.savedCount(cards.length)}
         </div>
         {cards.length === 0 ? (
           <div className="panel panel-quiet">
             <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
-              No saved cards yet.
+              {t.cards.noSaved}
             </p>
           </div>
         ) : (
@@ -1964,6 +2349,7 @@ function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
 }
 
 function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+  const t = getExtText(settings);
   // Initial value: always prefer the local snapshot when it exists. It's the
   // most recent text the user saw, whether or not it's been synced — `dirty`
   // is for *syncing* decisions, not for *display* decisions. Falling back to
@@ -2039,9 +2425,9 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
   return (
     <div className="notes-panel">
       <div className="notes-panel-header">
-        <span className="section-label" style={{ margin: 0 }}>Notes</span>
+        <span className="section-label" style={{ margin: 0 }}>{t.notes.title}</span>
         <span className={`notes-panel-status${status !== "idle" ? " is-visible" : ""}`}>
-          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+          {status === "saving" ? t.notes.saving : status === "saved" ? t.notes.saved : ""}
         </span>
       </div>
       <textarea
@@ -2049,7 +2435,7 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
         value={notes}
         onChange={(e) => handleChange(e.target.value)}
         onBlur={flushSave}
-        placeholder="What tripped you up, key insights, alternative approaches…"
+        placeholder={t.notes.placeholder}
       />
     </div>
   );
@@ -2068,6 +2454,7 @@ function QuickRate({
   settings: ExtSettings;
   onRated: () => void;
 }) {
+  const t = getExtText(settings);
   const [rating, setRating] = useState<FsrsRating>(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2082,7 +2469,7 @@ function QuickRate({
         body: JSON.stringify({ problemId, rating }),
       });
       if (res.status === 409) {
-        setError("Already rated in another window. Refreshing…");
+        setError(t.review.alreadyRated);
         onRated();
         return;
       }
@@ -2092,7 +2479,7 @@ function QuickRate({
       }
       onRated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Rate failed");
+      setError(e instanceof Error ? e.message : t.review.rateFailed);
     } finally {
       setBusy(false);
     }
@@ -2101,7 +2488,7 @@ function QuickRate({
   return (
     <div className="quick-rate">
       <div className="rate-row">
-        {RATING_BUTTONS.map((b) => {
+        {getRatingButtons(t).map((b) => {
           const active = rating === b.rating;
           const interval = formatInterval(previews?.[b.rating]?.due);
           return (
@@ -2122,8 +2509,8 @@ function QuickRate({
           className="btn btn-primary rate-submit-inline"
           disabled={busy}
           onClick={submit}
-          aria-label="Submit rating"
-          title="Submit rating"
+          aria-label={t.review.submitRating}
+          title={t.review.submitRating}
         >
           {busy ? "…" : "→"}
         </button>
@@ -2145,10 +2532,11 @@ function CardList({
   settings: ExtSettings;
   onRefresh: () => void;
 }) {
+  const t = getExtText(settings);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function deleteCard(cardId: string) {
-    if (!window.confirm("Delete this card?")) return;
+    if (!window.confirm(t.cards.deleteConfirm)) return;
     setDeletingId(cardId);
     try {
       const res = await fetch(`${settings.apiBaseUrl}/api/cards`, {
@@ -2159,7 +2547,7 @@ function CardList({
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
       onRefresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Delete failed");
+      window.alert(e instanceof Error ? e.message : t.cards.deleteFailed);
     } finally {
       setDeletingId(null);
     }
@@ -2170,11 +2558,11 @@ function CardList({
       {cards.map((card) => (
         <Collapse key={card.id} header={<span className="card-q-preview">{card.question}</span>}>
           <div className="card-q-box">
-            <div className="card-q-label">Question</div>
+            <div className="card-q-label">{t.cards.question}</div>
             <PopupMarkdown>{card.question}</PopupMarkdown>
           </div>
           <div className="card-a-box">
-            <div className="card-a-label">Answer</div>
+            <div className="card-a-label">{t.cards.answer}</div>
             <PopupMarkdown>{card.answer}</PopupMarkdown>
           </div>
           <button
@@ -2184,7 +2572,7 @@ function CardList({
             disabled={deletingId === card.id}
             onClick={() => deleteCard(card.id)}
           >
-            {deletingId === card.id ? "…" : "Delete"}
+            {deletingId === card.id ? "…" : t.cards.delete}
           </button>
         </Collapse>
       ))}
@@ -2203,6 +2591,7 @@ function AddCardForm({
   settings: ExtSettings;
   onAdded: () => void;
 }) {
+  const t = getExtText(settings);
   const slug = problem.leetcodeSlug;
   const [mode, setMode] = useState<"manual" | "ai">("ai");
   const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
@@ -2269,7 +2658,7 @@ function AddCardForm({
       if (!pending) {
         setPendingAiCard(null);
         setBusy((current) => (current === "auto" || current === "note" ? false : current));
-        setError("AI card generation timed out. Try again.");
+        setError(t.cards.timedOut);
       }
     }, 2500);
     return () => window.clearInterval(timer);
@@ -2304,7 +2693,7 @@ function AddCardForm({
       setAnswer("");
       onAdded();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -2338,7 +2727,7 @@ function AddCardForm({
     } catch (e) {
       clearPendingOperation(pendingKey);
       setPendingAiCard(null);
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -2348,34 +2737,34 @@ function AddCardForm({
     <div>
       <div className="mode-tabs">
         <button type="button" className={`mode-tab${mode === "ai" ? " active" : ""}`} onClick={() => setMode("ai")}>
-          AI from notes
+          {t.cards.aiFromNotes}
         </button>
         <button type="button" className={`mode-tab${mode === "manual" ? " active" : ""}`} onClick={() => setMode("manual")}>
-          Manual Q&A
+          {t.cards.manual}
         </button>
       </div>
 
       {mode === "manual" && (
         <div className="stack">
           <label className="field-label">
-            Question
+            {t.cards.question}
             <textarea
               className="textarea-card field-ta"
               rows={3}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="What do you want to recall?"
+              placeholder={t.cards.questionPlaceholder}
               disabled={!!busy}
             />
           </label>
           <label className="field-label">
-            Answer
+            {t.cards.answer}
             <textarea
               className="textarea-card field-ta"
               rows={4}
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              placeholder="The answer you need to remember."
+              placeholder={t.cards.answerPlaceholder}
               disabled={!!busy}
             />
           </label>
@@ -2386,7 +2775,7 @@ function AddCardForm({
             disabled={!!busy || !question.trim() || !answer.trim()}
             className="btn btn-primary"
           >
-            {busy ? "Saving…" : "Save card"}
+            {busy ? t.quiz.saving : t.cards.saveCard}
           </button>
         </div>
       )}
@@ -2394,28 +2783,28 @@ function AddCardForm({
       {mode === "ai" && (
         <div className="stack">
           <label className="field-label">
-            Your notes
+            {t.cards.yourNotes}
             <textarea
               className="textarea-card field-ta"
               rows={5}
               value={rawText}
               onChange={(e) => updateRawText(e.target.value)}
-              placeholder="Questions, pitfalls, or reasoning you want to remember..."
+              placeholder={t.cards.notesPlaceholder}
               disabled={!!busy}
             />
           </label>
           <div className="ai-toolbar">
             <span className="draft-hint">
-              {pendingAiCard ? "Generating candidate…" : `${rawText.length}/6000${rawText.trim() && hydrated ? " · autosaved" : ""}`}
+              {pendingAiCard ? t.cards.generatingCandidate : `${rawText.length}/6000${rawText.trim() && hydrated ? ` · ${t.cards.autosaved}` : ""}`}
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               {rawText.trim() && (
                 <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={!!busy}>
-                  Clear
+                  {t.cards.clear}
                 </button>
               )}
               <button type="button" onClick={() => handleAiGenerate("auto")} disabled={!!busy} className="btn btn-ghost">
-                {busy === "auto" ? "Generating…" : "Auto generate"}
+                {busy === "auto" ? t.quiz.generating : t.cards.autoGenerate}
               </button>
               <button
                 type="button"
@@ -2423,13 +2812,13 @@ function AddCardForm({
                 disabled={!rawText.trim() || !!busy}
                 className="btn btn-primary"
               >
-                {busy === "note" ? "Generating…" : "Generate from note"}
+                {busy === "note" ? t.quiz.generating : t.cards.generateFromNote}
               </button>
             </div>
           </div>
           {pendingAiCard && (
             <div className="operation-timer">
-              Generating {formatElapsedSeconds(pendingAiCardElapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+              {t.quiz.pendingTimer(formatElapsedSeconds(pendingAiCardElapsedSeconds)).replace("02:00", formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS))}
             </div>
           )}
 
@@ -2453,6 +2842,7 @@ function CandidateList({
   settings: ExtSettings;
   onRefresh: () => void;
 }) {
+  const t = getExtText(settings);
   const [local, setLocal] = useState<LocalCandidate[]>([]);
   const [pendingVersion, setPendingVersion] = useState(0);
 
@@ -2526,7 +2916,7 @@ function CandidateList({
       onRefresh();
     } catch (e) {
       clearPendingOperation(pendingKey);
-      update(card.id, { busy: null, localError: e instanceof Error ? e.message : "AI request failed" });
+      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.aiFailed });
     }
   }
 
@@ -2536,7 +2926,7 @@ function CandidateList({
       await patchCard(id, { aiStatus: "ready", question: q.trim(), answer: a.trim() });
       onRefresh();
     } catch (e) {
-      update(id, { busy: null, localError: e instanceof Error ? e.message : "Confirm failed" });
+      update(id, { busy: null, localError: e instanceof Error ? e.message : t.cards.confirmFailed });
     }
   }
 
@@ -2554,14 +2944,14 @@ function CandidateList({
       }
       onRefresh();
     } catch (e) {
-      update(id, { busy: null, localError: e instanceof Error ? e.message : "Discard failed" });
+      update(id, { busy: null, localError: e instanceof Error ? e.message : t.cards.discardFailed });
     }
   }
 
   return (
     <div className="panel">
       <div className="section-label">
-        {candidates.length} AI candidate{candidates.length !== 1 ? "s" : ""} — review &amp; confirm
+        {t.cards.candidateCount(candidates.length)}
       </div>
       {local.map((c) => {
         const disabled = !!c.busy;
@@ -2575,7 +2965,7 @@ function CandidateList({
                 color: c.aiStatus === "failed" ? "var(--danger)" : "var(--muted)",
               }}
             >
-              {c.aiStatus === "failed" ? "Failed" : "Candidate"}
+              {c.aiStatus === "failed" ? t.cards.failed : t.cards.candidate}
             </div>
             {c.errorMessage && <div className="err-banner" style={{ marginBottom: 8 }}>{c.errorMessage}</div>}
 
@@ -2605,7 +2995,7 @@ function CandidateList({
                 value={c.instruction}
                 disabled={disabled}
                 onChange={(e) => update(c.id, { instruction: e.target.value })}
-                placeholder="Follow up instruction (optional)"
+                placeholder={t.cards.followupPlaceholder}
               />
               <div className="candidate-actions">
                 <button
@@ -2614,7 +3004,7 @@ function CandidateList({
                   disabled={disabled || !c.question.trim() || !c.answer.trim() || !c.instruction.trim()}
                   onClick={() => runAi(c, c.instruction)}
                 >
-                  {c.busy === "followup" ? "…" : "Apply"}
+                  {c.busy === "followup" ? "…" : t.cards.apply}
                 </button>
                 <button
                   type="button"
@@ -2622,7 +3012,7 @@ function CandidateList({
                   disabled={disabled || !c.question.trim() || !c.answer.trim()}
                   onClick={() => confirm(c.id, c.question, c.answer)}
                 >
-                  {c.busy === "confirm" ? "…" : "Confirm"}
+                  {c.busy === "confirm" ? "…" : t.cards.confirm}
                 </button>
                 <button type="button" className="btn-xs btn-xs-danger" disabled={!!c.busy} onClick={() => discard(c.id)}>
                   ×
@@ -2630,7 +3020,7 @@ function CandidateList({
               </div>
               {c.busy === "followup" && (
                 <div className="operation-timer">
-                  Applying {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+                  {t.cards.applying} {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
                 </div>
               )}
             </div>
@@ -2655,6 +3045,7 @@ function CaptureView({
   onCaptured: () => void;
   onError: (msg: string) => void;
 }) {
+  const t = getExtText(settings);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<CapturedProblem | null>(null);
 
@@ -2663,7 +3054,7 @@ function CaptureView({
     try {
       setPreview(await readActiveProblem());
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Unknown error");
+      onError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -2676,7 +3067,7 @@ function CaptureView({
       await saveCapturedProblem(settings, preview);
       onCaptured();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Unknown error");
+      onError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -2685,12 +3076,12 @@ function CaptureView({
   if (!preview) {
     return (
       <div className="panel">
-        <span className="section-label">Not in your deck</span>
+        <span className="section-label">{t.capture.notInDeck}</span>
         <p className="popup-muted" style={{ marginTop: 0 }}>
-          Problem <span className="popup-code">{slug}</span> hasn&apos;t been captured.
+          {t.capture.notCaptured(slug)}
         </p>
         <button type="button" onClick={readPage} disabled={busy} className="btn btn-primary" style={{ marginTop: 14 }}>
-          {busy ? "Reading…" : "Capture this problem"}
+          {busy ? t.capture.reading : t.capture.captureThis}
         </button>
       </div>
     );
@@ -2709,20 +3100,20 @@ function CaptureView({
             {preview.title}
           </h2>
           <div className="hero-meta">
-            {preview.difficulty} · {preview.topicTags.slice(0, 4).join(", ")}
+            {difficultyLabel(preview.difficulty, t)} · {preview.topicTags.slice(0, 4).join(", ")}
           </div>
         </div>
       </div>
       <p className="capture-meta" style={{ marginTop: 12 }}>
-        {preview.submissions.length} submissions
-        {preview.submissions.length > 0 && ` (${accepted} accepted, ${failed} failed)`}
+        {t.common.submissions(preview.submissions.length)}
+        {preview.submissions.length > 0 && ` ${t.common.acceptedFailed(accepted, failed)}`}
       </p>
       <div className="capture-actions" style={{ marginTop: 16 }}>
         <button type="button" onClick={saveCapture} disabled={busy} className="btn btn-primary">
-          {busy ? "Saving…" : "Add to ankify"}
+          {busy ? t.capture.saving : t.capture.add}
         </button>
         <button type="button" onClick={() => setPreview(null)} disabled={busy} className="btn btn-secondary">
-          Back
+          {t.capture.back}
         </button>
       </div>
     </div>
@@ -2740,8 +3131,9 @@ function SettingsTab({
   settings: ExtSettings;
   theme: ThemePreference;
   onThemeChange: (next: ThemePreference) => void;
-  onSave: (next: ExtSettings) => void;
+  onSave: (next: Partial<ExtSettings>) => void;
 }) {
+  const t = getExtText(settings);
   const [base, setBase] = useState(settings.apiBaseUrl);
   const [token, setToken] = useState(settings.apiToken);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -2754,11 +3146,11 @@ function SettingsTab({
 
   async function testConnection() {
     if (!normalizedBase || !token.trim()) {
-      setTestState({ kind: "error", message: "API base URL and token are required." });
+      setTestState({ kind: "error", message: t.settings.required });
       return;
     }
 
-    setTestState({ kind: "loading", message: "Checking connection…" });
+    setTestState({ kind: "loading", message: t.settings.checking });
     try {
       const res = await fetch(`${normalizedBase}/api/me`, {
         headers: token.trim() ? { "x-ankify-token": token.trim() } : {},
@@ -2767,20 +3159,35 @@ function SettingsTab({
       if (!res.ok) {
         throw new Error(data?.error || `Connection failed (${res.status})`);
       }
-      setTestState({ kind: "success", message: `Connected as ${data?.user?.email ?? "this user"}.` });
+      setTestState({ kind: "success", message: t.settings.connectedAs(data?.user?.email ?? t.settings.thisUser) });
     } catch (error) {
-      setTestState({ kind: "error", message: error instanceof Error ? error.message : "Connection failed." });
+      setTestState({ kind: "error", message: error instanceof Error ? error.message : t.settings.failed });
     }
   }
 
   return (
     <div className="settings-stack">
       <section className="settings-module panel" aria-labelledby="settings-appearance">
-        <div className="settings-module-head">
-          <strong id="settings-appearance">Appearance</strong>
-          <p>Theme only affects the extension popup.</p>
+        <div className="settings-module-head settings-module-head-row">
+          <div>
+            <strong id="settings-appearance">{t.settings.appearance}</strong>
+            <p>{t.settings.appearanceHelp}</p>
+          </div>
+          <div className="theme-control language-control" aria-label={t.language.label}>
+            {(["en", "zh"] as const).map((language) => (
+              <button
+                key={language}
+                type="button"
+                data-active={settings.language === language}
+                onClick={() => onSave({ language })}
+                aria-pressed={settings.language === language}
+              >
+                {t.language[language]}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="theme-control settings-theme-control" aria-label="Theme">
+        <div className="theme-control settings-theme-control" aria-label={t.theme.label}>
           {THEME_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -2789,7 +3196,7 @@ function SettingsTab({
               onClick={() => onThemeChange(option.value)}
               aria-pressed={theme === option.value}
             >
-              {option.label}
+              {t.theme[option.key]}
             </button>
           ))}
         </div>
@@ -2797,15 +3204,15 @@ function SettingsTab({
 
       <section className="settings-module panel" aria-labelledby="settings-connection">
         <div className="settings-module-head">
-          <strong id="settings-connection">Connection</strong>
-          <p>Used when the extension talks to the web API.</p>
+          <strong id="settings-connection">{t.settings.connection}</strong>
+          <p>{t.settings.connectionHelp}</p>
         </div>
         <label>
-          API base URL
+          {t.settings.apiBaseUrl}
           <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
         </label>
         <label>
-          User API token
+          {t.settings.apiToken}
           <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
         </label>
         <div className="settings-actions">
@@ -2820,13 +3227,13 @@ function SettingsTab({
               setTimeout(() => setSavedFlash(false), 2000);
             }}
           >
-            Save connection
+            {t.settings.saveConnection}
           </button>
           <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testState.kind === "loading"}>
-            {testState.kind === "loading" ? "Testing…" : "Test connection"}
+            {testState.kind === "loading" ? t.settings.testing : t.settings.testConnection}
           </button>
           <p className="popup-muted">
-            {savedFlash ? "Saved." : "Create a token in web Settings, then paste it here."}
+            {savedFlash ? t.settings.saved : t.settings.tokenHint}
           </p>
         </div>
         {testState.message ? (

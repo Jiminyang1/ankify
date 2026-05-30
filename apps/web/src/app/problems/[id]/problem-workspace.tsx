@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 import { cn } from "@/lib/utils";
 
 export type WorkspacePanel = {
@@ -23,13 +24,14 @@ export function ProblemWorkspace({
   panels: WorkspacePanel[];
   defaultTab?: string;
 }) {
+  const { t } = useLanguage();
   const [active, setActive] = useState(defaultTab ?? panels[0]?.id);
 
   return (
     <section className="flex h-[42rem] max-h-[calc(100vh-3rem)] min-h-[28rem] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
       <div
         role="tablist"
-        aria-label="Problem content"
+        aria-label={t.detail.problemContent}
         className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2"
       >
         {panels.map((p) => {

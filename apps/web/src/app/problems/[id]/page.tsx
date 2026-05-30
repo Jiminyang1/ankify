@@ -10,19 +10,28 @@ import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProblemWorkspace, type WorkspacePanel } from "./problem-workspace";
 import { requirePageUser } from "@/lib/auth";
+import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { cn, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
 
-const RATING_LABELS: Record<number, string> = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" };
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
+
+function ratingLabel(rating: number | null, t: Awaited<ReturnType<typeof getRequestTranslations>>) {
+  if (rating === 1) return t.rating.again;
+  if (rating === 2) return t.rating.hard;
+  if (rating === 3) return t.rating.good;
+  if (rating === 4) return t.rating.easy;
+  return rating;
+}
 
 export const dynamic = "force-dynamic";
 
 export default async function ProblemDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageUser();
+  const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
   const { id } = await params;
   const db = getDb();
   const problemRows = await db
@@ -57,16 +66,16 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
     <Markdown>{problem.descriptionMd}</Markdown>
   ) : (
     <EmptyState
-      title="No statement captured"
-      description="The problem statement is pulled in when you capture from LeetCode."
+      title={t.detail.noStatement}
+      description={t.detail.statementHelp}
     />
   );
 
   const cardsPanel =
     cards.length === 0 ? (
       <EmptyState
-        title="No cards yet"
-        description="Capture what confused you on this problem — write it yourself, or let AI structure a draft into a flashcard."
+        title={t.detail.noCards}
+        description={t.detail.cardsHelp}
         action={
           <UserCardButton
             problemId={problem.id}
@@ -79,7 +88,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted">
-            {cards.length} saved card{cards.length === 1 ? "" : "s"}
+            {t.detail.savedCards(cards.length)}
           </p>
           <UserCardButton
             problemId={problem.id}
@@ -93,19 +102,19 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
   const submissionsPanel =
     submissions.length === 0 ? (
-      <EmptyState title="No submissions yet" description="Submissions captured from LeetCode will appear here." />
+      <EmptyState title={t.detail.noSubmissions} description={t.detail.submissionsHelp} />
     ) : (
       <SubmissionList submissions={submissions} />
     );
 
   const historyPanel =
     reviewHistory.length === 0 ? (
-      <EmptyState title="No reviews yet" description="Your recall ratings show up here once you start reviewing." />
+      <EmptyState title={t.detail.noReviews} description={t.detail.reviewsHelp} />
     ) : (
       <ul className="divide-y divide-border">
         {reviewHistory.map((ev) => (
           <li key={ev.id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
-            <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{RATING_LABELS[ev.fsrsRating!] ?? ev.fsrsRating}</Pill>
+            <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{ratingLabel(ev.fsrsRating, t)}</Pill>
             <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
             {ev.fsrsStabilitySnap != null && (
               <span className="text-xs text-muted tabular-nums">
@@ -120,11 +129,11 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const notesPanel = <NotesEditor problemId={problem.id} initialNotes={problem.notes ?? ""} />;
 
   const panels: WorkspacePanel[] = [
-    { id: "statement", label: "Statement", node: statementPanel },
-    { id: "cards", label: "Cards", count: cards.length, node: cardsPanel },
-    { id: "submissions", label: "Submissions", count: submissions.length, node: submissionsPanel },
-    { id: "history", label: "History", count: reviewHistory.length, node: historyPanel },
-    { id: "notes", label: "Notes", node: notesPanel },
+    { id: "statement", label: t.detail.statement, node: statementPanel },
+    { id: "cards", label: t.review.cards, count: cards.length, node: cardsPanel },
+    { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
+    { id: "history", label: t.detail.history, count: reviewHistory.length, node: historyPanel },
+    { id: "notes", label: t.review.notes, node: notesPanel },
   ];
 
   return (
@@ -134,9 +143,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Surface className="p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <DifficultyPill difficulty={problem.difficulty} />
-              <FsrsStatePill state={problem.fsrsState} />
-              {isDue && problem.fsrsReps > 0 && <Pill tone="accent">due</Pill>}
+              <DifficultyPill difficulty={problem.difficulty} language={language} />
+              <FsrsStatePill state={problem.fsrsState} language={language} />
+              {isDue && problem.fsrsReps > 0 && <Pill tone="accent">{t.common.due}</Pill>}
             </div>
             <h1 className="mt-3 text-xl font-semibold leading-snug tracking-tight">
               {problem.leetcodeId != null && (
@@ -157,31 +166,31 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               rel="noreferrer"
               className="mt-3 inline-flex items-center gap-1 text-sm text-muted hover:text-accent"
             >
-              Open on LeetCode <span aria-hidden>↗</span>
+              {t.detail.openLeetcode} <span aria-hidden>↗</span>
             </a>
           </Surface>
 
           <Surface className="overflow-hidden">
             <div className="border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted">
-              Scheduling
+              {t.detail.scheduling}
             </div>
             <dl className="divide-y divide-border">
-              <MetaRow label="Due" value={isDue ? "now" : formatRelative(problem.fsrsDue)} accent={isDue} />
+              <MetaRow label={t.detail.due} value={isDue ? t.common.now : formatRelative(problem.fsrsDue)} accent={isDue} />
               <MetaRow
-                label="Reviews"
+                label={t.detail.reviews}
                 value={
                   <>
                     {problem.fsrsReps}
                     {problem.fsrsLapses > 0 && (
                       <span className="ml-1.5 text-xs font-normal text-danger">
-                        {problem.fsrsLapses} lapse{problem.fsrsLapses === 1 ? "" : "s"}
+                        {t.common.lapses(problem.fsrsLapses)}
                       </span>
                     )}
                   </>
                 }
               />
-              <MetaRow label="Last reviewed" value={formatRelative(problem.fsrsLastReview)} />
-              <MetaRow label="Cards" value={cards.length} />
+              <MetaRow label={t.detail.lastReviewed} value={formatRelative(problem.fsrsLastReview)} />
+              <MetaRow label={t.review.cards} value={cards.length} />
             </dl>
           </Surface>
 
@@ -190,7 +199,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               href={`/review?problemId=${problem.id}`}
               className={buttonClasses({ variant: "primary", className: "flex-1" })}
             >
-              {isDue || problem.fsrsReps === 0 ? "Review" : "Review ahead"}
+              {isDue || problem.fsrsReps === 0 ? t.nav.review : t.detail.reviewAhead}
             </Link>
             <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
           </div>

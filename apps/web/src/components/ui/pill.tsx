@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { translateDifficulty, translateFsrsState, type Language } from "@/lib/i18n";
 
 type Tone = "neutral" | "accent" | "success" | "warning" | "danger" | "easy" | "medium" | "hard";
 
@@ -42,12 +43,12 @@ const FSRS_TONE: Record<string, Tone> = {
   relearning: "danger",
 };
 
-export function FsrsStatePill({ state }: { state: string }) {
-  return <Pill tone={FSRS_TONE[state] ?? "neutral"}>{state}</Pill>;
+export function FsrsStatePill({ state, language = "en" }: { state: string; language?: Language }) {
+  return <Pill tone={FSRS_TONE[state] ?? "neutral"}>{translateFsrsState(language, state)}</Pill>;
 }
 
-export function DifficultyPill({ difficulty }: { difficulty: string }) {
+export function DifficultyPill({ difficulty, language = "en" }: { difficulty: string; language?: Language }) {
   const tone: Tone =
     difficulty === "Easy" ? "easy" : difficulty === "Hard" ? "hard" : "medium";
-  return <Pill tone={tone}>{difficulty}</Pill>;
+  return <Pill tone={tone}>{translateDifficulty(language, difficulty)}</Pill>;
 }

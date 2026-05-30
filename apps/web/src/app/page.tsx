@@ -7,6 +7,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { requirePageUser } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
+import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
 
@@ -76,25 +77,26 @@ async function getHomeData(userId: string) {
 
 export default async function HomePage() {
   const user = await requirePageUser();
-  const data = await getHomeData(user.id);
+  const [data, t, language] = await Promise.all([getHomeData(user.id), getRequestTranslations(), getRequestLanguage()]);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
+  const held = Math.max(0, data.totalDue - data.dueCount);
 
   return (
     <div className="space-y-8">
         <Surface className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">Daily LeetCode review</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">{t.home.kicker}</p>
               <h1 className="mt-2 text-4xl font-semibold tracking-tight">
                 {hasDue ? (
                   <>
-                    <span className="text-accent">{data.dueCount}</span> due problem{data.dueCount === 1 ? "" : "s"}
+                    <span className="text-accent">{data.dueCount}</span> {language === "zh" ? "道待复习题" : `due problem${data.dueCount === 1 ? "" : "s"}`}
                   </>
                 ) : allDone ? (
-                  "Done for today"
+                  t.home.doneForToday
                 ) : (
-                  "No problems yet"
+                  t.home.noProblemsYet
                 )}
               </h1>
             </div>
@@ -102,23 +104,21 @@ export default async function HomePage() {
               href={hasDue ? "/review" : "/problems"}
               className={buttonClasses({ variant: "primary", className: "px-5 py-2.5" })}
             >
-              {hasDue ? "Start session" : "Open deck"}
+              {hasDue ? t.home.startSession : t.home.openDeck}
               <span aria-hidden>-&gt;</span>
             </Link>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <MiniStat label="Done today" value={data.doneToday} suffix={`/${data.dailyReviewLimit}`} />
-            <MiniStat label="Due now" value={data.dueCount} accent={hasDue} />
-            <MiniStat label="Deck" value={data.totalProblems} />
+            <MiniStat label={t.home.doneToday} value={data.doneToday} suffix={`/${data.dailyReviewLimit}`} />
+            <MiniStat label={t.home.dueNow} value={data.dueCount} accent={hasDue} />
+            <MiniStat label={t.home.deck} value={data.totalProblems} />
           </div>
         </Surface>
 
       {"error" in data && data.error && (
         <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          Database is not initialized. Configure <code className="font-mono">.env.local</code> or{" "}
-          <code className="font-mono">.env</code>, then run{" "}
-          <code className="font-mono">pnpm db:migrate</code>.
+          {t.common.databaseNotInitialized}
         </div>
       )}
 
@@ -126,13 +126,13 @@ export default async function HomePage() {
         <section>
           <div className="flex items-end justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Today&apos;s queue</h2>
+              <h2 className="text-lg font-semibold">{t.home.queueTitle}</h2>
               <p className="mt-1 text-sm text-muted">
-                Ordered by review urgency. {data.totalDue > data.dueCount ? `${data.totalDue - data.dueCount} due problem${data.totalDue - data.dueCount === 1 ? "" : "s"} held for later by your daily limit.` : ""}
+                {t.home.queueDescription(held)}
               </p>
             </div>
             <Link href="/review" className="text-sm font-medium text-accent hover:underline">
-              Review now
+              {t.home.reviewNow}
             </Link>
           </div>
 
@@ -146,8 +146,8 @@ export default async function HomePage() {
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{problem.title}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <DifficultyPill difficulty={problem.difficulty} />
-                        <FsrsStatePill state={problem.fsrsState} />
+                        <DifficultyPill difficulty={problem.difficulty} language={language} />
+                        <FsrsStatePill state={problem.fsrsState} language={language} />
                         {problem.topicTags.slice(0, 3).map((tag) => (
                           <span key={tag} className="text-xs text-muted">
                             #{tag}
@@ -157,7 +157,7 @@ export default async function HomePage() {
                     </div>
                     <div className="flex items-center gap-2 text-xs sm:justify-end">
                       <Pill tone={cardCount > 0 ? "accent" : "neutral"}>
-                        {cardCount > 0 ? `${cardCount} cards` : "needs cards"}
+                        {cardCount > 0 ? t.common.cards(cardCount) : t.home.needsCards}
                       </Pill>
                       <span className="text-muted">{formatRelative(problem.fsrsDue)}</span>
                     </div>
@@ -171,11 +171,11 @@ export default async function HomePage() {
         !("error" in data && data.error) && (
           <Surface className="p-4">
             <EmptyState
-              title={allDone ? "No reviews are due" : "Capture a LeetCode problem to start"}
+              title={allDone ? t.home.noReviewsDue : t.home.captureToStart}
               description={
                 allDone
-                  ? "The next session appears when a problem becomes due."
-                  : "Use the extension from a LeetCode problem page."
+                  ? t.home.nextSession
+                  : t.home.captureHint
               }
             />
           </Surface>
