@@ -2,7 +2,7 @@ import { defineManifest } from "@crxjs/vite-plugin";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "ankify — LeetCode capture",
+  name: "ankify",
   description: "One-click add LeetCode problems to your ankify spaced-repetition deck.",
   version: "0.0.1",
   action: {

@@ -113,7 +113,6 @@ const EXT_I18N = {
   en: {
     nav: { today: "Today", problem: "Problem", settings: "Settings" },
     common: {
-      refresh: "Refresh",
       retry: "Retry",
       loadingQueue: "Loading today's queue...",
       due: "due",
@@ -307,7 +306,6 @@ const EXT_I18N = {
   zh: {
     nav: { today: "今日", problem: "题目", settings: "设置" },
     common: {
-      refresh: "刷新",
       retry: "重试",
       loadingQueue: "正在加载今日队列...",
       due: "到期",
@@ -687,28 +685,6 @@ function mergeCandidatePendingState(
   };
 }
 
-function PopupBrandMark() {
-  return (
-    <span className="popup-brand-mark" aria-hidden>
-      <svg viewBox="0 0 64 64">
-        <rect x="9" y="27" width="12" height="27" rx="4.5" className="brand-bar brand-bar-left" />
-        <rect x="27" y="20" width="12" height="34" rx="4.5" className="brand-bar brand-bar-mid" />
-        <rect x="45" y="10" width="16" height="50" rx="6" className="brand-bar brand-bar-right" />
-        <circle cx="53" cy="23" r="3" className="brand-dot" />
-      </svg>
-    </span>
-  );
-}
-
-function PopupBrandBanner() {
-  return (
-    <div className="popup-brand" aria-label="ankify spaced repetition">
-      <PopupBrandMark />
-      <span className="popup-brand-title">ankify<span>.</span></span>
-    </div>
-  );
-}
-
 function applyThemePreference(preference: ThemePreference) {
   if (preference === "system") {
     document.documentElement.removeAttribute("data-theme");
@@ -929,37 +905,21 @@ export function Popup() {
 
   return (
     <div className="popup-shell">
-      {/* Top bar */}
-      <div className="popup-topbar">
-        <PopupBrandBanner />
-        {(tab === "today" || tab === "problem") && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              if (tab === "today") window.dispatchEvent(new CustomEvent("ankify:refresh-today"));
-              else void detect({ force: true });
-            }}
-            title={text.common.refresh}
-          >
-            {text.common.refresh}
-          </button>
-        )}
-      </div>
-
       {/* Nav */}
       <nav className="popup-nav">
-        {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
-          <button
-            key={navTab}
-            type="button"
-            className="popup-nav-tab"
-            data-active={tab === navTab}
-            onClick={() => setTab(navTab)}
-          >
-            {text.nav[navTab]}
-          </button>
-        ))}
+        <div className="popup-nav-tabs">
+          {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
+            <button
+              key={navTab}
+              type="button"
+              className="popup-nav-tab"
+              data-active={tab === navTab}
+              onClick={() => setTab(navTab)}
+            >
+              {text.nav[navTab]}
+            </button>
+          ))}
+        </div>
       </nav>
 
       {/* Content */}
@@ -1038,16 +998,13 @@ function TodayTab({
     void load();
   }, [load]);
 
-  /* Refresh on focus + every 30s + on manual top-bar refresh */
+  /* Refresh on focus + every 30s. */
   useEffect(() => {
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
     const interval = setInterval(() => void load(), 30_000);
-    const onManual = () => void load();
-    window.addEventListener("ankify:refresh-today", onManual);
     return () => {
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("ankify:refresh-today", onManual);
       clearInterval(interval);
     };
   }, [load]);

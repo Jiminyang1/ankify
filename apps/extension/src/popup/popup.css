@@ -178,65 +178,6 @@ label, button, th, .font-ui {
   min-height: 0;
 }
 
-.popup-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.popup-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.popup-brand-mark {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 22px;
-  color: var(--accent-strong);
-}
-
-.popup-brand-mark svg {
-  width: 100%;
-  height: 100%;
-}
-
-.popup-brand-mark .brand-bar {
-  fill: currentColor;
-}
-
-.popup-brand-mark .brand-bar-left {
-  opacity: 0.42;
-}
-
-.popup-brand-mark .brand-bar-mid {
-  opacity: 0.72;
-}
-
-.popup-brand-mark .brand-dot {
-  fill: #141418;
-}
-
-.popup-brand-title {
-  font-family: var(--font-mono);
-  color: var(--fg);
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.popup-brand-title span {
-  color: var(--accent-strong);
-}
-
 .theme-control {
   display: flex;
   align-items: center;
@@ -285,11 +226,19 @@ label, button, th, .font-ui {
 
 .popup-nav {
   display: flex;
+  align-items: center;
   gap: 4px;
   padding: 4px;
   border-radius: var(--radius-sm);
   background: var(--subtle);
   border: 1px solid var(--border);
+}
+
+.popup-nav-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
 }
 
 .popup-nav-tab {
