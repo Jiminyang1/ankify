@@ -290,7 +290,11 @@ const EXT_I18N = {
       languageHelp: "Interface language",
       themeHelp: "Popup color mode",
       connection: "Connection",
-      connectionHelp: "Used when the extension talks to the web API.",
+      connectionHelp: "API base URL and token the extension uses to reach your ankify web app.",
+      reviewGuard: "Review guard",
+      reviewGuardHelp: "Keeps LeetCode problem pages clean while reviewing.",
+      resetCode: "Reset code on problem pages",
+      resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
       apiBaseUrl: "API base URL",
       apiToken: "User API token",
       saveConnection: "Save connection",
@@ -468,7 +472,11 @@ const EXT_I18N = {
       languageHelp: "界面语言",
       themeHelp: "弹窗颜色模式",
       connection: "连接",
-      connectionHelp: "扩展与 Web API 通信时使用。",
+      connectionHelp: "插件用这里的 API 地址和 token 连接你的 ankify Web 服务。",
+      reviewGuard: "复习保护",
+      reviewGuardHelp: "复习时保持 LeetCode 题目页干净。",
+      resetCode: "打开题目时重置代码",
+      resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
       apiBaseUrl: "API base URL",
       apiToken: "用户 API token",
       saveConnection: "保存连接",
@@ -3083,6 +3091,39 @@ function CaptureView({
 
 /* ── SettingsTab ── */
 
+function SettingsInfoTip({ label, align = "center" }: { label: string; align?: "center" | "left" | "right" }) {
+  return (
+    <span className="settings-info-tip" data-align={align} tabIndex={0} role="img" aria-label={label}>
+      i
+      <span className="settings-info-tooltip" role="tooltip">
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function SettingsTitle({
+  children,
+  info,
+  as = "span",
+  id,
+}: {
+  children: React.ReactNode;
+  info?: string;
+  as?: "span" | "strong";
+  id?: string;
+}) {
+  const TitleTag = as;
+  return (
+    <div className="settings-title">
+      <TitleTag id={id} className="settings-title-text">
+        {children}
+      </TitleTag>
+      {info ? <SettingsInfoTip label={info} align="left" /> : null}
+    </div>
+  );
+}
+
 function SettingsTab({
   settings,
   theme,
@@ -3130,14 +3171,14 @@ function SettingsTab({
     <div className="settings-stack">
       <section className="settings-module panel" aria-labelledby="settings-appearance">
         <div className="settings-module-head">
-          <strong id="settings-appearance">{t.settings.appearance}</strong>
-          <p>{t.settings.appearanceHelp}</p>
+          <SettingsTitle as="strong" id="settings-appearance">
+            {t.settings.appearance}
+          </SettingsTitle>
         </div>
         <div className="settings-preference-list">
           <div className="settings-preference-row">
             <div className="settings-preference-copy">
-              <span>{t.language.label}</span>
-              <p>{t.settings.languageHelp}</p>
+              <SettingsTitle>{t.language.label}</SettingsTitle>
             </div>
             <div className="theme-control language-control" aria-label={t.language.label}>
               {(["en", "zh"] as const).map((language) => (
@@ -3155,8 +3196,7 @@ function SettingsTab({
           </div>
           <div className="settings-preference-row">
             <div className="settings-preference-copy">
-              <span>{t.theme.label}</span>
-              <p>{t.settings.themeHelp}</p>
+              <SettingsTitle>{t.theme.label}</SettingsTitle>
             </div>
             <div className="theme-control settings-theme-control" aria-label={t.theme.label}>
               {THEME_OPTIONS.map((option) => (
@@ -3175,19 +3215,57 @@ function SettingsTab({
         </div>
       </section>
 
+      <section className="settings-module panel" aria-labelledby="settings-review-guard">
+        <div className="settings-module-head">
+          <SettingsTitle as="strong" id="settings-review-guard">
+            {t.settings.reviewGuard}
+          </SettingsTitle>
+        </div>
+        <div className="settings-preference-list">
+          <div className="settings-preference-row">
+            <div className="settings-preference-copy">
+              <SettingsTitle info={t.settings.resetCodeHelp}>{t.settings.resetCode}</SettingsTitle>
+            </div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={settings.resetCodeOnProblemOpen}
+                onChange={(e) => onSave({ resetCodeOnProblemOpen: e.target.checked })}
+                aria-label={t.settings.resetCode}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+        </div>
+      </section>
+
       <section className="settings-module panel" aria-labelledby="settings-connection">
         <div className="settings-module-head">
-          <strong id="settings-connection">{t.settings.connection}</strong>
-          <p>{t.settings.connectionHelp}</p>
+          <SettingsTitle as="strong" id="settings-connection" info={t.settings.connectionHelp}>
+            {t.settings.connection}
+          </SettingsTitle>
         </div>
         <div className="settings-field-group">
           <label>
-            {t.settings.apiBaseUrl}
+            <span className="settings-field-label">{t.settings.apiBaseUrl}</span>
             <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
           <label>
-            {t.settings.apiToken}
-            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
+            <span className="settings-field-label">{t.settings.apiToken}</span>
+            <input
+              name="ankify-extension-api-token"
+              type="text"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              style={token ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties) : undefined}
+            />
           </label>
         </div>
         <div className="settings-actions">
@@ -3207,9 +3285,7 @@ function SettingsTab({
           <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testState.kind === "loading"}>
             {testState.kind === "loading" ? t.settings.testing : t.settings.testConnection}
           </button>
-          <p className="popup-muted">
-            {savedFlash ? t.settings.saved : t.settings.tokenHint}
-          </p>
+          {savedFlash ? <p className="popup-muted">{t.settings.saved}</p> : null}
         </div>
         {testState.message ? (
           <p className={`connection-status connection-status-${testState.kind}`}>{testState.message}</p>

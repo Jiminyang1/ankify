@@ -1020,15 +1020,8 @@ label, button, th, .font-ui {
 }
 
 .settings-module-head {
-  display: grid;
-  gap: 4px;
-}
-
-.settings-module-head p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
+  display: flex;
+  align-items: center;
 }
 
 .language-control {
@@ -1073,21 +1066,166 @@ label, button, th, .font-ui {
 
 .settings-preference-copy {
   display: grid;
-  gap: 2px;
   min-width: 0;
 }
 
-.settings-preference-copy span {
+.settings-title,
+.settings-field-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-title-text {
   color: var(--fg);
   font-size: 13px;
   font-weight: 700;
 }
 
-.settings-preference-copy p {
-  margin: 0;
+.settings-module-head .settings-title-text {
+  font-size: 15px;
+}
+
+.settings-info-tip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+  cursor: help;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.settings-info-tip:hover,
+.settings-info-tip:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 64%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.settings-info-tooltip {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  width: 220px;
+  max-width: min(220px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0;
+  text-align: left;
+  text-transform: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 140ms ease;
+}
+
+.settings-info-tip[data-align="left"] .settings-info-tooltip {
+  left: 0;
+  transform: translate(0, 4px);
+}
+
+.settings-info-tip[data-align="right"] .settings-info-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+.settings-info-tip:hover .settings-info-tooltip,
+.settings-info-tip:focus-visible .settings-info-tooltip {
+  opacity: 1;
+}
+
+.settings-info-tip[data-align="center"]:hover .settings-info-tooltip,
+.settings-info-tip[data-align="center"]:focus-visible .settings-info-tooltip {
+  transform: translate(-50%, 0);
+}
+
+.settings-info-tip[data-align="left"]:hover .settings-info-tooltip,
+.settings-info-tip[data-align="left"]:focus-visible .settings-info-tooltip,
+.settings-info-tip[data-align="right"]:hover .settings-info-tooltip,
+.settings-info-tip[data-align="right"]:focus-visible .settings-info-tooltip {
+  transform: translate(0, 0);
+}
+
+.settings-stack .settings-switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  font-size: 0;
+}
+
+.settings-switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-switch span {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid color-mix(in srgb, var(--muted) 24%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 10%, var(--surface));
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-switch span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 78%, var(--surface));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-switch input:checked + span {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong) 20%, transparent);
+}
+
+.settings-switch input:checked + span::after {
+  transform: translateX(16px);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(40, 30, 12, 0.24);
+}
+
+.settings-switch input:focus-visible + span {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
 }
 
 .settings-field-group {

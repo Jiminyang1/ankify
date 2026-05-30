@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export function AppearanceSettingsForm() {
   const { t } = useLanguage();
@@ -17,14 +18,12 @@ export function AppearanceSettingsForm() {
       <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="min-w-0">
           <div className="text-sm font-medium text-fg">{t.language.label}</div>
-          <p className="mt-1 text-xs text-muted">{t.settings.languageHelp}</p>
         </div>
         <LanguageToggle className="w-fit" size="md" />
       </div>
       <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="min-w-0">
           <div className="text-sm font-medium text-fg">{t.theme.label}</div>
-          <p className="mt-1 text-xs text-muted">{t.settings.themeHelp}</p>
         </div>
         <ThemeToggle className="w-fit" size="md" />
       </div>
@@ -63,8 +62,9 @@ export function AiSettingsForm({
   const [model, setModel] = useState(initial.model);
   const [reasoningMode, setReasoningMode] = useState(initial.reasoningMode);
   const [apiKey, setApiKey] = useState("");
-  const [clearApiKey, setClearApiKey] = useState(false);
+  const [hasStoredApiKey, setHasStoredApiKey] = useState(initial.hasApiKey);
   const [saving, setSaving] = useState(false);
+  const [removingKey, setRemovingKey] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<
@@ -82,13 +82,16 @@ export function AiSettingsForm({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const showGenerationMode = provider === "deepseek";
 
+  useEffect(() => {
+    setHasStoredApiKey(initial.hasApiKey);
+  }, [initial.hasApiKey]);
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMsg(null);
     const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast" };
-    if (clearApiKey) body.apiKey = "";
-    else if (apiKey) body.apiKey = apiKey;
+    if (apiKey) body.apiKey = apiKey;
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -97,8 +100,8 @@ export function AiSettingsForm({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
+      if (apiKey) setHasStoredApiKey(true);
       setApiKey("");
-      setClearApiKey(false);
       router.refresh();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
@@ -138,8 +141,31 @@ export function AiSettingsForm({
     }
   }
 
-  const canTest = Boolean(provider && model && (apiKey || initial.hasApiKey) && !clearApiKey);
-  const canRefreshModels = Boolean(provider && (apiKey || initial.hasApiKey) && !clearApiKey);
+  async function removeApiKey() {
+    if (!window.confirm(t.settings.removeApiKeyConfirm)) return;
+    setRemovingKey(true);
+    setMsg(null);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast", apiKey: "" }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setApiKey("");
+      setHasStoredApiKey(false);
+      setMsg(t.common.saved);
+      router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
+    } finally {
+      setRemovingKey(false);
+    }
+  }
+
+  const canTest = Boolean(provider && model && (apiKey || hasStoredApiKey));
+  const canRefreshModels = Boolean(provider && (apiKey || hasStoredApiKey));
 
   async function refreshModels() {
     if (!provider) return;
@@ -253,7 +279,10 @@ export function AiSettingsForm({
 
       {showGenerationMode && (
         <div className="space-y-1">
-          <label className="block text-sm">{t.settings.generationMode}</label>
+          <div className="flex items-center gap-1.5 text-sm">
+            <span>{t.settings.generationMode}</span>
+            <InfoTip label={t.settings.deepseekOnly} align="left" />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -280,37 +309,46 @@ export function AiSettingsForm({
               {t.settings.thinking}
             </button>
           </div>
-          <p className="text-xs text-muted">
-            {t.settings.deepseekOnly}
-          </p>
         </div>
       )}
 
       <div className="space-y-1">
-        <label className="block text-sm" htmlFor="ai-api-key">
-          {t.settings.apiKey} {initial.hasApiKey && <span className="text-muted">{t.settings.apiKeySet}</span>}
-        </label>
+        <div className="flex items-center gap-1.5 text-sm">
+          <label htmlFor="ai-api-key">{t.settings.apiKey}</label>
+          {hasStoredApiKey && <InfoTip label={t.settings.apiKeySet} align="left" />}
+        </div>
         <Input
           id="ai-api-key"
-          type="password"
+          name="ankify-ai-provider-key"
+          type="text"
           value={apiKey}
-          disabled={clearApiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-…"
+          placeholder={hasStoredApiKey ? "****" : "sk-..."}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          data-form-type="other"
+          style={apiKey ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties) : undefined}
           className="font-mono"
         />
-        {initial.hasApiKey && (
-          <label className="mt-2 flex items-center gap-2 text-xs text-muted">
-            <input
-              type="checkbox"
-              checked={clearApiKey}
-              onChange={(e) => {
-                setClearApiKey(e.target.checked);
-                if (e.target.checked) setApiKey("");
-              }}
-            />
-            {t.settings.clearStoredKey}
-          </label>
+        {hasStoredApiKey && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-medium text-success">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              {t.settings.apiKeySaved}
+            </span>
+            <button
+              type="button"
+              onClick={removeApiKey}
+              disabled={removingKey || saving}
+              className="font-medium text-danger transition hover:underline disabled:pointer-events-none disabled:opacity-50"
+            >
+              {removingKey ? t.settings.removingApiKey : t.settings.removeApiKey}
+            </button>
+          </div>
         )}
       </div>
 
@@ -456,7 +494,7 @@ export function ExtensionConnectionForm() {
                 <div>
                   <div className="font-medium">{key.name ?? t.settings.extensionToken}</div>
                   <div className="mt-1 text-xs text-muted">
-                    {key.start ? <code className="font-mono">{key.start}...</code> : t.settings.hidden} · {t.settings.created}{" "}
+                    <span className="font-mono">{key.start?.includes("_") ? `${key.start.split("_")[0]}_***` : "***"}</span> · {t.settings.created}{" "}
                     {new Date(key.createdAt).toLocaleDateString()} · {t.settings.lastUsed}{" "}
                     {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : t.settings.never}
                   </div>
@@ -505,7 +543,10 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="space-y-1">
-        <label className="block text-sm" htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
+        <div className="flex items-center gap-1.5 text-sm">
+          <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
+          <InfoTip label={t.settings.dailyReviewHelp} align="left" />
+        </div>
         <Input
           id="daily-review-limit"
           type="number"
@@ -515,9 +556,6 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
           onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
           className="tabular-nums"
         />
-        <p className="text-xs text-muted">
-          {t.settings.dailyReviewHelp}
-        </p>
       </div>
 
       <div className="flex items-center gap-3">

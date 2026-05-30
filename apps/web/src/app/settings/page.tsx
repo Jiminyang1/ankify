@@ -2,6 +2,7 @@ import { requirePageUser } from "@/lib/auth";
 import { getRequestTranslations } from "@/lib/i18n-server";
 import { getAiSettings, getReviewSettings } from "@/lib/settings";
 import { AiSettingsForm, AppearanceSettingsForm, ExtensionConnectionForm, ReviewSettingsForm } from "./form";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +16,15 @@ export default async function SettingsPage() {
       </div>
 
       <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
-        <div className="mb-4">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{t.settings.appearance}</h2>
-          <p className="mt-1 text-sm text-muted">{t.settings.appearanceHelp}</p>
-        </div>
+        <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.appearance}</h2>
         <AppearanceSettingsForm />
       </section>
 
       <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.aiProvider}</h2>
+        <div className="mb-4 flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted">
+          <h2>{t.settings.aiProvider}</h2>
+          <InfoTip label={t.settings.keySecurity} align="left" />
+        </div>
         <AiSettingsForm
           initial={{
             provider: ai.provider,
@@ -32,13 +33,13 @@ export default async function SettingsPage() {
             hasApiKey: Boolean(ai.encryptedApiKey),
           }}
         />
-        <p className="mt-3 text-xs text-muted">
-          {t.settings.keySecurity}
-        </p>
       </section>
 
       <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.extensionConnection}</h2>
+        <div className="mb-4 flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted">
+          <h2>{t.settings.extensionConnection}</h2>
+          <InfoTip label={t.settings.extensionConnectionHelp} align="left" />
+        </div>
         <ExtensionConnectionForm />
       </section>
 
