@@ -5,7 +5,7 @@
   "description": "Personal LeetCode/CS spaced-repetition app with FSRS-6, AI MCQs, and a Chrome extension",
   "packageManager": "pnpm@10.25.0",
   "engines": {
-    "node": "24.x"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "pnpm db:migrate && pnpm --filter @ankify/web dev",
