@@ -15,7 +15,8 @@ import { BrandLockup } from "./brand";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
 import { useLanguage } from "./LanguageProvider";
-import { getUserDisplayName, UserAvatar } from "./user-avatar";
+import { UserAvatar } from "./user-avatar";
+import { getUserDisplayName } from "@/lib/user-identity";
 
 const LINKS = [
   { href: "/today", key: "today" },

@@ -10,7 +10,8 @@ import { dueProblemCondition } from "@/lib/due-problems";
 import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
-import { getUserFirstName, UserAvatar } from "@/components/user-avatar";
+import { UserAvatar } from "@/components/user-avatar";
+import { getUserFirstName } from "@/lib/user-identity";
 
 export const dynamic = "force-dynamic";
 

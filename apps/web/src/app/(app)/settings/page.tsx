@@ -8,7 +8,8 @@ import {
   ReviewSettingsForm,
 } from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
-import { getUserDisplayName, UserAvatar } from "@/components/user-avatar";
+import { UserAvatar } from "@/components/user-avatar";
+import { getUserDisplayName } from "@/lib/user-identity";
 
 export const dynamic = "force-dynamic";
 
