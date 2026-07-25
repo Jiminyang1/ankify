@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { schemas, emptyCardState } from "@ankify/core";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
@@ -160,13 +160,10 @@ export async function POST(req: Request) {
       .from(schema.submissions)
       .where(and(eq(schema.submissions.problemId, problemId!), eq(schema.submissions.userId, user.id)));
 
-    const [{ count: existingSubmissionCount } = { count: 0 }] = await tx
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.submissions)
-      .where(and(eq(schema.submissions.problemId, problemId!), eq(schema.submissions.userId, user.id)));
+    // Same predicate as the select above, so its row count is the stored total.
     const availableSlots = Math.max(
       0,
-      MAX_SUBMISSIONS_PER_PROBLEM - existingSubmissionCount,
+      MAX_SUBMISSIONS_PER_PROBLEM - existingSubmissionIds.length,
     );
 
     const normalizedCode = (code: string) =>
@@ -190,6 +187,33 @@ export async function POST(req: Request) {
     );
     const seenSubmissionKeys = new Set<string>();
     const pid = problemId!;
+
+    // One lookup for the whole batch instead of a query per candidate row.
+    // Each statement in an interactive transaction is its own round trip, so a
+    // 20-submission capture used to cost 20 of them. Restricting the search to
+    // the incoming code strings keeps the result set at most one row per
+    // candidate rather than loading every stored source file.
+    const incomingCodes = [...new Set(submissionRows.map((row) => row.code))];
+    const storedMatches = incomingCodes.length
+      ? await tx
+          .select({
+            language: schema.submissions.language,
+            status: schema.submissions.status,
+            code: schema.submissions.code,
+          })
+          .from(schema.submissions)
+          .where(
+            and(
+              eq(schema.submissions.userId, user.id),
+              eq(schema.submissions.problemId, pid),
+              inArray(schema.submissions.code, incomingCodes),
+            ),
+          )
+      : [];
+    const exactKey = (s: { language: string; status: string; code: string }) =>
+      `${s.language}\x00${s.status}\x00${s.code}`;
+    const storedExactKeys = new Set(storedMatches.map(exactKey));
+
     const newRows: Array<(typeof submissionRows)[number] & { userId: string; problemId: string }> = [];
     for (const row of submissionRows.map((submission) => ({ ...submission, userId: user.id, problemId: pid }))) {
       if (row.leetcodeSubmissionId && seenLeetcodeIds.has(row.leetcodeSubmissionId)) continue;
@@ -201,20 +225,7 @@ export async function POST(req: Request) {
         break;
       }
 
-      const [sameSubmission] = await tx
-        .select({ id: schema.submissions.id })
-        .from(schema.submissions)
-        .where(
-          and(
-            eq(schema.submissions.userId, user.id),
-            eq(schema.submissions.problemId, pid),
-            eq(schema.submissions.language, row.language),
-            eq(schema.submissions.status, row.status),
-            eq(schema.submissions.code, row.code),
-          ),
-        )
-        .limit(1);
-      if (sameSubmission) {
+      if (storedExactKeys.has(exactKey(row))) {
         seenSubmissionKeys.add(key);
         continue;
       }

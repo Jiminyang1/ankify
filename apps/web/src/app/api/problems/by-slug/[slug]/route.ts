@@ -39,7 +39,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
       .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problem.id), ne(schema.cards.aiStatus, "ready")))
       .orderBy(desc(schema.cards.createdAt))
       .limit(25),
-    getReviewQueueStatus(user.id, db),
+    getReviewQueueStatus(user.id),
   ]);
 
   const now = new Date();

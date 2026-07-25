@@ -36,7 +36,8 @@ export default function ProblemsPage({
   const [filters, setFilters] = useState<FilterState>({ difficulty: "all", state: "all", tag: "", search: "" });
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "due", asc: true });
   const [dueCount, setDueCount] = useState(initialData.dueCount);
-  const [totalCount, setTotalCount] = useState(initialData.totalCount);
+  // The first page is never a cursor page, so the server always sends a total.
+  const [totalCount, setTotalCount] = useState(initialData.totalCount ?? 0);
   const [nextCursor, setNextCursor] = useState<string | null>(
     initialData.nextCursor,
   );

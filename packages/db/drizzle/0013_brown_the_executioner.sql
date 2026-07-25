@@ -1,0 +1,1 @@
+CREATE INDEX `problems_user_archived_created_idx` ON `problems` (`user_id`,`archived_at`,`created_at`,`id`);

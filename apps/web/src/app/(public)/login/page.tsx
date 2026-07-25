@@ -9,7 +9,17 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 function cleanNext(next: string | undefined) {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/api/")) return "/today";
+  // Browsers normalize "\" to "/" in Location URLs, so "/\evil.com" would
+  // become a protocol-relative external redirect. Reject backslashes outright.
+  if (
+    !next ||
+    !next.startsWith("/") ||
+    next.startsWith("//") ||
+    next.includes("\\") ||
+    next.startsWith("/api/")
+  ) {
+    return "/today";
+  }
   return next;
 }
 

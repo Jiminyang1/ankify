@@ -26,14 +26,20 @@ const LINKS = [
   { href: "/settings", key: "settings" },
 ] as const;
 
-export function Nav({ user }: { user: AuthUser | null }) {
+export function Nav({
+  user,
+  initialDueCount = 0,
+}: {
+  user: AuthUser | null;
+  initialDueCount?: number;
+}) {
   const pathname = usePathname();
   const isPublicPage =
     pathname === "/login" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     (pathname === "/" && !user);
-  const [dueCount, setDueCount] = useState(0);
+  const [dueCount, setDueCount] = useState(initialDueCount);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const { t } = useLanguage();
@@ -57,6 +63,16 @@ export function Nav({ user }: { user: AuthUser | null }) {
     };
   }, [accountOpen]);
 
+  // Re-seed when a router.refresh() hands down a newer server count. Adjusting
+  // during render (rather than in an effect) avoids painting the stale value.
+  const [seededCount, setSeededCount] = useState(initialDueCount);
+  if (seededCount !== initialDueCount) {
+    setSeededCount(initialDueCount);
+    setDueCount(initialDueCount);
+  }
+
+  // The badge is seeded by the server layout, so no fetch on mount. Ratings
+  // dispatch the count directly; only events without one need a round trip.
   useEffect(() => {
     if (isPublicPage) return;
     let cancelled = false;
@@ -81,7 +97,6 @@ export function Nav({ user }: { user: AuthUser | null }) {
       }
     };
 
-    void loadDueCount();
     window.addEventListener(REVIEW_QUEUE_UPDATED_EVENT, handleQueueUpdate);
     return () => {
       cancelled = true;

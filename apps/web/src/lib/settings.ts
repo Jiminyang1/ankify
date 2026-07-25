@@ -1,5 +1,6 @@
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
+import { cache } from "react";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
@@ -76,6 +77,10 @@ export async function setAiSettings(
 ) {
   const db = getDb();
   const existing = await getAiSettings(userId);
+  // A stored key belongs to the provider it was entered for. Never carry it
+  // over to a different provider — it would be sent to the wrong API.
+  const retainedKey =
+    existing.provider === value.provider ? existing.encryptedApiKey : undefined;
   const next = {
     ...existing,
     provider: value.provider,
@@ -83,7 +88,7 @@ export async function setAiSettings(
     reasoningMode: value.reasoningMode ?? existing.reasoningMode,
     encryptedApiKey:
       value.apiKey === undefined
-        ? existing.encryptedApiKey
+        ? retainedKey
         : value.apiKey
           ? encryptSecret(value.apiKey)
           : undefined,
@@ -97,7 +102,7 @@ export async function setAiSettings(
     });
 }
 
-export async function getReviewSettings(userId: string): Promise<ReviewSettings> {
+async function readReviewSettings(userId: string): Promise<ReviewSettings> {
   const db = getDb();
   const rows = await db
     .select()
@@ -114,12 +119,16 @@ export async function getReviewSettings(userId: string): Promise<ReviewSettings>
   };
 }
 
+/** Memoized per request — the queue status and the analysis page both read it.
+ *  Writers use readReviewSettings() so they always merge against fresh state. */
+export const getReviewSettings = cache(readReviewSettings);
+
 export async function setReviewSettings(
   userId: string,
   value: { dailyReviewLimit?: number; timeZone?: string },
 ) {
   const db = getDb();
-  const existing = await getReviewSettings(userId);
+  const existing = await readReviewSettings(userId);
   const next: { dailyReviewLimit: number; timeZone?: string } = {
     dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit ?? existing.dailyReviewLimit),
     ...(existing.timeZoneConfigured ? { timeZone: existing.timeZone } : {}),

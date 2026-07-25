@@ -89,7 +89,7 @@ Monorepo with three layers:
   - `review/next/` - returns next due problem with FSRS previews (via `preview()`), ready cards, submissions, and notes. A due problem does not need ready cards because Quiz can start review.
   - `review/queue/` - returns today's due queue for the extension Today tab.
   - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`. The rated event stores a pre-rating FSRS snapshot in `metadata.undo`.
-  - `review/undo/` - POST `{ problemId }` reverts the most recent rating: restores the problem's FSRS fields from the event's `metadata.undo` snapshot and deletes that event (guarded by `fsrsReps = prev.reps + 1` against races; events without the snapshot return 409).
+  - `review/undo/` - POST `{ problemId }` reverts the most recent rating: restores the problem's FSRS fields from the event's `metadata.undo` snapshot and stamps `undoneAt` on that event (guarded by `fsrsReps = prev.reps + 1` against races; events without the snapshot return 409).
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
   - `settings/ai-test/` - session-only POST. Runs a tiny `generateObject` probe against the configured provider/model/key (or supplied overrides) to verify the connection. Returns `{ ok, latencyMs }` on success or `{ ok: false, code, message }` on failure with categorized error codes (`invalid_api_key`, `model_not_found`, `quota_or_rate_limit`, `timeout`, `network`, `forbidden`, `unknown`).
   - `settings/ai-models/` - session-only POST. Body `{ provider, apiKey? }`. Calls the provider's `/v1/models` endpoint (Anthropic / OpenAI / DeepSeek) and returns chat-capable model ids so the Settings UI doesn't go stale when providers ship new models. Falls back to the user's stored encrypted key when `apiKey` is omitted; OpenAI list is filtered against an embeddings/audio/image/moderation block list.
@@ -159,7 +159,7 @@ There is no AI-card batch generation, background card generation, polling, `poli
 2. User reviews Quiz/Cards/Submissions/Notes, then self-rates recall (Again/Hard/Good/Easy).
 3. `POST /api/review/rate` records the rating and applies FSRS scheduling. Notes are saved to `problems.notes`.
 4. Meaningful interactions write to `review_events`.
-5. The result screen offers Undo (`POST /api/review/undo`), which restores the pre-rating FSRS snapshot, deletes the rating event, and re-enters the same problem.
+5. The result screen offers Undo (`POST /api/review/undo`), which restores the pre-rating FSRS snapshot, marks the rating event undone, and re-enters the same problem.
 
 ## Key Design Decisions
 
@@ -173,7 +173,7 @@ There is no AI-card batch generation, background card generation, polling, `poli
 - **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
 - **Quiz is synchronous V1**: no background jobs. Pending is UI state while the foreground request runs.
 - **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
-- **`review_events` is append-only, with one exception**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history. The exception is `/api/review/undo`, which deletes the undone rating event so done-today counts and dashboards don't count it.
+- **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history. `/api/review/undo` never deletes the rating event — it stamps `undoneAt`, and done-today counts and dashboards exclude undone events.
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.
 - **AI defaults to empty**: provider/model/key must be configured before AI generation; errors should be clear.
 

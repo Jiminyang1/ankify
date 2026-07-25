@@ -115,6 +115,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: failure }, { status: 409 });
   }
 
-  const queue = await getReviewQueueStatus(user.id, db);
+  const queue = await getReviewQueueStatus(user.id);
   return NextResponse.json({ ok: true, queue });
 }

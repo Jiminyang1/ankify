@@ -60,7 +60,9 @@ export type ProblemsListPayload = {
   problems: ProblemListItem[];
   dueCount: number;
   serverNow: string;
-  totalCount: number;
+  /** Omitted on cursor pages — the total can't change mid-pagination, and the
+   *  client keeps the value it already has. */
+  totalCount?: number;
   nextCursor: string | null;
 };
 
@@ -101,7 +103,7 @@ export async function loadProblemsList(
       )
     : undefined;
 
-  const [problemRows, [totalRow], [dueRow]] = await Promise.all([
+  const [problemRows, totalRows, [dueRow]] = await Promise.all([
     db
       .select({
         id: schema.problems.id,
@@ -121,10 +123,12 @@ export async function loadProblemsList(
       .where(and(...baseConditions, cursorCondition))
       .orderBy(desc(schema.problems.createdAt), desc(schema.problems.id))
       .limit(limit + 1),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.problems)
-      .where(and(...baseConditions)),
+    cursor
+      ? Promise.resolve([])
+      : db
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.problems)
+          .where(and(...baseConditions)),
     db
       .select({ count: sql<number>`count(*)` })
       .from(schema.problems)
@@ -166,7 +170,7 @@ export async function loadProblemsList(
     })),
     dueCount: dueRow?.count ?? 0,
     serverNow: now.toISOString(),
-    totalCount: totalRow?.count ?? 0,
+    ...(cursor ? {} : { totalCount: totalRows[0]?.count ?? 0 }),
     nextCursor:
       hasMore && lastProblem
         ? encodeCursor(lastProblem.createdAt, lastProblem.id)

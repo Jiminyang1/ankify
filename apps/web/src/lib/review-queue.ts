@@ -1,10 +1,17 @@
-import { getDb, schema, type DB } from "@ankify/db";
+import { getDb, schema } from "@ankify/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { cache } from "react";
 import { dueProblemCondition } from "./due-problems";
 import { getReviewSettings } from "./settings";
 import { getZonedDayBounds } from "./time-zone";
 
-export async function getReviewQueueStatus(userId: string, db: DB = getDb()) {
+/**
+ * Queue stats for the current review day. Memoized per request so the app
+ * layout (nav badge) and the page loader below it share one execution instead
+ * of each paying the settings read plus two counts.
+ */
+export const getReviewQueueStatus = cache(async (userId: string) => {
+  const db = getDb();
   const now = new Date();
   const review = await getReviewSettings(userId);
   const { start: startOfDay } = getZonedDayBounds(review.timeZone, now);
@@ -38,4 +45,6 @@ export async function getReviewQueueStatus(userId: string, db: DB = getDb()) {
     totalDue,
     dueCount: Math.min(totalDue, remaining),
   };
-}
+});
+
+export type ReviewQueueStatus = Awaited<ReturnType<typeof getReviewQueueStatus>>;

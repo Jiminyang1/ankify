@@ -6,7 +6,12 @@ import { getAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
 import { safeErrorForLog } from "@/lib/ai-errors";
 
-export const maxDuration = 180;
+// Listing models is a single cheap GET against the provider. Card and quiz
+// generation need minutes; this does not, and a long hang here just leaves the
+// Settings dropdown spinning.
+export const maxDuration = 30;
+
+const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 const requestSchema = z.object({
   provider: schemas.aiProviderEnum,
@@ -50,7 +55,7 @@ export async function POST(req: Request) {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 175_000);
+  const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
 
   try {
     const models = await listModels(provider, apiKey, controller.signal);
@@ -171,7 +176,10 @@ function classifyListError(err: unknown): { code: string; message: string } {
   }
   const raw = err instanceof Error ? err.message : String(err);
   if (raw.toLowerCase().includes("aborted")) {
-    return { code: "timeout", message: "Provider did not respond within 3 minutes." };
+    return {
+      code: "timeout",
+      message: `Provider did not respond within ${MODEL_LIST_TIMEOUT_MS / 1000} seconds.`,
+    };
   }
   return { code: "network", message: "Could not reach the provider." };
 }

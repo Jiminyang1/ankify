@@ -17,14 +17,37 @@ const isDev = process.env.NODE_ENV !== "production";
 
 export const dynamic = "force-dynamic";
 
-type RiskProblem = typeof schema.problems.$inferSelect & {
+/** Only the columns the risk table and the retrievability curve actually need.
+ *  Selecting the full row would drag every problem's statement Markdown across
+ *  the wire just to render eight rows. */
+const riskProblemColumns = {
+  id: schema.problems.id,
+  title: schema.problems.title,
+  difficulty: schema.problems.difficulty,
+  fsrsDue: schema.problems.fsrsDue,
+  fsrsStability: schema.problems.fsrsStability,
+  fsrsDifficulty: schema.problems.fsrsDifficulty,
+  fsrsElapsedDays: schema.problems.fsrsElapsedDays,
+  fsrsScheduledDays: schema.problems.fsrsScheduledDays,
+  fsrsLearningSteps: schema.problems.fsrsLearningSteps,
+  fsrsReps: schema.problems.fsrsReps,
+  fsrsLapses: schema.problems.fsrsLapses,
+  fsrsState: schema.problems.fsrsState,
+  fsrsLastReview: schema.problems.fsrsLastReview,
+} as const;
+
+type ReviewedProblem = {
+  [K in keyof typeof riskProblemColumns]: (typeof schema.problems.$inferSelect)[K];
+};
+
+type RiskProblem = ReviewedProblem & {
   retrievabilityNow: number;
   riskScore: number;
 };
 
 type StabilityBucket = { label: string; count: number; pct: number };
 
-function toFsrsState(problem: typeof schema.problems.$inferSelect): FsrsCardState {
+function toFsrsState(problem: ReviewedProblem): FsrsCardState {
   return {
     due: problem.fsrsDue,
     stability: problem.fsrsStability,
@@ -93,7 +116,7 @@ async function loadAnalysis(userId: string) {
         ),
       ),
     db
-      .select()
+      .select(riskProblemColumns)
       .from(schema.problems)
       .where(and(owns, gt(schema.problems.fsrsReps, 0))),
     getReviewSettings(userId),

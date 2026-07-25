@@ -133,6 +133,14 @@ export const problems = sqliteTable(
     // filters by userId first — so they only added write overhead.
     userIdx: index("problems_user_idx").on(t.userId),
     userArchivedDueIdx: index("problems_user_archived_due_idx").on(t.userId, t.archivedAt, t.fsrsDue),
+    // Matches the problems list's keyset pagination order so it reads straight
+    // off the index instead of sorting the whole deck in a temp b-tree.
+    userArchivedCreatedIdx: index("problems_user_archived_created_idx").on(
+      t.userId,
+      t.archivedAt,
+      t.createdAt,
+      t.id,
+    ),
     userSlugIdx: uniqueIndex("problems_user_slug_unique").on(t.userId, t.leetcodeSlug),
     userLeetcodeIdIdx: uniqueIndex("problems_user_leetcode_id_unique").on(t.userId, t.leetcodeId),
   }),

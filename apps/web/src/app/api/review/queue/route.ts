@@ -5,7 +5,8 @@ import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { dueProblemCondition } from "@/lib/due-problems";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 
-/** GET /api/review/queue?limit=20 — today's due problem list + queue stats. */
+/** GET /api/review/queue?limit=20 — today's due problem list + queue stats.
+ *  `limit=0` returns queue stats only, skipping the problem-list queries. */
 export async function GET(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
@@ -13,9 +14,9 @@ export async function GET(req: Request) {
   const db = getDb();
   const { searchParams } = new URL(req.url);
   const requested = Number(searchParams.get("limit") ?? "20");
-  const cap = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 100) : 20;
+  const cap = Number.isFinite(requested) && requested >= 0 ? Math.min(requested, 100) : 20;
 
-  const queue = await getReviewQueueStatus(user.id, db);
+  const queue = await getReviewQueueStatus(user.id);
   const now = new Date();
   const limit = Math.min(cap, queue.remaining);
 

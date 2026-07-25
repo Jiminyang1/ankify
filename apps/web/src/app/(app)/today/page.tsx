@@ -21,7 +21,7 @@ async function getHomeData(userId: string) {
     const now = new Date();
 
     const [queue, totalRows, allDueProblems] = await Promise.all([
-      getReviewQueueStatus(userId, db),
+      getReviewQueueStatus(userId),
       db
         .select({ count: sql<number>`count(*)` })
         .from(schema.problems)
@@ -114,7 +114,7 @@ export default async function HomePage() {
               <h1 className="mt-2 text-4xl font-semibold tracking-tight">
                 {hasDue ? (
                   <>
-                    <span className="text-accent">{data.dueCount}</span> {language === "zh" ? "道待复习题" : `due problem${data.dueCount === 1 ? "" : "s"}`}
+                    <span className="text-accent">{data.dueCount}</span> {t.home.dueHeroSuffix(data.dueCount)}
                   </>
                 ) : allDone ? (
                   t.home.doneForToday

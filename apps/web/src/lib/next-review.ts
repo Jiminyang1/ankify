@@ -19,7 +19,7 @@ export async function loadNextReview(
   const now = new Date();
 
   const [queue, problemRows] = await Promise.all([
-    getReviewQueueStatus(userId, db),
+    getReviewQueueStatus(userId),
     targetId
       ? db
           .select()
