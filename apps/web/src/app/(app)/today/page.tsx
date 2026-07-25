@@ -10,6 +10,7 @@ import { dueProblemCondition } from "@/lib/due-problems";
 import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
+import { getUserFirstName, UserAvatar } from "@/components/user-avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -83,9 +84,28 @@ export default async function HomePage() {
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
   const held = Math.max(0, data.totalDue - data.dueCount);
+  const firstName = getUserFirstName(user.name, user.email);
+  const welcomeMessage = hasDue
+    ? t.home.welcomeDue
+    : allDone
+      ? t.home.welcomeDone
+      : t.home.welcomeEmpty;
 
   return (
     <div className="space-y-8">
+      <div className="flex items-center gap-3">
+        <UserAvatar
+          name={user.name}
+          email={user.email}
+          image={user.image}
+          size="md"
+        />
+        <div>
+          <p className="font-semibold">{t.home.welcomeBack(firstName)}</p>
+          <p className="mt-0.5 text-sm text-muted">{welcomeMessage}</p>
+        </div>
+      </div>
+
         <Surface className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>

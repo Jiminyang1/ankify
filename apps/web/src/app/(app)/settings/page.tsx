@@ -8,17 +8,37 @@ import {
   ReviewSettingsForm,
 } from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
+import { getUserDisplayName, UserAvatar } from "@/components/user-avatar";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requirePageUser();
   const [ai, review, t] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id), getRequestTranslations()]);
+  const displayName = getUserDisplayName(user.name, user.email);
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-semibold">{t.settings.title}</h1>
+        <p className="mt-1 text-sm text-muted">{t.settings.subtitle}</p>
       </div>
+
+      <section className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface p-5 shadow-card">
+        <UserAvatar
+          name={user.name}
+          email={user.email}
+          image={user.image}
+          size="lg"
+        />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+          <p className="truncate text-sm text-muted">{user.email}</p>
+          <p className="mt-1 text-xs text-muted">{t.settings.googleManaged}</p>
+        </div>
+        <span className="rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+          {t.settings.googleConnected}
+        </span>
+      </section>
 
       <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.appearance}</h2>

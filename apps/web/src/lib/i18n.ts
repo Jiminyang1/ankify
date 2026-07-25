@@ -22,6 +22,8 @@ export const translations = {
       problems: "Problems",
       analysis: "Analysis",
       settings: "Settings",
+      accountMenu: "Open account menu",
+      accountSettings: "Account settings",
       signOut: "Sign out",
     },
     common: {
@@ -76,6 +78,10 @@ export const translations = {
     },
     home: {
       kicker: "Daily LeetCode review",
+      welcomeBack: (name: string) => `Welcome back, ${name}`,
+      welcomeDue: "A few ideas are ready to be brought back into focus.",
+      welcomeDone: "You're clear for today. A small win worth keeping.",
+      welcomeEmpty: "Your memory workspace is ready when you are.",
       doneToday: "Done today",
       dueNow: "Due now",
       deck: "Deck",
@@ -123,6 +129,9 @@ export const translations = {
     },
     settings: {
       title: "Settings",
+      subtitle: "Manage your account, study preferences, and connected services.",
+      googleConnected: "Google connected",
+      googleManaged: "Your name, email, and profile photo are managed by Google.",
       appearance: "Appearance",
       appearanceHelp: "Language and theme for the web app.",
       languageHelp: "Interface language",
@@ -363,7 +372,16 @@ export const translations = {
   zh: {
     language: { label: "语言", en: "EN", zh: "中" },
     theme: { label: "主题", system: "系统", light: "浅色", dark: "深色" },
-    nav: { today: "今日", review: "复习", problems: "题库", analysis: "分析", settings: "设置", signOut: "退出" },
+    nav: {
+      today: "今日",
+      review: "复习",
+      problems: "题库",
+      analysis: "分析",
+      settings: "设置",
+      accountMenu: "打开账号菜单",
+      accountSettings: "账号设置",
+      signOut: "退出",
+    },
     common: {
       loading: "加载中...",
       save: "保存",
@@ -405,6 +423,10 @@ export const translations = {
     },
     home: {
       kicker: "每日 LeetCode 复习",
+      welcomeBack: (name: string) => `欢迎回来，${name}`,
+      welcomeDue: "有一些重要思路，正适合现在重新唤醒。",
+      welcomeDone: "今天已经清空，稳稳积累了一次小胜利。",
+      welcomeEmpty: "你的记忆工作台已经准备好了。",
       doneToday: "今日完成",
       dueNow: "当前到期",
       deck: "题库",
@@ -451,6 +473,9 @@ export const translations = {
     },
     settings: {
       title: "设置",
+      subtitle: "管理你的账号、学习偏好和已连接服务。",
+      googleConnected: "Google 已连接",
+      googleManaged: "姓名、邮箱和头像由 Google 账号管理。",
       appearance: "外观",
       appearanceHelp: "Web 应用里的语言和主题。",
       languageHelp: "界面语言",
