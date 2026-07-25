@@ -17,7 +17,7 @@ import { LanguageToggle } from "./LanguageToggle";
 import { useLanguage } from "./LanguageProvider";
 
 const LINKS = [
-  { href: "/", key: "today" },
+  { href: "/today", key: "today" },
   { href: "/review", key: "review" },
   { href: "/problems", key: "problems" },
   { href: "/analysis", key: "analysis" },
@@ -69,14 +69,14 @@ export function Nav({ user }: { user: AuthUser | null }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-        <Link href="/" className="group">
+        <Link href={user ? "/today" : "/"} className="group">
           <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
         {!isPublicPage && (
           <div className="flex items-center gap-1 text-sm">
             {LINKS.map((l) => {
-              const active = l.href === "/" ? pathname === "/" : pathname === l.href || pathname.startsWith(l.href + "/");
+              const active = pathname === l.href || pathname.startsWith(l.href + "/");
               const showBadge = l.href === "/review" && dueCount > 0;
               return (
                 <Link

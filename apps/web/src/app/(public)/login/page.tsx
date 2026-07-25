@@ -9,7 +9,7 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 function cleanNext(next: string | undefined) {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/api/")) return "/";
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/api/")) return "/today";
   return next;
 }
 

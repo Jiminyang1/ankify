@@ -1,12 +1,8 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { Surface } from "@/components/ui/surface";
-import { getRequestLanguage } from "@/lib/i18n-server";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Terms of use · ankify",
-  description: "Terms governing use of ankify and its Chrome extension.",
-};
+import Link from "next/link";
+import { useLanguage } from "@/components/LanguageProvider";
+import { Surface } from "@/components/ui/surface";
 
 const copy = {
   en: {
@@ -44,8 +40,8 @@ const copy = {
   },
 } as const;
 
-export default async function TermsPage() {
-  const language = await getRequestLanguage();
+export function TermsContent() {
+  const { language } = useLanguage();
   const t = copy[language];
   return (
     <Surface className="mx-auto max-w-3xl p-6 sm:p-8">

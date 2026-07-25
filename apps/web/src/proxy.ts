@@ -35,6 +35,9 @@ function withApiCors(req: NextRequest, res: NextResponse) {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
+  const hasSessionCookie = req.cookies
+    .getAll()
+    .some((cookie) => cookie.name.endsWith("better-auth.session_token"));
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/login" ||
@@ -46,14 +49,17 @@ export async function proxy(req: NextRequest) {
     return withApiCors(req, new NextResponse(null, { status: 204 }));
   }
 
+  if (pathname === "/" && hasSessionCookie) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/today";
+    return NextResponse.redirect(url);
+  }
+
   if (isPublicRoute) {
     const res = NextResponse.next();
     return isApi ? withApiCors(req, res) : res;
   }
 
-  const hasSessionCookie = req.cookies
-    .getAll()
-    .some((cookie) => cookie.name.endsWith("better-auth.session_token"));
   if (hasSessionCookie) {
     const res = NextResponse.next();
     return isApi ? withApiCors(req, res) : res;

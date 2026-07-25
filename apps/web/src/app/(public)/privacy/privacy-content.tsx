@@ -1,12 +1,8 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { Surface } from "@/components/ui/surface";
-import { getRequestLanguage } from "@/lib/i18n-server";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Privacy policy · ankify",
-  description: "How ankify and its Chrome extension handle user data.",
-};
+import Link from "next/link";
+import { useLanguage } from "@/components/LanguageProvider";
+import { Surface } from "@/components/ui/surface";
 
 const copy = {
   en: {
@@ -99,8 +95,8 @@ const copy = {
   },
 } as const;
 
-export default async function PrivacyPage() {
-  const language = await getRequestLanguage();
+export function PrivacyContent() {
+  const { language } = useLanguage();
   const t = copy[language];
 
   return (

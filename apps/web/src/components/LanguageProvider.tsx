@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
   DEFAULT_LANGUAGE,
@@ -31,6 +31,32 @@ function persistLanguage(language: Language) {
   document.documentElement.lang = language === "zh" ? "zh-Hans" : "en";
 }
 
+const languageListeners = new Set<() => void>();
+
+function getStoredLanguage(fallback: Language) {
+  try {
+    return normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function subscribeLanguage(listener: () => void) {
+  languageListeners.add(listener);
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === LANGUAGE_STORAGE_KEY) listener();
+  };
+  window.addEventListener("storage", handleStorage);
+  return () => {
+    languageListeners.delete(listener);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
+function notifyLanguageChanged() {
+  languageListeners.forEach((listener) => listener());
+}
+
 export function LanguageProvider({
   initialLanguage,
   children,
@@ -39,10 +65,11 @@ export function LanguageProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window === "undefined") return initialLanguage;
-    return normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? initialLanguage);
-  });
+  const language = useSyncExternalStore(
+    subscribeLanguage,
+    () => getStoredLanguage(initialLanguage),
+    () => initialLanguage,
+  );
 
   useEffect(() => {
     persistLanguage(language);
@@ -52,10 +79,9 @@ export function LanguageProvider({
   }, [initialLanguage, language, router]);
 
   const setLanguage = useCallback((next: Language) => {
-    setLanguageState(next);
     persistLanguage(next);
-    router.refresh();
-  }, [router]);
+    notifyLanguageChanged();
+  }, []);
 
   const value = useMemo(
     () => ({ language, setLanguage, t: getTranslations(language) }),

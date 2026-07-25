@@ -241,7 +241,7 @@ export default async function AnalysisPage() {
             {t.analysis.subtitle}
           </p>
         </div>
-        <Link href="/" className="text-sm font-medium text-accent hover:underline">
+        <Link href="/today" className="text-sm font-medium text-accent hover:underline">
           {t.analysis.backToday}
         </Link>
       </header>

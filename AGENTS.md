@@ -87,7 +87,8 @@ Monorepo with three layers:
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. Server env provider keys are intentionally not used as runtime fallbacks.
 - **Pages**:
-  - `/` - home: due queue, progress, daily stats
+  - `/` - static public landing page; authenticated sessions redirect to `/today`
+  - `/today` - authenticated home: due queue, progress, daily stats
   - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes
   - `/problems` - list with difficulty/state/tag/search filters
   - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline

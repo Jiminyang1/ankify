@@ -1,11 +1,5 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
-import { Nav } from "@/components/nav";
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { LanguageProvider } from "@/components/LanguageProvider";
-import { TimeZoneSync } from "@/components/TimeZoneSync";
-import { getOptionalPageUser } from "@/lib/auth";
-import { getRequestLanguage } from "@/lib/i18n-server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,26 +14,16 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [language, user] = await Promise.all([
-    getRequestLanguage(),
-    getOptionalPageUser(),
-  ]);
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang={language === "zh" ? "zh-Hans" : "en"} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen">
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem("ankify-theme")||"system";if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t)}else{document.documentElement.removeAttribute("data-theme")}var l=localStorage.getItem("ankify-language")||"en";document.documentElement.lang=l==="zh"?"zh-Hans":"en"}catch(e){}})()`,
           }}
         />
-        <LanguageProvider initialLanguage={language}>
-          <ThemeProvider>
-            <TimeZoneSync />
-            <Nav user={user} />
-            <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
-          </ThemeProvider>
-        </LanguageProvider>
+        {children}
         <Analytics />
       </body>
     </html>

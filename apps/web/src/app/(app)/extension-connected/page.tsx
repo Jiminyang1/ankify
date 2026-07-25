@@ -31,7 +31,7 @@ export default async function ExtensionConnectedPage() {
         <h1 className="mt-4 text-xl font-semibold">{t.title}</h1>
         <p className="mt-2 text-sm leading-6 text-muted">{t.body}</p>
         <Link
-          href="/"
+          href="/today"
           className="mt-5 inline-flex rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast"
         >
           {t.continue}
