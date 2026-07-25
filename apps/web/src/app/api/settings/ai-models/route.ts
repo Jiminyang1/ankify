@@ -4,6 +4,7 @@ import { schemas, type AiProvider } from "@ankify/core";
 import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { getAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
+import { safeErrorForLog } from "@/lib/ai-errors";
 
 export const maxDuration = 180;
 
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
     const models = await listModels(provider, apiKey, controller.signal);
     return NextResponse.json({ ok: true, provider, models });
   } catch (err) {
+    console.warn("[ai-models] provider request failed", safeErrorForLog(err));
     return NextResponse.json(
       { ok: false, ...classifyListError(err) },
       { status: 200 },
@@ -90,7 +92,7 @@ async function listAnthropic(apiKey: string, signal: AbortSignal): Promise<Model
     },
     signal,
   });
-  if (!res.ok) throw new ProviderError(res.status, await res.text().catch(() => ""));
+  if (!res.ok) throw new ProviderError(res.status);
   const json = (await res.json()) as { data?: Array<{ id: string; display_name?: string }> };
   const items = (json.data ?? [])
     .map((m) => ({ id: m.id, label: m.display_name }))
@@ -105,7 +107,7 @@ async function listOpenAi(apiKey: string, signal: AbortSignal): Promise<ModelEnt
     headers: { Authorization: `Bearer ${apiKey}` },
     signal,
   });
-  if (!res.ok) throw new ProviderError(res.status, await res.text().catch(() => ""));
+  if (!res.ok) throw new ProviderError(res.status);
   const json = (await res.json()) as { data?: Array<{ id: string }> };
   const items = (json.data ?? [])
     .map((m) => ({ id: m.id }))
@@ -119,7 +121,7 @@ async function listDeepseek(apiKey: string, signal: AbortSignal): Promise<ModelE
     headers: { Authorization: `Bearer ${apiKey}` },
     signal,
   });
-  if (!res.ok) throw new ProviderError(res.status, await res.text().catch(() => ""));
+  if (!res.ok) throw new ProviderError(res.status);
   const json = (await res.json()) as { data?: Array<{ id: string }> };
   const items = (json.data ?? []).map((m) => ({ id: m.id }));
   items.sort((a, b) => b.id.localeCompare(a.id));
@@ -155,7 +157,7 @@ function isOpenAiChatModel(id: string): boolean {
 }
 
 class ProviderError extends Error {
-  constructor(public status: number, public body: string) {
+  constructor(public status: number) {
     super(`provider_${status}`);
   }
 }
@@ -165,11 +167,11 @@ function classifyListError(err: unknown): { code: string; message: string } {
     if (err.status === 401) return { code: "invalid_api_key", message: "API key was rejected by the provider." };
     if (err.status === 403) return { code: "forbidden", message: "API key cannot list models." };
     if (err.status === 429) return { code: "quota_or_rate_limit", message: "Provider returned a rate limit error." };
-    return { code: `http_${err.status}`, message: err.body.slice(0, 300) || `Provider returned ${err.status}.` };
+    return { code: `http_${err.status}`, message: `Provider returned HTTP ${err.status}.` };
   }
   const raw = err instanceof Error ? err.message : String(err);
   if (raw.toLowerCase().includes("aborted")) {
     return { code: "timeout", message: "Provider did not respond within 3 minutes." };
   }
-  return { code: "network", message: raw.slice(0, 300) };
+  return { code: "network", message: "Could not reach the provider." };
 }

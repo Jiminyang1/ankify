@@ -78,6 +78,20 @@
       "when": 1779999124118,
       "tag": "0010_simple_invisible_woman",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1784302030395,
+      "tag": "0011_low_wonder_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784961955138,
+      "tag": "0012_next_black_tarantula",
+      "breakpoints": true
     }
   ]
 }

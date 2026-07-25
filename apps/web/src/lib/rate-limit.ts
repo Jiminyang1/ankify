@@ -1,31 +1,14 @@
 import { NextResponse } from "next/server";
+import { getDb, schema } from "@ankify/db";
+import { sql } from "drizzle-orm";
 
 /**
- * Best-effort in-memory rate limiter.
- *
- * On serverless (Vercel) every warm instance keeps its own window map, so this
- * is NOT a globally exact limit — it's a cheap guardrail that stops a single
- * client from hammering one instance, and it resets on cold start (fine for
- * abuse mitigation). Hard, globally-accurate caps (e.g. the per-user problem
- * quota in capture) are enforced in the database instead.
- *
- * This matters most once `ANKIFY_OPEN_SIGNUP` is on: any Google account can
- * sign in, so the expensive paths (AI generation, capture writes) need a floor
- * of protection even though each user pays for their own AI key.
+ * Database-backed fixed-window rate limiter. The counter lives in the
+ * user-scoped settings table and is updated atomically by one SQLite UPSERT, so
+ * all Vercel instances share the same limit. One stable row per scope avoids
+ * accumulating one row for every time window.
  */
-type Window = { count: number; resetAt: number };
-
-const windows = new Map<string, Window>();
-let lastSweep = 0;
-
-/** Drop expired windows at most once a minute so the map can't grow unbounded. */
-function sweep(now: number) {
-  if (now - lastSweep < 60_000) return;
-  lastSweep = now;
-  for (const [key, w] of windows) {
-    if (w.resetAt <= now) windows.delete(key);
-  }
-}
+type StoredWindow = { windowStart: number; count: number };
 
 export interface RateLimitResult {
   ok: boolean;
@@ -41,22 +24,51 @@ export const RATE_LIMITS = {
   capture: { limit: 60, windowMs: 60_000 },
 } as const;
 
-/** Hard cap on non-archived problems per user — enforced in the DB on create. */
-export const MAX_PROBLEMS_PER_USER = 2000;
-
-export function checkRateLimit(key: string, opts: { limit: number; windowMs: number }): RateLimitResult {
+export async function checkRateLimit(
+  userId: string,
+  scope: string,
+  opts: { limit: number; windowMs: number },
+): Promise<RateLimitResult> {
   const now = Date.now();
-  sweep(now);
-  const existing = windows.get(key);
-  if (!existing || existing.resetAt <= now) {
-    windows.set(key, { count: 1, resetAt: now + opts.windowMs });
-    return { ok: true, remaining: opts.limit - 1, retryAfterSec: 0 };
-  }
-  if (existing.count >= opts.limit) {
-    return { ok: false, remaining: 0, retryAfterSec: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)) };
-  }
-  existing.count += 1;
-  return { ok: true, remaining: opts.limit - existing.count, retryAfterSec: 0 };
+  const windowStart = Math.floor(now / opts.windowMs) * opts.windowMs;
+  const key = `rate-limit:${scope}`;
+  const db = getDb();
+  const [row] = await db
+    .insert(schema.settings)
+    .values({
+      userId,
+      key,
+      value: { windowStart, count: 1 } satisfies StoredWindow,
+      updatedAt: new Date(now),
+    })
+    .onConflictDoUpdate({
+      target: [schema.settings.userId, schema.settings.key],
+      set: {
+        value: sql`
+          CASE
+            WHEN CAST(json_extract(${schema.settings.value}, '$.windowStart') AS INTEGER) = ${windowStart}
+              THEN json_object(
+                'windowStart', ${windowStart},
+                'count', CAST(json_extract(${schema.settings.value}, '$.count') AS INTEGER) + 1
+              )
+            ELSE json_object('windowStart', ${windowStart}, 'count', 1)
+          END
+        `,
+        updatedAt: new Date(now),
+      },
+    })
+    .returning({ value: schema.settings.value });
+
+  const stored = row?.value as Partial<StoredWindow> | undefined;
+  const count = typeof stored?.count === "number" ? stored.count : opts.limit + 1;
+  const ok = count <= opts.limit;
+  return {
+    ok,
+    remaining: ok ? Math.max(0, opts.limit - count) : 0,
+    retryAfterSec: ok
+      ? 0
+      : Math.max(1, Math.ceil((windowStart + opts.windowMs - now) / 1000)),
+  };
 }
 
 export function rateLimitResponse(retryAfterSec: number) {

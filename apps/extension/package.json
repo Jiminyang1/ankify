@@ -1,27 +1,27 @@
 {
   "name": "@ankify/extension",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ankify/core": "workspace:*",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.30",
     "@types/chrome": "^0.0.290",
-    "@types/react": "19.0.2",
-    "@types/react-dom": "19.0.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
-    "vite": "^6.0.6"
+    "vite": "^6.4.3"
   }
 }

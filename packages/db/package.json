@@ -12,13 +12,16 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "migrate:preview": "ANKIFY_PROFILE=preview tsx src/migrate.ts",
     "migrate:prod": "ANKIFY_PROFILE=production tsx src/migrate.ts",
+    "backup": "ANKIFY_PROFILE=production tsx src/backup.ts",
     "studio": "drizzle-kit studio",
+    "studio:preview": "ANKIFY_PROFILE=preview drizzle-kit studio",
     "studio:prod": "ANKIFY_PROFILE=production drizzle-kit studio",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@libsql/client": "^0.15.7",
+    "@libsql/client": "^0.17.4",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

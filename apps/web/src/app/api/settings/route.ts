@@ -8,6 +8,7 @@ import {
 } from "@/lib/settings";
 import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { schemas } from "@ankify/core";
+import { isValidTimeZone } from "@/lib/time-zone";
 
 const settingsSchema = z
   .object({
@@ -16,11 +17,12 @@ const settingsSchema = z
     reasoningMode: schemas.aiReasoningModeEnum.optional(),
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
+    timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
   })
   .refine(
-    (value) => value.dailyReviewLimit != null || Boolean(value.provider && value.model),
+    (value) => value.dailyReviewLimit != null || value.timeZone != null || Boolean(value.provider && value.model),
     {
-      message: "Provide AI provider/model or dailyReviewLimit.",
+      message: "Provide AI provider/model or review settings.",
     },
   );
 
@@ -58,8 +60,11 @@ export async function POST(req: Request) {
       apiKey: parsed.data.apiKey,
     });
   }
-  if (parsed.data.dailyReviewLimit != null) {
-    await setReviewSettings(user.id, { dailyReviewLimit: parsed.data.dailyReviewLimit });
+  if (parsed.data.dailyReviewLimit != null || parsed.data.timeZone != null) {
+    await setReviewSettings(user.id, {
+      dailyReviewLimit: parsed.data.dailyReviewLimit,
+      timeZone: parsed.data.timeZone,
+    });
   }
   return NextResponse.json({ ok: true });
 }

@@ -6,6 +6,7 @@ import type { Submission } from "@ankify/db";
 import { Pill } from "@/components/ui/pill";
 import { HighlightedCode } from "@/components/ui/highlighted-code";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 function formatMemory(memoryKb: number) {
   return `${(memoryKb / 1024).toFixed(1)} MB`;
@@ -127,11 +128,7 @@ function FullscreenButton({
   title?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useHydrated();
 
   const close = useCallback(() => setOpen(false), []);
 

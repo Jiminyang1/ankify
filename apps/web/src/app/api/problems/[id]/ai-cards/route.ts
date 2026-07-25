@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas, type CardDraft } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
@@ -9,6 +9,7 @@ import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { MAX_CARDS_PER_PROBLEM } from "@/lib/resource-limits";
 
 export const maxDuration = 180;
 
@@ -25,7 +26,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .select()
     .from(schema.cards)
     .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problemId), ne(schema.cards.aiStatus, "ready")))
-    .orderBy(desc(schema.cards.createdAt));
+    .orderBy(desc(schema.cards.createdAt))
+    .limit(25);
 
   return NextResponse.json({ ok: true, candidates });
 }
@@ -34,7 +36,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
 
-  const limit = checkRateLimit(`ai:${user.id}`, RATE_LIMITS.ai);
+  const limit = await checkRateLimit(user.id, "ai", RATE_LIMITS.ai);
   if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
   const { id: problemId } = await ctx.params;
@@ -52,6 +54,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!problem) return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
 
   if (parsed.data.action === "generate") {
+    const [{ count } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.cards)
+      .where(
+        and(
+          eq(schema.cards.userId, user.id),
+          eq(schema.cards.problemId, problemId),
+        ),
+      );
+    if (count >= MAX_CARDS_PER_PROBLEM) {
+      return cardLimitResponse();
+    }
+
     try {
       const draft = await generateAiDraft({
         userId: user.id,
@@ -61,15 +76,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       });
 
       const cardId = nanoid(12);
-      await db.insert(schema.cards).values({
-        id: cardId,
-        userId: user.id,
-        problemId,
-        aiStatus: "candidate",
-        errorMessage: null,
-        question: draft.question,
-        answer: draft.answer,
+      let cardLimitReached = false;
+      await db.transaction(async (tx) => {
+        const [{ count: currentCount } = { count: 0 }] = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(schema.cards)
+          .where(
+            and(
+              eq(schema.cards.userId, user.id),
+              eq(schema.cards.problemId, problemId),
+            ),
+          );
+        if (currentCount >= MAX_CARDS_PER_PROBLEM) {
+          cardLimitReached = true;
+          return;
+        }
+        await tx.insert(schema.cards).values({
+          id: cardId,
+          userId: user.id,
+          problemId,
+          aiStatus: "candidate",
+          errorMessage: null,
+          question: draft.question,
+          answer: draft.answer,
+        });
       });
+      if (cardLimitReached) return cardLimitResponse();
 
       const [card] = await db
         .select()
@@ -133,7 +165,7 @@ async function loadPromptContext(userId: string, problemId: string) {
     .from(schema.submissions)
     .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
     .orderBy(desc(schema.submissions.submittedAt))
-    .limit(25);
+    .limit(10);
   return { problem, submissions };
 }
 
@@ -188,4 +220,14 @@ function aiErrorResponse(err: unknown) {
     timeoutMs: AI_CARD_GENERATION_TIMEOUT_MS,
     logPrefix: "[ai-card] failed",
   });
+}
+
+function cardLimitResponse() {
+  return NextResponse.json(
+    {
+      error: "card_limit_reached",
+      message: `This problem already has ${MAX_CARDS_PER_PROBLEM} cards. Delete one before generating another.`,
+    },
+    { status: 403 },
+  );
 }

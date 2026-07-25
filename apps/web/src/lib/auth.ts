@@ -3,10 +3,7 @@ import { redirect } from "next/navigation";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { apiKey } from "@better-auth/api-key";
 import { getDb, schema } from "@ankify/db";
-
-const API_KEY_HEADER = "x-ankify-token";
 
 function requiredEnv(name: string) {
   const value = process.env[name];
@@ -20,28 +17,24 @@ function configuredBaseUrl() {
   return requiredEnv("BETTER_AUTH_URL") || "http://localhost:3000";
 }
 
-export function allowedEmails() {
-  return (process.env.ANKIFY_ALLOWED_EMAILS ?? "")
+function configuredExtensionOrigins() {
+  const configured = (process.env.ANKIFY_EXTENSION_ORIGINS ?? "")
     .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.startsWith("chrome-extension://"));
+  if (configured.length === 0 && process.env.NODE_ENV !== "production") {
+    return ["chrome-extension://*"];
+  }
+  return configured;
 }
 
 /**
- * Open-signup mode: any Google account may sign up and use the app. Enables a
- * public deployment without maintaining an email allowlist. When on, it also
- * lifts the production requirement for ANKIFY_ALLOWED_EMAILS.
+ * Public signup is the default. This kill switch is reserved for an incident
+ * where new account creation must be paused without locking out existing users.
  */
-export function isOpenSignup() {
-  const flag = (process.env.ANKIFY_OPEN_SIGNUP ?? "").trim().toLowerCase();
-  return flag === "true" || flag === "1" || flag === "yes";
-}
-
-export function isAllowedEmail(email: string | null | undefined) {
-  if (isOpenSignup()) return Boolean(email);
-  const allowlist = allowedEmails();
-  if (allowlist.length === 0) return process.env.NODE_ENV !== "production";
-  return Boolean(email && allowlist.includes(email.toLowerCase()));
+export function isSignupEnabled() {
+  const flag = (process.env.ANKIFY_DISABLE_SIGNUP ?? "").trim().toLowerCase();
+  return !(flag === "true" || flag === "1" || flag === "yes");
 }
 
 export function ensureAuthConfigured() {
@@ -50,9 +43,6 @@ export function ensureAuthConfigured() {
   requiredEnv("GOOGLE_CLIENT_ID");
   requiredEnv("GOOGLE_CLIENT_SECRET");
   requiredEnv("AI_KEY_ENCRYPTION_SECRET");
-  if (process.env.NODE_ENV === "production" && !isOpenSignup() && allowedEmails().length === 0) {
-    throw new Error("ANKIFY_ALLOWED_EMAILS missing");
-  }
 }
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -65,7 +55,7 @@ export const auth = betterAuth({
     provider: "sqlite",
     schema,
   }),
-  trustedOrigins: [configuredBaseUrl()],
+  trustedOrigins: [configuredBaseUrl(), ...configuredExtensionOrigins()],
   socialProviders:
     googleClientId && googleClientSecret
       ? {
@@ -78,29 +68,11 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (nextUser) => isAllowedEmail(nextUser.email),
+        before: async () => isSignupEnabled(),
       },
     },
   },
-  plugins: [
-    apiKey({
-      apiKeyHeaders: API_KEY_HEADER,
-      references: "user",
-      enableSessionForAPIKeys: true,
-      defaultPrefix: "ank_",
-      requireName: true,
-      keyExpiration: {
-        defaultExpiresIn: null,
-        disableCustomExpiresTime: true,
-      },
-      rateLimit: {
-        enabled: true,
-        timeWindow: 24 * 60 * 60 * 1000,
-        maxRequests: 1000,
-      },
-    }),
-    nextCookies(),
-  ],
+  plugins: [nextCookies()],
 });
 
 export type AuthUser = {
@@ -128,12 +100,11 @@ export async function getUserFromHeaders(inputHeaders: Headers): Promise<AuthUse
       if (isAuthFailure(error)) return null;
       throw error;
     });
-  if (!result?.user || !isAllowedEmail(result.user.email)) return null;
+  if (!result?.user?.email) return null;
   return result.user;
 }
 
 export async function getSessionUserFromHeaders(inputHeaders: Headers): Promise<AuthUser | null> {
-  if (inputHeaders.get(API_KEY_HEADER)) return null;
   return getUserFromHeaders(inputHeaders);
 }
 
@@ -158,5 +129,3 @@ export async function getRequestSessionUser(req: Request) {
 export function unauthorizedResponse() {
   return Response.json({ error: "unauthorized" }, { status: 401 });
 }
-
-export { API_KEY_HEADER };

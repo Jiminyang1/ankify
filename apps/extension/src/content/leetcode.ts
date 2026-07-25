@@ -24,15 +24,23 @@ function csrfToken(): string | null {
 
 async function gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
   const token = csrfToken();
-  const res = await fetch(GRAPHQL, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { "x-csrftoken": token } : {}),
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  let res: Response;
+  try {
+    res = await fetch(GRAPHQL, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { "x-csrftoken": token } : {}),
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!res.ok) {
     // Surface the response body so we can see WHICH field/type is rejected.
     const body = await res.text().catch(() => "");
@@ -126,6 +134,13 @@ async function fetchRecentSubmissions(slug: string, limit = 5): Promise<RawSubmi
   }
 }
 
+/** True when any of the user's recent submissions for this slug is Accepted.
+ *  Used by the capture badge to detect solved-but-uncaptured problems. */
+export async function hasRecentAcceptedSubmission(slug: string, limit = 10): Promise<boolean> {
+  const recent = await fetchRecentSubmissions(slug, limit);
+  return recent.some((s) => s.statusDisplay === "Accepted");
+}
+
 async function fetchSubmissionDetails(submissionId: string) {
   type R = {
     submissionDetails: {
@@ -194,6 +209,20 @@ function parseMemoryKb(s: string | null): number | undefined {
   return m[2]!.toUpperCase() === "MB" ? Math.round(v * 1024) : Math.round(v);
 }
 
+async function mapConcurrent<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function captureCurrent(): Promise<CapturedProblem> {
   const slug = slugFromUrl();
   if (!slug) throw new Error("Not a LeetCode problem page");
@@ -207,15 +236,14 @@ export async function captureCurrent(): Promise<CapturedProblem> {
   const recent = await fetchRecentSubmissions(slug, 20);
   console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
 
-  const submissions: CapturedSubmission[] = [];
-  for (const s of recent) {
+  const detailResults = await mapConcurrent(recent, 4, async (s): Promise<CapturedSubmission | null> => {
     try {
       const d = await fetchSubmissionDetails(s.id);
       if (!d) {
         console.warn("[ankify] submissionDetails returned null for", s.id);
-        continue;
+        return null;
       }
-      submissions.push({
+      return {
         leetcodeSubmissionId: s.id,
         language: d.lang.verboseName || d.lang.name,
         code: d.code,
@@ -227,11 +255,13 @@ export async function captureCurrent(): Promise<CapturedProblem> {
         actualOutput: d.codeOutput ?? undefined,
         errorMessage: d.runtimeError ?? d.compileError ?? undefined,
         submittedAt: new Date(d.timestamp * 1000).toISOString(),
-      });
+      };
     } catch (err) {
       console.warn("[ankify] submissionDetails failed for", s.id, err);
+      return null;
     }
-  }
+  });
+  const submissions = detailResults.filter((submission): submission is CapturedSubmission => submission != null);
   console.log(`[ankify] captured ${submissions.length} submission details`);
 
   let similarSlugs: string[] = [];

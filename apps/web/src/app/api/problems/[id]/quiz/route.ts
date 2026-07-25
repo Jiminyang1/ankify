@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas, type QuizItem } from "@ankify/core";
 import { getDb, schema, type QuizSession } from "@ankify/db";
@@ -9,6 +9,7 @@ import { aiRouteErrorResponse } from "@/lib/ai-errors";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildQuizPrompt } from "@/lib/quiz-prompt";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { MAX_QUIZ_SESSIONS_PER_PROBLEM } from "@/lib/resource-limits";
 
 export const maxDuration = 180;
 
@@ -57,7 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   // Past the cached/early-return paths — everything below calls the LLM.
-  const limit = checkRateLimit(`ai:${user.id}`, RATE_LIMITS.ai);
+  const limit = await checkRateLimit(user.id, "ai", RATE_LIMITS.ai);
   if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
   try {
@@ -65,8 +66,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const items = await generateQuizItems(user.id, problemId, history);
     const now = new Date();
     const sessionId = nanoid(12);
+    let persistedSessionId = sessionId;
+    let quizSessionLimitReached = false;
 
     await db.transaction(async (tx) => {
+      // A second generate request may have passed the pre-LLM check while this
+      // request was still waiting on the provider. Re-check under the write
+      // transaction so only one current session is persisted.
+      if (parsed.data.action === "generate") {
+        const [winner] = await tx
+          .select({ id: schema.quizSessions.id })
+          .from(schema.quizSessions)
+          .where(
+            and(
+              eq(schema.quizSessions.userId, user.id),
+              eq(schema.quizSessions.problemId, problemId),
+              ne(schema.quizSessions.status, "archived"),
+            ),
+          )
+          .orderBy(desc(schema.quizSessions.createdAt))
+          .limit(1);
+        if (winner) {
+          persistedSessionId = winner.id;
+          return;
+        }
+      }
+
       if (parsed.data.action === "regenerate" || parsed.data.action === "nextBatch") {
         await tx
           .update(schema.quizSessions)
@@ -78,6 +103,41 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
               ne(schema.quizSessions.status, "archived"),
             ),
           );
+      }
+
+      const [{ count } = { count: 0 }] = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.quizSessions)
+        .where(
+          and(
+            eq(schema.quizSessions.userId, user.id),
+            eq(schema.quizSessions.problemId, problemId),
+          ),
+        );
+      const pruneCount = Math.max(
+        0,
+        count - MAX_QUIZ_SESSIONS_PER_PROBLEM + 1,
+      );
+      if (pruneCount > 0) {
+        const expired = await tx
+          .select({ id: schema.quizSessions.id })
+          .from(schema.quizSessions)
+          .where(
+            and(
+              eq(schema.quizSessions.userId, user.id),
+              eq(schema.quizSessions.problemId, problemId),
+              eq(schema.quizSessions.status, "archived"),
+            ),
+          )
+          .orderBy(asc(schema.quizSessions.createdAt))
+          .limit(pruneCount);
+        if (expired.length < pruneCount) {
+          quizSessionLimitReached = true;
+          return;
+        }
+        await tx
+          .delete(schema.quizSessions)
+          .where(inArray(schema.quizSessions.id, expired.map((session) => session.id)));
       }
 
       await tx.insert(schema.quizSessions).values({
@@ -94,10 +154,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       });
     });
 
+    if (quizSessionLimitReached) {
+      return NextResponse.json(
+        {
+          error: "quiz_session_limit_reached",
+          message: "Archive or delete the current quiz before generating another.",
+        },
+        { status: 403 },
+      );
+    }
+
     const [session] = await db
       .select()
       .from(schema.quizSessions)
-      .where(and(eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.userId, user.id)));
+      .where(and(eq(schema.quizSessions.id, persistedSessionId), eq(schema.quizSessions.userId, user.id)));
     return NextResponse.json({ ok: true, session });
   } catch (err) {
     return quizErrorResponse(err);

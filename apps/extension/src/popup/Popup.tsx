@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatQuizMarkdown } from "@ankify/core";
-import type { CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
+import type { BackgroundRequest, CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
 import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
 import { PopupMarkdown } from "./PopupMarkdown";
 
@@ -72,6 +72,17 @@ type State =
   | { kind: "not-saved"; slug: string }
   | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
   | { kind: "error"; msg: string };
+
+type AuthAccount = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+type AuthState =
+  | { kind: "loading" }
+  | { kind: "signed-out" }
+  | { kind: "signed-in"; account: AuthAccount };
 
 // Pinned reference to the most recent successful capture. Survives across tab
 // switches so the popup can keep showing the last problem (with a "jump back"
@@ -272,6 +283,8 @@ const EXT_I18N = {
     capture: {
       notInDeck: "Not in your deck",
       notCaptured: (slug: string) => `Problem ${slug} hasn't been captured.`,
+      helperUnavailable:
+        "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
       reading: "Reading...",
       captureThis: "Capture this problem",
       add: "Add to ankify",
@@ -290,23 +303,30 @@ const EXT_I18N = {
       languageHelp: "Interface language",
       themeHelp: "Popup color mode",
       connection: "Connection",
-      connectionHelp: "API base URL and token the extension uses to reach your ankify web app.",
+      connectionHelp: "The extension securely reuses your ankify web login session. No API token is needed.",
       reviewGuard: "Review guard",
       reviewGuardHelp: "Keeps LeetCode problem pages clean while reviewing.",
       resetCode: "Reset code on problem pages",
       resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
       apiBaseUrl: "API base URL",
-      apiToken: "User API token",
       saveConnection: "Save connection",
       testConnection: "Test connection",
       testing: "Testing...",
       saved: "Saved.",
-      tokenHint: "Create a token in web Settings, then paste it here.",
-      required: "API base URL and token are required.",
+      required: "API base URL is required.",
+      invalidUrl: "Use an HTTPS API origin (or localhost for development).",
+      permissionDenied: "Chrome permission for this API origin was not granted.",
       checking: "Checking connection...",
       connectedAs: (email: string) => `Connected as ${email}.`,
       thisUser: "this user",
       failed: "Connection failed.",
+      signIn: "Continue with Google",
+      signingIn: "Waiting for Google sign-in...",
+      signInTitle: "Sign in to ankify",
+      signInBody: "Use the same Google account as the ankify web app. If you are already signed in, connection is automatic.",
+      refreshSession: "Check again",
+      manageAccount: "Open web account",
+      loginTimedOut: "Sign-in was not completed. Finish signing in on the web, then check again.",
     },
   },
   zh: {
@@ -459,6 +479,7 @@ const EXT_I18N = {
     capture: {
       notInDeck: "不在你的题库中",
       notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
+      helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
       reading: "读取中...",
       captureThis: "捕获这道题",
       add: "添加到 ankify",
@@ -472,23 +493,30 @@ const EXT_I18N = {
       languageHelp: "界面语言",
       themeHelp: "弹窗颜色模式",
       connection: "连接",
-      connectionHelp: "插件用这里的 API 地址和 token 连接你的 ankify Web 服务。",
+      connectionHelp: "扩展会安全复用 ankify 网页登录会话，不再需要 API token。",
       reviewGuard: "复习保护",
       reviewGuardHelp: "复习时保持 LeetCode 题目页干净。",
       resetCode: "打开题目时重置代码",
       resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
       apiBaseUrl: "API base URL",
-      apiToken: "用户 API token",
       saveConnection: "保存连接",
       testConnection: "测试连接",
       testing: "测试中...",
       saved: "已保存。",
-      tokenHint: "在 Web 设置中创建 token，然后粘贴到这里。",
-      required: "需要 API base URL 和 token。",
+      required: "需要 API base URL。",
+      invalidUrl: "请使用 HTTPS API 地址（本地开发可使用 localhost）。",
+      permissionDenied: "未授予此 API 地址所需的 Chrome 权限。",
       checking: "正在检查连接...",
       connectedAs: (email: string) => `已连接为 ${email}。`,
       thisUser: "此用户",
       failed: "连接失败。",
+      signIn: "使用 Google 继续",
+      signingIn: "等待 Google 登录...",
+      signInTitle: "登录 ankify",
+      signInBody: "请使用与 ankify 网页相同的 Google 账号；如果网页已经登录，扩展会自动连接。",
+      refreshSession: "重新检查",
+      manageAccount: "打开网页账号",
+      loginTimedOut: "登录尚未完成。请先在网页完成登录，然后重新检查。",
     },
   },
 } as const;
@@ -532,6 +560,7 @@ const QUIZ_PENDING_TTL_MS = 125_000;
 const AI_CARD_PENDING_TTL_MS = 65_000;
 const CARD_GENERATION_TARGET_SECONDS = 60;
 const PENDING_OPERATION_EVENT = "ankify:pending-operation";
+const AUTH_REQUIRED_EVENT = "ankify:auth-required";
 
 type PendingOperation = {
   id: string;
@@ -542,22 +571,47 @@ type PendingOperation = {
 /* ── helpers ── */
 
 function jsonHeaders(settings: ExtSettings): HeadersInit {
-  const h: Record<string, string> = { "content-type": "application/json" };
-  if (settings.apiToken) h["x-ankify-token"] = settings.apiToken;
-  return h;
+  void settings;
+  return { "content-type": "application/json" };
 }
 
 function authHeaders(settings: ExtSettings): HeadersInit {
-  return settings.apiToken ? { "x-ankify-token": settings.apiToken } : {};
+  void settings;
+  return {};
+}
+
+async function apiFetch(settings: ExtSettings, path: string, init?: RequestInit) {
+  const base = settings.apiBaseUrl.replace(/\/+$/, "");
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    credentials: "include",
+  });
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+  }
+  return response;
+}
+
+async function loadSessionAccount(apiBaseUrl: string): Promise<AuthAccount | null> {
+  const base = apiBaseUrl.replace(/\/+$/, "");
+  const response = await fetch(`${base}/api/me`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error(`Connection failed (${response.status})`);
+  const data = (await response.json()) as { user?: AuthAccount };
+  return data.user ?? null;
 }
 
 /* Per-field caps mirror packages/core/src/schemas.ts captureProblemSchema. */
 const CAPTURE_LIMITS = {
   descriptionMd: 200_000,
-  code: 200_000,
-  output: 50_000,
+  code: 100_000,
+  output: 20_000,
   errorMessage: 10_000,
-  submissions: 50,
+  submissions: 20,
+  requestBytes: 3_800_000,
 } as const;
 
 function clip(value: string | undefined, max: number): string | undefined {
@@ -580,12 +634,51 @@ function trimCapturePayload(p: CapturedProblem): CapturedProblem {
   };
 }
 
-async function readActiveProblem(): Promise<CapturedProblem> {
+function encodeCapturePayload(problem: CapturedProblem): string {
+  const payload = trimCapturePayload(problem);
+  let body = JSON.stringify(payload);
+  const encoder = new TextEncoder();
+
+  // Vercel Functions reject request bodies above 4.5 MB. Keep enough margin
+  // for UTF-8 expansion and platform framing by dropping the oldest captured
+  // submissions until the serialized request is safely below that ceiling.
+  while (
+    payload.submissions.length > 0 &&
+    encoder.encode(body).byteLength > CAPTURE_LIMITS.requestBytes
+  ) {
+    payload.submissions.pop();
+    body = JSON.stringify(payload);
+  }
+
+  if (encoder.encode(body).byteLength > CAPTURE_LIMITS.requestBytes) {
+    throw new Error("Capture payload is too large even without submissions.");
+  }
+  return body;
+}
+
+function isMissingContentScriptError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Receiving end does not exist") ||
+    message.includes("Could not establish connection") ||
+    message.includes("Extension context invalidated")
+  );
+}
+
+async function readActiveProblem(settings: ExtSettings): Promise<CapturedProblem> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab.");
-  const resp = (await chrome.tabs.sendMessage(tab.id, {
-    type: "capture_current_problem",
-  })) as ContentResponse;
+  let resp: ContentResponse;
+  try {
+    resp = (await chrome.tabs.sendMessage(tab.id, {
+      type: "capture_current_problem",
+    })) as ContentResponse;
+  } catch (error) {
+    if (isMissingContentScriptError(error)) {
+      throw new Error(getExtText(settings).capture.helperUnavailable);
+    }
+    throw error;
+  }
   if (resp.type !== "captured") {
     throw new Error(resp.type === "error" ? resp.message : "Unexpected response");
   }
@@ -593,14 +686,21 @@ async function readActiveProblem(): Promise<CapturedProblem> {
 }
 
 async function saveCapturedProblem(settings: ExtSettings, problem: CapturedProblem): Promise<CaptureResult> {
-  const res = await fetch(`${settings.apiBaseUrl}/api/capture`, {
+  const res = await apiFetch(settings, "/api/capture", {
     method: "POST",
     headers: jsonHeaders(settings),
-    body: JSON.stringify(trimCapturePayload(problem)),
+    body: encodeCapturePayload(problem),
   });
   if (!res.ok) {
     const j = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(j?.error ?? `HTTP ${res.status}`);
+  }
+  // Tell the background worker so open tabs drop their "uncaptured" badge.
+  const badgeMsg: BackgroundRequest = { type: "capture_badge_captured", slug: problem.leetcodeSlug };
+  try {
+    void chrome.runtime.sendMessage(badgeMsg).catch(() => {});
+  } catch {
+    /* background unavailable — the next content-script check reconciles */
   }
   return (await res.json()) as CaptureResult;
 }
@@ -736,7 +836,7 @@ async function fetchProblemBySlug(
   settings: ExtSettings,
   slug: string,
 ): Promise<{ problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews } | "not_captured"> {
-  const res = await fetch(`${settings.apiBaseUrl}/api/problems/by-slug/${encodeURIComponent(slug)}`, {
+  const res = await apiFetch(settings, `/api/problems/by-slug/${encodeURIComponent(slug)}`, {
     headers: authHeaders(settings),
   });
   if (res.status === 404) return "not_captured";
@@ -775,6 +875,7 @@ export function Popup() {
   const [state, setState] = useState<State>({ kind: "detecting" });
   const [sticky, setSticky] = useState<Sticky | null>(null);
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
+  const [authState, setAuthState] = useState<AuthState>({ kind: "loading" });
   const [tab, setTab] = useState<NavTab>("today");
   const [theme, setTheme] = useState<ThemePreference>("system");
 
@@ -803,6 +904,30 @@ export function Popup() {
     getSettings().then(setLocalSettings);
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    if (!settings?.apiBaseUrl) {
+      setAuthState({ kind: "signed-out" });
+      return;
+    }
+    setAuthState({ kind: "loading" });
+    try {
+      const account = await loadSessionAccount(settings.apiBaseUrl);
+      setAuthState(account ? { kind: "signed-in", account } : { kind: "signed-out" });
+    } catch {
+      setAuthState({ kind: "signed-out" });
+    }
+  }, [settings?.apiBaseUrl]);
+
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  useEffect(() => {
+    const requireAuth = () => setAuthState({ kind: "signed-out" });
+    window.addEventListener(AUTH_REQUIRED_EVENT, requireAuth);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, requireAuth);
+  }, []);
+
   // Tracks the slug we last initiated a detect for. Auto-triggered detects
   // (tab activation / URL update) skip when the slug hasn't changed so the
   // popup doesn't tear itself down to the "detecting" / "loading" placeholder
@@ -812,7 +937,7 @@ export function Popup() {
 
   const detect = useCallback(
     async (opts?: { force?: boolean }) => {
-      if (!settings) return;
+      if (!settings || authState.kind !== "signed-in") return;
       const force = opts?.force ?? false;
 
       let activeUrl: string | undefined;
@@ -858,12 +983,12 @@ export function Popup() {
         setState({ kind: "error", msg: e instanceof Error ? e.message : getExtText(settings).common.unknownError });
       }
     },
-    [settings],
+    [settings, authState.kind],
   );
 
   useEffect(() => {
-    if (settings) void detect();
-  }, [settings, detect]);
+    if (settings && authState.kind === "signed-in") void detect();
+  }, [settings, authState.kind, detect]);
 
   /* Side Panel persists across tab changes — re-detect on tab swap or real
    * URL change. We deliberately ignore `info.status === "complete"` because
@@ -871,7 +996,7 @@ export function Popup() {
    * unchanged, and the slug-equality guard inside `detect()` would skip the
    * work anyway — listening to `info.url` keeps the listener noise low too. */
   useEffect(() => {
-    if (!settings) return;
+    if (!settings || authState.kind !== "signed-in") return;
     const onActivated = () => void detect();
     const onUpdated = (_tabId: number, info: chrome.tabs.TabChangeInfo, t: chrome.tabs.Tab) => {
       if (!t.active) return;
@@ -883,10 +1008,33 @@ export function Popup() {
       chrome.tabs.onActivated.removeListener(onActivated);
       chrome.tabs.onUpdated.removeListener(onUpdated);
     };
-  }, [settings, detect]);
+  }, [settings, authState.kind, detect]);
 
   const captured = state.kind === "captured" ? state : null;
   const text = settings ? getExtText(settings) : EXT_I18N.en;
+
+  if (!settings || authState.kind === "loading") {
+    return (
+      <div className="popup-shell">
+        <main className="popup-main">
+          <div className="panel">
+            <p className="popup-muted">{text.settings.checking}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (authState.kind === "signed-out") {
+    return (
+      <SignInGate
+        settings={settings}
+        onSave={saveLocalSettings}
+        onAuthenticated={(account) => setAuthState({ kind: "signed-in", account })}
+        onRefresh={() => void refreshSession()}
+      />
+    );
+  }
 
   // Jump back to the LeetCode tab where the sticky problem was last seen.
   // Falls back to any open tab on that slug if the original tab is gone, or
@@ -963,6 +1111,7 @@ export function Popup() {
           <div className="tab-pane" key="settings">
             <SettingsTab
               settings={settings}
+              account={authState.account}
               theme={theme}
               onThemeChange={setThemePreference}
               onSave={saveLocalSettings}
@@ -991,7 +1140,7 @@ function TodayTab({
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/review/queue?limit=20`, {
+      const res = await apiFetch(settings, "/api/review/queue?limit=20", {
         headers: authHeaders(settings),
       });
       if (!res.ok) {
@@ -1185,7 +1334,7 @@ function ProblemTab({
 
     setSyncState({ busy: true, message: null, tone: "success" });
     try {
-      const capturedProblem = await readActiveProblem();
+      const capturedProblem = await readActiveProblem(settings);
       if (capturedProblem.leetcodeSlug !== displayCaptured.problem.leetcodeSlug) {
         throw new Error(`Active tab is ${capturedProblem.leetcodeSlug}, not ${displayCaptured.problem.leetcodeSlug}.`);
       }
@@ -1543,7 +1692,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     setFeedback(null);
     setSavedItemIds(new Set());
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
         headers: authHeaders(settings),
       });
       const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
@@ -1611,7 +1760,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     setFeedback(null);
     setShowResults(false);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ action }),
@@ -1644,7 +1793,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     }
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
         method: "DELETE",
         headers: authHeaders(settings),
       });
@@ -1670,7 +1819,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     setSubmittingItem(true);
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}`, {
         method: "PATCH",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ itemId: item.id, selectedIndex }),
@@ -1704,7 +1853,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     setSavingItemId(item.id);
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ itemId: item.id }),
@@ -2360,7 +2509,7 @@ function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtS
     if (value === savedRef.current) return;
     setStatus("saving");
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}`, {
         method: "PATCH",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ notes: value }),
@@ -2427,15 +2576,17 @@ function QuickRate({
   const [rating, setRating] = useState<FsrsRating>(3);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef<string | null>(null);
 
   async function submit() {
+    requestIdRef.current ??= crypto.randomUUID();
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/review/rate`, {
+      const res = await apiFetch(settings, "/api/review/rate", {
         method: "POST",
         headers: jsonHeaders(settings),
-        body: JSON.stringify({ problemId, rating }),
+        body: JSON.stringify({ problemId, rating, requestId: requestIdRef.current }),
       });
       if (res.status === 409) {
         setError(t.review.alreadyRated);
@@ -2446,6 +2597,7 @@ function QuickRate({
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      requestIdRef.current = null;
       onRated();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.review.rateFailed);
@@ -2508,7 +2660,7 @@ function CardList({
     if (!window.confirm(t.cards.deleteConfirm)) return;
     setDeletingId(cardId);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/cards`, {
+      const res = await apiFetch(settings, "/api/cards", {
         method: "DELETE",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ ids: [cardId] }),
@@ -2649,7 +2801,7 @@ function AddCardForm({
     setBusy("manual");
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/user-card`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/user-card`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ mode: "manual", question: question.trim(), answer: answer.trim() }),
@@ -2676,7 +2828,7 @@ function AddCardForm({
     setBusy(kind);
     setError(null);
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({
@@ -2846,7 +2998,7 @@ function CandidateList({
   }
 
   async function patchCard(id: string, body: Record<string, unknown>) {
-    const res = await fetch(`${settings.apiBaseUrl}/api/cards/${id}`, {
+    const res = await apiFetch(settings, `/api/cards/${id}`, {
       method: "PATCH",
       headers: jsonHeaders(settings),
       body: JSON.stringify(body),
@@ -2865,7 +3017,7 @@ function CandidateList({
     writePendingOperation(pendingKey, "followup");
     update(card.id, { busy: "followup", localError: null });
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/problems/${problem.id}/ai-cards`, {
+      const res = await apiFetch(settings, `/api/problems/${problem.id}/ai-cards`, {
         method: "POST",
         headers: jsonHeaders(settings),
         body: JSON.stringify({
@@ -2902,7 +3054,7 @@ function CandidateList({
   async function discard(id: string) {
     update(id, { busy: "discard", localError: null });
     try {
-      const res = await fetch(`${settings.apiBaseUrl}/api/cards`, {
+      const res = await apiFetch(settings, "/api/cards", {
         method: "DELETE",
         headers: jsonHeaders(settings),
         body: JSON.stringify({ ids: [id] }),
@@ -3021,7 +3173,7 @@ function CaptureView({
   async function readPage() {
     setBusy(true);
     try {
-      setPreview(await readActiveProblem());
+      setPreview(await readActiveProblem(settings));
     } catch (e) {
       onError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
@@ -3091,6 +3243,102 @@ function CaptureView({
 
 /* ── SettingsTab ── */
 
+function SignInGate({
+  settings,
+  onSave,
+  onAuthenticated,
+  onRefresh,
+}: {
+  settings: ExtSettings;
+  onSave: (next: Partial<ExtSettings>) => void;
+  onAuthenticated: (account: AuthAccount) => void;
+  onRefresh: () => void;
+}) {
+  const t = getExtText(settings);
+  const [base, setBase] = useState(settings.apiBaseUrl);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const normalizedBase = base.trim().replace(/\/+$/, "");
+
+  async function beginSignIn() {
+    setError(null);
+    const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
+    if (!permittedBase) {
+      setError(isValidApiOrigin(normalizedBase) ? t.settings.permissionDenied : t.settings.invalidUrl);
+      return;
+    }
+
+    setBase(permittedBase);
+    setBusy(true);
+
+    try {
+      const loginUrl = `${permittedBase}/login?next=${encodeURIComponent("/extension-connected")}`;
+      const loginTab = await chrome.tabs.create({ url: loginUrl });
+
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const account = await loadSessionAccount(permittedBase).catch(() => null);
+        if (account) {
+          onSave({ apiBaseUrl: permittedBase });
+          if (loginTab.id != null) {
+            // The session cookie can become visible a moment before the OAuth
+            // callback finishes navigating. Give the confirmation page a short
+            // window to load so the extension can close only its own auth tab.
+            for (let navigationAttempt = 0; navigationAttempt < 20; navigationAttempt += 1) {
+              const current = await chrome.tabs.get(loginTab.id).catch(() => null);
+              if (!current) break;
+              if (current.url?.startsWith(`${permittedBase}/extension-connected`)) {
+                await chrome.tabs.remove(loginTab.id).catch(() => {});
+                break;
+              }
+              await new Promise((resolve) => window.setTimeout(resolve, 250));
+            }
+          }
+          onAuthenticated(account);
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+
+      setError(t.settings.loginTimedOut);
+    } catch (signInError) {
+      setError(signInError instanceof Error ? signInError.message : t.settings.failed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="popup-shell">
+      <main className="popup-main">
+        <div className="panel auth-gate">
+          <div className="auth-gate-mark" aria-hidden="true">A</div>
+          <h1>{t.settings.signInTitle}</h1>
+          <p className="popup-muted">{t.settings.signInBody}</p>
+          <label className="auth-gate-origin">
+            <span>{t.settings.apiBaseUrl}</span>
+            <input
+              type="text"
+              value={base}
+              onChange={(event) => setBase(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <div className="settings-actions">
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void beginSignIn()}>
+              {busy ? t.settings.signingIn : t.settings.signIn}
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRefresh}>
+              {t.settings.refreshSession}
+            </button>
+          </div>
+          {error ? <p className="connection-status connection-status-error">{error}</p> : null}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 function SettingsInfoTip({ label, align = "center" }: { label: string; align?: "center" | "left" | "right" }) {
   return (
     <span className="settings-info-tip" data-align={align} tabIndex={0} role="img" aria-label={label}>
@@ -3126,18 +3374,19 @@ function SettingsTitle({
 
 function SettingsTab({
   settings,
+  account,
   theme,
   onThemeChange,
   onSave,
 }: {
   settings: ExtSettings;
+  account: AuthAccount;
   theme: ThemePreference;
   onThemeChange: (next: ThemePreference) => void;
   onSave: (next: Partial<ExtSettings>) => void;
 }) {
   const t = getExtText(settings);
   const [base, setBase] = useState(settings.apiBaseUrl);
-  const [token, setToken] = useState(settings.apiToken);
   const [savedFlash, setSavedFlash] = useState(false);
   const [testState, setTestState] = useState<{ kind: "idle" | "loading" | "success" | "error"; message: string }>({
     kind: "idle",
@@ -3147,15 +3396,27 @@ function SettingsTab({
   const normalizedBase = base.trim().replace(/\/+$/, "");
 
   async function testConnection() {
-    if (!normalizedBase || !token.trim()) {
+    if (!normalizedBase) {
       setTestState({ kind: "error", message: t.settings.required });
+      return;
+    }
+
+    const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
+    if (!permittedBase) {
+      setTestState({
+        kind: "error",
+        message: isValidApiOrigin(normalizedBase)
+          ? t.settings.permissionDenied
+          : t.settings.invalidUrl,
+      });
       return;
     }
 
     setTestState({ kind: "loading", message: t.settings.checking });
     try {
-      const res = await fetch(`${normalizedBase}/api/me`, {
-        headers: token.trim() ? { "x-ankify-token": token.trim() } : {},
+      const res = await fetch(`${permittedBase}/api/me`, {
+        credentials: "include",
+        cache: "no-store",
       });
       const data = (await res.json().catch(() => null)) as { user?: { email?: string }; error?: string } | null;
       if (!res.ok) {
@@ -3250,32 +3511,27 @@ function SettingsTab({
             <span className="settings-field-label">{t.settings.apiBaseUrl}</span>
             <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
-          <label>
-            <span className="settings-field-label">{t.settings.apiToken}</span>
-            <input
-              name="ankify-extension-api-token"
-              type="text"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-form-type="other"
-              style={token ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties) : undefined}
-            />
-          </label>
         </div>
+        <p className="connection-status connection-status-success">
+          {t.settings.connectedAs(account.email)}
+        </p>
         <div className="settings-actions">
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => {
-              onSave({ apiBaseUrl: normalizedBase, apiToken: token.trim() });
-              setBase(normalizedBase);
-              setToken(token.trim());
+            onClick={async () => {
+              const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
+              if (!permittedBase) {
+                setTestState({
+                  kind: "error",
+                  message: isValidApiOrigin(normalizedBase)
+                    ? t.settings.permissionDenied
+                    : t.settings.invalidUrl,
+                });
+                return;
+              }
+              onSave({ apiBaseUrl: permittedBase });
+              setBase(permittedBase);
               setSavedFlash(true);
               setTimeout(() => setSavedFlash(false), 2000);
             }}
@@ -3285,6 +3541,13 @@ function SettingsTab({
           <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testState.kind === "loading"}>
             {testState.kind === "loading" ? t.settings.testing : t.settings.testConnection}
           </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void chrome.tabs.create({ url: `${settings.apiBaseUrl.replace(/\/+$/, "")}/settings` })}
+          >
+            {t.settings.manageAccount}
+          </button>
           {savedFlash ? <p className="popup-muted">{t.settings.saved}</p> : null}
         </div>
         {testState.message ? (
@@ -3293,4 +3556,35 @@ function SettingsTab({
       </section>
     </div>
   );
+}
+
+function parseApiOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const local =
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "[::1]";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+      return null;
+    }
+    if (url.username || url.password) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isValidApiOrigin(value: string) {
+  return parseApiOrigin(value) !== null;
+}
+
+async function requestApiOriginPermission(value: string): Promise<string | null> {
+  const origin = parseApiOrigin(value);
+  if (!origin) return null;
+  const origins = [`${origin}/*`];
+  const alreadyGranted = await chrome.permissions.contains({ origins });
+  if (alreadyGranted) return origin;
+  const granted = await chrome.permissions.request({ origins });
+  return granted ? origin : null;
 }

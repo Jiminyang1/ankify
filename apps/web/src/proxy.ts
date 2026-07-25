@@ -1,14 +1,27 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const API_METHODS = "GET,POST,PATCH,DELETE,OPTIONS";
-const API_HEADERS = "Content-Type, X-Ankify-Token";
+const API_HEADERS = "Content-Type";
+
+function allowedExtensionOrigins() {
+  return (process.env.ANKIFY_EXTENSION_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.startsWith("chrome-extension://"));
+}
 
 function withApiCors(req: NextRequest, res: NextResponse) {
   const origin = req.headers.get("origin");
-  if (origin?.startsWith("chrome-extension://")) {
+  const allowlist = allowedExtensionOrigins();
+  const allowed =
+    origin?.startsWith("chrome-extension://") &&
+    (allowlist.includes(origin) ||
+      (allowlist.length === 0 && process.env.NODE_ENV !== "production"));
+  if (origin && allowed) {
     res.headers.set("Access-Control-Allow-Origin", origin);
     res.headers.set("Access-Control-Allow-Methods", API_METHODS);
     res.headers.set("Access-Control-Allow-Headers", API_HEADERS);
+    res.headers.set("Access-Control-Allow-Credentials", "true");
     res.headers.set("Access-Control-Max-Age", "86400");
     res.headers.append("Vary", "Origin");
   }
@@ -17,21 +30,25 @@ function withApiCors(req: NextRequest, res: NextResponse) {
 
 /**
  * Lightweight gate only. API routes and server pages validate the Better Auth
- * session/API key again before touching data.
+ * session again before touching data.
  */
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
-  const isAuthRoute = pathname === "/login" || pathname.startsWith("/api/auth/");
-
-  if (isAuthRoute) return NextResponse.next();
+  const isPublicRoute =
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname.startsWith("/api/auth/");
 
   if (isApi && req.method === "OPTIONS") {
     return withApiCors(req, new NextResponse(null, { status: 204 }));
   }
 
-  if (isApi && req.headers.get("x-ankify-token")) {
-    return withApiCors(req, NextResponse.next());
+  if (isPublicRoute) {
+    const res = NextResponse.next();
+    return isApi ? withApiCors(req, res) : res;
   }
 
   const hasSessionCookie = req.cookies

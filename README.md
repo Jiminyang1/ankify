@@ -63,7 +63,7 @@ The popup mirrors the web app: Quiz / Cards / Notes tabs, a rating bar, and a `R
 | Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6, state stored on the `problems` row. Cards and quizzes feed recall but only the problem is scheduled. |
 | AI | Vercel AI SDK with Claude, OpenAI, DeepSeek (V4 thinking + non-thinking), or any OpenAI-compatible provider. User-supplied keys, encrypted at rest with AES-256-GCM. |
 | Capture | Content script on `leetcode.com/problems/*` reads the GraphQL endpoint for problem + submission detail. |
-| Auth | Better Auth + Google OAuth, email allowlist on signup. The extension authenticates with per-user API tokens (`x-ankify-token`) instead of OAuth. |
+| Auth | Better Auth + Google OAuth with public signup. The extension reuses the same secure web session, so users never create or paste a separate token. |
 | Data | Turso / libSQL for production, local SQLite for dev. Drizzle ORM. Every business table scoped by `userId`. |
 | Web + API | Next.js 16 App Router, TypeScript, Tailwind. |
 | Extension | Chrome MV3, Vite, React. |
@@ -81,48 +81,95 @@ pnpm install
 cp .env.example .env.local        # local profile (SQLite + localhost auth)
 pnpm db:migrate                    # creates packages/db/local.db
 pnpm dev                           # http://localhost:3000
-pnpm dev:ext                       # extension watch build
+pnpm dev:ext                       # extension dev server with HMR
 ```
 
-Fill `.env.local` with Better Auth + Google OAuth credentials, an email allowlist, and `AI_KEY_ENCRYPTION_SECRET`. Leave `TURSO_*` empty so the app uses the local SQLite. AI provider keys are saved per-user from the Settings page, never read from server env vars.
+Fill `.env.local` with Better Auth + Google OAuth credentials and `AI_KEY_ENCRYPTION_SECRET`. Leave `TURSO_*` empty so the app uses the local SQLite. AI provider keys are saved per-user from the Settings page, never read from server env vars.
 
-Load the unpacked extension from `apps/extension/dist/` (`chrome://extensions` → Developer mode → Load unpacked). Set the extension's API base URL to `http://localhost:3000` and paste a token generated in web Settings.
+Load the unpacked extension from `apps/extension/dist/` (`chrome://extensions` → Developer mode → Load unpacked). Set the extension's API base URL to `http://localhost:3000`, sign into the web app with Google, and open the extension. It detects the shared session automatically.
 
-## Two profiles, two scripts, no accidents
+Use `pnpm dev:ext` while editing the extension so CRXJS can refresh extension pages and content scripts. After a production `pnpm build`, reload Ankify once in `chrome://extensions`, then refresh any already-open LeetCode tabs; production builds replace hashed content-script files.
 
-The repo separates the local dev profile from the production profile so a `db:migrate` in dev can never accidentally hit Turso, and vice versa.
+## Isolated local, Preview, and Production profiles
+
+The repo separates local development, Vercel Preview, and Production so a local
+command cannot silently fall back to or mutate a deployed database.
 
 | Profile | DB | Auth URL | Env file | Used by |
 | --- | --- | --- | --- | --- |
 | `local` (default) | SQLite at `LOCAL_DB_PATH` | `http://localhost:3000` | `.env.local` | `pnpm dev`, `db:migrate`, `db:studio`, `db:generate` |
+| `preview` | dedicated Preview Turso DB | stable Preview branch domain | `.env.preview.local` | `db:migrate:preview`, `db:studio:preview` |
 | `production` | Turso (`TURSO_DATABASE_URL`) | your Vercel URL | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
 
-`pnpm dev` always runs against `local`. Production is served by Vercel using env vars from the Vercel dashboard. The `.env.production.local` file is only needed when running prod migrations from your laptop — it must not be committed. `AI_KEY_ENCRYPTION_SECRET` in that file MUST match the value set on Vercel; rotating it orphans every encrypted AI key in the prod DB.
+`pnpm dev` always runs against `local`. Vercel reads its runtime variables from
+the dashboard; the two deployed `.env.*.local` files are only for explicitly
+running migrations from your laptop and must never be committed. Each
+environment needs its own database, auth secret, and encryption secret.
+`AI_KEY_ENCRYPTION_SECRET` must remain stable within one database; losing or
+rotating it without re-encryption orphans every stored AI key.
 
 ## Deploy to Vercel
 
 Use Turso for production. Do not deploy with local SQLite on Vercel.
 
 1. Create a Turso database and token.
-2. Set the following Vercel environment variables (Production + Preview):
+2. Configure **Production** variables in Vercel:
    - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
    - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-   - `ANKIFY_ALLOWED_EMAILS`
    - `AI_KEY_ENCRYPTION_SECRET`
-3. Run the first migration against Turso from your laptop:
+   - `ANKIFY_DEPLOYMENT_ENV=production`
+   - `ANKIFY_EXTENSION_ORIGINS=chrome-extension://<extension-id>`
+   - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
+     emergency kill switch for new accounts; existing users can still sign in.
+3. Configure the same names under **Preview**, but use a separate Turso
+   database, separate secrets, `ANKIFY_DEPLOYMENT_ENV=preview`, a stable Preview
+   branch domain for `BETTER_AUTH_URL`, and normally
+   `ANKIFY_DISABLE_SIGNUP=true`. Register that domain's Google callback URL if
+   Preview login is required.
+4. Before the first Production deployment—and before every deployment that
+   contains a new migration—back up and migrate from one controlled terminal:
    ```bash
-   pnpm db:migrate:prod
+   pnpm db:release
    ```
-   After that, every Vercel deploy auto-runs the migration before `next build` (see the `vercel-build` script in `apps/web/package.json`). Drizzle's migration ledger keeps it idempotent — unchanged schema is a no-op.
-4. Import the repo on Vercel as a monorepo project with root directory `apps/web`. Build command `pnpm build`, install command `pnpm install --frozen-lockfile`. Vercel picks up `vercel-build` automatically.
-5. Add OAuth redirect URIs in Google Cloud Console:
+   Preview migrations use `pnpm db:migrate:preview`. Database migrations never
+   run inside a Vercel build: concurrent or retried builds must remain read-only
+   with respect to schema. For breaking schema changes, use an
+   expand/deploy/contract sequence.
+5. Import the repo on Vercel with root directory `apps/web` and keep
+   **Include source files outside the Root Directory** enabled. The committed
+   `apps/web/vercel.json` pins the framework, frozen-lockfile install, validated
+   build command, and Fluid compute. Node 24 and pnpm 10.25 are pinned from the
+   root package metadata.
+6. Add OAuth redirect URIs in Google Cloud Console:
    - local: `http://localhost:3000/api/auth/callback/google`
    - production: `https://your-domain.com/api/auth/callback/google`
-6. Sign in with an allowlisted Google email, save your AI provider/model/key in Settings, generate an extension API token.
-7. In the Chrome extension settings, point API Base URL at your Vercel URL, paste the token, click `Test connection`.
+   Set the Production OAuth audience to External, use the public root page as
+   the app homepage, link `/privacy` and `/terms`, and verify the domain.
+7. Sign in with any Google account and save your AI provider/model/key in Settings.
+8. In the Chrome extension, point API Base URL at your Vercel URL and click
+   `Continue with Google`. An existing web login is detected automatically.
 
-The web UI uses Better Auth Google sessions; the extension never performs OAuth and only sends the per-user API token as `x-ankify-token`.
+The web UI and Chrome extension use the same Better Auth Google session. The
+extension sends credentialed requests only to the exact configured API origin;
+it does not create or store a separate ankify API token.
+
+Before uploading the extension to the Chrome Web Store, build it with the
+Production API origin and use the public policy URL from the deployed web app:
+
+```bash
+ANKIFY_EXTENSION_API_ORIGIN=https://your-domain.com pnpm --filter @ankify/extension build
+```
+
+- Privacy policy: `https://your-domain.com/privacy`
+- Terms: `https://your-domain.com/terms`
+- The manifest asks for exact LeetCode and Production API hosts. Any custom API
+  origin is requested from Chrome only after the user explicitly saves or tests it.
+- Users can export their data as NDJSON and permanently delete their account
+  from Settings.
+
+See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the complete
+Preview-to-Production runbook.
 
 ---
 
@@ -140,7 +187,6 @@ packages/
 ## Tables
 
 - `user`, `session`, `account`, `verification`: Better Auth.
-- `apikey`: Better Auth API-key plugin (extension tokens).
 - `problems`: LeetCode problem metadata, notes, archived flag, FSRS state.
 - `submissions`: captured accepted and failed submissions.
 - `cards`: flashcards and AI candidates (`ai_status`: `candidate | failed | ready`).
@@ -154,13 +200,15 @@ After schema changes:
 ```bash
 pnpm db:generate     # generate migration files
 pnpm db:migrate      # apply locally
-pnpm db:migrate:prod # apply to Turso (also auto-runs on Vercel deploy)
+pnpm db:migrate:preview # apply to the isolated Preview Turso database
+pnpm db:release      # back up Production, then apply Production migrations
 ```
 
 ## Verification
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm build
+pnpm release:check
 ```
+
+This runs type checking, lint, tests, all Production builds, and fails on any
+high/critical production dependency advisory.

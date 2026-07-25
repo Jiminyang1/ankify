@@ -1,7 +1,12 @@
 import { requirePageUser } from "@/lib/auth";
 import { getRequestTranslations } from "@/lib/i18n-server";
 import { getAiSettings, getReviewSettings } from "@/lib/settings";
-import { AiSettingsForm, AppearanceSettingsForm, ExtensionConnectionForm, ReviewSettingsForm } from "./form";
+import {
+  AccountDataForm,
+  AiSettingsForm,
+  AppearanceSettingsForm,
+  ReviewSettingsForm,
+} from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
 
 export const dynamic = "force-dynamic";
@@ -40,12 +45,19 @@ export default async function SettingsPage() {
           <h2>{t.settings.extensionConnection}</h2>
           <InfoTip label={t.settings.extensionConnectionHelp} align="left" />
         </div>
-        <ExtensionConnectionForm />
+        <p className="text-sm leading-6 text-muted">{t.settings.extensionConnectionHelp}</p>
       </section>
 
       <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.reviewSchedule}</h2>
-        <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit }} />
+        <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit, timeZone: review.timeZone }} />
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+        <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">
+          {t.settings.accountData}
+        </h2>
+        <AccountDataForm email={user.email} />
       </section>
     </div>
   );

@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pnpm install                # install deps (pnpm workspaces)
-cp .env.example .env.local  # fill in Better Auth/Google, allowlist, encryption secret (LOCAL profile)
+cp .env.example .env.local  # fill in Better Auth/Google, encryption secret (LOCAL profile)
 
 pnpm db:generate            # drizzle-kit generate (after schema changes; uses LOCAL profile)
 pnpm db:migrate             # apply migrations to local SQLite (packages/db/local.db)
 pnpm db:migrate:prod        # apply migrations to prod Turso (requires .env.production.local)
 pnpm db:studio              # drizzle-kit studio against local SQLite
 pnpm db:studio:prod         # drizzle-kit studio against prod Turso
+pnpm db:backup              # dump prod Turso into backups/ankify-prod-<ts>.db (gitignored; requires .env.production.local)
 
 pnpm dev                    # Next.js web app on :3000 (LOCAL profile)
 pnpm dev:ext                # Chrome extension build in watch mode
@@ -41,7 +42,7 @@ Monorepo with three layers:
 
 ### `packages/db` - Database layer
 
-- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; Better Auth API-key plugin `apikey`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, `settings`)
+- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, `settings`)
 - `client.ts` exposes a singleton `getDb()`. Production requires `TURSO_DATABASE_URL`; `LOCAL_DB_PATH` is a development-only SQLite fallback.
 - `migrate.ts` applies `drizzle/` migrations; run via `pnpm db:migrate`
 - Schema infer types are re-exported (e.g. `Problem`, `Card`, `QuizSession`, `ReviewEvent`, etc.)
@@ -65,19 +66,18 @@ Monorepo with three layers:
 
 - **Auth and isolation**:
   - Better Auth handles Google OAuth through `/api/auth/[...all]`.
-  - Production is fail-closed without `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, Google credentials, `ANKIFY_ALLOWED_EMAILS`, and `AI_KEY_ENCRYPTION_SECRET`.
-  - Signup/login is email allowlist based through `ANKIFY_ALLOWED_EMAILS`, enforced both at user-create (Better Auth `databaseHooks.user.create.before`) and on every session check (`getUserFromHeaders`).
-  - `ANKIFY_OPEN_SIGNUP="true"` switches to open signup: any Google account may sign in, `ANKIFY_ALLOWED_EMAILS` is ignored, and the production requirement for it is lifted. Leave unset/`false` to keep the allowlist gate.
-  - Middleware is only a lightweight redirect/CORS gate. Server pages must call `requirePageUser()`, API routes that accept web sessions or extension tokens must call `getRequestUser()`, and session-only routes such as settings and API-token management must call `getRequestSessionUser()`.
+  - Production is fail-closed without `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, Google credentials, and `AI_KEY_ENCRYPTION_SECRET`.
+  - Signup is public for any Google account by default. `ANKIFY_DISABLE_SIGNUP=true` pauses only new account creation.
+  - Middleware is only a lightweight redirect/CORS gate. Server pages must call `requirePageUser()` and API routes must call `getRequestUser()` or `getRequestSessionUser()`.
   - Every business query must be scoped by the current `userId`, including raw SQL dashboard queries.
-  - Extension requests authenticate with Better Auth API keys sent as `x-ankify-token`; the extension does not run Google OAuth.
+  - Extension requests use `credentials: include` and reuse the Better Auth web-session cookie. `ANKIFY_EXTENSION_ORIGINS` must list exact trusted extension IDs in production.
 
 - **API routes** under `src/app/api/`:
   - `auth/[...all]/` - Better Auth route handler for Google OAuth sessions and auth callbacks.
-  - `me/` - returns the current authenticated user for either a web session or extension API token; used by extension Test connection.
+  - `me/` - returns the current session user; used by extension automatic login detection and Test connection.
   - `capture/` - extension hits this to upsert problems + submissions. Idempotent by `leetcodeSlug`, stores `leetcodeId` when present, and seeds FSRS state for new problems.
-  - `problems/` - list problems with card counts. Supports `?search=` for title search.
-  - `problems/[id]/` - PATCH notes (`{ notes }`) for autosave from review. DELETE permanently removes the problem and cascades to its submissions, cards, quiz sessions, and review events.
+  - `problems/` - list problems with card counts. Supports `?search=` for title search and `?archived=1` to list archived problems instead of active ones.
+  - `problems/[id]/` - PATCH accepts `{ notes }` (autosave from review) and/or `{ archived }` (sets/clears `archivedAt`; archived problems keep all data but leave the review rotation). DELETE permanently removes the problem and cascades to its submissions, cards, quiz sessions, and review events.
   - `problems/by-slug/[slug]/` - extension lookup by LeetCode slug. Returns problem, ready cards, candidates, FSRS previews, and queue state.
   - `problems/[id]/user-card/` - POST saves a manual card directly as `ready` (just `question` + `answer`).
   - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. POST synchronously runs AI for `single/generate` (auto or from rawText) or `single/followup` with instruction. AI produces `candidate` drafts; user confirms to `ready`.
@@ -88,13 +88,12 @@ Monorepo with three layers:
   - `cards/[id]/` - PATCH edits question/answer or confirms a candidate card (`aiStatus: "ready"`).
   - `review/next/` - returns next due problem with FSRS previews (via `preview()`), ready cards, submissions, and notes. A due problem does not need ready cards because Quiz can start review.
   - `review/queue/` - returns today's due queue for the extension Today tab.
-  - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`.
-  - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization; extension tokens cannot mutate settings.
+  - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`. The rated event stores a pre-rating FSRS snapshot in `metadata.undo`.
+  - `review/undo/` - POST `{ problemId }` reverts the most recent rating: restores the problem's FSRS fields from the event's `metadata.undo` snapshot and deletes that event (guarded by `fsrsReps = prev.reps + 1` against races; events without the snapshot return 409).
+  - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
   - `settings/ai-test/` - session-only POST. Runs a tiny `generateObject` probe against the configured provider/model/key (or supplied overrides) to verify the connection. Returns `{ ok, latencyMs }` on success or `{ ok: false, code, message }` on failure with categorized error codes (`invalid_api_key`, `model_not_found`, `quota_or_rate_limit`, `timeout`, `network`, `forbidden`, `unknown`).
   - `settings/ai-models/` - session-only POST. Body `{ provider, apiKey? }`. Calls the provider's `/v1/models` endpoint (Anthropic / OpenAI / DeepSeek) and returns chat-capable model ids so the Settings UI doesn't go stale when providers ship new models. Falls back to the user's stored encrypted key when `apiKey` is omitted; OpenAI list is filtered against an embeddings/audio/image/moderation block list.
-  - `settings/api-keys/` - session-only list/create extension API tokens. Newly created tokens are shown once.
-  - `settings/api-keys/[keyId]/` - session-only revoke extension API tokens.
-- **`src/proxy.ts`**: lightweight auth gate and Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages require a Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data. Extension requests use per-user Better Auth API keys sent as `x-ankify-token`.
+- **`src/proxy.ts`**: lightweight auth gate and credentialed Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages and extension API requests require the same Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data.
 - **`src/lib/`**:
   - `ai.ts`: loads AI provider/model from DB, builds `LanguageModelV1`. Throws a clear error if AI is not configured. DeepSeek thinking mode is left at its provider default (on for V4) for card and quiz generation; `buildModel(..., { disableThinking: true })` is used only by short latency-sensitive probes such as the settings connection test.
   - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.
@@ -102,26 +101,27 @@ Monorepo with three layers:
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. Server env provider keys are intentionally not used as runtime fallbacks.
-  - `rate-limit.ts`: abuse floor for the web-session paths (extension token paths already have Better Auth's API-key rate limit). Best-effort in-memory fixed-window limiter keyed by `userId` — `RATE_LIMITS.ai` (20/min, applied to AI card + quiz generation) and `RATE_LIMITS.capture` (60/min). Per-instance, resets on cold start, so it's a guardrail not a hard global cap. The hard, DB-enforced cap is `MAX_PROBLEMS_PER_USER` (2000 non-archived problems), checked in `/api/capture` only when creating a brand-new problem. Both matter most under `ANKIFY_OPEN_SIGNUP`.
+  - `rate-limit.ts`: atomic database-backed fixed-window limiter keyed by `userId` for AI and capture paths. Hard storage caps also limit problems, submissions, cards, and quiz sessions per user/problem.
 - **Pages**:
   - `/` - home: due queue, progress, daily stats
-  - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes
-  - `/problems` - list with difficulty/state/tag/search filters
-  - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline
+  - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes. Keyboard shortcuts (ignored while typing or when a control has focus): `1-4` select rating, `Enter` submits (never inside the Quiz tab), `A-D` answer the current quiz question, `Space` flips cards / advances quiz feedback, arrows navigate cards; on the result screen `Enter`/`Space` load the next problem. The result screen has an Undo button (`/api/review/undo`) that re-enters the same problem. The QuizPanel auto-starts generation on problem load: no session → `generate`, completed session → `nextBatch` (archiving it), active session → resume; failures stay manual so a broken AI config can't retry-loop, and a completed quiz preselects its suggested rating.
+  - `/problems` - list with difficulty/state/tag/search filters; the state filter's `Archived` option refetches with `?archived=1`
+  - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline, Archive/Unarchive (archived problems hide the Review button and show a notice)
   - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
   - `/settings` - AI provider configuration + daily review limit
 
 ### `apps/extension` - Chrome MV3 Extension
 
 - **Content script** (`content/leetcode.ts`): scrapes LeetCode problem pages via their GraphQL endpoint - fetches problem metadata, recent submissions, and submission details (code, status, failures). Falls back from `questionSubmissionList` to legacy `submissionList`.
-- **Background** (`background/index.ts`): minimal service worker, satisfies MV3 lifecycle.
+- **Capture badge** (`content/capture-badge.ts` + background): the content script watches the SPA URL (plus a 60s in-place re-check) and reports `{ slug, hasAccepted }`; the background worker checks `/api/problems/by-slug` (60s in-memory cache) and sets a per-tab gold `!` action badge when a problem has an accepted submission but isn't captured. Missing config or API errors never badge. A successful capture from the popup sends `capture_badge_captured` to clear matching tabs.
+- **Background** (`background/index.ts`): MV3 service worker — side-panel behavior plus the capture-badge message handler.
 - **Popup** (`popup/`):
   - Top nav: `Today`, `Problem`, `Settings`.
   - Theme control: `System`, `Light`, `Dark`.
   - `Problem` has compact `Review` / `Manage` modes.
   - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation is synchronous; if the user switches tabs while generation is pending, the Quiz tab shows pending state until the session appears. Completed quizzes can create a new batch and bulk-create cards for missed items.
   - `Manage` contains manual card creation, synchronous AI candidate generation/follow-up/confirm/discard, pending-state preservation for in-flight AI calls, and existing card management.
-  - `Settings` stores API base URL and the per-user API token. Test connection calls `/api/me` and shows the token owner's email.
+  - `Settings` stores only the API base URL and preferences. Test connection calls `/api/me` with the shared web session and shows the signed-in email.
   - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
 
@@ -130,7 +130,7 @@ Monorepo with three layers:
 ### Capture (extension)
 
 1. Open a LeetCode problem page and click the extension popup.
-2. The extension sends the configured `x-ankify-token`; API routes resolve it to a Better Auth user session.
+2. The extension sends credentialed requests to the exact API origin; Chrome includes the existing Better Auth web-session cookie.
 3. If the problem is unknown, "Capture this problem" reads page data via the content script and POSTs to `/api/capture`.
 4. If the problem is known, the popup shows Review/Manage with the current FSRS due state, ready cards, candidates, submissions, notes, and quiz session.
 
@@ -159,11 +159,12 @@ There is no AI-card batch generation, background card generation, polling, `poli
 2. User reviews Quiz/Cards/Submissions/Notes, then self-rates recall (Again/Hard/Good/Easy).
 3. `POST /api/review/rate` records the rating and applies FSRS scheduling. Notes are saved to `problems.notes`.
 4. Meaningful interactions write to `review_events`.
+5. The result screen offers Undo (`POST /api/review/undo`), which restores the pre-rating FSRS snapshot, deletes the rating event, and re-enters the same problem.
 
 ## Key Design Decisions
 
-- **Multi-user deployment**: Better Auth Google OAuth, email allowlist, and per-user data isolation across all business tables.
-- **Extension auth is token-based**: users generate/revoke per-user API tokens in Web Settings; the extension stores API base URL + token and sends `x-ankify-token`.
+- **Multi-user deployment**: public Better Auth Google OAuth and per-user data isolation across all business tables.
+- **Extension auth reuses the web session**: no separate ankify token is created, copied, or stored; signed-out users continue with Google in a web tab.
 - **User-owned AI keys**: server env provider keys are not runtime fallbacks. Users save provider/model/key in Settings, and keys are encrypted before storage.
 - **Problem-level scheduling**: FSRS state lives directly on the `problems` row. Cards and quizzes support recall, but only the problem gets scheduled.
 - **Cards are simple**: `question`, `answer`, lifecycle fields only. No explanation/rationale/source fields on the card row.
@@ -172,7 +173,7 @@ There is no AI-card batch generation, background card generation, polling, `poli
 - **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
 - **Quiz is synchronous V1**: no background jobs. Pending is UI state while the foreground request runs.
 - **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
-- **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history.
+- **`review_events` is append-only, with one exception**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history. The exception is `/api/review/undo`, which deletes the undone rating event so done-today counts and dashboards don't count it.
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.
 - **AI defaults to empty**: provider/model/key must be configured before AI generation; errors should be clear.
 
@@ -187,7 +188,7 @@ The web app and the extension popup share one typographic language. **Default ev
 **Use mono (Tailwind `font-mono` in web; `var(--font-mono)` in extension popup CSS) only for:**
 1. Real code: `<pre>` blocks and inline `<code>` rendered by Markdown components, submission code displays.
 2. Shell commands and env-path tokens inside copy: `<code>pnpm db:migrate</code>`, `<code>.env.local</code>`.
-3. Identifier-shaped inputs: API key, model id, API base URL, API token. Slug displays (`two-sum`).
+3. Identifier-shaped inputs: API key, model id, API base URL. Slug displays (`two-sum`).
 4. Programming-language labels rendered next to code (`python`, `cpp`).
 
 Anything else in `font-mono` is a bug - it splits the visual register and looks terminal-ish against the rest of the app.

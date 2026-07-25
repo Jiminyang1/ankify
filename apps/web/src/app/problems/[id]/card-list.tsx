@@ -24,7 +24,9 @@ export function CardList({ cards }: { cards: Card[] }) {
   /** Close editor if list refreshed and card disappeared */
   useEffect(() => {
     if (!editForm) return;
-    if (!cards.some((c) => c.id === editForm.id)) setEditForm(null);
+    if (cards.some((c) => c.id === editForm.id)) return;
+    const timer = window.setTimeout(() => setEditForm(null), 0);
+    return () => window.clearTimeout(timer);
   }, [cards, editForm]);
 
   const toggle = (id: string) => {

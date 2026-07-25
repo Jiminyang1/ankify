@@ -10,22 +10,27 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const { id: problemId } = await ctx.params;
   const body = await req.json().catch(() => null);
-  const parsed = schemas.problemNotesPatchSchema.safeParse(body);
+  const parsed = schemas.problemPatchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
 
+  const now = new Date();
   const db = getDb();
   const result = await db
     .update(schema.problems)
-    .set({ notes: parsed.data.notes, updatedAt: new Date() })
+    .set({
+      updatedAt: now,
+      ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+      ...(parsed.data.archived !== undefined ? { archivedAt: parsed.data.archived ? now : null } : {}),
+    })
     .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)))
-    .returning({ id: schema.problems.id });
+    .returning({ id: schema.problems.id, archivedAt: schema.problems.archivedAt });
 
   if (result.length === 0) {
     return NextResponse.json({ error: "problem_not_found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, archivedAt: result[0]!.archivedAt });
 }
 
 /** DELETE /api/problems/:id

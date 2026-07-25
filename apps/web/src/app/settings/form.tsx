@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClasses } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/field";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -83,7 +84,11 @@ export function AiSettingsForm({
   const showGenerationMode = provider === "deepseek";
 
   useEffect(() => {
-    setHasStoredApiKey(initial.hasApiKey);
+    const timer = window.setTimeout(
+      () => setHasStoredApiKey(initial.hasApiKey),
+      0,
+    );
+    return () => window.clearTimeout(timer);
   }, [initial.hasApiKey]);
 
   async function save(e: React.FormEvent) {
@@ -389,134 +394,11 @@ export function AiSettingsForm({
   );
 }
 
-type ExtensionApiKey = {
-  id: string;
-  name: string | null;
-  start: string | null;
-  prefix: string | null;
-  createdAt: string;
-  lastRequest: string | null;
-  enabled: boolean;
-};
-
-export function ExtensionConnectionForm() {
-  const { t } = useLanguage();
-  const [keys, setKeys] = useState<ExtensionApiKey[]>([]);
-  const [newKey, setNewKey] = useState<string | null>(null);
-  const [name, setName] = useState("Chrome extension");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function loadKeys() {
-    setLoading(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/settings/api-keys", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { apiKeys: ExtensionApiKey[] };
-      setKeys(json.apiKeys ?? []);
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Failed to load extension tokens");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadKeys();
-  }, []);
-
-  async function createKey(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    setNewKey(null);
-    try {
-      const res = await fetch("/api/settings/api-keys", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { apiKey: { key: string } };
-      setNewKey(json.apiKey.key);
-      await loadKeys();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Failed to create extension token");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function revokeKey(id: string) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch(`/api/settings/api-keys/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await loadKeys();
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Failed to revoke extension token");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <form onSubmit={createKey} className="flex flex-wrap items-end gap-3">
-        <label className="min-w-64 flex-1 space-y-1">
-          <span className="block text-sm">{t.settings.tokenName}</span>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <Button type="submit" variant="primary" disabled={busy}>
-          {t.settings.generateToken}
-        </Button>
-      </form>
-
-      {newKey && (
-        <div className="rounded-md border border-accent/30 bg-accent/10 p-3">
-          <p className="text-sm font-medium text-accent">{t.settings.copyTokenNow}</p>
-          <code className="mt-2 block break-all rounded bg-bg p-2 font-mono text-xs">{newKey}</code>
-        </div>
-      )}
-
-      <div className="rounded-lg border border-border">
-        {loading ? (
-          <p className="p-3 text-sm text-muted">{t.settings.loadingTokens}</p>
-        ) : keys.length === 0 ? (
-          <p className="p-3 text-sm text-muted">{t.settings.noTokens}</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {keys.map((key) => (
-              <li key={key.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
-                <div>
-                  <div className="font-medium">{key.name ?? t.settings.extensionToken}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    <span className="font-mono">{key.start?.includes("_") ? `${key.start.split("_")[0]}_***` : "***"}</span> · {t.settings.created}{" "}
-                    {new Date(key.createdAt).toLocaleDateString()} · {t.settings.lastUsed}{" "}
-                    {key.lastRequest ? new Date(key.lastRequest).toLocaleDateString() : t.settings.never}
-                  </div>
-                </div>
-                <Button size="sm" onClick={() => revokeKey(key.id)} disabled={busy}>
-                  {t.settings.revoke}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {msg && <p className="text-sm text-muted">{msg}</p>}
-    </div>
-  );
-}
-
-export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number } }) {
+export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number; timeZone: string } }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [dailyReviewLimit, setDailyReviewLimit] = useState(initial.dailyReviewLimit);
+  const [timeZone, setTimeZone] = useState(initial.timeZone);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -528,7 +410,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dailyReviewLimit }),
+        body: JSON.stringify({ dailyReviewLimit, timeZone }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
@@ -558,6 +440,25 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         />
       </div>
 
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 text-sm">
+          <label htmlFor="review-time-zone">{t.settings.timeZone}</label>
+          <InfoTip label={t.settings.timeZoneHelp} align="left" />
+        </div>
+        <Input
+          id="review-time-zone"
+          list="review-time-zone-options"
+          value={timeZone}
+          onChange={(e) => setTimeZone(e.target.value)}
+          placeholder="Asia/Shanghai"
+        />
+        <datalist id="review-time-zone-options">
+          {["UTC", "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
+      </div>
+
       <div className="flex items-center gap-3">
         <Button type="submit" variant="primary" disabled={saving}>
           {saving ? t.common.saving : t.settings.saveReviewSettings}
@@ -565,5 +466,92 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         {msg && <span className="text-sm text-muted">{msg}</span>}
       </div>
     </form>
+  );
+}
+
+export function AccountDataForm({ email }: { email: string }) {
+  const { t } = useLanguage();
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const matches = confirmationEmail.trim().toLowerCase() === email.toLowerCase();
+
+  async function deleteAccount() {
+    if (!matches || !window.confirm(t.settings.deleteAccountConfirm)) return;
+    setDeleting(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: confirmationEmail.trim(),
+          confirmation: "DELETE",
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(body?.error ?? `HTTP ${response.status}`);
+      }
+      window.location.assign("/login?deleted=1");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : t.settings.deleteAccountFailed,
+      );
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <a
+          href="/api/account/export"
+          download
+          className={buttonClasses({ variant: "secondary" })}
+        >
+          {t.settings.exportData}
+        </a>
+        <p className="text-sm text-muted">{t.settings.exportDataHelp}</p>
+      </div>
+
+      <div className="flex flex-wrap gap-4 text-sm">
+        <Link href="/privacy" className="font-medium text-accent hover:underline">
+          {t.settings.privacyPolicy}
+        </Link>
+        <Link href="/terms" className="font-medium text-accent hover:underline">
+          {t.settings.termsOfUse}
+        </Link>
+      </div>
+
+      <div className="space-y-3 border-t border-border pt-5">
+        <div>
+          <h3 className="text-sm font-medium text-danger">
+            {t.settings.deleteAccount}
+          </h3>
+          <p className="mt-1 text-sm text-muted">
+            {t.settings.deleteAccountHelp}
+          </p>
+        </div>
+        <Input
+          type="email"
+          value={confirmationEmail}
+          onChange={(event) => setConfirmationEmail(event.target.value)}
+          placeholder={t.settings.typeEmailToDelete(email)}
+          autoComplete="off"
+          className="max-w-md"
+        />
+        <Button
+          variant="danger"
+          onClick={() => void deleteAccount()}
+          disabled={!matches || deleting}
+        >
+          {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
+        </Button>
+        {message && <p className="text-sm text-danger">{message}</p>}
+      </div>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
+import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
 
 export interface AiSettings {
   provider: AiProvider;
@@ -19,6 +20,8 @@ export interface AiRuntimeSettings {
 
 export interface ReviewSettings {
   dailyReviewLimit: number;
+  timeZone: string;
+  timeZoneConfigured: boolean;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -29,6 +32,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
 
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   dailyReviewLimit: 20,
+  timeZone: "UTC",
+  timeZoneConfigured: false,
 };
 
 const KEY_AI = "ai";
@@ -101,17 +106,24 @@ export async function getReviewSettings(userId: string): Promise<ReviewSettings>
   const row = rows[0];
   if (!row) return DEFAULT_REVIEW_SETTINGS;
   const value = row.value as Partial<ReviewSettings>;
+  const timeZoneConfigured = isValidTimeZone(value.timeZone);
   return {
-    ...DEFAULT_REVIEW_SETTINGS,
-    ...value,
     dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit),
+    timeZone: normalizeTimeZone(value.timeZone),
+    timeZoneConfigured,
   };
 }
 
-export async function setReviewSettings(userId: string, value: ReviewSettings) {
+export async function setReviewSettings(
+  userId: string,
+  value: { dailyReviewLimit?: number; timeZone?: string },
+) {
   const db = getDb();
-  const next: ReviewSettings = {
-    dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit),
+  const existing = await getReviewSettings(userId);
+  const next: { dailyReviewLimit: number; timeZone?: string } = {
+    dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit ?? existing.dailyReviewLimit),
+    ...(existing.timeZoneConfigured ? { timeZone: existing.timeZone } : {}),
+    ...(value.timeZone !== undefined ? { timeZone: normalizeTimeZone(value.timeZone) } : {}),
   };
   await db
     .insert(schema.settings)

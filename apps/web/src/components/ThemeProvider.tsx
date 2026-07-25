@@ -3,9 +3,8 @@
 import {
   createContext,
   useContext,
-  useEffect,
-  useState,
   useCallback,
+  useSyncExternalStore,
 } from "react";
 
 type Theme = "dark" | "light";
@@ -20,6 +19,7 @@ const ThemeContext = createContext<{
   theme: "system",
   setTheme: () => {},
 });
+const THEME_EVENT = "ankify:theme-change";
 
 function applyThemePreference(preference: ThemePreference) {
   if (preference === "system") {
@@ -29,23 +29,35 @@ function applyThemePreference(preference: ThemePreference) {
   }
 }
 
+function readThemePreference(): ThemePreference {
+  const stored = window.localStorage.getItem("ankify-theme");
+  return stored === "light" || stored === "dark" ? stored : "system";
+}
+
+function subscribeTheme(onChange: () => void) {
+  const handleChange = () => {
+    applyThemePreference(readThemePreference());
+    onChange();
+  };
+  window.addEventListener("storage", handleChange);
+  window.addEventListener(THEME_EVENT, handleChange);
+  return () => {
+    window.removeEventListener("storage", handleChange);
+    window.removeEventListener(THEME_EVENT, handleChange);
+  };
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [preference, setPreference] = useState<ThemePreference>("system");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("ankify-theme");
-    if (stored === "system" || stored === "light" || stored === "dark") {
-      setPreference(stored);
-    }
-  }, []);
-
-  useEffect(() => {
-    applyThemePreference(preference);
-    localStorage.setItem("ankify-theme", preference);
-  }, [preference]);
+  const preference = useSyncExternalStore<ThemePreference>(
+    subscribeTheme,
+    readThemePreference,
+    () => "system",
+  );
 
   const setTheme = useCallback((t: ThemePreference) => {
-    setPreference(t);
+    applyThemePreference(t);
+    window.localStorage.setItem("ankify-theme", t);
+    window.dispatchEvent(new Event(THEME_EVENT));
   }, []);
 
   return (

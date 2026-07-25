@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { schemas } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { MAX_CARDS_PER_PROBLEM } from "@/lib/resource-limits";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sessionId: string }> }) {
   const user = await getRequestUser(req);
@@ -35,8 +36,30 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
   const cardId = `qz_${session.id}_${item.id}`;
   const correctChoice = item.choices[item.answerIndex] ?? "";
   const answer = [`**Correct answer:** ${correctChoice}`, item.explanation].filter(Boolean).join("\n\n");
+  const [existingCard] = await db
+    .select()
+    .from(schema.cards)
+    .where(and(eq(schema.cards.id, cardId), eq(schema.cards.userId, user.id)));
+  if (existingCard) {
+    return NextResponse.json({ ok: true, card: existingCard });
+  }
 
+  let cardLimitReached = false;
   await db.transaction(async (tx) => {
+    const [{ count } = { count: 0 }] = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.cards)
+      .where(
+        and(
+          eq(schema.cards.userId, user.id),
+          eq(schema.cards.problemId, problemId),
+        ),
+      );
+    if (count >= MAX_CARDS_PER_PROBLEM) {
+      cardLimitReached = true;
+      return;
+    }
+
     const inserted = await tx
       .insert(schema.cards)
       .values({
@@ -62,6 +85,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
       });
     }
   });
+
+  if (cardLimitReached) {
+    return NextResponse.json(
+      {
+        error: "card_limit_reached",
+        message: `This problem already has ${MAX_CARDS_PER_PROBLEM} cards. Delete one before saving another.`,
+      },
+      { status: 403 },
+    );
+  }
 
   const [card] = await db
     .select()

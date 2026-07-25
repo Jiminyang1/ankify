@@ -1,4 +1,4 @@
-import { getSettings, SETTINGS_KEY } from "../shared/storage";
+import type { BackgroundRequest, ContentSettingsResponse } from "../shared/messages";
 
 const LOCATION_EVENT = "ankify:locationchange";
 const RESET_WAIT_MS = 18_000;
@@ -29,12 +29,6 @@ export function startAutoResetCodeOnProblemPages(): void {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) scheduleResetCheck(250);
   });
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !changes[SETTINGS_KEY]) return;
-    lastResetSlug = null;
-    scheduleResetCheck(150);
-  });
-
   scheduleResetCheck(700);
 }
 
@@ -74,8 +68,7 @@ async function maybeResetCurrentProblem() {
 
   activeSlug = slug;
   try {
-    const settings = await getSettings();
-    if (!settings.resetCodeOnProblemOpen) return;
+    if (!(await shouldResetCode())) return;
 
     const result = await resetCodeToDefault();
     if (result.clicked) {
@@ -87,6 +80,14 @@ async function maybeResetCurrentProblem() {
   } finally {
     if (activeSlug === slug) activeSlug = null;
   }
+}
+
+async function shouldResetCode() {
+  const request: BackgroundRequest = { type: "get_content_settings" };
+  const response = (await chrome.runtime.sendMessage(request)) as
+    | ContentSettingsResponse
+    | undefined;
+  return response?.resetCodeOnProblemOpen === true;
 }
 
 function slugFromUrl(): string | null {

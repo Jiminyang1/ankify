@@ -57,6 +57,7 @@ export async function GET(req: Request) {
     difficulty: problem.fsrsDifficulty,
     elapsedDays: problem.fsrsElapsedDays,
     scheduledDays: problem.fsrsScheduledDays,
+    learningSteps: problem.fsrsLearningSteps,
     reps: problem.fsrsReps,
     lapses: problem.fsrsLapses,
     state: problem.fsrsState,
@@ -70,7 +71,9 @@ export async function GET(req: Request) {
     db
       .select()
       .from(schema.cards)
-      .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problem.id), eq(schema.cards.aiStatus, "ready"))),
+      .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problem.id), eq(schema.cards.aiStatus, "ready")))
+      .orderBy(desc(schema.cards.createdAt))
+      .limit(50),
     db
       .select()
       .from(schema.submissions)

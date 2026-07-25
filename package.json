@@ -5,7 +5,7 @@
   "description": "Personal LeetCode/CS spaced-repetition app with FSRS-6, AI MCQs, and a Chrome extension",
   "packageManager": "pnpm@10.25.0",
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "pnpm db:migrate && pnpm --filter @ankify/web dev",
@@ -14,15 +14,33 @@
     "dev:ext": "pnpm --filter @ankify/extension dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
+    "release:check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm extension:check-manifest && pnpm audit --prod --audit-level=high",
+    "extension:check-manifest": "node scripts/check-extension-manifest.mjs",
     "db:generate": "pnpm --filter @ankify/db generate",
     "db:migrate": "pnpm --filter @ankify/db migrate",
+    "db:migrate:preview": "pnpm --filter @ankify/db migrate:preview",
     "db:migrate:prod": "pnpm --filter @ankify/db migrate:prod",
     "db:studio": "pnpm --filter @ankify/db studio",
-    "db:studio:prod": "pnpm --filter @ankify/db studio:prod"
+    "db:studio:preview": "pnpm --filter @ankify/db studio:preview",
+    "db:studio:prod": "pnpm --filter @ankify/db studio:prod",
+    "db:backup": "pnpm --filter @ankify/db backup",
+    "db:release": "pnpm db:backup && pnpm db:migrate:prod"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
-    "@types/node": "^22.10.0"
+    "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "jsondiffpatch": "0.7.2",
+      "postcss": "8.5.23",
+      "sharp": "0.35.0",
+      "shell-quote": "1.10.0",
+      "ws": "8.21.1"
+    }
   }
 }

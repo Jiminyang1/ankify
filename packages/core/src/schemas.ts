@@ -42,26 +42,26 @@ export const captureProblemSchema = z.object({
       z.object({
         leetcodeSubmissionId: z.string().max(64).optional(),
         language: z.string().max(64),
-        code: z.string().max(200_000),
+        code: z.string().max(100_000),
         status: submissionStatusEnum,
         runtimeMs: z.number().int().optional(),
         memoryKb: z.number().int().optional(),
-        failedTestcase: z.string().max(50_000).optional(),
-        expectedOutput: z.string().max(50_000).optional(),
-        actualOutput: z.string().max(50_000).optional(),
+        failedTestcase: z.string().max(20_000).optional(),
+        expectedOutput: z.string().max(20_000).optional(),
+        actualOutput: z.string().max(20_000).optional(),
         errorMessage: z.string().max(10_000).optional(),
         submittedAt: z.string().datetime().optional(),
       }),
     )
-    .max(50)
+    .max(20)
     .default([]),
 });
 export type CaptureProblemInput = z.infer<typeof captureProblemSchema>;
 
 /** A flash card: question (front) and answer (back). */
 export const cardDraftSchema = z.object({
-  question: z.string().min(1).max(10_000),
-  answer: z.string().min(1).max(50_000),
+  question: z.string().min(1).max(5_000),
+  answer: z.string().min(1).max(20_000),
 });
 export type CardDraft = z.infer<typeof cardDraftSchema>;
 
@@ -69,10 +69,10 @@ export type CardDraft = z.infer<typeof cardDraftSchema>;
  *  the app can index `choices[answerIndex]` cheaply. */
 export const quizItemSchema = z.object({
   id: z.string().min(1),
-  question: z.string().min(1),
-  choices: z.array(z.string().min(1)).length(4),
+  question: z.string().min(1).max(4_000),
+  choices: z.array(z.string().min(1).max(2_000)).length(4),
   answerIndex: z.number().int().min(0).max(3),
-  explanation: z.string().min(1),
+  explanation: z.string().min(1).max(8_000),
   source: quizItemSourceEnum,
   scope: quizItemScopeEnum,
 });
@@ -100,15 +100,17 @@ export type QuizAnswer = z.infer<typeof quizAnswerSchema>;
  *  reads. */
 export const quizDraftItemSchema = z
   .object({
-    question: z.string().min(1).describe("The question text shown to the user."),
-    choices: z.array(z.string().min(1)).length(4).describe("Exactly 4 plausible options."),
+    question: z.string().min(1).max(4_000).describe("The question text shown to the user."),
+    choices: z.array(z.string().min(1).max(2_000)).length(4).describe("Exactly 4 plausible options."),
     correctAnswer: z
       .string()
       .min(1)
+      .max(2_000)
       .describe("The exact text of the correct option, character-for-character identical to one of the choices entries."),
     explanation: z
       .string()
       .min(1)
+      .max(8_000)
       .describe("Concise rationale shown to the user after they answer."),
     source: quizItemSourceEnum.describe(
       "Which input material this question is grounded in: 'statement' (problem statement), 'submission' (the user's submitted code), 'notes' (the user's saved notes), or 'card' (an existing flashcard). NOT a category of question type — that is `scope`.",
@@ -152,8 +154,8 @@ export const aiCardsRequestSchema = z.union([
 /** POST /api/problems/:id/user-card — saves a manual card directly as ready. */
 export const userCardManualCreateSchema = z.object({
   mode: z.literal("manual"),
-  question: z.string().min(1).max(10_000),
-  answer: z.string().min(1).max(50_000),
+  question: z.string().min(1).max(5_000),
+  answer: z.string().min(1).max(20_000),
 });
 
 export type AiCardsRequestInput = z.infer<typeof aiCardsRequestSchema>;
@@ -163,8 +165,8 @@ export type UserCardManualCreateInput = z.infer<typeof userCardManualCreateSchem
 export const updateCardPatchSchema = z
   .object({
     aiStatus: z.literal("ready").optional(),
-    question: z.string().min(1).max(10_000).optional(),
-    answer: z.string().min(1).max(50_000).optional(),
+    question: z.string().min(1).max(5_000).optional(),
+    answer: z.string().min(1).max(20_000).optional(),
   })
   .strict()
   .refine((o) => Object.keys(o).length > 0, { message: "empty_patch" });
@@ -175,11 +177,23 @@ export const reviewRatingSchema = z.object({
   problemId: z.string().min(1).max(64),
   rating: fsrsRatingSchema,
   notes: z.string().max(50_000).optional(),
+  // Optional for older extension builds. Current clients always send it so a
+  // network retry cannot schedule the same review twice.
+  requestId: z.string().uuid().optional(),
 });
 
-/** PATCH /api/problems/:id — autosave notes from review. */
-export const problemNotesPatchSchema = z.object({
-  notes: z.string().max(50_000),
+/** PATCH /api/problems/:id — autosave notes from review, or archive/unarchive. */
+export const problemPatchSchema = z
+  .object({
+    notes: z.string().max(50_000).optional(),
+    archived: z.boolean().optional(),
+  })
+  .strict()
+  .refine((o) => o.notes !== undefined || o.archived !== undefined, { message: "empty_patch" });
+
+/** POST /api/review/undo — revert the most recent rating of a problem. */
+export const reviewUndoSchema = z.object({
+  problemId: z.string().min(1).max(64),
 });
 
 export const quizGenerateRequestSchema = z.object({

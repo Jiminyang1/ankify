@@ -86,40 +86,6 @@ export const verification = sqliteTable(
   }),
 );
 
-export const apikey = sqliteTable(
-  "apikey",
-  {
-    id: text("id").primaryKey(),
-    configId: text("config_id").notNull().default("default"),
-    name: text("name"),
-    start: text("start"),
-    referenceId: text("reference_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    prefix: text("prefix"),
-    key: text("key").notNull(),
-    refillInterval: integer("refill_interval"),
-    refillAmount: integer("refill_amount"),
-    lastRefillAt: optTs("last_refill_at"),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    rateLimitEnabled: integer("rate_limit_enabled", { mode: "boolean" }).notNull().default(true),
-    rateLimitTimeWindow: integer("rate_limit_time_window").notNull().default(86_400_000),
-    rateLimitMax: integer("rate_limit_max").notNull().default(1000),
-    requestCount: integer("request_count").notNull().default(0),
-    remaining: integer("remaining"),
-    lastRequest: optTs("last_request"),
-    expiresAt: optTs("expires_at"),
-    permissions: text("permissions"),
-    metadata: text("metadata"),
-    createdAt: ts("created_at"),
-    updatedAt: ts("updated_at"),
-  },
-  (t) => ({
-    referenceIdx: index("apikey_reference_idx").on(t.referenceId),
-    keyIdx: uniqueIndex("apikey_key_unique").on(t.key),
-  }),
-);
-
 /* ────────────────────────────────────────────────────────────────────────────
  * problems
  * One row per LeetCode problem the user is studying.
@@ -149,6 +115,7 @@ export const problems = sqliteTable(
     fsrsDifficulty: real("fsrs_difficulty"),
     fsrsElapsedDays: real("fsrs_elapsed_days"),
     fsrsScheduledDays: real("fsrs_scheduled_days"),
+    fsrsLearningSteps: integer("fsrs_learning_steps").notNull().default(0),
     fsrsReps: integer("fsrs_reps").notNull().default(0),
     fsrsLapses: integer("fsrs_lapses").notNull().default(0),
     fsrsState: text("fsrs_state", { enum: ["new", "learning", "review", "relearning"] })
@@ -278,6 +245,8 @@ export const reviewEvents = sqliteTable(
     }).notNull(),
 
     fsrsRating: integer("fsrs_rating"),
+    requestId: text("request_id"),
+    undoneAt: optTs("undone_at"),
 
     cardId: text("card_id").references(() => cards.id, { onDelete: "set null" }),
     submissionId: text("submission_id").references(() => submissions.id, { onDelete: "set null" }),
@@ -295,6 +264,7 @@ export const reviewEvents = sqliteTable(
     typeIdx: index("review_events_type_idx").on(t.eventType),
     occurredIdx: index("review_events_occurred_idx").on(t.occurredAt),
     userTypeOccurredIdx: index("review_events_user_type_occurred_idx").on(t.userId, t.eventType, t.occurredAt),
+    userRequestIdx: uniqueIndex("review_events_user_request_unique").on(t.userId, t.requestId),
   }),
 );
 
@@ -344,6 +314,9 @@ export const quizSessions = sqliteTable(
     userIdx: index("quiz_sessions_user_idx").on(t.userId),
     problemIdx: index("quiz_sessions_problem_idx").on(t.problemId),
     statusIdx: index("quiz_sessions_status_idx").on(t.status),
+    currentSessionIdx: uniqueIndex("quiz_sessions_user_problem_current_unique")
+      .on(t.userId, t.problemId)
+      .where(sql`${t.status} <> 'archived'`),
   }),
 );
 
@@ -383,4 +356,3 @@ export type User = typeof user.$inferSelect;
 export type Session = typeof session.$inferSelect;
 export type Account = typeof account.$inferSelect;
 export type Verification = typeof verification.$inferSelect;
-export type ApiKey = typeof apikey.$inferSelect;

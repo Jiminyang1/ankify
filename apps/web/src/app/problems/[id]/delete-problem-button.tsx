@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export function DeleteProblemButton({
   problemId,
@@ -13,14 +14,10 @@ export function DeleteProblemButton({
   problemTitle: string;
 }) {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const close = useCallback(() => {
     if (busy) return;

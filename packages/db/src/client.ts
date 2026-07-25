@@ -29,6 +29,7 @@ function repoRoot(): string {
  *
  * Profile selection:
  *   - ANKIFY_PROFILE=production → load `.env.production.local` (writes to prod Turso)
+ *   - ANKIFY_PROFILE=preview    → load `.env.preview.local`    (writes to preview Turso)
  *   - otherwise                  → load `.env.local`            (writes to local SQLite)
  *
  * Next.js dev server doesn't need this — it loads `.env.local` itself. This
@@ -42,8 +43,17 @@ export function loadDbEnv() {
   _envLoaded = true;
 
   const root = repoRoot();
-  const profile = process.env.ANKIFY_PROFILE === "production" ? "production" : "local";
-  const profileFile = profile === "production" ? ".env.production.local" : ".env.local";
+  const requestedProfile = process.env.ANKIFY_PROFILE;
+  const profile =
+    requestedProfile === "production" || requestedProfile === "preview"
+      ? requestedProfile
+      : "local";
+  const profileFile =
+    profile === "production"
+      ? ".env.production.local"
+      : profile === "preview"
+        ? ".env.preview.local"
+        : ".env.local";
 
   const existingEnv = new Map(Object.entries(process.env));
   loadEnvFile(resolve(root, ".env"));
@@ -53,9 +63,9 @@ export function loadDbEnv() {
   }
 
   if (!process.env.TURSO_DATABASE_URL && !process.env.LOCAL_DB_PATH) {
-    if (profile === "production") {
+    if (profile !== "local") {
       throw new Error(
-        `TURSO_DATABASE_URL missing in ${profileFile}: production profile requires Turso, not local SQLite`,
+        `TURSO_DATABASE_URL missing in ${profileFile}: ${profile} profile requires Turso, not local SQLite`,
       );
     }
     process.env.LOCAL_DB_PATH = resolve(root, "packages/db/local.db");
@@ -79,6 +89,9 @@ function buildClient(): Client {
 
   if (remoteUrl) {
     return createClient({ url: remoteUrl, authToken });
+  }
+  if (process.env.VERCEL) {
+    throw new Error("TURSO_DATABASE_URL missing: Vercel deployments cannot use local SQLite");
   }
 
   return createClient({ url: `file:${localDbPath()}` });

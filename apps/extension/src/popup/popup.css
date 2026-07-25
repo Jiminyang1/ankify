@@ -309,6 +309,49 @@ label, button, th, .font-ui {
   box-shadow: none;
 }
 
+.auth-gate {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  min-height: 320px;
+}
+
+.auth-gate h1,
+.auth-gate p {
+  margin: 0;
+}
+
+.auth-gate-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.auth-gate-origin {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-gate-origin input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
 .section-label {
   display: block;
   font-family: var(--font-ui);

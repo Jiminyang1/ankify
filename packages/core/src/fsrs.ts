@@ -14,6 +14,7 @@ export interface FsrsCardState {
   difficulty: number | null;
   elapsedDays: number | null;
   scheduledDays: number | null;
+  learningSteps: number;
   reps: number;
   lapses: number;
   state: "new" | "learning" | "review" | "relearning";
@@ -51,6 +52,7 @@ export function toState(c: FsrsCard): FsrsCardState {
     difficulty: c.difficulty,
     elapsedDays: c.elapsed_days,
     scheduledDays: c.scheduled_days,
+    learningSteps: c.learning_steps,
     reps: c.reps,
     lapses: c.lapses,
     state: STATE_TO_STR[c.state],
@@ -65,6 +67,7 @@ export function fromState(s: FsrsCardState): FsrsCard {
     difficulty: s.difficulty ?? 0,
     elapsed_days: s.elapsedDays ?? 0,
     scheduled_days: s.scheduledDays ?? 0,
+    learning_steps: s.learningSteps,
     reps: s.reps,
     lapses: s.lapses,
     state: STR_TO_STATE[s.state],
@@ -98,5 +101,4 @@ export function retrievability(state: FsrsCardState, at = new Date()) {
   if (state.state === "new") return 1;
   return scheduler.get_retrievability(fromState(state), at, false) as number;
 }
-
 

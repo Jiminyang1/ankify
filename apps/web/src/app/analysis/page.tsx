@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDb, schema } from "@ankify/db";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNull, sql } from "drizzle-orm";
 import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
@@ -10,6 +10,8 @@ import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
+import { getReviewSettings } from "@/lib/settings";
+import { formatDateKeyInTimeZone } from "@/lib/time-zone";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -29,6 +31,7 @@ function toFsrsState(problem: typeof schema.problems.$inferSelect): FsrsCardStat
     difficulty: problem.fsrsDifficulty,
     elapsedDays: problem.fsrsElapsedDays,
     scheduledDays: problem.fsrsScheduledDays,
+    learningSteps: problem.fsrsLearningSteps,
     reps: problem.fsrsReps,
     lapses: problem.fsrsLapses,
     state: problem.fsrsState,
@@ -54,7 +57,7 @@ async function loadAnalysis(userId: string) {
   // whole deck into memory just to reduce it. retrievability() is a JS-only
   // curve computation, and new (reps=0) cards always sit at r=1 with ~0 risk,
   // so the per-row JS pass runs over reviewed problems only.
-  const [aggRows, stateRows, dueRow, dailyReviews, reviewedProblems] = await Promise.all([
+  const [aggRows, stateRows, dueRow, dailyReviewEvents, reviewedProblems, reviewSettings] = await Promise.all([
     db
       .select({
         total: sql<number>`count(*)`,
@@ -78,20 +81,32 @@ async function loadAnalysis(userId: string) {
       .select({ count: sql<number>`count(*)` })
       .from(schema.problems)
       .where(dueProblemCondition(userId, now)),
-    db.all(sql`
-      SELECT
-        strftime('%Y-%m-%d', occurred_at / 1000, 'unixepoch') as day,
-        COUNT(*) as count
-      FROM review_events
-      WHERE user_id = ${userId} AND event_type = 'self_recall_rated' AND occurred_at >= ${thirtyDaysAgo}
-      GROUP BY day
-      ORDER BY day ASC
-    `) as Promise<{ day: string; count: number }[]>,
+    db
+      .select({ occurredAt: schema.reviewEvents.occurredAt })
+      .from(schema.reviewEvents)
+      .where(
+        and(
+          eq(schema.reviewEvents.userId, userId),
+          eq(schema.reviewEvents.eventType, "self_recall_rated"),
+          isNull(schema.reviewEvents.undoneAt),
+          gte(schema.reviewEvents.occurredAt, new Date(thirtyDaysAgo)),
+        ),
+      ),
     db
       .select()
       .from(schema.problems)
       .where(and(owns, gt(schema.problems.fsrsReps, 0))),
+    getReviewSettings(userId),
   ]);
+
+  const reviewCounts = new Map<string, number>();
+  for (const event of dailyReviewEvents) {
+    const day = formatDateKeyInTimeZone(event.occurredAt, reviewSettings.timeZone);
+    reviewCounts.set(day, (reviewCounts.get(day) ?? 0) + 1);
+  }
+  const dailyReviews = [...reviewCounts.entries()]
+    .map(([day, count]) => ({ day, count }))
+    .sort((a, b) => a.day.localeCompare(b.day));
 
   const agg = aggRows[0];
   const total = agg?.total ?? 0;

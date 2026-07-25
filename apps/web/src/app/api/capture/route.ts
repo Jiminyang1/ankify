@@ -4,17 +4,29 @@ import { schemas, emptyCardState } from "@ankify/core";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
-import { MAX_PROBLEMS_PER_USER, RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { readJsonBody } from "@/lib/request-body";
+import {
+  MAX_PROBLEMS_PER_USER,
+  MAX_SUBMISSIONS_PER_PROBLEM,
+} from "@/lib/resource-limits";
 
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
 
-  const limit = checkRateLimit(`capture:${user.id}`, RATE_LIMITS.capture);
+  const limit = await checkRateLimit(user.id, "capture", RATE_LIMITS.capture);
   if (!limit.ok) return rateLimitResponse(limit.retryAfterSec);
 
-  const body = await req.json().catch(() => null);
-  const parsed = schemas.captureProblemSchema.safeParse(body);
+  const body = await readJsonBody(req);
+  if (!body.ok) {
+    return NextResponse.json(
+      { error: body.error },
+      { status: body.error === "payload_too_large" ? 413 : 400 },
+    );
+  }
+
+  const parsed = schemas.captureProblemSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
@@ -50,6 +62,7 @@ export async function POST(req: Request) {
   let problemId = existingProblem?.id;
   let created = false;
   let importedSubmissions = 0;
+  let submissionLimitReached = false;
 
   // Hard per-user cap on new problems (abuse floor for open signup). Only gates
   // brand-new captures — re-capturing an existing problem stays allowed.
@@ -107,6 +120,7 @@ export async function POST(req: Request) {
         fsrsDue: init.due,
         fsrsStability: init.stability,
         fsrsDifficulty: init.difficulty,
+        fsrsLearningSteps: init.learningSteps,
         fsrsState: init.state,
       });
       await tx.insert(schema.reviewEvents).values({
@@ -130,22 +144,30 @@ export async function POST(req: Request) {
           topicTags: input.topicTags,
           similarSlugs: input.similarSlugs,
           notes: input.notes ?? ep.notes,
+          archivedAt: null,
           updatedAt: new Date(),
         })
         .where(and(eq(schema.problems.id, problemId!), eq(schema.problems.userId, user.id)));
     }
 
-    // Dedup submissions inside the transaction. Prefer LeetCode's stable
-    // submission id, then collapse exact repeated code submissions.
-    const existingSubmissions = await tx
+    // Dedup inside the transaction without loading every stored source file
+    // into the function. LeetCode's stable submission id is the primary key;
+    // an exact-code lookup handles old/third-party clients that omit it.
+    const existingSubmissionIds = await tx
       .select({
         leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId,
-        language: schema.submissions.language,
-        code: schema.submissions.code,
-        status: schema.submissions.status,
       })
       .from(schema.submissions)
       .where(and(eq(schema.submissions.problemId, problemId!), eq(schema.submissions.userId, user.id)));
+
+    const [{ count: existingSubmissionCount } = { count: 0 }] = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.submissions)
+      .where(and(eq(schema.submissions.problemId, problemId!), eq(schema.submissions.userId, user.id)));
+    const availableSlots = Math.max(
+      0,
+      MAX_SUBMISSIONS_PER_PROBLEM - existingSubmissionCount,
+    );
 
     const normalizedCode = (code: string) =>
       code
@@ -162,9 +184,11 @@ export async function POST(req: Request) {
     }) => `${s.language}\x00${s.status}\x00${normalizedCode(s.code)}`;
 
     const seenLeetcodeIds = new Set(
-      existingSubmissions.map((s) => s.leetcodeSubmissionId).filter((id): id is string => Boolean(id)),
+      existingSubmissionIds
+        .map((s) => s.leetcodeSubmissionId)
+        .filter((id): id is string => Boolean(id)),
     );
-    const seenSubmissionKeys = new Set(existingSubmissions.map(submissionKey));
+    const seenSubmissionKeys = new Set<string>();
     const pid = problemId!;
     const newRows: Array<(typeof submissionRows)[number] & { userId: string; problemId: string }> = [];
     for (const row of submissionRows.map((submission) => ({ ...submission, userId: user.id, problemId: pid }))) {
@@ -172,6 +196,28 @@ export async function POST(req: Request) {
 
       const key = submissionKey(row);
       if (seenSubmissionKeys.has(key)) continue;
+      if (newRows.length >= availableSlots) {
+        submissionLimitReached = true;
+        break;
+      }
+
+      const [sameSubmission] = await tx
+        .select({ id: schema.submissions.id })
+        .from(schema.submissions)
+        .where(
+          and(
+            eq(schema.submissions.userId, user.id),
+            eq(schema.submissions.problemId, pid),
+            eq(schema.submissions.language, row.language),
+            eq(schema.submissions.status, row.status),
+            eq(schema.submissions.code, row.code),
+          ),
+        )
+        .limit(1);
+      if (sameSubmission) {
+        seenSubmissionKeys.add(key);
+        continue;
+      }
 
       newRows.push(row);
       if (row.leetcodeSubmissionId) seenLeetcodeIds.add(row.leetcodeSubmissionId);
@@ -197,5 +243,6 @@ export async function POST(req: Request) {
     problemId,
     created,
     importedSubmissions,
+    submissionLimitReached,
   });
 }

@@ -21,12 +21,17 @@ const LINKS = [
 
 export function Nav() {
   const pathname = usePathname();
-  const isLogin = pathname === "/login";
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const isPublicPage =
+    pathname === "/login" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    (pathname === "/" && (sessionPending || !session?.user));
   const [dueCount, setDueCount] = useState(0);
   const { t } = useLanguage();
 
   useEffect(() => {
-    if (isLogin) return;
+    if (isPublicPage) return;
     let cancelled = false;
 
     async function loadDueCount() {
@@ -44,7 +49,7 @@ export function Nav() {
     return () => {
       cancelled = true;
     };
-  }, [isLogin, pathname]);
+  }, [isPublicPage, pathname]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
@@ -53,7 +58,7 @@ export function Nav() {
           <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
-        {!isLogin && (
+        {!isPublicPage && (
           <div className="flex items-center gap-1 text-sm">
             {LINKS.map((l) => {
               const active = l.href === "/" ? pathname === "/" : pathname === l.href || pathname.startsWith(l.href + "/");
@@ -82,7 +87,7 @@ export function Nav() {
         )}
 
         <div className="flex items-center gap-2">
-          {!isLogin && (
+          {!isPublicPage && session?.user && (
             <button
               type="button"
               onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}
@@ -91,7 +96,7 @@ export function Nav() {
               {t.nav.signOut}
             </button>
           )}
-          {isLogin && (
+          {isPublicPage && (
             <>
               <LanguageToggle />
               <ThemeToggle />

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
@@ -14,10 +14,15 @@ import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
 import { cn, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
+import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
+
+function currentTimeMs() {
+  return Date.now();
+}
 
 function ratingLabel(rating: number | null, t: Awaited<ReturnType<typeof getRequestTranslations>>) {
   if (rating === 1) return t.rating.again;
@@ -46,21 +51,23 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       .select()
       .from(schema.submissions)
       .where(and(eq(schema.submissions.userId, user.id), eq(schema.submissions.problemId, id)))
-      .orderBy(desc(schema.submissions.submittedAt)),
+      .orderBy(desc(schema.submissions.submittedAt))
+      .limit(10),
     db
       .select()
       .from(schema.cards)
       .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
-      .orderBy(desc(schema.cards.createdAt)),
+      .orderBy(desc(schema.cards.createdAt))
+      .limit(50),
     db
       .select()
       .from(schema.reviewEvents)
-      .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated")))
+      .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated"), isNull(schema.reviewEvents.undoneAt)))
       .orderBy(desc(schema.reviewEvents.occurredAt))
       .limit(20),
   ]);
 
-  const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= Date.now();
+  const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
 
   const statementPanel = problem.descriptionMd ? (
     <Markdown>{problem.descriptionMd}</Markdown>
@@ -145,7 +152,8 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             <div className="flex flex-wrap items-center gap-2">
               <DifficultyPill difficulty={problem.difficulty} language={language} />
               <FsrsStatePill state={problem.fsrsState} language={language} />
-              {isDue && problem.fsrsReps > 0 && <Pill tone="accent">{t.common.due}</Pill>}
+              {problem.archivedAt != null && <Pill tone="neutral">{t.detail.archived}</Pill>}
+              {problem.archivedAt == null && isDue && problem.fsrsReps > 0 && <Pill tone="accent">{t.common.due}</Pill>}
             </div>
             <h1 className="mt-3 text-xl font-semibold leading-snug tracking-tight">
               {problem.leetcodeId != null && (
@@ -194,13 +202,22 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             </dl>
           </Surface>
 
+          {problem.archivedAt != null && (
+            <p className="rounded-lg border border-border bg-subtle px-3 py-2 text-xs text-muted">
+              {t.detail.archivedNotice}
+            </p>
+          )}
+
           <div className="flex gap-2">
-            <Link
-              href={`/review?problemId=${problem.id}`}
-              className={buttonClasses({ variant: "primary", className: "flex-1" })}
-            >
-              {isDue || problem.fsrsReps === 0 ? t.nav.review : t.detail.reviewAhead}
-            </Link>
+            {problem.archivedAt == null && (
+              <Link
+                href={`/review?problemId=${problem.id}`}
+                className={buttonClasses({ variant: "primary", className: "flex-1" })}
+              >
+                {isDue || problem.fsrsReps === 0 ? t.nav.review : t.detail.reviewAhead}
+              </Link>
+            )}
+            <ArchiveProblemButton problemId={problem.id} archived={problem.archivedAt != null} />
             <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
           </div>
         </aside>

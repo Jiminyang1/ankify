@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import { preview, type FsrsCardState } from "@ankify/core";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { getReviewQueueStatus } from "@/lib/review-queue";
@@ -15,7 +15,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
   const [problem] = await db
     .select()
     .from(schema.problems)
-    .where(and(eq(schema.problems.userId, user.id), eq(schema.problems.leetcodeSlug, slug)));
+    .where(
+      and(
+        eq(schema.problems.userId, user.id),
+        eq(schema.problems.leetcodeSlug, slug),
+        isNull(schema.problems.archivedAt),
+      ),
+    );
   if (!problem) {
     return NextResponse.json({ error: "not_captured" }, { status: 404 });
   }
@@ -25,12 +31,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
       .select()
       .from(schema.cards)
       .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problem.id), eq(schema.cards.aiStatus, "ready")))
-      .orderBy(desc(schema.cards.createdAt)),
+      .orderBy(desc(schema.cards.createdAt))
+      .limit(50),
     db
       .select()
       .from(schema.cards)
       .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, problem.id), ne(schema.cards.aiStatus, "ready")))
-      .orderBy(desc(schema.cards.createdAt)),
+      .orderBy(desc(schema.cards.createdAt))
+      .limit(25),
     getReviewQueueStatus(user.id, db),
   ]);
 
@@ -41,6 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
     difficulty: problem.fsrsDifficulty,
     elapsedDays: problem.fsrsElapsedDays,
     scheduledDays: problem.fsrsScheduledDays,
+    learningSteps: problem.fsrsLearningSteps,
     reps: problem.fsrsReps,
     lapses: problem.fsrsLapses,
     state: problem.fsrsState,

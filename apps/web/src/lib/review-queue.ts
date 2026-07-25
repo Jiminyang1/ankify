@@ -1,15 +1,15 @@
 import { getDb, schema, type DB } from "@ankify/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { dueProblemCondition } from "./due-problems";
 import { getReviewSettings } from "./settings";
+import { getZonedDayBounds } from "./time-zone";
 
 export async function getReviewQueueStatus(userId: string, db: DB = getDb()) {
   const now = new Date();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const review = await getReviewSettings(userId);
+  const { start: startOfDay } = getZonedDayBounds(review.timeZone, now);
 
-  const [review, totalDueRows, doneTodayRows] = await Promise.all([
-    getReviewSettings(userId),
+  const [totalDueRows, doneTodayRows] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
       .from(schema.problems)
@@ -21,6 +21,7 @@ export async function getReviewQueueStatus(userId: string, db: DB = getDb()) {
         and(
           eq(schema.reviewEvents.userId, userId),
           eq(schema.reviewEvents.eventType, "self_recall_rated"),
+          isNull(schema.reviewEvents.undoneAt),
           sql`${schema.reviewEvents.occurredAt} >= ${startOfDay}`,
         ),
       ),

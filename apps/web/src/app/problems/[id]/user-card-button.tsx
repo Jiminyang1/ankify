@@ -9,6 +9,7 @@ import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 type Mode = "manual" | "ai";
 type Candidate = Card & {
@@ -37,7 +38,7 @@ export function UserCardButton({
   problemDescription?: string | null;
 }) {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("manual");
   const [rawText, setRawText] = useState("");
@@ -51,8 +52,6 @@ export function UserCardButton({
   const [candidateBusyStartedAt, setCandidateBusyStartedAt] = useState<Record<string, number>>({});
   const generatingAi = busy === "auto" || busy === "note";
   const generationElapsedSeconds = useElapsedSeconds(generatingAi, generationStartedAt);
-
-  useEffect(() => setMounted(true), []);
 
   const loadCandidates = useCallback(async () => {
     const res = await fetch(`/api/problems/${problemId}/ai-cards`, { cache: "no-store" });
@@ -74,7 +73,10 @@ export function UserCardButton({
   }, [problemId]);
 
   useEffect(() => {
-    void loadCandidates().catch(() => undefined);
+    const timer = window.setTimeout(() => {
+      void loadCandidates().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadCandidates]);
 
   const resetManual = useCallback(() => {
@@ -420,15 +422,20 @@ export function UserCardButton({
 }
 
 function useElapsedSeconds(active: boolean, startedAt: number | null) {
-  const [now, setNow] = useState(Date.now());
+  const [clock, setClock] = useState<{ startedAt: number | null; now: number }>({
+    startedAt: null,
+    now: 0,
+  });
   useEffect(() => {
     if (!active || !startedAt) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(
+      () => setClock({ startedAt, now: Date.now() }),
+      1000,
+    );
     return () => window.clearInterval(timer);
   }, [active, startedAt]);
-  if (!active || !startedAt) return 0;
-  return Math.max(0, Math.floor((now - startedAt) / 1000));
+  if (!active || !startedAt || clock.startedAt !== startedAt) return 0;
+  return Math.max(0, Math.floor((clock.now - startedAt) / 1000));
 }
 
 function formatElapsedSeconds(totalSeconds: number) {

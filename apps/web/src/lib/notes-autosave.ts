@@ -92,14 +92,17 @@ export function useNotesAutosave({
   // then recover any dirty local draft (e.g. a save that failed before unmount).
   useEffect(() => {
     savedRef.current = value;
-    const draft = readNotesDraft(problemId);
-    if (draft && draft.dirty && draft.value !== value) {
-      setValue(draft.value);
-      void persist(draft.value);
-    } else if (draft && !draft.dirty && draft.value !== value) {
-      // Server value diverged from last-synced draft (edited elsewhere).
-      writeNotesDraft(problemId, value, false);
-    }
+    const timer = window.setTimeout(() => {
+      const draft = readNotesDraft(problemId);
+      if (draft && draft.dirty && draft.value !== value) {
+        setValue(draft.value);
+        void persist(draft.value);
+      } else if (draft && !draft.dirty && draft.value !== value) {
+        // Server value diverged from last-synced draft (edited elsewhere).
+        writeNotesDraft(problemId, value, false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
     // Only re-run when the active problem changes; typing flows through onChange.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemId]);

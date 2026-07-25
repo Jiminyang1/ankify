@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { LanguageProvider } from "@/components/LanguageProvider";
+import { TimeZoneSync } from "@/components/TimeZoneSync";
 import { getRequestLanguage } from "@/lib/i18n-server";
 import "./globals.css";
 
@@ -30,6 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
         <LanguageProvider initialLanguage={language}>
           <ThemeProvider>
+            <TimeZoneSync />
             <Nav />
             <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
           </ThemeProvider>

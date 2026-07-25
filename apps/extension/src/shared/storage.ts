@@ -5,8 +5,7 @@ export const SETTINGS_KEY = "ankify.settings";
 const CARD_DRAFTS_KEY = "ankify.cardDrafts";
 
 const DEFAULTS: ExtSettings = {
-  apiBaseUrl: "http://localhost:3000",
-  apiToken: "",
+  apiBaseUrl: __ANKIFY_DEFAULT_API_ORIGIN__,
   language: "en",
   resetCodeOnProblemOpen: false,
 };
@@ -15,7 +14,18 @@ const MAX_DRAFT_KEYS = 48;
 
 export async function getSettings(): Promise<ExtSettings> {
   const r = await chrome.storage.local.get(SETTINGS_KEY);
-  return { ...DEFAULTS, ...(r[SETTINGS_KEY] as Partial<ExtSettings> | undefined) };
+  const stored = r[SETTINGS_KEY] as
+    | (Partial<ExtSettings> & { apiToken?: string })
+    | undefined;
+  const { apiToken: retiredToken, ...safeSettings } = stored ?? {};
+  const settings = { ...DEFAULTS, ...safeSettings };
+
+  // Remove API keys written by releases before cookie-session authentication.
+  if (retiredToken !== undefined) {
+    await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  }
+
+  return settings;
 }
 
 export async function setSettings(s: Partial<ExtSettings>) {

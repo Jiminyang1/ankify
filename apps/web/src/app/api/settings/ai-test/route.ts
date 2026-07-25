@@ -6,6 +6,7 @@ import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { buildModel } from "@/lib/ai";
 import { getAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
+import { safeErrorForLog } from "@/lib/ai-errors";
 
 export const maxDuration = 180;
 
@@ -25,7 +26,7 @@ const probeSchema = z.object({ ok: z.literal(true) });
  * overrides so users can test a new key before saving it. Falls back to the
  * user's stored AI settings for any field that's omitted.
  *
- * Session-only (extension tokens cannot test settings).
+ * Session-only.
  */
 export async function POST(req: Request) {
   const user = await getRequestSessionUser(req);
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ ok: true, provider, model, latencyMs: Date.now() - t0 });
   } catch (err) {
+    console.warn("[ai-test] provider probe failed", safeErrorForLog(err));
     return NextResponse.json(
       {
         ok: false,
@@ -113,5 +115,8 @@ function classifyAiError(err: unknown): { code: string; message: string } {
   if (lower.includes("network") || lower.includes("fetch failed") || lower.includes("enotfound") || lower.includes("econnrefused")) {
     return { code: "network", message: "Could not reach the provider." };
   }
-  return { code: "unknown", message: raw.slice(0, 500) };
+  return {
+    code: "unknown",
+    message: "The provider rejected the test or returned an unexpected response.",
+  };
 }
