@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/LanguageProvider";
+import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
 /** Archive removes the problem from the review rotation but keeps notes,
  *  cards, submissions, and review history. Reversible, so no confirm modal. */
@@ -32,6 +33,7 @@ export function ArchiveProblemButton({
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      notifyReviewQueueUpdated();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.detail.archiveFailed);

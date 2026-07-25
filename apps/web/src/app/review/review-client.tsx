@@ -13,7 +13,7 @@ import {
   type SetStateAction,
 } from "react";
 import Link from "next/link";
-import type { Problem, Card, Submission } from "@ankify/db";
+import type { Card, Problem, Submission } from "@ankify/db";
 import { formatQuizMarkdown, type FsrsRating, type QuizAnswer, type QuizItem } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -23,12 +23,9 @@ import { useNotesAutosave } from "@/lib/notes-autosave";
 import { SaveStatus } from "@/components/ui/save-status";
 import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatInterval } from "@/lib/utils";
+import type { ReviewPayload } from "@/lib/next-review";
+import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
-type ReviewPayload = {
-  problem: (Problem & { cards: Card[]; submissions: Submission[] }) | null;
-  previews: Record<FsrsRating, { due: string }> | null;
-  queue?: { dueCount: number };
-};
 type RateResult = {
   ok: true;
   nextDue: string;
@@ -74,12 +71,20 @@ const MAX_CONTEXT_SPLIT = 70;
 const MIN_CONTEXT_WIDTH = 360;
 const MIN_CARD_WIDTH = 360;
 
-export default function ReviewPage() {
+export default function ReviewPage({
+  initialData,
+  initialTargetId,
+}: {
+  initialData: ReviewPayload;
+  initialTargetId: string | null;
+}) {
   const { language, t } = useLanguage();
-  const [data, setData] = useState<ReviewPayload | null>(null);
-  const [stage, setStage] = useState<Stage>("loading");
+  const [data, setData] = useState<ReviewPayload | null>(initialData);
+  const [stage, setStage] = useState<Stage>(
+    initialData.problem ? "review" : "empty",
+  );
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating>(3);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialData.problem?.notes ?? "");
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("quiz");
   const [cardIdx, setCardIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -123,16 +128,10 @@ export default function ReviewPage() {
   }, [t.review.sessionExpired]);
 
   useEffect(() => {
-    // Allow deep-linking a specific problem to review ahead of schedule
-    // (?problemId=…). Consume the param once, then strip it so a refresh or
-    // "Next" falls back to the normal due queue.
-    const timer = window.setTimeout(() => {
-      const target = new URLSearchParams(window.location.search).get("problemId");
-      void loadNext(target);
-      if (target) window.history.replaceState(null, "", "/review");
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadNext]);
+    // The server already loaded a targeted review. Consume the deep-link once
+    // so refresh/Next returns to the normal due queue.
+    if (initialTargetId) window.history.replaceState(null, "", "/review");
+  }, [initialTargetId]);
 
   const getSplitBounds = useCallback(() => {
     const layout = reviewLayoutRef.current;
@@ -219,7 +218,9 @@ export default function ReviewPage() {
         setSubmitting(false);
         return;
       }
-      setResult((await res.json()) as RateResult);
+      const nextResult = (await res.json()) as RateResult;
+      setResult(nextResult);
+      notifyReviewQueueUpdated(nextResult.queue?.dueCount);
       ratingRequestRef.current = null;
       setStage("result");
     } catch {
@@ -243,6 +244,10 @@ export default function ReviewPage() {
         setSubmitting(false);
         return;
       }
+      const undoResult = (await res.json()) as {
+        queue?: { dueCount?: number };
+      };
+      notifyReviewQueueUpdated(undoResult.queue?.dueCount);
       setSubmitting(false);
       // Re-enter the same problem with its restored pre-rating state.
       await loadNext(data.problem.id);

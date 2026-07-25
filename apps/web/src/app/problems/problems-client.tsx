@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { Problem } from "@ankify/db";
 import type { LeetCodeDifficulty } from "@ankify/core";
+import type {
+  ProblemListItem,
+  ProblemsListPayload,
+} from "@/lib/problems-list";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
@@ -11,22 +14,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatRelative } from "@/lib/utils";
-
-type ProblemWithCards = Pick<
-  Problem,
-  | "id"
-  | "leetcodeSlug"
-  | "leetcodeId"
-  | "title"
-  | "difficulty"
-  | "topicTags"
-  | "fsrsDue"
-  | "fsrsReps"
-  | "fsrsLapses"
-  | "fsrsState"
-  | "archivedAt"
-  | "createdAt"
-> & { cardTotal: number };
 
 type FilterState = {
   difficulty: LeetCodeDifficulty | "all";
@@ -37,20 +24,31 @@ type FilterState = {
 
 type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
 
-export default function ProblemsPage() {
+export default function ProblemsPage({
+  initialData,
+}: {
+  initialData: ProblemsListPayload;
+}) {
   const { language, t } = useLanguage();
-  const [problems, setProblems] = useState<ProblemWithCards[]>([]);
+  const [problems, setProblems] = useState<ProblemListItem[]>(
+    initialData.problems,
+  );
   const [filters, setFilters] = useState<FilterState>({ difficulty: "all", state: "all", tag: "", search: "" });
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "due", asc: true });
-  const [dueCount, setDueCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [dueCount, setDueCount] = useState(initialData.dueCount);
+  const [totalCount, setTotalCount] = useState(initialData.totalCount);
+  const [nextCursor, setNextCursor] = useState<string | null>(
+    initialData.nextCursor,
+  );
+  const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [nowMs, setNowMs] = useState(0);
+  const [nowMs, setNowMs] = useState(
+    () => new Date(initialData.serverNow).getTime(),
+  );
+  const skippedInitialFetch = useRef(false);
 
   // "Archived" is a fetch mode, not a client-side filter: the default list
   // endpoint excludes archived problems, so flipping to it refetches.
@@ -65,6 +63,14 @@ export default function ProblemsPage() {
   }, [filters.search]);
 
   useEffect(() => {
+    if (
+      !skippedInitialFetch.current &&
+      !showArchived &&
+      debouncedSearch === ""
+    ) {
+      skippedInitialFetch.current = true;
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(() => {
       setLoading(true);

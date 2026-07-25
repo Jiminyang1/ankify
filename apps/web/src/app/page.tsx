@@ -18,21 +18,21 @@ async function getHomeData(userId: string) {
     const db = getDb();
     const now = new Date();
 
-    const [queue, totalRows] = await Promise.all([
+    const [queue, totalRows, allDueProblems] = await Promise.all([
       getReviewQueueStatus(userId, db),
       db
         .select({ count: sql<number>`count(*)` })
         .from(schema.problems)
         .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt))),
+      db
+        .select()
+        .from(schema.problems)
+        .where(dueProblemCondition(userId, now))
+        .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
+        .limit(8),
     ]);
     const totalRow = totalRows[0];
-
-    const dueProblems = await db
-      .select()
-      .from(schema.problems)
-      .where(dueProblemCondition(userId, now))
-      .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
-      .limit(Math.min(8, queue.remaining));
+    const dueProblems = allDueProblems.slice(0, Math.min(8, queue.remaining));
 
     const dueProblemIds = dueProblems.map((problem) => problem.id);
     const cardStats = dueProblemIds.length

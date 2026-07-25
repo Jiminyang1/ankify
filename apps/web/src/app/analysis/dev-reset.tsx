@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
+import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
 /** Dev-only "wipe everything" button. The server route also enforces
  *  NODE_ENV !== "production", so this is double-guarded. */
@@ -24,6 +25,7 @@ export function DevResetButton() {
         return;
       }
       setStatus(t.analysis.wiped);
+      notifyReviewQueueUpdated(0);
       router.refresh();
     });
   };

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
@@ -55,6 +56,15 @@ export const auth = betterAuth({
     provider: "sqlite",
     schema,
   }),
+  session: {
+    // Keep routine page/API authentication off the remote database for a
+    // short window. Sensitive account/settings routes explicitly bypass this
+    // cache through getRequestSessionUser().
+    cookieCache: {
+      enabled: true,
+      maxAge: 60,
+    },
+  },
   trustedOrigins: [configuredBaseUrl(), ...configuredExtensionOrigins()],
   socialProviders:
     googleClientId && googleClientSecret
@@ -89,12 +99,15 @@ function isAuthFailure(error: unknown) {
   return status === "UNAUTHORIZED" || status === "FORBIDDEN" || status === 401 || status === 403;
 }
 
-export async function getUserFromHeaders(inputHeaders: Headers): Promise<AuthUser | null> {
+export async function getUserFromHeaders(
+  inputHeaders: Headers,
+  disableCookieCache = false,
+): Promise<AuthUser | null> {
   ensureAuthConfigured();
   const result = await auth.api
     .getSession({
       headers: inputHeaders,
-      query: { disableCookieCache: true },
+      query: { disableCookieCache },
     })
     .catch((error: unknown) => {
       if (isAuthFailure(error)) return null;
@@ -105,11 +118,13 @@ export async function getUserFromHeaders(inputHeaders: Headers): Promise<AuthUse
 }
 
 export async function getSessionUserFromHeaders(inputHeaders: Headers): Promise<AuthUser | null> {
-  return getUserFromHeaders(inputHeaders);
+  return getUserFromHeaders(inputHeaders, true);
 }
 
+const getCachedPageUser = cache(async () => getUserFromHeaders(await headers()));
+
 export async function getOptionalPageUser() {
-  return getUserFromHeaders(await headers());
+  return getCachedPageUser();
 }
 
 export async function requirePageUser() {

@@ -6,6 +6,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
+import type { AuthUser } from "@/lib/auth";
+import {
+  REVIEW_QUEUE_UPDATED_EVENT,
+  type ReviewQueueUpdatedEvent,
+} from "@/lib/review-queue-event";
 import { BrandLockup } from "./brand";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
@@ -19,14 +24,13 @@ const LINKS = [
   { href: "/settings", key: "settings" },
 ] as const;
 
-export function Nav() {
+export function Nav({ user }: { user: AuthUser | null }) {
   const pathname = usePathname();
-  const { data: session, isPending: sessionPending } = authClient.useSession();
   const isPublicPage =
     pathname === "/login" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
-    (pathname === "/" && (sessionPending || !session?.user));
+    (pathname === "/" && !user);
   const [dueCount, setDueCount] = useState(0);
   const { t } = useLanguage();
 
@@ -45,11 +49,22 @@ export function Nav() {
       }
     }
 
+    const handleQueueUpdate = (event: Event) => {
+      const detail = (event as ReviewQueueUpdatedEvent).detail;
+      if (typeof detail?.dueCount === "number") {
+        setDueCount(detail.dueCount);
+      } else {
+        void loadDueCount();
+      }
+    };
+
     void loadDueCount();
+    window.addEventListener(REVIEW_QUEUE_UPDATED_EVENT, handleQueueUpdate);
     return () => {
       cancelled = true;
+      window.removeEventListener(REVIEW_QUEUE_UPDATED_EVENT, handleQueueUpdate);
     };
-  }, [isPublicPage, pathname]);
+  }, [isPublicPage]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
@@ -87,7 +102,7 @@ export function Nav() {
         )}
 
         <div className="flex items-center gap-2">
-          {!isPublicPage && session?.user && (
+          {!isPublicPage && user && (
             <button
               type="button"
               onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}

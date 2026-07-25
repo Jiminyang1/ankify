@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
+import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
 export function DeleteProblemButton({
   problemId,
@@ -43,6 +44,7 @@ export function DeleteProblemButton({
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      notifyReviewQueueUpdated();
       router.replace("/problems");
       router.refresh();
     } catch (e) {

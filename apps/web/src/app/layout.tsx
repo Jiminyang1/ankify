@@ -4,6 +4,7 @@ import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { LanguageProvider } from "@/components/LanguageProvider";
 import { TimeZoneSync } from "@/components/TimeZoneSync";
+import { getOptionalPageUser } from "@/lib/auth";
 import { getRequestLanguage } from "@/lib/i18n-server";
 import "./globals.css";
 
@@ -20,7 +21,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const language = await getRequestLanguage();
+  const [language, user] = await Promise.all([
+    getRequestLanguage(),
+    getOptionalPageUser(),
+  ]);
   return (
     <html lang={language === "zh" ? "zh-Hans" : "en"} suppressHydrationWarning>
       <body className="min-h-screen">
@@ -32,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <LanguageProvider initialLanguage={language}>
           <ThemeProvider>
             <TimeZoneSync />
-            <Nav />
+            <Nav user={user} />
             <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
           </ThemeProvider>
         </LanguageProvider>
