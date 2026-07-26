@@ -10,6 +10,7 @@ import {
   MAX_PROBLEMS_PER_USER,
   MAX_SUBMISSIONS_PER_PROBLEM,
 } from "@/lib/resource-limits";
+import { markFirstCapture } from "@/lib/onboarding";
 
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
@@ -249,6 +250,12 @@ export async function POST(req: Request) {
       );
     }
   });
+
+  if (created) {
+    await markFirstCapture(user.id).catch((error) => {
+      console.warn("[onboarding] failed to record first capture", error);
+    });
+  }
 
   return NextResponse.json({
     problemId,

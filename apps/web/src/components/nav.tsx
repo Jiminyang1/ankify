@@ -36,6 +36,7 @@ export function Nav({
   const pathname = usePathname();
   const isPublicPage =
     pathname === "/login" ||
+    pathname === "/welcome" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     (pathname === "/" && !user);

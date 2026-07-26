@@ -1,12 +1,12 @@
 /**
  * Where "Get the extension" points.
  *
- * The extension is not on the Chrome Web Store yet, so the default sends people
- * to the repository, whose README documents loading it unpacked. Once it ships,
- * set NEXT_PUBLIC_EXTENSION_INSTALL_URL to the store listing — no code change.
+ * Production has a stable Web Store ID. The environment override remains useful
+ * for trusted-test or future listing migrations, but users should never fall
+ * back to local-development instructions.
  */
 const FALLBACK_INSTALL_URL =
-  "https://github.com/Jiminyang1/ankify#quick-start-local-dev-sqlite";
+  "https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb";
 
 export function getExtensionInstallUrl() {
   const configured = process.env.NEXT_PUBLIC_EXTENSION_INSTALL_URL?.trim();

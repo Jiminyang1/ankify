@@ -23,6 +23,15 @@ describe("extension session CORS", () => {
     expect(response.headers.has("location")).toBe(false);
   });
 
+  it("keeps the extension welcome page public before sign-in", async () => {
+    const response = await proxy(
+      new NextRequest("https://ankify.example.com/welcome?source=extension"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has("location")).toBe(false);
+  });
+
   it("allows credentialed preflight only for configured extension origins", async () => {
     process.env.ANKIFY_EXTENSION_ORIGINS = extensionOrigin;
     const response = await proxy(

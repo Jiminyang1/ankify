@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { rate, retrievability, schemas, type FsrsCardState } from "@ankify/core";
 import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { getReviewQueueStatus } from "@/lib/review-queue";
+import { markFirstReview } from "@/lib/onboarding";
 
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
@@ -142,6 +143,12 @@ export async function POST(req: Request) {
   }
   if (requestConflict) {
     return NextResponse.json({ error: "review_request_conflict" }, { status: 409 });
+  }
+
+  if (!idempotentReplay) {
+    await markFirstReview(user.id).catch((error) => {
+      console.warn("[onboarding] failed to record first review", error);
+    });
   }
 
   const queue = await getReviewQueueStatus(user.id);

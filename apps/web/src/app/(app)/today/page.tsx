@@ -14,6 +14,9 @@ import { UserAvatar } from "@/components/user-avatar";
 import { getUserFirstName } from "@/lib/user-identity";
 import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
+import { getAiSettings } from "@/lib/settings";
+import { getOnboardingProgress } from "@/lib/onboarding";
+import { OnboardingCard } from "./onboarding-card";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +86,11 @@ export default async function HomePage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
 
-  const data = await getHomeData(user.id);
+  const [data, onboarding, ai] = await Promise.all([
+    getHomeData(user.id),
+    getOnboardingProgress(user.id),
+    getAiSettings(user.id),
+  ]);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
   const held = Math.max(0, data.totalDue - data.dueCount);
@@ -108,6 +115,19 @@ export default async function HomePage() {
           <p className="mt-0.5 text-sm text-muted">{welcomeMessage}</p>
         </div>
       </div>
+
+      {!onboarding.complete && (
+        <OnboardingCard
+          initialProgress={onboarding}
+          initialAi={{
+            provider: ai.provider,
+            model: ai.model,
+            hasApiKey: Boolean(ai.encryptedApiKey),
+          }}
+          installUrl={getExtensionInstallUrl()}
+          language={language}
+        />
+      )}
 
         <Surface className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">

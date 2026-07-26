@@ -4,9 +4,10 @@ import { z } from "zod";
 import { schemas } from "@ankify/core";
 import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
 import { buildModel } from "@/lib/ai";
-import { getAiSettings } from "@/lib/settings";
+import { getAiSettings, setAiSettings } from "@/lib/settings";
 import { decryptSecret } from "@/lib/secret-box";
 import { safeErrorForLog } from "@/lib/ai-errors";
+import { markAiVerified } from "@/lib/onboarding";
 
 export const maxDuration = 180;
 
@@ -14,6 +15,7 @@ const testRequestSchema = z.object({
   provider: schemas.aiProviderEnum.optional(),
   model: z.string().min(1).max(128).optional(),
   apiKey: z.string().min(1).max(512).optional(),
+  saveOnSuccess: z.boolean().optional(),
 });
 
 const probeSchema = z.object({ ok: z.literal(true) });
@@ -43,7 +45,9 @@ export async function POST(req: Request) {
   const model = parsed.data.model ?? (stored.model || undefined);
   const apiKey =
     parsed.data.apiKey ??
-    (stored.encryptedApiKey ? safeDecrypt(stored.encryptedApiKey) : undefined);
+    (provider === stored.provider && stored.encryptedApiKey
+      ? safeDecrypt(stored.encryptedApiKey)
+      : undefined);
 
   if (!provider) return NextResponse.json({ ok: false, code: "missing_provider" }, { status: 400 });
   if (!model) return NextResponse.json({ ok: false, code: "missing_model" }, { status: 400 });
@@ -67,7 +71,29 @@ export async function POST(req: Request) {
       mode,
       abortSignal: controller.signal,
     });
-    return NextResponse.json({ ok: true, provider, model, latencyMs: Date.now() - t0 });
+    if (parsed.data.saveOnSuccess) {
+      await setAiSettings(user.id, {
+        provider,
+        model,
+        reasoningMode: provider === stored.provider ? stored.reasoningMode : "fast",
+        apiKey: parsed.data.apiKey,
+      });
+      await markAiVerified(user.id);
+    } else if (
+      parsed.data.apiKey === undefined &&
+      provider === stored.provider &&
+      model === stored.model &&
+      stored.encryptedApiKey
+    ) {
+      await markAiVerified(user.id);
+    }
+    return NextResponse.json({
+      ok: true,
+      provider,
+      model,
+      saved: Boolean(parsed.data.saveOnSuccess),
+      latencyMs: Date.now() - t0,
+    });
   } catch (err) {
     console.warn("[ai-test] provider probe failed", safeErrorForLog(err));
     return NextResponse.json(

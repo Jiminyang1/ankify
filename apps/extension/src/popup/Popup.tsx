@@ -290,6 +290,10 @@ const EXT_I18N = {
       add: "Add to ankify",
       saving: "Saving...",
       back: "Back",
+      savedTitle: "Added to ankify",
+      savedBody: "Your first review is ready. ankify will schedule the next recall after you rate it.",
+      reviewNow: "Review now",
+      openToday: "Open Today",
     },
     notes: {
       title: "Notes",
@@ -479,6 +483,10 @@ const EXT_I18N = {
       add: "添加到 ankify",
       saving: "保存中...",
       back: "返回",
+      savedTitle: "已添加到 ankify",
+      savedBody: "第一次复习已经准备好。完成评分后，ankify 会安排下一次回忆。",
+      reviewNow: "立即复习",
+      openToday: "打开 Today",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
     settings: {
@@ -633,6 +641,16 @@ async function loadSessionAccount(apiBaseUrl: string): Promise<AuthAccount | nul
   if (!response.ok) throw new Error(`Connection failed (${response.status})`);
   const data = (await response.json()) as { user?: AuthAccount };
   return data.user ?? null;
+}
+
+async function markExtensionConnected(apiBaseUrl: string) {
+  const base = apiBaseUrl.replace(/\/+$/, "");
+  await fetch(`${base}/api/onboarding`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "extension_connected" }),
+  });
 }
 
 /* Per-field caps mirror packages/core/src/schemas.ts captureProblemSchema. */
@@ -943,6 +961,7 @@ export function Popup() {
     setAuthState({ kind: "loading" });
     try {
       const account = await loadSessionAccount(settings.apiBaseUrl);
+      if (account) void markExtensionConnected(settings.apiBaseUrl).catch(() => {});
       setAuthState(account ? { kind: "signed-in", account } : { kind: "signed-out" });
     } catch {
       setAuthState({ kind: "signed-out" });
@@ -3199,6 +3218,7 @@ function CaptureView({
   const t = getExtText(settings);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<CapturedProblem | null>(null);
+  const [savedResult, setSavedResult] = useState<CaptureResult | null>(null);
 
   async function readPage() {
     setBusy(true);
@@ -3215,13 +3235,34 @@ function CaptureView({
     if (!preview) return;
     setBusy(true);
     try {
-      await saveCapturedProblem(settings, preview);
-      onCaptured();
+      setSavedResult(await saveCapturedProblem(settings, preview));
     } catch (e) {
       onError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (savedResult) {
+    return (
+      <div className="panel">
+        <span className="section-label">{t.capture.savedTitle}</span>
+        <p className="popup-muted" style={{ marginTop: 0 }}>{t.capture.savedBody}</p>
+        <div className="capture-actions" style={{ marginTop: 16 }}>
+          <button type="button" className="btn btn-primary" onClick={onCaptured}>
+            {t.capture.reviewNow}
+          </button>
+          <a
+            href={`${settings.apiBaseUrl.replace(/\/+$/, "")}/today`}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-secondary"
+          >
+            {t.capture.openToday}
+          </a>
+        </div>
+      </div>
+    );
   }
 
   if (!preview) {
@@ -3298,6 +3339,7 @@ function SignInGate({
       for (let attempt = 0; attempt < 120; attempt += 1) {
         const account = await loadSessionAccount(apiBaseUrl).catch(() => null);
         if (account) {
+          void markExtensionConnected(apiBaseUrl).catch(() => {});
           if (loginTab.id != null) {
             // The session cookie can become visible a moment before the OAuth
             // callback finishes navigating. Give the confirmation page a short

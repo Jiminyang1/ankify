@@ -7,10 +7,20 @@ void chrome.storage.local
   .catch((err) => console.error("ankify: failed to restrict local storage", err));
 
 // MV3 service worker. Opens the Side Panel when the toolbar action is clicked.
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((err) => console.error("ankify: failed to set panel behavior", err));
+
+  if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
+    void getSettings()
+      .then((settings) =>
+        chrome.tabs.create({
+          url: `${settings.apiBaseUrl.replace(/\/+$/, "")}/welcome?source=extension`,
+        }),
+      )
+      .catch((err) => console.error("ankify: failed to open welcome page", err));
+  }
 });
 
 // Re-apply on startup in case the install hook missed it (e.g. after browser update).
