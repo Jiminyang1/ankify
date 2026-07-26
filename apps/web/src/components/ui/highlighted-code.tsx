@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
+let hasLoggedHighlightError = false;
+
 const LANGUAGE_ALIASES: Record<string, string> = {
   bash: "bash",
   c: "c",
@@ -69,7 +71,11 @@ export function HighlightedCode({
           defaultColor: "light-dark()",
         });
         if (!cancelled) setHighlight({ key: cacheKey, html: rendered });
-      } catch {
+      } catch (error) {
+        if (!hasLoggedHighlightError) {
+          hasLoggedHighlightError = true;
+          console.error("[ankify] syntax highlighting failed", error);
+        }
         if (!cancelled) setHighlight({ key: cacheKey, html: null });
       }
     }

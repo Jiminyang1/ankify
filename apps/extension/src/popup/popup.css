@@ -1142,6 +1142,10 @@ label, button, th, .font-ui {
   gap: 6px;
 }
 
+.settings-title {
+  position: relative;
+}
+
 .settings-title-text {
   color: var(--fg);
   font-size: 13px;
@@ -1153,7 +1157,7 @@ label, button, th, .font-ui {
 }
 
 .settings-info-tip {
-  position: relative;
+  position: static;
   display: inline-flex;
   flex: 0 0 auto;
   width: 14px;

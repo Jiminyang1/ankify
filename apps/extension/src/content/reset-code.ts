@@ -76,10 +76,16 @@ async function maybeResetCurrentProblem() {
       console.info("[ankify] reset LeetCode code to default", { slug, confirmed: result.confirmed });
     }
   } catch (error) {
+    if (isInvalidatedExtensionContext(error)) return;
     console.warn("[ankify] failed to reset LeetCode code", error);
   } finally {
     if (activeSlug === slug) activeSlug = null;
   }
+}
+
+function isInvalidatedExtensionContext(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Extension context invalidated");
 }
 
 async function shouldResetCode() {

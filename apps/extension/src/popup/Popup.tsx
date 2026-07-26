@@ -1056,32 +1056,9 @@ export function Popup() {
   const captured = state.kind === "captured" ? state : null;
   const text = settings ? getExtText(settings) : EXT_I18N.en;
 
-  if (!settings || authState.kind === "loading") {
-    return (
-      <div className="popup-shell">
-        <main className="popup-main">
-          <div className="panel">
-            <p className="popup-muted">{text.settings.checking}</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (authState.kind === "signed-out") {
-    return (
-      <SignInGate
-        settings={settings}
-        onSave={saveLocalSettings}
-        onAuthenticated={(account) => setAuthState({ kind: "signed-in", account })}
-        onRefresh={() => void refreshSession()}
-      />
-    );
-  }
-
   // Jump back to the LeetCode tab where the sticky problem was last seen.
-  // Falls back to any open tab on that slug if the original tab is gone, or
-  // opens a fresh tab as a last resort. Force-detect after to refresh.
+  // Hooks must run before the loading / signed-out early returns so the hook
+  // order stays stable while the session state changes.
   const jumpToSticky = useCallback(async () => {
     if (!sticky) return;
     const targetUrl = `https://leetcode.com/problems/${sticky.slug}/`;
@@ -1105,6 +1082,29 @@ export function Popup() {
       // chrome.tabs.update can reject if the tab was just closed mid-call; ignore
     }
   }, [sticky]);
+
+  if (!settings || authState.kind === "loading") {
+    return (
+      <div className="popup-shell">
+        <main className="popup-main">
+          <div className="panel">
+            <p className="popup-muted">{text.settings.checking}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (authState.kind === "signed-out") {
+    return (
+      <SignInGate
+        settings={settings}
+        onSave={saveLocalSettings}
+        onAuthenticated={(account) => setAuthState({ kind: "signed-in", account })}
+        onRefresh={() => void refreshSession()}
+      />
+    );
+  }
 
   return (
     <div className="popup-shell">
