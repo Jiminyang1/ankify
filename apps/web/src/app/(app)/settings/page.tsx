@@ -25,19 +25,21 @@ export default async function SettingsPage() {
     <PageFrame width="standard" className="space-y-6">
       <PageHeader title={t.settings.title} description={t.settings.subtitle} />
 
-      <Surface as="section" className="flex flex-wrap items-center gap-4 p-5 sm:p-6">
-        <UserAvatar
-          name={user.name}
-          email={user.email}
-          image={user.image}
-          size="lg"
-        />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold">{displayName}</h2>
-          <p className="truncate text-sm text-muted">{user.email}</p>
-          <p className="mt-1 text-xs text-muted">{t.settings.googleManaged}</p>
+      <Surface as="section" className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-6">
+        <div className="flex min-w-0 items-center gap-4">
+          <UserAvatar
+            name={user.name}
+            email={user.email}
+            image={user.image}
+            size="lg"
+          />
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold">{displayName}</h2>
+            <p className="truncate text-sm text-muted">{user.email}</p>
+            <p className="mt-1 text-xs text-muted">{t.settings.googleManaged}</p>
+          </div>
         </div>
-        <span className="rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-medium text-success">
+        <span className="w-fit rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-medium text-success sm:justify-self-end">
           {t.settings.googleConnected}
         </span>
       </Surface>

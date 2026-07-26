@@ -106,13 +106,13 @@ export function Nav({
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+      <nav className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-2 sm:flex sm:justify-between sm:px-6 sm:py-3">
         <Link href={user ? "/today" : "/"} className="group">
           <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
         {!isPublicPage && (
-          <div className="flex items-center gap-1 text-sm">
+          <div className="order-3 col-span-2 grid w-full grid-cols-5 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
             {LINKS.map((l) => {
               const active = pathname === l.href || pathname.startsWith(l.href + "/");
               const showBadge = l.href === "/review" && dueCount > 0;
@@ -121,7 +121,7 @@ export function Nav({
                   key={l.href}
                   href={l.href as Route}
                   className={cn(
-                    "relative rounded-md px-3 py-1.5 transition font-ui",
+                    "relative rounded-md px-1.5 py-1.5 text-center transition font-ui sm:px-3",
                     active
                       ? "bg-accent-soft text-accent"
                       : "text-muted hover:bg-subtle hover:text-fg",
@@ -139,7 +139,7 @@ export function Nav({
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-self-end gap-2">
           {!isPublicPage && user && (
             <div className="relative" ref={accountMenuRef}>
               <button
