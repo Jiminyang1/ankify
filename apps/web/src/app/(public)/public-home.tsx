@@ -14,7 +14,7 @@ export function PublicHome() {
         title: "不要只刷过，真正记住。",
         body: "ankify 把你的 LeetCode 题目、提交、失败用例和笔记整理成间隔复习、卡片与针对性测验。网页和 Chrome 扩展共用一次 Google 登录。",
         start: "使用 Google 开始",
-        getExtension: "获取扩展",
+        getExtension: "扩展安装指南",
         privacy: "隐私政策",
         terms: "使用条款",
         features: [
@@ -28,7 +28,7 @@ export function PublicHome() {
         title: "Don’t just solve it. Remember it.",
         body: "ankify turns your LeetCode problems, submissions, failed cases, and notes into spaced reviews, cards, and focused quizzes. The web app and Chrome extension share one Google login.",
         start: "Continue with Google",
-        getExtension: "Get the extension",
+        getExtension: "Extension setup guide",
         privacy: "Privacy policy",
         terms: "Terms of use",
         features: [
