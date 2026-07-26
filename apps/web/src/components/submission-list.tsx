@@ -52,7 +52,9 @@ function SubmissionCard({
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const hydrated = useHydrated();
   const passed = submission.status === "Accepted";
+  const submittedAtLabel = hydrated ? formatDate(submission.submittedAt) : "—";
   const meta = [
     submission.language,
     submission.runtimeMs != null ? `${submission.runtimeMs} ms` : null,
@@ -78,7 +80,7 @@ function SubmissionCard({
         <Pill tone={passed ? "success" : "danger"}>{submission.status}</Pill>
         <span className="text-muted tabular-nums">#{index}</span>
         <span className="truncate text-muted">{meta}</span>
-        <span className="ml-auto shrink-0 text-muted">{formatDate(submission.submittedAt)}</span>
+        <span className="ml-auto shrink-0 text-muted">{submittedAtLabel}</span>
       </button>
 
       {open && (
@@ -95,7 +97,7 @@ function SubmissionCard({
             <FullscreenButton
               code={submission.code}
               language={submission.language}
-              title={`${submission.status} · #${index} · ${formatDate(submission.submittedAt)}`}
+              title={`${submission.status} · #${index} · ${submittedAtLabel}`}
             />
             <HighlightedCode code={submission.code} language={submission.language} className="max-h-80" />
           </div>
