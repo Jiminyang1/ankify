@@ -103,7 +103,11 @@ export function CardReviewPanel({
             <EmptyState
               title={t.review.noCards}
               action={
-                <Link href={`/problems/${problemId}`} className={buttonClasses({ size: "sm" })}>
+                <Link
+                  href={`/problems/${problemId}`}
+                  prefetch={false}
+                  className={buttonClasses({ size: "sm" })}
+                >
                   {t.review.addCard}
                 </Link>
               }
