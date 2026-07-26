@@ -17,6 +17,9 @@ import type { Card, Problem, Submission } from "@ankify/db";
 import { formatQuizMarkdown, type FsrsRating, type QuizAnswer, type QuizItem } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
+import { Button, buttonClasses } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Spinner } from "@/components/ui/spinner";
 import { Markdown } from "@/components/ui/markdown";
 import { SubmissionList } from "@/components/submission-list";
 import { useNotesAutosave } from "@/lib/notes-autosave";
@@ -25,6 +28,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatInterval } from "@/lib/utils";
 import type { ReviewPayload } from "@/lib/next-review";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
+import { ShortcutsHelp } from "./shortcuts-help";
 
 type RateResult = {
   ok: true;
@@ -86,6 +90,7 @@ export default function ReviewPage({
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating>(3);
   const [notes, setNotes] = useState(initialData.problem?.notes ?? "");
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("quiz");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [cardIdx, setCardIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [result, setResult] = useState<RateResult | null>(null);
@@ -272,6 +277,13 @@ export default function ReviewPage({
       ) {
         return;
       }
+
+      // "?" is the conventional help key and works from any stage or tab.
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen((open) => !open);
+        return;
+      }
       // Let Enter/Space activate a focused control instead of hijacking it.
       const interactiveFocused = target?.closest?.("button, a, select, [role='separator']") != null;
       const isEnter = e.key === "Enter";
@@ -358,7 +370,7 @@ export default function ReviewPage({
       <Surface className="p-10 text-center">
         <h1 className="text-2xl font-semibold">{t.review.nothingDue}</h1>
         <p className="mt-2 text-sm text-muted">{t.review.nothingDueDescription}</p>
-        <Link href="/problems" className="mt-4 inline-block rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium hover:bg-subtle">
+        <Link href="/problems" className={buttonClasses({ className: "mt-4" })}>
           {t.review.browseProblems}
         </Link>
       </Surface>
@@ -372,6 +384,7 @@ export default function ReviewPage({
 
   return (
     <div className="space-y-4">
+      <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       {/* Header */}
       <ReviewHeader
         problem={problem}
@@ -398,6 +411,7 @@ export default function ReviewPage({
                 error={error}
                 submitting={submitting}
                 onSubmitRating={submitRating}
+                onOpenShortcuts={() => setShortcutsOpen(true)}
               />
             </div>
 
@@ -446,21 +460,12 @@ export default function ReviewPage({
             <Summary label={t.review.remainingToday} value={result.queue?.dueCount ?? 0} />
           </div>
           <div className="mt-6 flex items-center justify-center gap-2">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => void undoRating()}
-              className="inline-flex rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
-            >
+            <Button size="lg" disabled={submitting} onClick={() => void undoRating()}>
               {t.review.undo}
-            </button>
-            <button
-              type="button"
-              onClick={() => loadNext()}
-              className="inline-flex rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-card hover:opacity-90"
-            >
+            </Button>
+            <Button variant="primary" size="lg" onClick={() => loadNext()}>
               {t.common.next}
-            </button>
+            </Button>
           </div>
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
         </Surface>
@@ -523,6 +528,7 @@ function StatementPanel({
   error,
   submitting,
   onSubmitRating,
+  onOpenShortcuts,
 }: {
   problem: Problem;
   previews: ReviewPayload["previews"];
@@ -531,6 +537,7 @@ function StatementPanel({
   error: string | null;
   submitting: boolean;
   onSubmitRating: () => void;
+  onOpenShortcuts: () => void;
 }) {
   const { t } = useLanguage();
   return (
@@ -557,6 +564,7 @@ function StatementPanel({
         error={error}
         submitting={submitting}
         onSubmitRating={onSubmitRating}
+        onOpenShortcuts={onOpenShortcuts}
       />
     </Surface>
   );
@@ -644,8 +652,8 @@ function WorkspacePanel({
 
         <div className={cn("h-full overflow-y-auto p-4", activeTab !== "submissions" && "hidden")}>
           {submissions.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-center">
-              <p className="text-sm text-muted">{t.review.noSubmissions}</p>
+            <div className="flex h-full items-center justify-center">
+              <EmptyState title={t.review.noSubmissions} />
             </div>
           ) : (
             <SubmissionList submissions={submissions} />
@@ -937,13 +945,17 @@ function QuizPanel({
   }
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center p-5 text-sm text-muted">{t.quiz.loading}</div>;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <EmptyState title={t.quiz.loading} />
+      </div>
+    );
   }
 
   if (generating && !session) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-lg border border-border bg-surface p-5 text-center shadow-card">
+        <Surface className="w-full max-w-md p-5 text-center">
           <div className="mx-auto h-1.5 w-32 overflow-hidden rounded-full bg-subtle">
             <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/80" />
           </div>
@@ -952,7 +964,7 @@ function QuizPanel({
             {t.quiz.pendingBody}
           </p>
           <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-3 justify-center" />
-        </div>
+        </Surface>
       </div>
     );
   }
@@ -960,24 +972,25 @@ function QuizPanel({
   if (!session) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-lg border border-border bg-surface p-5 text-center shadow-card">
-          <div className="mx-auto inline-flex rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-accent">
-            Quiz
-          </div>
-          <h3 className="mt-3 text-sm font-semibold">{t.quiz.noQuizTitle}</h3>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            {t.quiz.noQuizBody}
-          </p>
-          <button
-            type="button"
-            disabled={generating}
-            onClick={() => void generateQuiz("generate")}
-            className="mt-4 rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
-          >
-            {generating ? t.quiz.generating : t.quiz.generateFive}
-          </button>
+        <Surface className="w-full max-w-md p-5 text-center">
+          <Pill tone="accent">Quiz</Pill>
+          <EmptyState
+            className="px-0 pb-0 pt-3"
+            title={t.quiz.noQuizTitle}
+            description={t.quiz.noQuizBody}
+            action={
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={generating}
+                onClick={() => void generateQuiz("generate")}
+              >
+                {generating ? t.quiz.generating : t.quiz.generateFive}
+              </Button>
+            }
+          />
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}
-        </div>
+        </Surface>
       </div>
     );
   }
@@ -993,7 +1006,7 @@ function QuizPanel({
     return (
       <div className="flex h-full flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          <div className="rounded-lg border border-border bg-surface p-4">
+          <Surface className="p-4">
             <div className="flex flex-wrap items-center gap-3">
               <div className="rounded-lg border border-accent/30 bg-bg px-3 py-2">
                 <div className="text-2xl font-bold leading-none tabular-nums">
@@ -1008,23 +1021,23 @@ function QuizPanel({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   disabled={generating}
                   onClick={() => void resetHistory()}
                   title={t.quiz.resetHistoryTitle}
-                  className="rounded-md border border-border bg-surface px-3 py-2 text-xs font-medium text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                  className="text-muted hover:bg-danger/10 hover:text-danger"
                 >
                   {t.quiz.resetHistory}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
                   disabled={generating}
                   onClick={() => void generateQuiz("nextBatch")}
-                  className="rounded-md bg-accent px-3.5 py-2 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
                 >
                   {generating ? t.quiz.generating : t.quiz.newBatch}
-                </button>
+                </Button>
               </div>
             </div>
             {generating && <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-3" />}
@@ -1040,19 +1053,19 @@ function QuizPanel({
                 <span className="text-[10px] font-bold uppercase tracking-wide">{t.quiz.missedLabel}</span>
                 <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : t.quiz.none}</span>
               </div>
-              <button
-                type="button"
+              <Button
+                size="sm"
                 disabled={unsavedMissedCount === 0 || savingMissed}
                 onClick={() => void saveMissedAsCards()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent-soft px-2.5 py-1.5 text-xs font-semibold text-accent hover:border-accent/50 disabled:border-border disabled:bg-subtle disabled:text-muted disabled:opacity-75"
+                className="border-accent/30 bg-accent-soft text-accent hover:border-accent/50 hover:bg-accent-soft disabled:border-border disabled:bg-subtle disabled:text-muted"
               >
                 {savingMissed ? t.quiz.creating : unsavedMissedCount === 0 ? t.quiz.cardsSaved : t.quiz.createCards}
                 {unsavedMissedCount > 0 && !savingMissed && (
                   <span className="rounded-full bg-accent/15 px-1.5 text-[10px] tabular-nums">{unsavedMissedCount}</span>
                 )}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Surface>
 
           <div className="mt-3">
             <button
@@ -1092,18 +1105,20 @@ function QuizPanel({
   const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
   if (!item) {
     return (
-      <div className="flex h-full items-center justify-center p-5 text-center">
-        <div>
-          <p className="text-sm text-muted">{t.quiz.noQuestions}</p>
-          <button
-            type="button"
-            disabled={generating}
-            onClick={() => void generateQuiz("regenerate")}
-            className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
-          >
-            {generating ? t.quiz.regenerating : t.quiz.regenerateQuiz}
-          </button>
-        </div>
+      <div className="flex h-full items-center justify-center">
+        <EmptyState
+          title={t.quiz.noQuestions}
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={generating}
+              onClick={() => void generateQuiz("regenerate")}
+            >
+              {generating ? t.quiz.regenerating : t.quiz.regenerateQuiz}
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -1129,39 +1144,41 @@ function QuizPanel({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
+            <Button
+              size="sm"
               disabled={!canGoPrev}
               onClick={() => goToQuestion(currentIndex - 1)}
-              className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-45"
+              className="text-muted"
             >
               {t.common.previous}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="sm"
               disabled={!canGoNext}
               onClick={() => goToQuestion(currentIndex + 1)}
-              className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-45"
+              className="text-muted"
             >
               {t.common.next}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={generating}
               onClick={() => void generateQuiz("regenerate")}
-              className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-50"
+              className="text-muted"
             >
               {t.quiz.regenerateQuiz}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={generating}
               onClick={() => void resetHistory()}
               title={t.quiz.resetHistoryTitle}
-              className="rounded-md px-2 py-1 text-xs text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+              className="text-muted hover:bg-danger/10 hover:text-danger"
             >
               {t.quiz.resetHistory}
-            </button>
+            </Button>
           </div>
         </div>
         {generating && <QuizGenerationTimer elapsedSeconds={generationElapsedSeconds} className="mt-2" />}
@@ -1230,34 +1247,26 @@ function QuizPanel({
               </div>
               <Markdown className="px-3 py-2.5 text-sm leading-relaxed">{formatQuizMarkdown(item.explanation)}</Markdown>
               <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
-                <button
-                  type="button"
+                <Button
+                  size="sm"
                   disabled={savedItemIds.has(item.id) || savingItemId === item.id}
                   onClick={() => void saveAsCard(item)}
-                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:bg-subtle hover:text-fg disabled:opacity-50"
+                  className="text-muted"
                 >
                   {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
-                </button>
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-white shadow-card hover:opacity-90"
-                >
+                </Button>
+                <Button variant="primary" size="sm" onClick={goNext}>
                   {session.status === "completed" ? t.quiz.results : t.common.next}
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
               <span>{submittingItem ? t.quiz.checking : t.quiz.answerHint}</span>
               {answeredCount < session.itemsJson.length && !canGoNext && (
-                <button
-                  type="button"
-                  onClick={() => goToQuestion(getFirstUnansweredIndex(session))}
-                  className="rounded-md border border-border bg-surface px-2.5 py-1 font-medium hover:bg-subtle hover:text-fg"
-                >
+                <Button size="sm" onClick={() => goToQuestion(getFirstUnansweredIndex(session))}>
                   {t.quiz.firstUnanswered}
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -1327,7 +1336,7 @@ function QuizResultItem({
   const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
   const t = labels;
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
+    <Surface className="p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <span>{t.quiz.resultQuestion(index + 1)}</span>
         {answer && (
@@ -1348,15 +1357,10 @@ function QuizResultItem({
         {t.quiz.correctAnswer} <Markdown className="inline text-fg [&_code]:text-[0.95em] [&_p]:inline">{formatQuizMarkdown(correctChoice)}</Markdown>
       </div>
       <Markdown className="mt-3 text-sm">{formatQuizMarkdown(item.explanation)}</Markdown>
-      <button
-        type="button"
-        disabled={saved || saving}
-        onClick={onSave}
-        className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-subtle disabled:opacity-50"
-      >
+      <Button size="sm" className="mt-3" disabled={saved || saving} onClick={onSave}>
         {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
-      </button>
-    </div>
+      </Button>
+    </Surface>
   );
 }
 
@@ -1488,7 +1492,7 @@ function CardReviewPanel({
           onClick={() => { setCardIdx((i) => i - 1); setFlipped(false); }}
           className="text-xs text-muted hover:text-fg disabled:opacity-30 transition-colors"
         >
-          ← {t.common.previous}
+          {t.common.previous}
         </button>
         <span className="text-[11px] text-muted tabular-nums">
           {cards.length > 0 ? `${cardIdx + 1} / ${cards.length}` : "0 / 0"}
@@ -1499,7 +1503,7 @@ function CardReviewPanel({
           onClick={() => { setCardIdx((i) => i + 1); setFlipped(false); }}
           className="text-xs text-muted hover:text-fg disabled:opacity-30 transition-colors"
         >
-          {t.common.next} →
+          {t.common.next}
         </button>
       </div>
 
@@ -1552,16 +1556,15 @@ function CardReviewPanel({
             </div>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center p-5 text-center">
-            <div>
-              <p className="text-sm text-muted">{t.review.noCards}</p>
-              <Link
-                href={`/problems/${problemId}`}
-                className="mt-2 inline-block text-xs text-accent hover:underline"
-              >
-                {t.review.addCard}
-              </Link>
-            </div>
+          <div className="flex h-full items-center justify-center">
+            <EmptyState
+              title={t.review.noCards}
+              action={
+                <Link href={`/problems/${problemId}`} className={buttonClasses({ size: "sm" })}>
+                  {t.review.addCard}
+                </Link>
+              }
+            />
           </div>
         )}
       </div>
@@ -1577,6 +1580,7 @@ function CompactRating({
   error,
   submitting,
   onSubmitRating,
+  onOpenShortcuts,
 }: {
   previews: ReviewPayload["previews"];
   userFsrsRating: FsrsRating;
@@ -1584,6 +1588,7 @@ function CompactRating({
   error: string | null;
   submitting: boolean;
   onSubmitRating: () => void;
+  onOpenShortcuts: () => void;
 }) {
   const { t } = useLanguage();
   const ratingButtons = getRatingButtons(t);
@@ -1591,7 +1596,15 @@ function CompactRating({
     <div className="shrink-0 border-t border-border bg-surface/70 p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{t.review.rating}</span>
-        <span className="hidden text-[10px] text-muted lg:inline">{t.review.shortcutsHint}</span>
+        <button
+          type="button"
+          onClick={onOpenShortcuts}
+          aria-label={t.review.shortcutsOpen}
+          className="text-[10px] text-muted transition-colors hover:text-fg"
+        >
+          <span className="hidden lg:inline">{t.review.shortcutsHint}</span>
+          <span className="lg:hidden">{t.review.shortcutsTitle} ?</span>
+        </button>
       </div>
       <div className="flex items-stretch gap-1.5">
         {ratingButtons.map((button) => {
@@ -1618,14 +1631,15 @@ function CompactRating({
           );
         })}
 
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
           disabled={submitting}
           onClick={onSubmitRating}
-          className="rounded-md bg-accent px-4 text-xs font-semibold text-white shadow-card hover:opacity-90 disabled:opacity-50"
+          className="px-4 py-0"
         >
-          {submitting ? "…" : t.review.submit}
-        </button>
+          {submitting ? <Spinner /> : t.review.submit}
+        </Button>
       </div>
 
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
@@ -1666,7 +1680,7 @@ function NotesEditor({
                 flush();
               }}
               placeholder={t.review.notesPlaceholder}
-              className="min-h-0 flex-1 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50 focus:outline-none focus:ring-0"
+              className="focus-inset min-h-0 flex-1 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50"
               autoFocus={editing}
             />
           ) : (

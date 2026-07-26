@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "icon" | "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: "border border-transparent bg-accent text-white shadow-card hover:opacity-90",
@@ -10,9 +10,14 @@ const VARIANT: Record<ButtonVariant, string> = {
   danger: "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/15",
 };
 
+/** `icon` is for square glyph-only controls (stepper arrows, close). `lg` is
+ *  the hero call to action — page-level primary actions use it so the padding
+ *  never has to be hand-overridden at the call site. */
 const SIZE: Record<ButtonSize, string> = {
+  icon: "gap-0 rounded-md px-2 py-1 text-xs",
   sm: "gap-1.5 rounded-md px-3 py-1.5 text-xs",
   md: "gap-2 rounded-lg px-4 py-2 text-sm",
+  lg: "gap-2 rounded-lg px-5 py-2.5 text-sm",
 };
 
 /**

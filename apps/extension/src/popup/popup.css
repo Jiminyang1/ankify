@@ -19,6 +19,11 @@
   --accent-soft: #2a261c;
   --success: #4caf91;
   --danger: #e0556a;
+  --warning: #e89240;
+  --warning-soft: #302416;
+  --easy: #4caf91;
+  --medium: #d4a853;
+  --hard: #e0556a;
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 1px 0 0 rgba(48,48,54,0.6), 0 1px 2px -1px rgba(0,0,0,0.08), 0 4px 8px -4px rgba(0,0,0,0.06);
@@ -31,18 +36,23 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #faf9f7;
+    --bg: #f5f4f1;
     --surface: #ffffff;
-    --subtle: #f2f1ef;
+    --subtle: #edece8;
     --fg: #1a1a1e;
-    --muted: #6e6d73;
-    --border: #e5e3e0;
+    --muted: #66656b;
+    --border: #d9d6d0;
     --accent: #b8963f;
     --accent-strong: #b8963f;
     --accent-soft: #faf6ec;
     --success: #2d8f6d;
     --danger: #c73e55;
-    --shadow: 0 1px 0 0 rgba(229,227,224,0.6), 0 1px 2px -1px rgba(30,30,40,0.05), 0 4px 8px -4px rgba(30,30,40,0.04);
+    --warning: #c06e1c;
+    --warning-soft: #fcf3e8;
+    --easy: #2d8f6d;
+    --medium: #b8963f;
+    --hard: #c73e55;
+    --shadow: 0 1px 0 0 rgba(217,214,208,0.6), 0 1px 2px -1px rgba(30,30,40,0.05), 0 4px 8px -4px rgba(30,30,40,0.04);
     --scrollbar-thumb: color-mix(in srgb, var(--muted) 32%, transparent);
     --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 54%, transparent);
   }
@@ -62,6 +72,11 @@
   --accent-soft: #2a261c;
   --success: #4caf91;
   --danger: #e0556a;
+  --warning: #e89240;
+  --warning-soft: #302416;
+  --easy: #4caf91;
+  --medium: #d4a853;
+  --hard: #e0556a;
   --shadow: 0 1px 0 0 rgba(48,48,54,0.6), 0 1px 2px -1px rgba(0,0,0,0.08), 0 4px 8px -4px rgba(0,0,0,0.06);
   --scrollbar-thumb: color-mix(in srgb, var(--muted) 46%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 68%, transparent);
@@ -69,18 +84,23 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #faf9f7;
+  --bg: #f5f4f1;
   --surface: #ffffff;
-  --subtle: #f2f1ef;
+  --subtle: #edece8;
   --fg: #1a1a1e;
-  --muted: #6e6d73;
-  --border: #e5e3e0;
+  --muted: #66656b;
+  --border: #d9d6d0;
   --accent: #b8963f;
   --accent-strong: #b8963f;
   --accent-soft: #faf6ec;
   --success: #2d8f6d;
   --danger: #c73e55;
-  --shadow: 0 1px 0 0 rgba(229,227,224,0.6), 0 1px 2px -1px rgba(30,30,40,0.05), 0 4px 8px -4px rgba(30,30,40,0.04);
+  --warning: #c06e1c;
+  --warning-soft: #fcf3e8;
+  --easy: #2d8f6d;
+  --medium: #b8963f;
+  --hard: #c73e55;
+  --shadow: 0 1px 0 0 rgba(217,214,208,0.6), 0 1px 2px -1px rgba(30,30,40,0.05), 0 4px 8px -4px rgba(30,30,40,0.04);
   --scrollbar-thumb: color-mix(in srgb, var(--muted) 32%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 54%, transparent);
 }
@@ -430,9 +450,11 @@ label, button, th, .font-ui {
   text-transform: uppercase;
 }
 
-.pill-easy { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-.pill-medium { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-strong); }
-.pill-hard { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+/* Difficulty uses its own tokens rather than borrowing success/accent/danger,
+ * so the web app can restyle either axis without silently changing the other. */
+.pill-easy { background: color-mix(in srgb, var(--easy) 15%, transparent); color: var(--easy); }
+.pill-medium { background: color-mix(in srgb, var(--medium) 15%, transparent); color: var(--medium); }
+.pill-hard { background: color-mix(in srgb, var(--hard) 15%, transparent); color: var(--hard); }
 .pill-state { background: var(--subtle); color: var(--muted); }
 .pill-due { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-strong); }
 
@@ -2635,8 +2657,8 @@ a:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Inline arrow button that submits the chosen rating, sits at the right
- * edge of the rate-row so the whole panel is one line. */
+/* Inline button that submits the chosen rating, sits at the right edge of the
+ * rate-row so the whole panel is one line. */
 .rate-submit-inline {
   flex-shrink: 0;
   display: flex;
@@ -2647,6 +2669,31 @@ a:focus-visible {
   font-size: 14px;
   font-weight: 700;
   border-radius: 6px;
+}
+
+/* Spinner for glyph-only buttons, so a pending action keeps the button's
+ * footprint instead of swapping the icon for an ellipsis. */
+.btn-spinner {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.75;
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner {
+    animation-duration: 2s;
+  }
 }
 
 /* ── Module 3: rating card ── */

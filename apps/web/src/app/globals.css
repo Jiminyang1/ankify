@@ -116,9 +116,6 @@ body {
       0 4px 8px -2px rgb(var(--shadow-color) / 0.10),
       0 12px 24px -8px rgb(var(--shadow-color) / 0.10);
   }
-  .ring-focus {
-    @apply outline-none ring-2 ring-accent/40 ring-offset-2 ring-offset-bg;
-  }
 }
 
 * {
@@ -146,12 +143,26 @@ body {
   background-color: rgb(var(--muted) / 0.8);
 }
 
-/* focus visible on all interactive elements by default */
+/* Focus ring for every interactive element, including form controls. Anything
+ * that opts out with `outline-none` must supply its own visible indicator —
+ * see the borderless editors, which use .focus-inset instead. */
 button:focus-visible,
 a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid rgb(var(--accent) / 0.5);
   outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* For full-panel editors where an offset ring would sit outside the panel:
+ * draws the indicator inside the element's own box instead of removing it. */
+.focus-inset:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.45);
+  outline-offset: -2px;
   border-radius: 6px;
 }
 

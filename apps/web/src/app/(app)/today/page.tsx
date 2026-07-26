@@ -12,6 +12,7 @@ import { getReviewQueueStatus } from "@/lib/review-queue";
 import { formatRelative } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { getUserFirstName } from "@/lib/user-identity";
+import { getExtensionInstallUrl } from "@/lib/extension-install";
 
 export const dynamic = "force-dynamic";
 
@@ -125,10 +126,9 @@ export default async function HomePage() {
             </div>
             <Link
               href={hasDue ? "/review" : "/problems"}
-              className={buttonClasses({ variant: "primary", className: "px-5 py-2.5" })}
+              className={buttonClasses({ variant: "primary", size: "lg" })}
             >
               {hasDue ? t.home.startSession : t.home.openDeck}
-              <span aria-hidden>-&gt;</span>
             </Link>
           </div>
 
@@ -195,10 +195,18 @@ export default async function HomePage() {
           <Surface className="p-4">
             <EmptyState
               title={allDone ? t.home.noReviewsDue : t.home.captureToStart}
-              description={
-                allDone
-                  ? t.home.nextSession
-                  : t.home.captureHint
+              description={allDone ? t.home.nextSession : t.home.captureHint}
+              action={
+                allDone ? undefined : (
+                  <a
+                    href={getExtensionInstallUrl()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonClasses({ variant: "primary", size: "sm" })}
+                  >
+                    {t.home.getExtension}
+                  </a>
+                )
               }
             />
           </Surface>

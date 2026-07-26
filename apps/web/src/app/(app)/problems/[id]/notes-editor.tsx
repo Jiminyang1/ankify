@@ -40,7 +40,7 @@ export function NotesEditor({
               flush();
             }}
             placeholder="Markdown notes — what to remember, what changed, open questions..."
-            className="min-h-[16rem] flex-1 w-full resize-y border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50 focus:outline-none focus:ring-0"
+            className="focus-inset min-h-[16rem] flex-1 w-full resize-y border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted/50"
             autoFocus={editing}
           />
         ) : (

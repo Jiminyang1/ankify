@@ -525,6 +525,49 @@ function getExtText(settings: ExtSettings) {
   return EXT_I18N[settings.language === "zh" ? "zh" : "en"];
 }
 
+/** Chevron for glyph-only controls. A drawn icon scales with the button and
+ *  keeps its weight consistent, which a text arrow character does not. */
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <path d={direction === "left" ? "M10 3.5 5.5 8l4.5 4.5" : "M6 3.5 10.5 8 6 12.5"} />
+    </svg>
+  );
+}
+
+/** Check mark for the inline "submit rating" control. */
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+    </svg>
+  );
+}
+
 function getRatingButtons(t: ReturnType<typeof getExtText>): { rating: FsrsRating; label: string; hint: string }[] {
   return [
     { rating: 1, label: t.rating.again, hint: t.rating.hints.again },
@@ -2418,7 +2461,7 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
           onClick={() => setIdx((i) => Math.max(0, i - 1))}
           aria-label="Previous card"
         >
-          ←
+          <ChevronIcon direction="left" />
         </button>
         <span className="card-flipper-pos">
           {idx + 1} / {cards.length}
@@ -2430,7 +2473,7 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
           onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
           aria-label="Next card"
         >
-          →
+          <ChevronIcon direction="right" />
         </button>
       </div>
     </div>
@@ -2633,7 +2676,7 @@ function QuickRate({
           aria-label={t.review.submitRating}
           title={t.review.submitRating}
         >
-          {busy ? "…" : "→"}
+          {busy ? <span className="btn-spinner" /> : <CheckIcon />}
         </button>
       </div>
 

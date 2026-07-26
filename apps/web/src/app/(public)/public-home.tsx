@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLanguage } from "@/components/LanguageProvider";
 import { buttonClasses } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
+import { getExtensionInstallUrl } from "@/lib/extension-install";
 
 export function PublicHome() {
   const { language } = useLanguage();
@@ -13,6 +14,7 @@ export function PublicHome() {
         title: "不要只刷过，真正记住。",
         body: "ankify 把你的 LeetCode 题目、提交、失败用例和笔记整理成间隔复习、卡片与针对性测验。网页和 Chrome 扩展共用一次 Google 登录。",
         start: "使用 Google 开始",
+        getExtension: "获取扩展",
         privacy: "隐私政策",
         terms: "使用条款",
         features: [
@@ -26,6 +28,7 @@ export function PublicHome() {
         title: "Don’t just solve it. Remember it.",
         body: "ankify turns your LeetCode problems, submissions, failed cases, and notes into spaced reviews, cards, and focused quizzes. The web app and Chrome extension share one Google login.",
         start: "Continue with Google",
+        getExtension: "Get the extension",
         privacy: "Privacy policy",
         terms: "Terms of use",
         features: [
@@ -42,14 +45,21 @@ export function PublicHome() {
         <h1 className="mt-4 text-5xl font-semibold tracking-tight sm:text-6xl">{copy.title}</h1>
         <p className="mt-6 max-w-2xl text-base leading-8 text-muted sm:text-lg">{copy.body}</p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/login?next=/today" className={buttonClasses({ variant: "primary", className: "px-5 py-2.5" })}>
+          <Link href="/login?next=/today" className={buttonClasses({ variant: "primary", size: "lg" })}>
             {copy.start}
-            <span aria-hidden>-&gt;</span>
           </Link>
-          <Link href="/privacy" className={buttonClasses({ className: "px-5 py-2.5" })}>
+          <a
+            href={getExtensionInstallUrl()}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonClasses({ size: "lg" })}
+          >
+            {copy.getExtension}
+          </a>
+          <Link href="/privacy" className={buttonClasses({ size: "lg" })}>
             {copy.privacy}
           </Link>
-          <Link href="/terms" className={buttonClasses({ className: "px-5 py-2.5" })}>
+          <Link href="/terms" className={buttonClasses({ size: "lg" })}>
             {copy.terms}
           </Link>
         </div>

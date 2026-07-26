@@ -8,6 +8,9 @@ import {
   ReviewSettingsForm,
 } from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Surface } from "@/components/ui/surface";
+import { buttonClasses } from "@/components/ui/button";
+import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { UserAvatar } from "@/components/user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
 
@@ -24,7 +27,7 @@ export default async function SettingsPage() {
         <p className="mt-1 text-sm text-muted">{t.settings.subtitle}</p>
       </div>
 
-      <section className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="flex flex-wrap items-center gap-4 p-5">
         <UserAvatar
           name={user.name}
           email={user.email}
@@ -39,14 +42,14 @@ export default async function SettingsPage() {
         <span className="rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-medium text-success">
           {t.settings.googleConnected}
         </span>
-      </section>
+      </Surface>
 
-      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="p-5">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.appearance}</h2>
         <AppearanceSettingsForm />
-      </section>
+      </Surface>
 
-      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="p-5">
         <div className="mb-4 flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted">
           <h2>{t.settings.aiProvider}</h2>
           <InfoTip label={t.settings.keySecurity} align="left" />
@@ -59,27 +62,35 @@ export default async function SettingsPage() {
             hasApiKey: Boolean(ai.encryptedApiKey),
           }}
         />
-      </section>
+      </Surface>
 
-      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="p-5">
         <div className="mb-4 flex items-center gap-1.5 text-sm font-medium uppercase tracking-wide text-muted">
           <h2>{t.settings.extensionConnection}</h2>
           <InfoTip label={t.settings.extensionConnectionHelp} align="left" />
         </div>
         <p className="text-sm leading-6 text-muted">{t.settings.extensionConnectionHelp}</p>
-      </section>
+        <a
+          href={getExtensionInstallUrl()}
+          target="_blank"
+          rel="noreferrer"
+          className={buttonClasses({ size: "sm", className: "mt-3" })}
+        >
+          {t.settings.installExtension}
+        </a>
+      </Surface>
 
-      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="p-5">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">{t.settings.reviewSchedule}</h2>
         <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit, timeZone: review.timeZone }} />
-      </section>
+      </Surface>
 
-      <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <Surface as="section" className="p-5">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted">
           {t.settings.accountData}
         </h2>
         <AccountDataForm email={user.email} />
-      </section>
+      </Surface>
     </div>
   );
 }

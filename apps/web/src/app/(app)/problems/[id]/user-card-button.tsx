@@ -527,10 +527,10 @@ function CandidateReview({
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" disabled={index === 0} onClick={onPrev} className="px-2 py-1">
+          <Button size="icon" disabled={index === 0} onClick={onPrev}>
             Prev
           </Button>
-          <Button size="sm" disabled={index >= count - 1} onClick={onNext} className="px-2 py-1">
+          <Button size="icon" disabled={index >= count - 1} onClick={onNext}>
             Next
           </Button>
         </div>

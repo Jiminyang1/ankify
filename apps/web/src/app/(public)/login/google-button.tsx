@@ -32,7 +32,7 @@ export function GoogleSignInButton({ next }: { next: string }) {
       >
         {pending ? t.login.redirecting : t.login.continueGoogle}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
 }
