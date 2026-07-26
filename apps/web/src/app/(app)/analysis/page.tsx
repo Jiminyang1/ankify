@@ -12,6 +12,7 @@ import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
 import { getReviewSettings } from "@/lib/settings";
 import { formatDateKeyInTimeZone } from "@/lib/time-zone";
+import { PageFrame, PageHeader } from "@/components/ui/page";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -240,12 +241,14 @@ export default async function AnalysisPage() {
     data = await loadAnalysis(user.id);
   } catch {
     return (
-      <Surface className="p-8">
-        <h1 className="text-2xl font-semibold">{t.analysis.title}</h1>
-        <p className="mt-2 text-sm text-danger">
-          {t.common.databaseNotInitialized}
-        </p>
-      </Surface>
+      <PageFrame width="wide">
+        <Surface className="p-8">
+          <h1 className="text-2xl font-semibold">{t.analysis.title}</h1>
+          <p className="mt-2 text-sm text-danger">
+            {t.common.databaseNotInitialized}
+          </p>
+        </Surface>
+      </PageFrame>
     );
   }
 
@@ -256,18 +259,16 @@ export default async function AnalysisPage() {
     data.memoryScore == null ? "default" : data.memoryScore >= 80 ? "success" : data.memoryScore < 60 ? "danger" : "default";
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{t.analysis.title}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {t.analysis.subtitle}
-          </p>
-        </div>
-        <Link href="/today" className="text-sm font-medium text-accent hover:underline">
-          {t.analysis.backToday}
-        </Link>
-      </header>
+    <PageFrame width="wide" className="space-y-8">
+      <PageHeader
+        title={t.analysis.title}
+        description={t.analysis.subtitle}
+        actions={
+          <Link href="/today" className="text-sm font-medium text-accent hover:underline">
+            {t.analysis.backToday}
+          </Link>
+        }
+      />
 
       {/* Plain-language summary */}
       <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${HEADLINE_TONE[headline.tone]}`}>
@@ -436,6 +437,6 @@ export default async function AnalysisPage() {
           </div>
         </section>
       )}
-    </div>
+    </PageFrame>
   );
 }

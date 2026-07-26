@@ -15,17 +15,13 @@ export function AppearanceSettingsForm() {
   const { t } = useLanguage();
 
   return (
-    <div className="grid gap-3">
-      <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-fg">{t.language.label}</div>
-        </div>
+    <div className="max-w-2xl divide-y divide-border">
+      <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 py-2 first:pt-0">
+        <div className="text-sm font-medium text-fg">{t.language.label}</div>
         <LanguageToggle className="w-fit" size="md" />
       </div>
-      <div className="grid gap-3 rounded-lg border border-border bg-subtle/40 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-fg">{t.theme.label}</div>
-        </div>
+      <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 py-2 last:pb-0">
+        <div className="text-sm font-medium text-fg">{t.theme.label}</div>
         <ThemeToggle className="w-fit" size="md" />
       </div>
     </div>
@@ -211,7 +207,7 @@ export function AiSettingsForm({
   const isCustomModel = !models.some((m) => m.id === model);
 
   return (
-    <form onSubmit={save} className="space-y-4">
+    <form onSubmit={save} className="max-w-2xl space-y-4">
       <div className="space-y-1">
         <label className="block text-sm" htmlFor="ai-provider">{t.settings.provider}</label>
         <Select
@@ -423,43 +419,45 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   }
 
   return (
-    <form onSubmit={save} className="space-y-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5 text-sm">
-          <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
-          <InfoTip label={t.settings.dailyReviewHelp} align="left" />
+    <form onSubmit={save} className="max-w-2xl">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-sm">
+            <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
+            <InfoTip label={t.settings.dailyReviewHelp} align="left" />
+          </div>
+          <Input
+            id="daily-review-limit"
+            type="number"
+            min={1}
+            max={100}
+            value={dailyReviewLimit}
+            onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
+            className="tabular-nums"
+          />
         </div>
-        <Input
-          id="daily-review-limit"
-          type="number"
-          min={1}
-          max={100}
-          value={dailyReviewLimit}
-          onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
-          className="tabular-nums"
-        />
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 text-sm">
+            <label htmlFor="review-time-zone">{t.settings.timeZone}</label>
+            <InfoTip label={t.settings.timeZoneHelp} align="left" />
+          </div>
+          <Input
+            id="review-time-zone"
+            list="review-time-zone-options"
+            value={timeZone}
+            onChange={(e) => setTimeZone(e.target.value)}
+            placeholder="Asia/Shanghai"
+          />
+          <datalist id="review-time-zone-options">
+            {["UTC", "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map((zone) => (
+              <option key={zone} value={zone} />
+            ))}
+          </datalist>
+        </div>
       </div>
 
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5 text-sm">
-          <label htmlFor="review-time-zone">{t.settings.timeZone}</label>
-          <InfoTip label={t.settings.timeZoneHelp} align="left" />
-        </div>
-        <Input
-          id="review-time-zone"
-          list="review-time-zone-options"
-          value={timeZone}
-          onChange={(e) => setTimeZone(e.target.value)}
-          placeholder="Asia/Shanghai"
-        />
-        <datalist id="review-time-zone-options">
-          {["UTC", "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map((zone) => (
-            <option key={zone} value={zone} />
-          ))}
-        </datalist>
-      </div>
-
-      <div className="flex items-center gap-3">
+      <div className="mt-5 flex items-center gap-3">
         <Button type="submit" variant="primary" disabled={saving}>
           {saving ? t.common.saving : t.settings.saveReviewSettings}
         </Button>
@@ -505,8 +503,8 @@ export function AccountDataForm({ email }: { email: string }) {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="max-w-2xl space-y-5">
+      <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4">
         <a
           href="/api/account/export"
           download
@@ -526,7 +524,7 @@ export function AccountDataForm({ email }: { email: string }) {
         </Link>
       </div>
 
-      <div className="space-y-3 border-t border-border pt-5">
+      <div className="space-y-3 rounded-lg border border-danger/25 bg-danger/5 p-4">
         <div>
           <h3 className="text-sm font-medium text-danger">
             {t.settings.deleteAccount}
@@ -535,21 +533,24 @@ export function AccountDataForm({ email }: { email: string }) {
             {t.settings.deleteAccountHelp}
           </p>
         </div>
-        <Input
-          type="email"
-          value={confirmationEmail}
-          onChange={(event) => setConfirmationEmail(event.target.value)}
-          placeholder={t.settings.typeEmailToDelete(email)}
-          autoComplete="off"
-          className="max-w-md"
-        />
-        <Button
-          variant="danger"
-          onClick={() => void deleteAccount()}
-          disabled={!matches || deleting}
-        >
-          {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
-        </Button>
+        <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
+          <Input
+            type="email"
+            value={confirmationEmail}
+            onChange={(event) => setConfirmationEmail(event.target.value)}
+            placeholder={t.settings.typeEmailToDelete(email)}
+            autoComplete="off"
+            className="min-w-0 flex-1"
+          />
+          <Button
+            variant="danger"
+            onClick={() => void deleteAccount()}
+            disabled={!matches || deleting}
+            className="shrink-0"
+          >
+            {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
+          </Button>
+        </div>
         {message && <p className="text-sm text-danger">{message}</p>}
       </div>
     </div>

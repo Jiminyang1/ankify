@@ -13,6 +13,7 @@ import { formatRelative } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { getUserFirstName } from "@/lib/user-identity";
 import { getExtensionInstallUrl } from "@/lib/extension-install";
+import { PageFrame } from "@/components/ui/page";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,7 @@ export default async function HomePage() {
       : t.home.welcomeEmpty;
 
   return (
-    <div className="space-y-8">
+    <PageFrame width="standard" className="space-y-8">
       <div className="flex items-center gap-3">
         <UserAvatar
           name={user.name}
@@ -212,7 +213,7 @@ export default async function HomePage() {
           </Surface>
         )
       )}
-    </div>
+    </PageFrame>
   );
 }
 

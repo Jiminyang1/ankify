@@ -12,6 +12,7 @@ import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { PageFrame, PageHeader } from "@/components/ui/page";
 import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatRelative } from "@/lib/utils";
 
@@ -233,46 +234,50 @@ export default function ProblemsPage({
 
   if (loading) {
     return (
-      <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
-        <p className="mt-3 text-sm text-muted">{t.problems.loading}</p>
-      </Surface>
+      <PageFrame width="wide">
+        <Surface className="p-10 text-center">
+          <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
+          <p className="mt-3 text-sm text-muted">{t.problems.loading}</p>
+        </Surface>
+      </PageFrame>
     );
   }
 
   if (loadError) {
     return (
-      <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
-        <p className="mt-3 text-sm text-danger">{loadError}</p>
-        <Link href="/login?next=/problems" className="mt-4 inline-flex text-sm font-medium text-accent hover:underline">
-          {t.problems.signInAgain}
-        </Link>
-      </Surface>
+      <PageFrame width="wide">
+        <Surface className="p-10 text-center">
+          <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
+          <p className="mt-3 text-sm text-danger">{loadError}</p>
+          <Link href="/login?next=/problems" className="mt-4 inline-flex text-sm font-medium text-accent hover:underline">
+            {t.problems.signInAgain}
+          </Link>
+        </Surface>
+      </PageFrame>
     );
   }
 
   if (!problems.length && !showArchived && !debouncedSearch) {
     return (
-      <Surface className="p-10 text-center">
-        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
-        <Pill tone="accent" className="mt-3">{t.common.empty}</Pill>
-        <p className="mt-3 text-lg font-medium">{t.problems.noProblems}</p>
-        <p className="mt-1 text-sm text-muted">
-          {t.problems.addFirst}
-        </p>
-      </Surface>
+      <PageFrame width="wide">
+        <Surface className="p-10 text-center">
+          <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
+          <Pill tone="accent" className="mt-3">{t.common.empty}</Pill>
+          <p className="mt-3 text-lg font-medium">{t.problems.noProblems}</p>
+          <p className="mt-1 text-sm text-muted">
+            {t.problems.addFirst}
+          </p>
+        </Surface>
+      </PageFrame>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">{t.problems.title}</h1>
-        <p className="mt-1 text-sm text-muted">
-          {t.problems.summary(filtered.length, totalCount, dueCount)}
-        </p>
-      </header>
+    <PageFrame width="wide" className="space-y-6">
+      <PageHeader
+        title={t.problems.title}
+        description={t.problems.summary(filtered.length, totalCount, dueCount)}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -444,6 +449,6 @@ export default function ProblemsPage({
           </div>
         )}
       </Surface>
-    </div>
+    </PageFrame>
   );
 }
