@@ -17,12 +17,18 @@ export async function getSettings(): Promise<ExtSettings> {
   const stored = r[SETTINGS_KEY] as
     | (Partial<ExtSettings> & { apiToken?: string })
     | undefined;
-  const { apiToken: retiredToken, ...safeSettings } = stored ?? {};
+  const {
+    apiToken: retiredToken,
+    apiBaseUrl: retiredApiBaseUrl,
+    ...safeSettings
+  } = stored ?? {};
   const settings = { ...DEFAULTS, ...safeSettings };
 
-  // Remove API keys written by releases before cookie-session authentication.
-  if (retiredToken !== undefined) {
-    await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  // Authentication and the API origin are release configuration, not user
+  // settings. Remove values written by older releases so an upgrade cannot
+  // keep using a stale token or a custom server.
+  if (retiredToken !== undefined || retiredApiBaseUrl !== undefined) {
+    await chrome.storage.local.set({ [SETTINGS_KEY]: safeSettings });
   }
 
   return settings;
@@ -30,7 +36,9 @@ export async function getSettings(): Promise<ExtSettings> {
 
 export async function setSettings(s: Partial<ExtSettings>) {
   const current = await getSettings();
-  await chrome.storage.local.set({ [SETTINGS_KEY]: { ...current, ...s } });
+  const preferences: Partial<ExtSettings> = { ...current, ...s };
+  delete preferences.apiBaseUrl;
+  await chrome.storage.local.set({ [SETTINGS_KEY]: preferences });
 }
 
 export async function getCardDraft(slug: string): Promise<string> {
@@ -42,13 +50,13 @@ export async function getCardDraft(slug: string): Promise<string> {
 /** Persist draft until user saves to server or clears the box. Debounced callers OK. */
 export async function setCardDraft(slug: string, text: string): Promise<void> {
   const r = await chrome.storage.local.get(CARD_DRAFTS_KEY);
-  let map = { ...((r[CARD_DRAFTS_KEY] as Record<string, string> | undefined) ?? {}) };
+  const map = { ...((r[CARD_DRAFTS_KEY] as Record<string, string> | undefined) ?? {}) };
   if (text.trim() === "") {
     delete map[slug];
   } else {
     map[slug] = text.slice(0, 6000);
   }
-  let keys = Object.keys(map);
+  const keys = Object.keys(map);
   if (keys.length > MAX_DRAFT_KEYS) {
     keys.sort();
     const drop = keys.slice(0, keys.length - MAX_DRAFT_KEYS);

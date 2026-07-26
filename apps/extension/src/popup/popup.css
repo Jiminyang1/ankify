@@ -353,25 +353,6 @@ label, button, th, .font-ui {
   font-weight: 800;
 }
 
-.auth-gate-origin {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.auth-gate-origin input {
-  display: block;
-  width: 100%;
-  margin-top: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-
 .section-label {
   display: block;
   font-family: var(--font-ui);
@@ -1295,11 +1276,6 @@ label, button, th, .font-ui {
 .settings-switch input:focus-visible + span {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 2px;
-}
-
-.settings-field-group {
-  display: grid;
-  gap: 10px;
 }
 
 .settings-stack label {

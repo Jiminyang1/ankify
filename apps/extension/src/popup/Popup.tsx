@@ -308,14 +308,8 @@ const EXT_I18N = {
       reviewGuardHelp: "Keeps LeetCode problem pages clean while reviewing.",
       resetCode: "Reset code on problem pages",
       resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
-      apiBaseUrl: "API base URL",
-      saveConnection: "Save connection",
       testConnection: "Test connection",
       testing: "Testing...",
-      saved: "Saved.",
-      required: "API base URL is required.",
-      invalidUrl: "Use an HTTPS API origin (or localhost for development).",
-      permissionDenied: "Chrome permission for this API origin was not granted.",
       checking: "Checking connection...",
       connectedAs: (email: string) => `Connected as ${email}.`,
       thisUser: "this user",
@@ -498,14 +492,8 @@ const EXT_I18N = {
       reviewGuardHelp: "复习时保持 LeetCode 题目页干净。",
       resetCode: "打开题目时重置代码",
       resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
-      apiBaseUrl: "API base URL",
-      saveConnection: "保存连接",
       testConnection: "测试连接",
       testing: "测试中...",
-      saved: "已保存。",
-      required: "需要 API base URL。",
-      invalidUrl: "请使用 HTTPS API 地址（本地开发可使用 localhost）。",
-      permissionDenied: "未授予此 API 地址所需的 Chrome 权限。",
       checking: "正在检查连接...",
       connectedAs: (email: string) => `已连接为 ${email}。`,
       thisUser: "此用户",
@@ -1099,7 +1087,6 @@ export function Popup() {
     return (
       <SignInGate
         settings={settings}
-        onSave={saveLocalSettings}
         onAuthenticated={(account) => setAuthState({ kind: "signed-in", account })}
         onRefresh={() => void refreshSession()}
       />
@@ -3288,40 +3275,29 @@ function CaptureView({
 
 function SignInGate({
   settings,
-  onSave,
   onAuthenticated,
   onRefresh,
 }: {
   settings: ExtSettings;
-  onSave: (next: Partial<ExtSettings>) => void;
   onAuthenticated: (account: AuthAccount) => void;
   onRefresh: () => void;
 }) {
   const t = getExtText(settings);
-  const [base, setBase] = useState(settings.apiBaseUrl);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const normalizedBase = base.trim().replace(/\/+$/, "");
+  const apiBaseUrl = settings.apiBaseUrl.replace(/\/+$/, "");
 
   async function beginSignIn() {
     setError(null);
-    const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
-    if (!permittedBase) {
-      setError(isValidApiOrigin(normalizedBase) ? t.settings.permissionDenied : t.settings.invalidUrl);
-      return;
-    }
-
-    setBase(permittedBase);
     setBusy(true);
 
     try {
-      const loginUrl = `${permittedBase}/login?next=${encodeURIComponent("/extension-connected")}`;
+      const loginUrl = `${apiBaseUrl}/login?next=${encodeURIComponent("/extension-connected")}`;
       const loginTab = await chrome.tabs.create({ url: loginUrl });
 
       for (let attempt = 0; attempt < 120; attempt += 1) {
-        const account = await loadSessionAccount(permittedBase).catch(() => null);
+        const account = await loadSessionAccount(apiBaseUrl).catch(() => null);
         if (account) {
-          onSave({ apiBaseUrl: permittedBase });
           if (loginTab.id != null) {
             // The session cookie can become visible a moment before the OAuth
             // callback finishes navigating. Give the confirmation page a short
@@ -3329,7 +3305,7 @@ function SignInGate({
             for (let navigationAttempt = 0; navigationAttempt < 20; navigationAttempt += 1) {
               const current = await chrome.tabs.get(loginTab.id).catch(() => null);
               if (!current) break;
-              if (current.url?.startsWith(`${permittedBase}/extension-connected`)) {
+              if (current.url?.startsWith(`${apiBaseUrl}/extension-connected`)) {
                 await chrome.tabs.remove(loginTab.id).catch(() => {});
                 break;
               }
@@ -3357,16 +3333,6 @@ function SignInGate({
           <div className="auth-gate-mark" aria-hidden="true">A</div>
           <h1>{t.settings.signInTitle}</h1>
           <p className="popup-muted">{t.settings.signInBody}</p>
-          <label className="auth-gate-origin">
-            <span>{t.settings.apiBaseUrl}</span>
-            <input
-              type="text"
-              value={base}
-              onChange={(event) => setBase(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
           <div className="settings-actions">
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void beginSignIn()}>
               {busy ? t.settings.signingIn : t.settings.signIn}
@@ -3429,35 +3395,16 @@ function SettingsTab({
   onSave: (next: Partial<ExtSettings>) => void;
 }) {
   const t = getExtText(settings);
-  const [base, setBase] = useState(settings.apiBaseUrl);
-  const [savedFlash, setSavedFlash] = useState(false);
   const [testState, setTestState] = useState<{ kind: "idle" | "loading" | "success" | "error"; message: string }>({
     kind: "idle",
     message: "",
   });
-
-  const normalizedBase = base.trim().replace(/\/+$/, "");
+  const apiBaseUrl = settings.apiBaseUrl.replace(/\/+$/, "");
 
   async function testConnection() {
-    if (!normalizedBase) {
-      setTestState({ kind: "error", message: t.settings.required });
-      return;
-    }
-
-    const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
-    if (!permittedBase) {
-      setTestState({
-        kind: "error",
-        message: isValidApiOrigin(normalizedBase)
-          ? t.settings.permissionDenied
-          : t.settings.invalidUrl,
-      });
-      return;
-    }
-
     setTestState({ kind: "loading", message: t.settings.checking });
     try {
-      const res = await fetch(`${permittedBase}/api/me`, {
+      const res = await fetch(`${apiBaseUrl}/api/me`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -3465,11 +3412,29 @@ function SettingsTab({
       if (!res.ok) {
         throw new Error(data?.error || `Connection failed (${res.status})`);
       }
-      setTestState({ kind: "success", message: t.settings.connectedAs(data?.user?.email ?? t.settings.thisUser) });
+      setTestState({
+        kind: "success",
+        message: t.settings.connectedAs(data?.user?.email ?? t.settings.thisUser),
+      });
     } catch (error) {
       setTestState({ kind: "error", message: error instanceof Error ? error.message : t.settings.failed });
     }
   }
+
+  const connectionStatus =
+    testState.kind === "loading"
+      ? testState.message
+      : testState.kind === "error"
+        ? testState.message
+        : testState.kind === "success"
+          ? testState.message
+          : t.settings.connectedAs(account.email);
+  const connectionStatusKind =
+    testState.kind === "loading"
+      ? "loading"
+      : testState.kind === "error"
+        ? "error"
+        : "success";
 
   return (
     <div className="settings-stack">
@@ -3549,38 +3514,10 @@ function SettingsTab({
             {t.settings.connection}
           </SettingsTitle>
         </div>
-        <div className="settings-field-group">
-          <label>
-            <span className="settings-field-label">{t.settings.apiBaseUrl}</span>
-            <input type="text" value={base} onChange={(e) => setBase(e.target.value)} autoComplete="off" spellCheck={false} />
-          </label>
-        </div>
-        <p className="connection-status connection-status-success">
-          {t.settings.connectedAs(account.email)}
+        <p className={`connection-status connection-status-${connectionStatusKind}`}>
+          {connectionStatus}
         </p>
         <div className="settings-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={async () => {
-              const permittedBase = await requestApiOriginPermission(normalizedBase).catch(() => null);
-              if (!permittedBase) {
-                setTestState({
-                  kind: "error",
-                  message: isValidApiOrigin(normalizedBase)
-                    ? t.settings.permissionDenied
-                    : t.settings.invalidUrl,
-                });
-                return;
-              }
-              onSave({ apiBaseUrl: permittedBase });
-              setBase(permittedBase);
-              setSavedFlash(true);
-              setTimeout(() => setSavedFlash(false), 2000);
-            }}
-          >
-            {t.settings.saveConnection}
-          </button>
           <button type="button" className="btn btn-secondary" onClick={testConnection} disabled={testState.kind === "loading"}>
             {testState.kind === "loading" ? t.settings.testing : t.settings.testConnection}
           </button>
@@ -3591,43 +3528,8 @@ function SettingsTab({
           >
             {t.settings.manageAccount}
           </button>
-          {savedFlash ? <p className="popup-muted">{t.settings.saved}</p> : null}
         </div>
-        {testState.message ? (
-          <p className={`connection-status connection-status-${testState.kind}`}>{testState.message}</p>
-        ) : null}
       </section>
     </div>
   );
-}
-
-function parseApiOrigin(value: string): string | null {
-  try {
-    const url = new URL(value);
-    const local =
-      url.hostname === "localhost" ||
-      url.hostname === "127.0.0.1" ||
-      url.hostname === "[::1]";
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
-      return null;
-    }
-    if (url.username || url.password) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
-function isValidApiOrigin(value: string) {
-  return parseApiOrigin(value) !== null;
-}
-
-async function requestApiOriginPermission(value: string): Promise<string | null> {
-  const origin = parseApiOrigin(value);
-  if (!origin) return null;
-  const origins = [`${origin}/*`];
-  const alreadyGranted = await chrome.permissions.contains({ origins });
-  if (alreadyGranted) return origin;
-  const granted = await chrome.permissions.request({ origins });
-  return granted ? origin : null;
 }
