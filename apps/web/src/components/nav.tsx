@@ -107,7 +107,7 @@ export function Nav({
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
       <nav className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-2 sm:flex sm:justify-between sm:px-6 sm:py-3">
-        <Link href={user ? "/today" : "/"} className="group">
+        <Link href={user ? "/today" : "/"} prefetch={false} className="group">
           <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
@@ -120,6 +120,7 @@ export function Nav({
                 <Link
                   key={l.href}
                   href={l.href as Route}
+                  prefetch={false}
                   className={cn(
                     "relative rounded-md px-1.5 py-1.5 text-center transition font-ui sm:px-3",
                     active
@@ -186,6 +187,7 @@ export function Nav({
                   </div>
                   <Link
                     href="/settings"
+                    prefetch={false}
                     role="menuitem"
                     onClick={() => setAccountOpen(false)}
                     className="mt-2 block rounded-lg px-3 py-2 text-sm text-fg transition hover:bg-subtle"

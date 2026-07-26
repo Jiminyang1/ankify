@@ -1,14 +1,53 @@
 import { getDb, schema } from "@ankify/db";
-import type { Card, Problem, Submission } from "@ankify/db";
+import type { Problem } from "@ankify/db";
 import { preview, type FsrsCardState, type FsrsRating } from "@ankify/core";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { dueProblemCondition } from "./due-problems";
 import { getReviewQueueStatus } from "./review-queue";
 
+export type ReviewProblem = Pick<
+  Problem,
+  | "id"
+  | "leetcodeId"
+  | "title"
+  | "difficulty"
+  | "descriptionMd"
+  | "topicTags"
+  | "fsrsDue"
+  | "fsrsStability"
+  | "fsrsDifficulty"
+  | "fsrsElapsedDays"
+  | "fsrsScheduledDays"
+  | "fsrsLearningSteps"
+  | "fsrsReps"
+  | "fsrsLapses"
+  | "fsrsState"
+  | "fsrsLastReview"
+>;
+
 export type ReviewPayload = {
-  problem: (Problem & { cards: Card[]; submissions: Submission[] }) | null;
+  problem: ReviewProblem | null;
   previews: Record<FsrsRating, { due: string }> | null;
   queue: Awaited<ReturnType<typeof getReviewQueueStatus>>;
+};
+
+const reviewProblemColumns = {
+  id: schema.problems.id,
+  leetcodeId: schema.problems.leetcodeId,
+  title: schema.problems.title,
+  difficulty: schema.problems.difficulty,
+  descriptionMd: schema.problems.descriptionMd,
+  topicTags: schema.problems.topicTags,
+  fsrsDue: schema.problems.fsrsDue,
+  fsrsStability: schema.problems.fsrsStability,
+  fsrsDifficulty: schema.problems.fsrsDifficulty,
+  fsrsElapsedDays: schema.problems.fsrsElapsedDays,
+  fsrsScheduledDays: schema.problems.fsrsScheduledDays,
+  fsrsLearningSteps: schema.problems.fsrsLearningSteps,
+  fsrsReps: schema.problems.fsrsReps,
+  fsrsLapses: schema.problems.fsrsLapses,
+  fsrsState: schema.problems.fsrsState,
+  fsrsLastReview: schema.problems.fsrsLastReview,
 };
 
 export async function loadNextReview(
@@ -22,7 +61,7 @@ export async function loadNextReview(
     getReviewQueueStatus(userId),
     targetId
       ? db
-          .select()
+          .select(reviewProblemColumns)
           .from(schema.problems)
           .where(
             and(
@@ -33,7 +72,7 @@ export async function loadNextReview(
           )
           .limit(1)
       : db
-          .select()
+          .select(reviewProblemColumns)
           .from(schema.problems)
           .where(dueProblemCondition(userId, now))
           .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`))
@@ -64,34 +103,8 @@ export async function loadNextReview(
   };
 
   const previews = preview(state, now);
-  const [cards, submissions] = await Promise.all([
-    db
-      .select()
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problem.id),
-          eq(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(50),
-    db
-      .select()
-      .from(schema.submissions)
-      .where(
-        and(
-          eq(schema.submissions.userId, userId),
-          eq(schema.submissions.problemId, problem.id),
-        ),
-      )
-      .orderBy(desc(schema.submissions.submittedAt))
-      .limit(10),
-  ]);
-
   return {
-    problem: { ...problem, cards, submissions },
+    problem,
     previews,
     queue,
   };
