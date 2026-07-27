@@ -1,8 +1,14 @@
 import { defineManifest } from "@crxjs/vite-plugin";
 import { extensionApiOrigin } from "./extension-env";
 
+const DEVELOPMENT_EXTENSION_KEY =
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr06aninDU5S6xFipr/A4IT9Dr0v9wgbhBxPFee5LYa4FP3PvzYf9CyPkQtxlD6UDBAPVj9KIRch0FzyCUCNO8MXN3W6/Y7k/yW0XvHu3g6GvFaXByvsF3OTmAY5J4HZQDuqWWUY1jl7vN5WIxdsMug1bBHW9Z9GqR8OEJ22XGNIi3+UUbBT+r4khmn05jLFNAuqoZaMGXbdqkJu5gwmqv1p6d5K5lStqq9/g4IQsRhBf/36i4v2LDWxb3E6tWHyMUeeN4vn5HapGsp8SlfsOkj2wwCikfGpiiLfqP3V+t3I1rZLPmwTfVl7B2K0CieJfqamIobsT62zi+Oii97560QIDAQAB";
+
 export default defineManifest(({ mode }) => {
   const apiOrigin = extensionApiOrigin(mode);
+  const includeDevelopmentKey =
+    mode === "development" ||
+    process.env.ANKIFY_EXTENSION_BUILD_TARGET === "unpacked";
 
   return {
     manifest_version: 3,
@@ -10,7 +16,7 @@ export default defineManifest(({ mode }) => {
     name: "ankify",
     description: "One-click add LeetCode problems to your ankify spaced-repetition deck.",
     version: "0.1.2",
-    key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr06aninDU5S6xFipr/A4IT9Dr0v9wgbhBxPFee5LYa4FP3PvzYf9CyPkQtxlD6UDBAPVj9KIRch0FzyCUCNO8MXN3W6/Y7k/yW0XvHu3g6GvFaXByvsF3OTmAY5J4HZQDuqWWUY1jl7vN5WIxdsMug1bBHW9Z9GqR8OEJ22XGNIi3+UUbBT+r4khmn05jLFNAuqoZaMGXbdqkJu5gwmqv1p6d5K5lStqq9/g4IQsRhBf/36i4v2LDWxb3E6tWHyMUeeN4vn5HapGsp8SlfsOkj2wwCikfGpiiLfqP3V+t3I1rZLPmwTfVl7B2K0CieJfqamIobsT62zi+Oii97560QIDAQAB",
+    ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
       default_icon: {

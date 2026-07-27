@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:unpacked": "ANKIFY_EXTENSION_BUILD_TARGET=unpacked vite build --outDir dist-unpacked",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

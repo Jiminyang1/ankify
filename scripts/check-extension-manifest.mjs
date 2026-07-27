@@ -13,6 +13,9 @@ if (manifest.manifest_version !== 3) {
 if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version ?? "")) {
   errors.push("version must be a Chrome-compatible numeric version");
 }
+if ("key" in manifest) {
+  errors.push("Chrome Web Store manifests must not contain the development-only key field");
+}
 
 const permissions = manifest.permissions ?? [];
 const requiredPermissions = ["sidePanel", "storage", "tabs"];
