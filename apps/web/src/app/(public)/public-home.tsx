@@ -11,7 +11,7 @@ export function PublicHome() {
   const copy = language === "zh"
     ? {
         eyebrow: "为真正做过的题建立长期记忆",
-        title: "不要只刷过，真正记住。",
+        title: "记住每道题背后的思路。",
         body: "ankify 把你的 LeetCode 题目、提交、失败用例和笔记整理成间隔复习、卡片与针对性测验。网页和 Chrome 扩展共用一次 Google 登录。",
         start: "使用 Google 开始",
         getExtension: "扩展安装指南",
@@ -25,7 +25,7 @@ export function PublicHome() {
       }
     : {
         eyebrow: "Long-term memory for problems you actually solved",
-        title: "Don’t just solve it. Remember it.",
+        title: "Remember the reasoning behind every solution.",
         body: "ankify turns your LeetCode problems, submissions, failed cases, and notes into spaced reviews, cards, and focused quizzes. The web app and Chrome extension share one Google login.",
         start: "Continue with Google",
         getExtension: "Extension setup guide",
@@ -45,23 +45,20 @@ export function PublicHome() {
         <h1 className="mt-4 text-5xl font-semibold tracking-tight sm:text-6xl">{copy.title}</h1>
         <p className="mt-6 max-w-2xl text-base leading-8 text-muted sm:text-lg">{copy.body}</p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/login?next=/today" className={buttonClasses({ variant: "primary", size: "lg" })}>
+          <Link
+            href="/login?next=/today"
+            className={buttonClasses({ variant: "primary", size: "lg", className: "w-full sm:w-48" })}
+          >
             {copy.start}
           </Link>
           <a
             href={getExtensionInstallUrl()}
             target="_blank"
             rel="noreferrer"
-            className={buttonClasses({ size: "lg" })}
+            className={buttonClasses({ size: "lg", className: "w-full sm:w-48" })}
           >
             {copy.getExtension}
           </a>
-          <Link href="/privacy" className={buttonClasses({ size: "lg" })}>
-            {copy.privacy}
-          </Link>
-          <Link href="/terms" className={buttonClasses({ size: "lg" })}>
-            {copy.terms}
-          </Link>
         </div>
       </section>
 
@@ -73,6 +70,15 @@ export function PublicHome() {
           </Surface>
         ))}
       </section>
+
+      <footer className="flex items-center gap-4 border-t border-border pt-5 text-sm text-muted">
+        <Link href="/privacy" className="transition hover:text-fg hover:underline">
+          {copy.privacy}
+        </Link>
+        <Link href="/terms" className="transition hover:text-fg hover:underline">
+          {copy.terms}
+        </Link>
+      </footer>
     </div>
   );
 }

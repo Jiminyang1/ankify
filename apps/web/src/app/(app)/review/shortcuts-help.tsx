@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
 
 function Key({ children }: { children: React.ReactNode }) {
   return (
@@ -32,18 +33,9 @@ function Row({ keys, label }: { keys: string[]; label: string }) {
  */
 export function ShortcutsHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useLanguage();
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useDialogA11y({ open, onClose, containerRef: dialogRef, initialFocusRef: closeRef });
 
   if (!open) return null;
 
@@ -59,12 +51,14 @@ export function ShortcutsHelp({ open, onClose }: { open: boolean; onClose: () =>
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-card-hover"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-sm font-semibold">{t.review.shortcutsTitle}</h2>
-          <Button autoFocus size="sm" onClick={onClose}>
+          <Button ref={closeRef} size="sm" onClick={onClose}>
             {t.review.shortcutsClose}
           </Button>
         </div>

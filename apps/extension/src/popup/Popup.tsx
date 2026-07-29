@@ -124,6 +124,8 @@ const EXT_I18N = {
   en: {
     nav: { today: "Today", problem: "Problem", settings: "Settings" },
     common: {
+      navigation: "Primary navigation",
+      cancel: "Cancel",
       retry: "Retry",
       loadingQueue: "Loading today's queue...",
       due: "due",
@@ -135,6 +137,8 @@ const EXT_I18N = {
       submissions: (count: number) => `${count} submissions`,
       acceptedFailed: (accepted: number, failed: number) => `(${accepted} accepted, ${failed} failed)`,
       unknownError: "Unknown error",
+      previous: "Previous",
+      next: "Next",
     },
     difficulty: { Easy: "Easy", Medium: "Medium", Hard: "Hard" },
     fsrs: { new: "new", learning: "learning", review: "review", relearning: "relearning" },
@@ -176,6 +180,7 @@ const EXT_I18N = {
       next: "next:",
     },
     review: {
+      workspace: "Review workspace",
       quiz: "Quiz",
       cards: "Cards",
       notes: "Notes",
@@ -206,6 +211,8 @@ const EXT_I18N = {
       missed: (count: number) => `${count} missed`,
       coverageBalanced: "coverage balanced",
       reset: "Reset",
+      confirmReset: "Delete history",
+      resetting: "Deleting...",
       newBatch: "New Batch",
       scope: "Scope",
       source: "Source",
@@ -253,6 +260,10 @@ const EXT_I18N = {
       noSaved: "No saved cards yet.",
       question: "Question",
       answer: "Answer",
+      showQuestion: "Show question",
+      showAnswer: "Show answer",
+      flipHint: "Tap, Enter, or Space",
+      flipBackHint: "Tap to show the question",
       deleteConfirm: "Delete this card?",
       deleteFailed: "Delete failed",
       delete: "Delete",
@@ -330,6 +341,8 @@ const EXT_I18N = {
   zh: {
     nav: { today: "今日", problem: "题目", settings: "设置" },
     common: {
+      navigation: "主导航",
+      cancel: "取消",
       retry: "重试",
       loadingQueue: "正在加载今日队列...",
       due: "到期",
@@ -341,6 +354,8 @@ const EXT_I18N = {
       submissions: (count: number) => `${count} 次提交`,
       acceptedFailed: (accepted: number, failed: number) => `（${accepted} 通过，${failed} 失败）`,
       unknownError: "未知错误",
+      previous: "上一张",
+      next: "下一张",
     },
     difficulty: { Easy: "简单", Medium: "中等", Hard: "困难" },
     fsrs: { new: "新题", learning: "学习中", review: "复习", relearning: "重新学习" },
@@ -377,6 +392,7 @@ const EXT_I18N = {
       next: "下次：",
     },
     review: {
+      workspace: "复习工作区",
       quiz: "测验",
       cards: "卡片",
       notes: "笔记",
@@ -407,6 +423,8 @@ const EXT_I18N = {
       missed: (count: number) => `错 ${count} 题`,
       coverageBalanced: "覆盖均衡",
       reset: "重置",
+      confirmReset: "删除历史",
+      resetting: "删除中...",
       newBatch: "新一批",
       scope: "范围",
       source: "来源",
@@ -447,6 +465,10 @@ const EXT_I18N = {
       noSaved: "还没有已保存卡片。",
       question: "问题",
       answer: "答案",
+      showQuestion: "显示问题",
+      showAnswer: "显示答案",
+      flipHint: "点击，或按 Enter / 空格",
+      flipBackHint: "点击返回问题",
       deleteConfirm: "删除这张卡片？",
       deleteFailed: "删除失败",
       delete: "删除",
@@ -519,6 +541,24 @@ const EXT_I18N = {
 
 function getExtText(settings: ExtSettings) {
   return EXT_I18N[settings.language === "zh" ? "zh" : "en"];
+}
+
+function movePopupTabFocus(event: React.KeyboardEvent<HTMLElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tabs = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+  );
+  const currentIndex = tabs.indexOf(event.target as HTMLButtonElement);
+  if (currentIndex < 0 || tabs.length === 0) return;
+  event.preventDefault();
+  const nextIndex =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[nextIndex]?.focus();
+  tabs[nextIndex]?.click();
 }
 
 /** Chevron for glyph-only controls. A drawn icon scales with the button and
@@ -1116,11 +1156,21 @@ export function Popup() {
     <div className="popup-shell">
       {/* Nav */}
       <nav className="popup-nav">
-        <div className="popup-nav-tabs">
+        <div
+          className="popup-nav-tabs"
+          role="tablist"
+          aria-label={text.common.navigation}
+          onKeyDown={movePopupTabFocus}
+        >
           {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
             <button
               key={navTab}
+              id={`popup-nav-tab-${navTab}`}
               type="button"
+              role="tab"
+              aria-selected={tab === navTab}
+              aria-controls={`popup-nav-panel-${navTab}`}
+              tabIndex={tab === navTab ? 0 : -1}
               className="popup-nav-tab"
               data-active={tab === navTab}
               onClick={() => setTab(navTab)}
@@ -1134,7 +1184,13 @@ export function Popup() {
       {/* Content */}
       <main className="popup-main">
         {tab === "today" && settings && (
-          <div className="tab-pane" key="today">
+          <div
+            id="popup-nav-panel-today"
+            role="tabpanel"
+            aria-labelledby="popup-nav-tab-today"
+            className="tab-pane"
+            key="today"
+          >
             <TodayTab
               settings={settings}
               onJumpToProblem={() => setTab("problem")}
@@ -1143,7 +1199,13 @@ export function Popup() {
         )}
 
         {tab === "problem" && settings && (
-          <div className="tab-pane" key="problem">
+          <div
+            id="popup-nav-panel-problem"
+            role="tabpanel"
+            aria-labelledby="popup-nav-tab-problem"
+            className="tab-pane"
+            key="problem"
+          >
             <ProblemTab
               state={state}
               settings={settings}
@@ -1157,7 +1219,13 @@ export function Popup() {
         )}
 
         {tab === "settings" && settings && (
-          <div className="tab-pane" key="settings">
+          <div
+            id="popup-nav-panel-settings"
+            role="tabpanel"
+            aria-labelledby="popup-nav-tab-settings"
+            className="tab-pane"
+            key="settings"
+          >
             <SettingsTab
               settings={settings}
               account={authState.account}
@@ -1461,39 +1529,43 @@ function ProblemTab({
         </div>
       )}
       {mode === "review" ? (
-    <ReviewView
-      problem={problem}
-      cards={cards}
-      previews={previews}
-      settings={settings}
-      due={due}
-      mode={mode}
-      onModeChange={setMode}
-      onSync={syncLatestSubmissions}
-      syncBusy={syncState.busy}
-      syncMessage={syncState.message}
-      syncTone={syncState.tone}
-      canSync={!isStickyView}
-      onRefresh={onRefresh}
-      onRated={onRefresh}
-    />
-  ) : (
-    <ManageView
-      problem={problem}
-      cards={cards}
-      candidates={candidates}
-      settings={settings}
-      due={due}
-      mode={mode}
-      onModeChange={setMode}
-      onSync={syncLatestSubmissions}
-      syncBusy={syncState.busy}
-      syncMessage={syncState.message}
-      syncTone={syncState.tone}
-      canSync={!isStickyView}
-      onRefresh={onRefresh}
-    />
-  )}
+        <div id="problem-mode-panel-review" role="tabpanel" aria-labelledby="problem-mode-tab-review">
+          <ReviewView
+            problem={problem}
+            cards={cards}
+            previews={previews}
+            settings={settings}
+            due={due}
+            mode={mode}
+            onModeChange={setMode}
+            onSync={syncLatestSubmissions}
+            syncBusy={syncState.busy}
+            syncMessage={syncState.message}
+            syncTone={syncState.tone}
+            canSync={!isStickyView}
+            onRefresh={onRefresh}
+            onRated={onRefresh}
+          />
+        </div>
+      ) : (
+        <div id="problem-mode-panel-manage" role="tabpanel" aria-labelledby="problem-mode-tab-manage">
+          <ManageView
+            problem={problem}
+            cards={cards}
+            candidates={candidates}
+            settings={settings}
+            due={due}
+            mode={mode}
+            onModeChange={setMode}
+            onSync={syncLatestSubmissions}
+            syncBusy={syncState.busy}
+            syncMessage={syncState.message}
+            syncTone={syncState.tone}
+            canSync={!isStickyView}
+            onRefresh={onRefresh}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -1567,16 +1639,31 @@ function ProblemCard({
         </div>
       </div>
       {syncMessage && <div className={`problem-card-sync problem-card-sync-${syncTone}`}>{syncMessage}</div>}
-      <div className="problem-card-mode">
+      <div
+        className="problem-card-mode"
+        role="tablist"
+        aria-label={t.problem.review}
+        onKeyDown={movePopupTabFocus}
+      >
         <button
+          id="problem-mode-tab-review"
           type="button"
+          role="tab"
+          aria-selected={mode === "review"}
+          aria-controls="problem-mode-panel-review"
+          tabIndex={mode === "review" ? 0 : -1}
           className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
           onClick={() => onModeChange("review")}
         >
           {t.problem.review}
         </button>
         <button
+          id="problem-mode-tab-manage"
           type="button"
+          role="tab"
+          aria-selected={mode === "manage"}
+          aria-controls="problem-mode-panel-manage"
+          tabIndex={mode === "manage" ? 0 : -1}
           className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
           onClick={() => onModeChange("manage")}
         >
@@ -1641,11 +1728,21 @@ function ReviewView({
 
       {/* Module 2 — content */}
       <div className="content-card">
-        <div className="content-card-tabs">
+        <div
+          className="content-card-tabs"
+          role="tablist"
+          aria-label={t.review.workspace}
+          onKeyDown={movePopupTabFocus}
+        >
           {(["quiz", "card", "notes"] as const).map((v) => (
             <button
               key={v}
+              id={`extension-review-tab-${v}`}
               type="button"
+              role="tab"
+              aria-selected={view === v}
+              aria-controls={`extension-review-panel-${v}`}
+              tabIndex={view === v ? 0 : -1}
               className="content-card-tab"
               data-active={view === v}
               onClick={() => setView(v)}
@@ -1657,7 +1754,13 @@ function ReviewView({
 
         <div className="review-stage-body">
           {view === "quiz" && (
-            <div className="review-stage-pane tab-pane" key="quiz">
+            <div
+              id="extension-review-panel-quiz"
+              role="tabpanel"
+              aria-labelledby="extension-review-tab-quiz"
+              className="review-stage-pane tab-pane"
+              key="quiz"
+            >
               <QuizPanel
                 problem={problem}
                 settings={settings}
@@ -1667,7 +1770,13 @@ function ReviewView({
           )}
 
           {view === "card" && (
-            <div className="review-stage-pane tab-pane" key="card">
+            <div
+              id="extension-review-panel-card"
+              role="tabpanel"
+              aria-labelledby="extension-review-tab-card"
+              className="review-stage-pane tab-pane"
+              key="card"
+            >
               {cards.length === 0 ? (
                 <div className="review-empty">
                   <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
@@ -1682,13 +1791,19 @@ function ReviewView({
                   </button>
                 </div>
               ) : (
-                <CardFlipper cards={cards} />
+                <CardFlipper cards={cards} settings={settings} />
               )}
             </div>
           )}
 
           {view === "notes" && (
-            <div className="review-stage-pane tab-pane" key="notes">
+            <div
+              id="extension-review-panel-notes"
+              role="tabpanel"
+              aria-labelledby="extension-review-tab-notes"
+              className="review-stage-pane tab-pane"
+              key="notes"
+            >
               <NotesPanel problem={problem} settings={settings} />
             </div>
           )}
@@ -1726,6 +1841,8 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   const [savingMissed, setSavingMissed] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const pendingElapsedSeconds = useElapsedSeconds(Boolean(pendingQuiz), pendingQuiz?.startedAt ?? null);
 
   const refreshPendingQuiz = useCallback(() => {
@@ -1837,9 +1954,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   }
 
   async function resetHistory() {
-    if (!window.confirm(t.quiz.resetConfirm)) {
-      return;
-    }
+    setResetting(true);
     setError(null);
     try {
       const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
@@ -1858,10 +1973,37 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       setFeedback(null);
       setCurrentIndex(0);
       setShowResults(false);
+      setConfirmingReset(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : t.quiz.failedReset);
+    } finally {
+      setResetting(false);
     }
   }
+
+  const resetConfirmation = confirmingReset ? (
+    <div className="popup-confirm" role="group" aria-label={t.quiz.confirmReset}>
+      <p role="alert">{t.quiz.resetConfirm}</p>
+      <div className="popup-confirm-actions">
+        <button
+          type="button"
+          className="btn btn-secondary btn-inline"
+          disabled={resetting}
+          onClick={() => setConfirmingReset(false)}
+        >
+          {t.common.cancel}
+        </button>
+        <button
+          type="button"
+          className="btn-xs btn-xs-danger"
+          disabled={resetting}
+          onClick={() => void resetHistory()}
+        >
+          {resetting ? t.quiz.resetting : t.quiz.confirmReset}
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
     if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
@@ -2009,8 +2151,8 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 <button
                   type="button"
                   className="quiz-link-btn quiz-link-muted"
-                  disabled={generating}
-                  onClick={() => void resetHistory()}
+                  disabled={generating || resetting}
+                  onClick={() => setConfirmingReset(true)}
                   title={t.quiz.resetConfirm}
                 >
                   {t.quiz.reset}
@@ -2025,6 +2167,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
                 </button>
               </div>
             </div>
+            {resetConfirmation}
 
             <div className="quiz-overview-rows">
               <QuizBreakdown label={t.quiz.scope} items={scopeBreakdown} />
@@ -2159,14 +2302,15 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
           <button
             type="button"
             className="quiz-link-btn quiz-link-muted"
-            disabled={generating}
-            onClick={() => void resetHistory()}
+            disabled={generating || resetting}
+            onClick={() => setConfirmingReset(true)}
             title={t.quiz.resetConfirm}
           >
             {t.quiz.reset}
           </button>
         </div>
       </div>
+      {resetConfirmation}
       <div className="quiz-active scroll-area">
         <div className="quiz-question">
           <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
@@ -2396,7 +2540,8 @@ function ManageView({
 
 /* ── CardFlipper ── */
 
-function CardFlipper({ cards }: { cards: ApiCard[] }) {
+function CardFlipper({ cards, settings }: { cards: ApiCard[]; settings: ExtSettings }) {
+  const t = getExtText(settings);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
 
@@ -2408,6 +2553,7 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
   // Keyboard: Space flips, ←/→ navigates (ignore when typing)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
       if (
         target instanceof HTMLTextAreaElement ||
@@ -2437,24 +2583,29 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
       <div
         className="card-flipper-stage"
         onClick={() => setFlipped((f) => !f)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          setFlipped((value) => !value);
+        }}
         role="button"
         tabIndex={0}
-        aria-label={flipped ? "Show question" : "Show answer"}
+        aria-label={flipped ? t.cards.showQuestion : t.cards.showAnswer}
       >
         <div className={`card-flipper-inner${flipped ? " is-flipped" : ""}`}>
           <div className="card-face card-face-front">
-            <div className="card-face-label">Question</div>
+            <div className="card-face-label">{t.cards.question}</div>
             <div className="card-face-content scroll-area">
               <PopupMarkdown className="card-face-md">{card.question}</PopupMarkdown>
             </div>
-            <div className="card-face-hint">Tap or press Space</div>
+            <div className="card-face-hint">{t.cards.flipHint}</div>
           </div>
           <div className="card-face card-face-back">
-            <div className="card-face-label card-face-label-answer">Answer</div>
+            <div className="card-face-label card-face-label-answer">{t.cards.answer}</div>
             <div className="card-face-content scroll-area">
               <PopupMarkdown className="card-face-md">{card.answer}</PopupMarkdown>
             </div>
-            <div className="card-face-hint">Tap to flip back</div>
+            <div className="card-face-hint">{t.cards.flipBackHint}</div>
           </div>
         </div>
       </div>
@@ -2465,7 +2616,7 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
           className="card-flipper-arrow"
           disabled={idx === 0}
           onClick={() => setIdx((i) => Math.max(0, i - 1))}
-          aria-label="Previous card"
+          aria-label={t.common.previous}
         >
           <ChevronIcon direction="left" />
         </button>
@@ -2477,7 +2628,7 @@ function CardFlipper({ cards }: { cards: ApiCard[] }) {
           className="card-flipper-arrow"
           disabled={idx >= cards.length - 1}
           onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
-          aria-label="Next card"
+          aria-label={t.common.next}
         >
           <ChevronIcon direction="right" />
         </button>
@@ -2704,10 +2855,12 @@ function CardList({
 }) {
   const t = getExtText(settings);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function deleteCard(cardId: string) {
-    if (!window.confirm(t.cards.deleteConfirm)) return;
     setDeletingId(cardId);
+    setDeleteError(null);
     try {
       const res = await apiFetch(settings, "/api/cards", {
         method: "DELETE",
@@ -2715,9 +2868,10 @@ function CardList({
         body: JSON.stringify({ ids: [cardId] }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      setPendingDeleteId(null);
       onRefresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : t.cards.deleteFailed);
+      setDeleteError(e instanceof Error ? e.message : t.cards.deleteFailed);
     } finally {
       setDeletingId(null);
     }
@@ -2740,12 +2894,42 @@ function CardList({
             className="btn-xs btn-xs-danger"
             style={{ marginTop: 10 }}
             disabled={deletingId === card.id}
-            onClick={() => deleteCard(card.id)}
+            onClick={() => {
+              setDeleteError(null);
+              setPendingDeleteId(card.id);
+            }}
           >
             {deletingId === card.id ? "…" : t.cards.delete}
           </button>
         </Collapse>
       ))}
+      {pendingDeleteId && (
+        <div className="popup-confirm" role="group" aria-label={t.cards.delete}>
+          <p role="alert">{t.cards.deleteConfirm}</p>
+          {deleteError && <div className="err-banner" role="alert">{deleteError}</div>}
+          <div className="popup-confirm-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-inline"
+              disabled={deletingId === pendingDeleteId}
+              onClick={() => {
+                setPendingDeleteId(null);
+                setDeleteError(null);
+              }}
+            >
+              {t.common.cancel}
+            </button>
+            <button
+              type="button"
+              className="btn-xs btn-xs-danger"
+              disabled={deletingId === pendingDeleteId}
+              onClick={() => void deleteCard(pendingDeleteId)}
+            >
+              {deletingId === pendingDeleteId ? "…" : t.cards.delete}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

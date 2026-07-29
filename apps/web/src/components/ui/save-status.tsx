@@ -1,5 +1,9 @@
+"use client";
+
 import type { NotesSaveStatus } from "@/lib/notes-autosave";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/components/LanguageProvider";
+import { Button } from "@/components/ui/button";
 
 /**
  * Tiny autosave indicator. Shows a fading "Saving…/Saved" hint, and an explicit
@@ -15,17 +19,21 @@ export function SaveStatus({
   onRetry: () => void;
   className?: string;
 }) {
+  const { t } = useLanguage();
   if (status === "error") {
     return (
-      <span className={cn("inline-flex items-center gap-2 text-[10px]", className)}>
-        <span className="text-danger">Save failed</span>
-        <button
-          type="button"
+      <span
+        className={cn("inline-flex items-center gap-2 text-[10px]", className)}
+        role="alert"
+      >
+        <span className="text-danger">{t.common.saveFailed}</span>
+        <Button
+          variant="danger"
+          size="xs"
           onClick={onRetry}
-          className="rounded border border-danger/40 px-1.5 py-0.5 font-medium text-danger transition-colors hover:bg-danger/10"
         >
-          Retry
-        </button>
+          {t.common.retry}
+        </Button>
       </span>
     );
   }
@@ -36,8 +44,10 @@ export function SaveStatus({
         status === "idle" ? "opacity-0" : "opacity-70",
         className,
       )}
+      role="status"
+      aria-live="polite"
     >
-      {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+      {status === "saving" ? t.common.saving : status === "saved" ? t.common.saved : ""}
     </span>
   );
 }

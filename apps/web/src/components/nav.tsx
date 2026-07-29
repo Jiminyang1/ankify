@@ -108,7 +108,7 @@ export function Nav({
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/60">
       <nav className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-2 sm:flex sm:justify-between sm:px-6 sm:py-3">
-        <Link href={user ? "/today" : "/"} prefetch={false} className="group">
+        <Link href={user ? "/today" : "/"} prefetch={false} className="group min-w-0">
           <BrandLockup size="sm" className="transition-opacity group-hover:opacity-85" />
         </Link>
 
@@ -123,7 +123,7 @@ export function Nav({
                   href={l.href as Route}
                   prefetch={false}
                   className={cn(
-                    "relative rounded-md px-1.5 py-1.5 text-center transition font-ui sm:px-3",
+                    "relative min-h-9 rounded-md px-1.5 py-2 text-center transition font-ui sm:min-h-0 sm:px-3 sm:py-1.5",
                     active
                       ? "bg-accent-soft text-accent"
                       : "text-muted hover:bg-subtle hover:text-fg",
@@ -131,7 +131,7 @@ export function Nav({
                 >
                   {t.nav[l.key]}
                   {showBadge && (
-                    <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+                    <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-contrast">
                       {dueCount > 99 ? "99+" : dueCount}
                     </span>
                   )}
@@ -141,7 +141,12 @@ export function Nav({
           </div>
         )}
 
-        <div className="flex items-center justify-self-end gap-2">
+        <div
+          className={cn(
+            "flex items-center justify-self-end gap-2",
+            isPublicPage && "col-span-2 w-full justify-end sm:col-auto sm:w-auto",
+          )}
+        >
           {!isPublicPage && user && (
             <div className="relative" ref={accountMenuRef}>
               <button

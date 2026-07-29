@@ -7,6 +7,8 @@ import { Markdown } from "@/components/ui/markdown";
 import { Surface } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/field";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useLanguage } from "@/components/LanguageProvider";
 
 type EditForm = {
   id: string;
@@ -16,10 +18,13 @@ type EditForm = {
 
 export function CardList({ cards }: { cards: Card[] }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, startDelete] = useTransition();
   const [saving, startSave] = useTransition();
   const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   /** Close editor if list refreshed and card disappeared */
   useEffect(() => {
@@ -47,28 +52,30 @@ export function CardList({ cards }: { cards: Card[] }) {
     setSelected(next);
   };
 
-  const deleteIds = (ids: string[], confirmText: string) => {
-    if (ids.length === 0) return;
-    if (!window.confirm(confirmText)) return;
+  const deleteIds = () => {
+    if (pendingDeleteIds.length === 0) return;
+    setActionError(null);
     startDelete(async () => {
       const res = await fetch("/api/cards", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ ids: pendingDeleteIds }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        window.alert(`Delete failed: ${j.error ?? res.statusText}`);
+        setActionError(`${t.common.deleteFailed}: ${j.error ?? res.statusText}`);
         return;
       }
       setSelected(new Set());
       setEditForm(null);
+      setPendingDeleteIds([]);
       router.refresh();
     });
   };
 
   const saveEdit = () => {
     if (!editForm) return;
+    setActionError(null);
     startSave(async () => {
       const res = await fetch(`/api/cards/${editForm.id}`, {
         method: "PATCH",
@@ -80,7 +87,7 @@ export function CardList({ cards }: { cards: Card[] }) {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        window.alert(`Save failed: ${j.error ?? res.statusText}`);
+        setActionError(`${t.common.saveFailed}: ${j.error ?? res.statusText}`);
         return;
       }
       setEditForm(null);
@@ -93,6 +100,22 @@ export function CardList({ cards }: { cards: Card[] }) {
 
   return (
     <div className="space-y-3">
+      <ConfirmDialog
+        open={pendingDeleteIds.length > 0}
+        title={t.detail.deleteCards(pendingDeleteIds.length)}
+        description={t.detail.deleteCardsDescription}
+        cancelLabel={t.common.cancel}
+        confirmLabel={deleting ? t.detail.deleting : t.common.delete}
+        busy={deleting}
+        error={actionError}
+        onClose={() => {
+          if (!deleting) {
+            setPendingDeleteIds([]);
+            setActionError(null);
+          }
+        }}
+        onConfirm={deleteIds}
+      />
       <Surface className="flex flex-wrap items-center gap-3 px-3 py-2">
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input
@@ -105,7 +128,7 @@ export function CardList({ cards }: { cards: Card[] }) {
             className="h-4 w-4 cursor-pointer rounded border-border accent-accent"
           />
           <span className="text-muted">
-            {selectedCount > 0 ? `${selectedCount} selected` : `${cards.length} card${cards.length === 1 ? "" : "s"}`}
+            {selectedCount > 0 ? t.common.selected(selectedCount) : t.common.cards(cards.length)}
           </span>
         </label>
 
@@ -114,18 +137,22 @@ export function CardList({ cards }: { cards: Card[] }) {
             variant="danger"
             size="sm"
             disabled={deleting}
-            onClick={() =>
-              deleteIds(
-                Array.from(selected),
-                `Delete ${selectedCount} card${selectedCount === 1 ? "" : "s"}? This cannot be undone.`,
-              )
-            }
+            onClick={() => {
+              setActionError(null);
+              setPendingDeleteIds(Array.from(selected));
+            }}
             className="ml-auto"
           >
-            {deleting ? "Deleting…" : `Delete ${selectedCount}`}
+            {deleting ? t.detail.deleting : `${t.common.delete} ${selectedCount}`}
           </Button>
         )}
       </Surface>
+
+      {actionError && pendingDeleteIds.length === 0 && (
+        <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
+          {actionError}
+        </p>
+      )}
 
       <ul className="space-y-3">
         {cards.map((c) => {
@@ -145,13 +172,15 @@ export function CardList({ cards }: { cards: Card[] }) {
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => toggle(c.id)}
+                    aria-label={c.question}
                     className="mt-1 h-4 w-4 cursor-pointer rounded border-border accent-accent"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
                       <div className="flex items-center gap-1">
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="xs"
                           disabled={deleting || saving}
                           onClick={() =>
                             isEditing
@@ -162,27 +191,31 @@ export function CardList({ cards }: { cards: Card[] }) {
                                   answer: c.answer,
                                 })
                           }
-                          className="rounded-md px-2 py-1 text-[11px] font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+                          className="text-accent hover:bg-accent/10 hover:text-accent"
                         >
-                          {isEditing ? "Cancel" : "Edit"}
-                        </button>
-                        <button
-                          type="button"
+                          {isEditing ? t.common.cancel : t.common.edit}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           disabled={deleting || saving}
-                          onClick={() => deleteIds([c.id], "Delete this card? This cannot be undone.")}
-                          aria-label="Delete card"
-                          title="Delete card"
-                          className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                          onClick={() => {
+                            setActionError(null);
+                            setPendingDeleteIds([c.id]);
+                          }}
+                          aria-label={t.detail.deleteCards(1)}
+                          title={t.detail.deleteCards(1)}
+                          className="h-7 w-7 text-muted hover:bg-danger/10 hover:text-danger"
                         >
                           ×
-                        </button>
+                        </Button>
                       </div>
                     </div>
 
                     {isEditing && editForm ? (
                       <div className="mt-3 space-y-3">
                         <label className="block text-[11px] font-medium uppercase tracking-wide text-muted">
-                          Question
+                          {t.review.question}
                           <Textarea
                             value={editForm.question}
                             onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
@@ -191,7 +224,7 @@ export function CardList({ cards }: { cards: Card[] }) {
                           />
                         </label>
                         <label className="block text-[11px] font-medium uppercase tracking-wide text-muted">
-                          Answer
+                          {t.review.answer}
                           <Textarea
                             value={editForm.answer}
                             onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })}
@@ -201,7 +234,7 @@ export function CardList({ cards }: { cards: Card[] }) {
                         </label>
                         <div className="flex justify-end gap-2 pt-1">
                           <Button size="sm" disabled={saving} onClick={() => setEditForm(null)}>
-                            Discard
+                            {t.common.discard}
                           </Button>
                           <Button
                             variant="primary"
@@ -209,7 +242,7 @@ export function CardList({ cards }: { cards: Card[] }) {
                             disabled={saving || !editForm.question.trim() || !editForm.answer.trim()}
                             onClick={saveEdit}
                           >
-                            {saving ? "Saving…" : "Save changes"}
+                            {saving ? t.common.saving : t.common.saveChanges}
                           </Button>
                         </div>
                       </div>

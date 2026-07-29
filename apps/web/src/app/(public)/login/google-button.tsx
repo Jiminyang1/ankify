@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useLanguage } from "@/components/LanguageProvider";
+import { Button } from "@/components/ui/button";
 
 export function GoogleSignInButton({ next }: { next: string }) {
   const [pending, setPending] = useState(false);
@@ -24,15 +25,15 @@ export function GoogleSignInButton({ next }: { next: string }) {
 
   return (
     <div className="mt-5 space-y-3">
-      <button
-        type="button"
+      <Button
+        variant="primary"
         onClick={signIn}
         disabled={pending}
-        className="w-full rounded-md border border-border bg-accent/10 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+        className="w-full"
       >
         {pending ? t.login.redirecting : t.login.continueGoogle}
-      </button>
-      {error && <p className="text-sm text-danger">{error}</p>}
+      </Button>
+      {error && <p className="text-sm text-danger" role="alert">{error}</p>}
     </div>
   );
 }

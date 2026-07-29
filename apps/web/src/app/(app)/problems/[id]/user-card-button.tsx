@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Card } from "@ankify/db";
@@ -8,8 +8,11 @@ import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
+import { useLanguage } from "@/components/LanguageProvider";
 
 type Mode = "manual" | "ai";
 type Candidate = Card & {
@@ -38,6 +41,7 @@ export function UserCardButton({
   problemDescription?: string | null;
 }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const mounted = useHydrated();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("manual");
@@ -50,6 +54,8 @@ export function UserCardButton({
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [candidateBusyStartedAt, setCandidateBusyStartedAt] = useState<Record<string, number>>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const generatingAi = busy === "auto" || busy === "note";
   const generationElapsedSeconds = useElapsedSeconds(generatingAi, generationStartedAt);
 
@@ -93,14 +99,12 @@ export function UserCardButton({
     setError(null);
   }, [busy]);
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") closePanel();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, closePanel]);
+  useDialogA11y({
+    open,
+    onClose: closePanel,
+    containerRef: dialogRef,
+    initialFocusRef: closeButtonRef,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -131,7 +135,7 @@ export function UserCardButton({
       setOpen(false);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t.common.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -164,7 +168,7 @@ export function UserCardButton({
       }
       if (kind === "note") setRawText("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "AI request failed");
+      setError(e instanceof Error ? e.message : t.detail.failed);
     } finally {
       setBusy(null);
       setGenerationStartedAt(null);
@@ -205,7 +209,7 @@ export function UserCardButton({
     } catch (e) {
       setCandidateState(candidate.id, {
         busy: null,
-        localError: e instanceof Error ? e.message : "AI request failed",
+        localError: e instanceof Error ? e.message : t.detail.failed,
       });
     } finally {
       setCandidateBusyStartedAt((prev) => {
@@ -240,7 +244,7 @@ export function UserCardButton({
     } catch (e) {
       setCandidateState(candidate.id, {
         busy: null,
-        localError: e instanceof Error ? e.message : "Confirm failed",
+        localError: e instanceof Error ? e.message : t.detail.failed,
       });
     }
   }
@@ -263,7 +267,7 @@ export function UserCardButton({
     } catch (e) {
       setCandidateState(candidate.id, {
         busy: null,
-        localError: e instanceof Error ? e.message : "Discard failed",
+        localError: e instanceof Error ? e.message : t.detail.failed,
       });
     }
   }
@@ -285,21 +289,23 @@ export function UserCardButton({
           onClick={closePanel}
         />
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="card-composer-title"
+          tabIndex={-1}
           className="relative z-[101] flex max-h-[min(94vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="min-w-0">
               <span id="card-composer-title" className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                New
+                {t.detail.newCard}
               </span>
               <h3 className="truncate text-base font-semibold">{problemTitle}</h3>
             </div>
-            <Button variant="ghost" size="sm" onClick={closePanel} disabled={!!busy} className="text-muted">
-              Close
+            <Button ref={closeButtonRef} variant="ghost" size="sm" onClick={closePanel} disabled={!!busy} className="text-muted">
+              {t.common.close}
             </Button>
           </div>
 
@@ -307,10 +313,10 @@ export function UserCardButton({
             <div className="border-b border-border px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <ModeButton active={mode === "manual"} onClick={() => setMode("manual")}>
-                  Manual
+                  {t.detail.manualCard}
                 </ModeButton>
                 <ModeButton active={mode === "ai"} onClick={() => setMode("ai")}>
-                  AI candidates
+                  {t.detail.aiCandidates}
                   {candidateCount > 0 && (
                     <span className="ml-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
                       {candidateCount}
@@ -326,13 +332,13 @@ export function UserCardButton({
               {mode === "manual" ? (
                 <div className="mt-4 space-y-4">
                   <div className="grid gap-3">
-                    <CardTextarea label="Question" value={question} onChange={setQuestion} rows={3} disabled={!!busy} />
-                    <CardTextarea label="Answer" value={answer} onChange={setAnswer} rows={5} disabled={!!busy} />
+                    <CardTextarea label={t.review.question} value={question} onChange={setQuestion} rows={3} disabled={!!busy} />
+                    <CardTextarea label={t.review.answer} value={answer} onChange={setAnswer} rows={5} disabled={!!busy} />
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
                     {error && <span className="mr-auto text-xs text-danger">{error}</span>}
                     <Button size="sm" disabled={!!busy} onClick={closePanel}>
-                      Cancel
+                      {t.common.cancel}
                     </Button>
                     <Button
                       variant="primary"
@@ -340,7 +346,7 @@ export function UserCardButton({
                       disabled={!!busy || !question.trim() || !answer.trim()}
                       onClick={saveManualCard}
                     >
-                      {busy === "save" ? "Saving..." : "Save card"}
+                      {busy === "save" ? t.common.saving : t.detail.addCard}
                     </Button>
                   </div>
                 </div>
@@ -348,7 +354,7 @@ export function UserCardButton({
                 <div className="mt-4 space-y-4">
                   <Surface className="space-y-3 p-3">
                     <CardTextarea
-                      label="Raw note for one candidate"
+                      label={t.detail.rawNote}
                       value={rawText}
                       onChange={(value) => setRawText(value.slice(0, 6000))}
                       rows={4}
@@ -358,14 +364,14 @@ export function UserCardButton({
                       <span className="text-xs text-muted">{rawText.length}/6000</span>
                       <div className="flex flex-wrap gap-2">
                         <Button variant="primary" size="sm" disabled={!!busy} onClick={() => startAiGenerate("auto")}>
-                          {busy === "auto" ? "Generating..." : "Auto generate"}
+                          {busy === "auto" ? t.detail.generating : t.detail.autoGenerate}
                         </Button>
                         <Button
                           size="sm"
                           disabled={!!busy || !rawText.trim()}
                           onClick={() => startAiGenerate("note")}
                         >
-                          {busy === "note" ? "Generating..." : "Generate from note"}
+                          {busy === "note" ? t.detail.generating : t.detail.generateFromNote}
                         </Button>
                       </div>
                     </div>
@@ -376,7 +382,7 @@ export function UserCardButton({
 
                   {candidateCount === 0 ? (
                     <Surface className="p-8 text-center">
-                      <p className="text-sm text-muted">No candidates waiting.</p>
+                      <p className="text-sm text-muted">{t.detail.noCandidates}</p>
                     </Surface>
                   ) : currentCandidate ? (
                     <CandidateReview
@@ -407,11 +413,11 @@ export function UserCardButton({
         variant="primary"
         onClick={() => {
           setOpen(true);
-          void loadCandidates().catch((e) => setError(e instanceof Error ? e.message : "Could not load candidates"));
+          void loadCandidates().catch((e) => setError(e instanceof Error ? e.message : t.detail.failed));
         }}
       >
         <span aria-hidden className="text-base leading-none">+</span>
-        Add card
+        {t.detail.addCard}
         {candidateCount > 0 ? (
           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{candidateCount}</span>
         ) : null}
@@ -445,11 +451,15 @@ function formatElapsedSeconds(totalSeconds: number) {
 }
 
 function CardGenerationTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
+  const { t } = useLanguage();
   return (
     <div className="flex items-center gap-2 text-xs text-muted tabular-nums">
       <span className="h-1.5 w-1.5 rounded-full bg-accent" />
       <span>
-        Generating {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
+        {t.detail.generationProgress(
+          formatElapsedSeconds(elapsedSeconds),
+          formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS),
+        )}
       </span>
     </div>
   );
@@ -469,8 +479,10 @@ function ModeButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-md border px-3 py-1.5 text-xs font-medium transition",
-        active ? "border-accent bg-accent/10 text-accent" : "border-border text-muted hover:bg-subtle hover:text-fg",
+        "h-8 rounded-lg border px-3 text-xs font-medium transition",
+        active
+          ? "border-accent/40 bg-accent-soft text-accent shadow-card"
+          : "border-border bg-surface text-muted hover:border-accent/25 hover:bg-subtle hover:text-fg",
       )}
     >
       {children}
@@ -479,13 +491,14 @@ function ModeButton({
 }
 
 function ProblemContext({ description }: { description?: string | null }) {
+  const { t } = useLanguage();
   return (
     <details className="rounded-md border border-border bg-subtle/40">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted">
-        Problem statement
+        {t.review.questionStatement}
       </summary>
       <div className="max-h-72 overflow-auto border-t border-border px-3 py-3">
-        {description?.trim() ? <Markdown>{description}</Markdown> : <p className="text-sm text-muted">No statement captured.</p>}
+        {description?.trim() ? <Markdown>{description}</Markdown> : <p className="text-sm text-muted">{t.detail.noStatement}</p>}
       </div>
     </details>
   );
@@ -514,24 +527,37 @@ function CandidateReview({
   onDiscard: () => void;
   followupElapsedSeconds: number;
 }) {
+  const { t } = useLanguage();
   const disabled = !!candidate.busy;
   return (
     <Surface className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Pill tone={candidate.aiStatus === "failed" ? "danger" : "success"}>
-            {candidate.aiStatus === "failed" ? "failed" : "candidate"}
+            {candidate.aiStatus === "failed" ? t.detail.failed : t.detail.candidate}
           </Pill>
           <span className="text-xs text-muted">
             {index + 1} / {count}
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="icon" disabled={index === 0} onClick={onPrev}>
-            Prev
+          <Button
+            size="icon"
+            disabled={index === 0}
+            onClick={onPrev}
+            aria-label={t.common.previous}
+            title={t.common.previous}
+          >
+            <span aria-hidden>←</span>
           </Button>
-          <Button size="icon" disabled={index >= count - 1} onClick={onNext}>
-            Next
+          <Button
+            size="icon"
+            disabled={index >= count - 1}
+            onClick={onNext}
+            aria-label={t.common.next}
+            title={t.common.next}
+          >
+            <span aria-hidden>→</span>
           </Button>
         </div>
       </div>
@@ -543,14 +569,14 @@ function CandidateReview({
       )}
 
       <CardTextarea
-        label="Question"
+        label={t.review.question}
         value={candidate.question}
         disabled={disabled}
         onChange={(question) => onChange({ question })}
         rows={3}
       />
       <CardTextarea
-        label="Answer"
+        label={t.review.answer}
         value={candidate.answer}
         disabled={disabled}
         onChange={(answer) => onChange({ answer })}
@@ -559,7 +585,7 @@ function CandidateReview({
 
       <div className="rounded-md border border-border bg-subtle/50 p-2">
         <CardTextarea
-          label="Follow up"
+          label={t.detail.followUp}
           value={candidate.instruction}
           disabled={disabled}
           onChange={(instruction) => onChange({ instruction })}
@@ -571,7 +597,7 @@ function CandidateReview({
             disabled={disabled || !candidate.question.trim() || !candidate.answer.trim() || !candidate.instruction.trim()}
             onClick={onFollowup}
           >
-            {candidate.busy === "followup" ? "Applying..." : "Apply follow up"}
+            {candidate.busy === "followup" ? t.detail.applying : t.detail.applyFollowUp}
           </Button>
         </div>
         {candidate.busy === "followup" && <CardGenerationTimer elapsedSeconds={followupElapsedSeconds} />}
@@ -580,7 +606,7 @@ function CandidateReview({
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
         {candidate.localError && <span className="mr-auto text-xs text-danger">{candidate.localError}</span>}
         <Button size="sm" disabled={disabled && candidate.busy !== "discard"} onClick={onDiscard}>
-          {candidate.busy === "discard" ? "Discarding..." : "Discard"}
+          {candidate.busy === "discard" ? t.detail.discarding : t.common.discard}
         </Button>
         <Button
           variant="primary"
@@ -588,7 +614,7 @@ function CandidateReview({
           disabled={disabled || !candidate.question.trim() || !candidate.answer.trim()}
           onClick={onConfirm}
         >
-          {candidate.busy === "confirm" ? "Confirming..." : "Confirm"}
+          {candidate.busy === "confirm" ? t.detail.confirming : t.detail.confirm}
         </Button>
       </div>
     </Surface>
@@ -611,11 +637,11 @@ function CardTextarea({
   return (
     <label className="block text-[10px] font-medium uppercase tracking-wide text-muted">
       {label}
-      <textarea
+      <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
-        className="mt-1 w-full resize-y rounded-lg border border-border bg-subtle p-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-60"
+        className="mt-1 bg-subtle shadow-none"
         disabled={disabled}
       />
     </label>

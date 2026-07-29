@@ -18,11 +18,13 @@
   --muted: 132 131 137;
   --border: 48 48 54;
   --accent: 212 168 83;
+  --accent-contrast: 26 26 30;
   --accent-soft: 42 38 28;
   --success: 76 175 145;
   --warning: 232 146 64;
   --warning-soft: 48 36 22;
   --danger: 224 85 106;
+  --danger-contrast: 26 26 30;
   --easy: 76 175 145;
   --medium: 212 168 83;
   --hard: 224 85 106;
@@ -39,11 +41,13 @@
   --muted: 102 101 107;
   --border: 217 214 208;
   --accent: 184 150 63;
+  --accent-contrast: 26 26 30;
   --accent-soft: 250 246 236;
   --success: 45 143 109;
   --warning: 192 110 28;
   --warning-soft: 252 243 232;
   --danger: 199 62 85;
+  --danger-contrast: 255 255 255;
   --easy: 45 143 109;
   --medium: 184 150 63;
   --hard: 199 62 85;
@@ -61,11 +65,13 @@
     --muted: 102 101 107;
     --border: 217 214 208;
     --accent: 184 150 63;
+    --accent-contrast: 26 26 30;
     --accent-soft: 250 246 236;
     --success: 45 143 109;
     --warning: 192 110 28;
     --warning-soft: 252 243 232;
     --danger: 199 62 85;
+    --danger-contrast: 255 255 255;
     --easy: 45 143 109;
     --medium: 184 150 63;
     --hard: 199 62 85;
@@ -155,7 +161,6 @@ select:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid rgb(var(--accent) / 0.5);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* For full-panel editors where an offset ring would sit outside the panel:

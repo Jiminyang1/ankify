@@ -21,7 +21,7 @@ export function LanguageToggle({
   return (
     <div
       className={cn(
-        "flex items-center rounded-md border border-border bg-subtle",
+        "flex items-center rounded-lg border border-border bg-subtle shadow-card",
         size === "md" ? "gap-1 p-1" : "gap-0.5 p-0.5",
         className,
       )}
@@ -33,8 +33,8 @@ export function LanguageToggle({
           type="button"
           onClick={() => setLanguage(option.value)}
           className={cn(
-            "font-semibold transition",
-            size === "md" ? "min-w-12 rounded-md px-3 py-1.5 text-sm" : "rounded px-2 py-1 text-[11px]",
+            "font-medium transition",
+            size === "md" ? "min-h-10 min-w-12 rounded-md px-3 py-1.5 text-sm" : "min-h-9 rounded-md px-2 py-1 text-[11px]",
             language === option.value ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg",
           )}
           aria-pressed={language === option.value}

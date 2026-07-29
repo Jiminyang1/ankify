@@ -3,7 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import Link from "next/link";
 import type { Card } from "@ankify/db";
-import { buttonClasses } from "@/components/ui/button";
+import { Button, buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -29,35 +29,43 @@ export function CardReviewPanel({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           disabled={cardIdx === 0}
           onClick={() => { setCardIdx((i) => i - 1); setFlipped(false); }}
-          className="text-xs text-muted hover:text-fg disabled:opacity-30 transition-colors"
         >
           {t.common.previous}
-        </button>
+        </Button>
         <span className="text-[11px] text-muted tabular-nums">
           {cards.length > 0 ? `${cardIdx + 1} / ${cards.length}` : "0 / 0"}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           disabled={cardIdx >= cards.length - 1}
           onClick={() => { setCardIdx((i) => i + 1); setFlipped(false); }}
-          className="text-xs text-muted hover:text-fg disabled:opacity-30 transition-colors"
         >
           {t.common.next}
-        </button>
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden" style={{ perspective: "800px" }}>
         {currentCard ? (
           <div
-            className="h-full cursor-pointer overflow-hidden"
+            role="button"
+            tabIndex={0}
+            aria-label={flipped ? t.review.tapQuestion : t.review.tapReveal}
+            className="h-full cursor-pointer overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
             onClick={() => setFlipped((f) => !f)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              setFlipped((value) => !value);
+            }}
           >
             <div
-              className="h-full transition-transform duration-500 ease-in-out"
+              className="h-full transition-transform duration-500 ease-in-out motion-reduce:transition-none"
               style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
             >
               {!flipped ? (

@@ -21,8 +21,31 @@ export function Tabs({
   onChange: (id: string) => void;
   className?: string;
 }) {
+  const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabButtons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    const currentIndex = tabButtons.indexOf(event.target as HTMLButtonElement);
+    if (currentIndex < 0 || tabButtons.length === 0) return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabButtons.length - 1
+          : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabButtons.length) %
+            tabButtons.length;
+    tabButtons[nextIndex]?.focus();
+    tabButtons[nextIndex]?.click();
+  };
+
   return (
-    <div role="tablist" className={cn("flex items-center gap-1", className)}>
+    <div
+      role="tablist"
+      className={cn("flex items-center gap-1", className)}
+      onKeyDown={moveFocus}
+    >
       {tabs.map((t) => {
         const selected = t.id === active;
         return (
@@ -35,8 +58,10 @@ export function Tabs({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(t.id)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition",
-              selected ? "bg-accent-soft text-accent" : "text-muted hover:bg-subtle hover:text-fg",
+              "h-8 rounded-lg px-3 text-sm font-medium transition",
+              selected
+                ? "bg-surface text-fg shadow-card"
+                : "text-muted hover:bg-subtle hover:text-fg",
             )}
           >
             {t.label}

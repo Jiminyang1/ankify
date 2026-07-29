@@ -8,6 +8,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Select } from "@/components/ui/field";
 import { InfoTip } from "@/components/ui/info-tip";
 
@@ -60,8 +61,13 @@ export function AiSettingsForm({
   const [reasoningMode, setReasoningMode] = useState(initial.reasoningMode);
   const [apiKey, setApiKey] = useState("");
   const [hasStoredApiKey, setHasStoredApiKey] = useState(initial.hasApiKey);
+  const [storedKeyProvider, setStoredKeyProvider] = useState<AiProvider>(
+    initial.hasApiKey ? initial.provider : "",
+  );
   const [saving, setSaving] = useState(false);
   const [removingKey, setRemovingKey] = useState(false);
+  const [removeKeyDialogOpen, setRemoveKeyDialogOpen] = useState(false);
+  const [removeKeyError, setRemoveKeyError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<
@@ -81,18 +87,26 @@ export function AiSettingsForm({
 
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setHasStoredApiKey(initial.hasApiKey),
+      () => {
+        setHasStoredApiKey(initial.hasApiKey);
+        setStoredKeyProvider(initial.hasApiKey ? initial.provider : "");
+      },
       0,
     );
     return () => window.clearTimeout(timer);
-  }, [initial.hasApiKey]);
+  }, [initial.hasApiKey, initial.provider]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMsg(null);
     const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast" };
-    if (apiKey) body.apiKey = apiKey;
+    if (apiKey) {
+      body.apiKey = apiKey;
+    } else if (hasStoredApiKey && storedKeyProvider !== provider) {
+      // Never carry a credential across providers: keys are provider-specific.
+      body.apiKey = "";
+    }
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -101,7 +115,13 @@ export function AiSettingsForm({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
-      if (apiKey) setHasStoredApiKey(true);
+      if (apiKey) {
+        setHasStoredApiKey(true);
+        setStoredKeyProvider(provider);
+      } else if (storedKeyProvider !== provider) {
+        setHasStoredApiKey(false);
+        setStoredKeyProvider("");
+      }
       setApiKey("");
       router.refresh();
     } catch (e) {
@@ -143,8 +163,8 @@ export function AiSettingsForm({
   }
 
   async function removeApiKey() {
-    if (!window.confirm(t.settings.removeApiKeyConfirm)) return;
     setRemovingKey(true);
+    setRemoveKeyError(null);
     setMsg(null);
     setTestResult(null);
     try {
@@ -156,17 +176,21 @@ export function AiSettingsForm({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setApiKey("");
       setHasStoredApiKey(false);
+      setStoredKeyProvider("");
       setMsg(t.common.saved);
+      setRemoveKeyDialogOpen(false);
       router.refresh();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
+      setRemoveKeyError(e instanceof Error ? e.message : t.settings.failedToSave);
     } finally {
       setRemovingKey(false);
     }
   }
 
-  const canTest = Boolean(provider && model && (apiKey || hasStoredApiKey));
-  const canRefreshModels = Boolean(provider && (apiKey || hasStoredApiKey));
+  const hasUsableStoredKey = hasStoredApiKey && storedKeyProvider === provider;
+  const storedKeyBelongsElsewhere = hasStoredApiKey && !hasUsableStoredKey;
+  const canTest = Boolean(provider && model && (apiKey || hasUsableStoredKey));
+  const canRefreshModels = Boolean(provider && (apiKey || hasUsableStoredKey));
 
   async function refreshModels() {
     if (!provider) return;
@@ -208,6 +232,22 @@ export function AiSettingsForm({
 
   return (
     <form onSubmit={save} className="max-w-2xl space-y-4">
+      <ConfirmDialog
+        open={removeKeyDialogOpen}
+        title={t.settings.removeApiKey}
+        description={t.settings.removeApiKeyConfirm}
+        cancelLabel={t.common.cancel}
+        confirmLabel={removingKey ? t.settings.removingApiKey : t.settings.removeApiKey}
+        busy={removingKey}
+        error={removeKeyError}
+        onClose={() => {
+          if (!removingKey) {
+            setRemoveKeyDialogOpen(false);
+            setRemoveKeyError(null);
+          }
+        }}
+        onConfirm={() => void removeApiKey()}
+      />
       <div className="space-y-1">
         <label className="block text-sm" htmlFor="ai-provider">{t.settings.provider}</label>
         <Select
@@ -217,10 +257,15 @@ export function AiSettingsForm({
             const p = e.target.value as typeof provider;
             setProvider(p);
             const first = MODEL_PRESETS[p]?.[0];
-            if (first) setModel(first);
+            setModel(first ?? "");
+            setApiKey("");
+            setMsg(null);
+            setTestResult(null);
+            setModelsError(null);
             if (p !== "deepseek") setReasoningMode("fast");
           }}
         >
+          <option value="">{t.settings.chooseProvider}</option>
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI</option>
           <option value="deepseek">DeepSeek</option>
@@ -274,7 +319,7 @@ export function AiSettingsForm({
           />
         )}
         {modelsError && (
-          <p className="text-xs text-danger">{t.settings.couldNotLoadModels(modelsError)}</p>
+          <p className="text-xs text-danger" role="alert">{t.settings.couldNotLoadModels(modelsError)}</p>
         )}
       </div>
 
@@ -289,10 +334,10 @@ export function AiSettingsForm({
               type="button"
               onClick={() => setReasoningMode("fast")}
               className={
-                "rounded-md border px-3 py-2 text-sm transition " +
+                "h-10 rounded-lg border px-3 text-sm font-medium transition " +
                 (reasoningMode === "fast"
-                  ? "border-accent/40 bg-accent-soft text-accent"
-                  : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
+                  ? "border-accent/40 bg-accent-soft text-accent shadow-card"
+                  : "border-border bg-surface text-muted shadow-card hover:border-accent/25 hover:bg-subtle hover:text-fg")
               }
             >
               {t.settings.fast}
@@ -301,10 +346,10 @@ export function AiSettingsForm({
               type="button"
               onClick={() => setReasoningMode("thinking")}
               className={
-                "rounded-md border px-3 py-2 text-sm transition " +
+                "h-10 rounded-lg border px-3 text-sm font-medium transition " +
                 (reasoningMode === "thinking"
-                  ? "border-accent/40 bg-accent-soft text-accent"
-                  : "border-border bg-bg text-muted hover:bg-subtle hover:text-fg")
+                  ? "border-accent/40 bg-accent-soft text-accent shadow-card"
+                  : "border-border bg-surface text-muted shadow-card hover:border-accent/25 hover:bg-subtle hover:text-fg")
               }
             >
               {t.settings.thinking}
@@ -316,7 +361,7 @@ export function AiSettingsForm({
       <div className="space-y-1">
         <div className="flex items-center gap-1.5 text-sm">
           <label htmlFor="ai-api-key">{t.settings.apiKey}</label>
-          {hasStoredApiKey && <InfoTip label={t.settings.apiKeySet} align="left" />}
+          {hasUsableStoredKey && <InfoTip label={t.settings.apiKeySet} align="left" />}
         </div>
         <Input
           id="ai-api-key"
@@ -324,7 +369,7 @@ export function AiSettingsForm({
           type="text"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder={hasStoredApiKey ? "****" : "sk-..."}
+          placeholder={hasUsableStoredKey ? "****" : "sk-..."}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="none"
@@ -335,20 +380,28 @@ export function AiSettingsForm({
           style={apiKey ? ({ WebkitTextSecurity: "disc" } as React.CSSProperties) : undefined}
           className="font-mono"
         />
-        {hasStoredApiKey && (
+        {storedKeyBelongsElsewhere && !apiKey && (
+          <p className="mt-1 text-xs text-warning" role="status">
+            {t.settings.apiKeyForOtherProvider}
+          </p>
+        )}
+        {hasUsableStoredKey && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span className="inline-flex items-center gap-1.5 font-medium text-success">
               <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
               {t.settings.apiKeySaved}
             </span>
-            <button
-              type="button"
-              onClick={removeApiKey}
+            <Button
+              variant="danger"
+              size="xs"
+              onClick={() => {
+                setRemoveKeyError(null);
+                setRemoveKeyDialogOpen(true);
+              }}
               disabled={removingKey || saving}
-              className="font-medium text-danger transition hover:underline disabled:pointer-events-none disabled:opacity-50"
             >
               {removingKey ? t.settings.removingApiKey : t.settings.removeApiKey}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -364,11 +417,13 @@ export function AiSettingsForm({
         >
           {testing ? t.settings.testing : t.settings.testConnection}
         </Button>
-        {msg && <span className="text-sm text-muted">{msg}</span>}
+        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
       </div>
 
       {testResult && (
         <div
+          role={testResult.kind === "err" ? "alert" : "status"}
+          aria-live="polite"
           className={
             "rounded-md border px-3 py-2 text-sm " +
             (testResult.kind === "ok"
@@ -461,7 +516,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         <Button type="submit" variant="primary" disabled={saving}>
           {saving ? t.common.saving : t.settings.saveReviewSettings}
         </Button>
-        {msg && <span className="text-sm text-muted">{msg}</span>}
+        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
       </div>
     </form>
   );
@@ -471,11 +526,12 @@ export function AccountDataForm({ email }: { email: string }) {
   const { t } = useLanguage();
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const matches = confirmationEmail.trim().toLowerCase() === email.toLowerCase();
 
   async function deleteAccount() {
-    if (!matches || !window.confirm(t.settings.deleteAccountConfirm)) return;
+    if (!matches) return;
     setDeleting(true);
     setMessage(null);
     try {
@@ -504,6 +560,22 @@ export function AccountDataForm({ email }: { email: string }) {
 
   return (
     <div className="max-w-2xl space-y-5">
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title={t.settings.deleteAccount}
+        description={t.settings.deleteAccountConfirm}
+        cancelLabel={t.common.cancel}
+        confirmLabel={deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
+        busy={deleting}
+        error={message}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteDialogOpen(false);
+            setMessage(null);
+          }
+        }}
+        onConfirm={() => void deleteAccount()}
+      />
       <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-4">
         <a
           href="/api/account/export"
@@ -544,14 +616,17 @@ export function AccountDataForm({ email }: { email: string }) {
           />
           <Button
             variant="danger"
-            onClick={() => void deleteAccount()}
+            onClick={() => {
+              setMessage(null);
+              setDeleteDialogOpen(true);
+            }}
             disabled={!matches || deleting}
             className="shrink-0"
           >
             {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
           </Button>
         </div>
-        {message && <p className="text-sm text-danger">{message}</p>}
+        {message && !deleteDialogOpen && <p className="text-sm text-danger" role="alert">{message}</p>}
       </div>
     </div>
   );

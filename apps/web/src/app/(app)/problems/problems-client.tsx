@@ -289,8 +289,10 @@ export default function ProblemsPage({
               type="button"
               onClick={() => setFilters((f) => ({ ...f, difficulty: o.value }))}
               className={cn(
-                "rounded-md px-3 py-1 text-xs font-medium transition",
-                filters.difficulty === o.value ? "bg-surface shadow-sm" : "text-muted hover:text-fg",
+                "h-8 rounded-lg px-3 text-xs font-medium transition",
+                filters.difficulty === o.value
+                  ? "bg-surface text-fg shadow-card"
+                  : "text-muted hover:bg-surface/60 hover:text-fg",
               )}
             >
               {o.label}
@@ -333,6 +335,15 @@ export default function ProblemsPage({
           className="w-auto"
         />
       </div>
+
+      {nextCursor && (
+        <p
+          className="rounded-lg border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-muted"
+          role="status"
+        >
+          {t.problems.partialResults(problems.length, totalCount)}
+        </p>
+      )}
 
       {/* Table */}
       <Surface className="overflow-hidden">
@@ -444,7 +455,7 @@ export default function ProblemsPage({
               {loadingMore ? t.problems.loadingMore : t.problems.loadMore}
             </Button>
             {loadMoreError && (
-              <p className="mt-2 text-xs text-danger">{loadMoreError}</p>
+              <p className="mt-2 text-xs text-danger" role="alert">{loadMoreError}</p>
             )}
           </div>
         )}

@@ -110,6 +110,8 @@ const MAX_CONTEXT_SPLIT = 70;
 const MIN_CONTEXT_WIDTH = 360;
 const MIN_CARD_WIDTH = 360;
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
+const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "cards";
+const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
 
 function subscribeReviewTags(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
@@ -140,8 +142,9 @@ export default function ReviewPage({
   const [stage, setStage] = useState<Stage>(
     initialData.problem ? "review" : "empty",
   );
-  const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating>(3);
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab | null>(null);
+  const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating | null>(null);
+  const [quizSuggestedRating, setQuizSuggestedRating] = useState<FsrsRating | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(DEFAULT_WORKSPACE_TAB);
   const [cards, setCards] = useState<Card[] | null>(null);
   const [submissions, setSubmissions] = useState<Submission[] | null>(null);
   const [notes, setNotes] = useState<string | null>(null);
@@ -167,8 +170,8 @@ export default function ReviewPage({
   const loadNext = useCallback(async (targetId?: string | null) => {
     setStage("loading");
     currentProblemIdRef.current = null;
-    setUserFsrsRating(3);
-    setWorkspaceTab(null);
+    setUserFsrsRating(null);
+    setQuizSuggestedRating(null);
     setCards(null);
     setSubmissions(null);
     setNotes(null);
@@ -277,8 +280,22 @@ export default function ReviewPage({
 
   const selectWorkspaceTab = useCallback((tab: WorkspaceTab) => {
     setWorkspaceTab(tab);
+    try {
+      localStorage.setItem(LAST_WORKSPACE_TAB_KEY, tab);
+    } catch {}
     if (tab !== "quiz") void loadWorkspaceResource(tab);
   }, [loadWorkspaceResource]);
+
+  useEffect(() => {
+    let preferred = DEFAULT_WORKSPACE_TAB;
+    try {
+      const stored = localStorage.getItem(LAST_WORKSPACE_TAB_KEY);
+      if (stored === "quiz" || stored === "cards" || stored === "submissions" || stored === "notes") {
+        preferred = stored;
+      }
+    } catch {}
+    selectWorkspaceTab(preferred);
+  }, [selectWorkspaceTab, data?.problem?.id]);
 
   const getSplitBounds = useCallback(() => {
     const layout = reviewLayoutRef.current;
@@ -482,14 +499,14 @@ export default function ReviewPage({
         setUserFsrsRating(Number(e.key) as FsrsRating);
         return;
       }
-      if (isEnter) {
+      if (isEnter && userFsrsRating !== null) {
         e.preventDefault();
         void submitRating();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [stage, workspaceTab, cardCount, loadNext, submitRating]);
+  }, [stage, workspaceTab, cardCount, loadNext, submitRating, userFsrsRating]);
 
   const handleQuizCardSaved = useCallback((card: Card) => {
     setCards((current) => {
@@ -541,6 +558,7 @@ export default function ReviewPage({
                 problem={problem}
                 previews={data.previews}
                 userFsrsRating={userFsrsRating}
+                quizSuggestedRating={quizSuggestedRating}
                 setUserFsrsRating={setUserFsrsRating}
                 error={error}
                 submitting={submitting}
@@ -581,7 +599,7 @@ export default function ReviewPage({
                 problemId={problem.id}
                 onQuizCardSaved={handleQuizCardSaved}
                 quizKeysRef={quizKeysRef}
-                onQuizCompleted={(score) => setUserFsrsRating(suggestedRatingForScore(score))}
+                onQuizCompleted={(score) => setQuizSuggestedRating(suggestedRatingForScore(score))}
               />
             </div>
           </div>
@@ -667,6 +685,7 @@ function StatementPanel({
   problem,
   previews,
   userFsrsRating,
+  quizSuggestedRating,
   setUserFsrsRating,
   error,
   submitting,
@@ -675,7 +694,8 @@ function StatementPanel({
 }: {
   problem: ReviewProblem;
   previews: ReviewPayload["previews"];
-  userFsrsRating: FsrsRating;
+  userFsrsRating: FsrsRating | null;
+  quizSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
   error: string | null;
   submitting: boolean;
@@ -703,6 +723,7 @@ function StatementPanel({
       <CompactRating
         previews={previews}
         userFsrsRating={userFsrsRating}
+        quizSuggestedRating={quizSuggestedRating}
         setUserFsrsRating={setUserFsrsRating}
         error={error}
         submitting={submitting}
@@ -733,7 +754,7 @@ function WorkspacePanel({
   quizKeysRef,
   onQuizCompleted,
 }: {
-  activeTab: WorkspaceTab | null;
+  activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
   cards: Card[] | null;
   currentCard: Card | null;
@@ -763,10 +784,16 @@ function WorkspacePanel({
   return (
     <Surface className="flex h-full min-h-[620px] flex-col overflow-hidden lg:min-h-0">
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <div className="flex rounded-lg bg-subtle p-1">
+        <div
+          role="tablist"
+          aria-label={t.review.workspace}
+          className="flex rounded-lg bg-subtle p-1"
+          onKeyDown={(event) => moveTabFocus(event)}
+        >
           {tabs.map((tab) => (
             <ReviewTabButton
               key={tab.id}
+              id={tab.id}
               label={tab.label}
               count={tab.count}
               active={activeTab === tab.id}
@@ -776,21 +803,16 @@ function WorkspacePanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === null && (
-          <div className="flex h-full items-center justify-center p-6 text-center">
-            <div>
-              <p className="text-sm font-medium text-fg">{t.review.workspace}</p>
-              <p className="mt-1 text-xs text-muted">{t.review.workspacePrompt}</p>
-            </div>
-          </div>
-        )}
-
+      <div
+        id={`review-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`review-tab-${activeTab}`}
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {activeTab === "quiz" && (
           <LazyQuizPanel
             problemId={problemId}
             onCardSaved={onQuizCardSaved}
-            autoStart
             quizKeysRef={quizKeysRef}
             onCompleted={onQuizCompleted}
           />
@@ -885,11 +907,13 @@ function WorkspaceResourceState({
 }
 
 function ReviewTabButton({
+  id,
   label,
   count,
   active,
   onClick,
 }: {
+  id: WorkspaceTab;
   label: string;
   count?: number;
   active: boolean;
@@ -897,7 +921,12 @@ function ReviewTabButton({
 }) {
   return (
     <button
+      id={`review-tab-${id}`}
       type="button"
+      role="tab"
+      aria-selected={active}
+      aria-controls={`review-panel-${id}`}
+      tabIndex={active ? 0 : -1}
       aria-label={count != null ? `${label} ${count}` : label}
       onClick={onClick}
       className={cn(
@@ -914,6 +943,7 @@ function ReviewTabButton({
 function CompactRating({
   previews,
   userFsrsRating,
+  quizSuggestedRating,
   setUserFsrsRating,
   error,
   submitting,
@@ -921,7 +951,8 @@ function CompactRating({
   onOpenShortcuts,
 }: {
   previews: ReviewPayload["previews"];
-  userFsrsRating: FsrsRating;
+  userFsrsRating: FsrsRating | null;
+  quizSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
   error: string | null;
   submitting: boolean;
@@ -934,6 +965,13 @@ function CompactRating({
     <div className="shrink-0 border-t border-border bg-surface/70 p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{t.review.rating}</span>
+        {quizSuggestedRating !== null && (
+          <span className="text-[10px] font-medium text-accent" role="status">
+            {t.review.quizSuggestion(
+              ratingButtons.find((button) => button.rating === quizSuggestedRating)?.label ?? "",
+            )}
+          </span>
+        )}
         <button
           type="button"
           onClick={onOpenShortcuts}
@@ -972,9 +1010,9 @@ function CompactRating({
         <Button
           variant="primary"
           size="sm"
-          disabled={submitting}
+          disabled={submitting || userFsrsRating === null}
           onClick={onSubmitRating}
-          className="px-4 py-0"
+          className="h-auto px-4"
         >
           {submitting ? <Spinner /> : t.review.submit}
         </Button>
@@ -983,6 +1021,22 @@ function CompactRating({
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
+}
+
+function moveTabFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  const current = tabs.indexOf(event.target as HTMLButtonElement);
+  if (current < 0 || tabs.length === 0) return;
+  event.preventDefault();
+  const nextIndex =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[nextIndex]?.focus();
+  tabs[nextIndex]?.click();
 }
 
 function Summary({ label, value }: { label: string; value: React.ReactNode }) {

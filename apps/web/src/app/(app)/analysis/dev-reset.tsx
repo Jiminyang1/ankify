@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
 /** Dev-only "wipe everything" button. The server route also enforces
@@ -12,19 +14,20 @@ export function DevResetButton() {
   const { t } = useLanguage();
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const onClick = () => {
-    const ok = window.confirm(t.analysis.resetConfirm);
-    if (!ok) return;
-
+  const resetAllData = () => {
     startTransition(async () => {
       setStatus(null);
+      setResetError(null);
       const res = await fetch("/api/dev/reset", { method: "POST" });
       if (!res.ok) {
-        setStatus(t.analysis.failed(res.status));
+        setResetError(t.analysis.failed(res.status));
         return;
       }
       setStatus(t.analysis.wiped);
+      setConfirmOpen(false);
       notifyReviewQueueUpdated(0);
       router.refresh();
     });
@@ -32,14 +35,31 @@ export function DevResetButton() {
 
   return (
     <div className="flex items-center gap-3">
-      <button
-        type="button"
-        onClick={onClick}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={t.analysis.resetAllData}
+        description={t.analysis.resetConfirm}
+        cancelLabel={t.common.cancel}
+        confirmLabel={pending ? t.analysis.wiping : t.analysis.resetAllData}
+        busy={pending}
+        error={resetError}
+        onClose={() => {
+          if (!pending) setConfirmOpen(false);
+        }}
+        onConfirm={resetAllData}
+      />
+      <Button
+        variant="danger"
+        size="sm"
+        onClick={() => {
+          setStatus(null);
+          setResetError(null);
+          setConfirmOpen(true);
+        }}
         disabled={pending}
-        className="inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/15 disabled:opacity-50"
       >
         {pending ? t.analysis.wiping : t.analysis.resetAllData}
-      </button>
+      </Button>
       {status && <span className="text-xs text-muted">{status}</span>}
     </div>
   );

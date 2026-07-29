@@ -1,19 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Submission } from "@ankify/db";
 import { Pill } from "@/components/ui/pill";
 import { HighlightedCode } from "@/components/ui/highlighted-code";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
+import { useDialogA11y } from "@/lib/use-dialog-a11y";
+import { useLanguage } from "@/components/LanguageProvider";
 
 function formatMemory(memoryKb: number) {
   return `${(memoryKb / 1024).toFixed(1)} MB`;
 }
 
-function formatDate(value: Submission["submittedAt"]) {
-  if (!value) return "No timestamp";
+function formatDate(value: Submission["submittedAt"], missingLabel: string) {
+  if (!value) return missingLabel;
   return new Date(value).toLocaleString();
 }
 
@@ -51,10 +54,11 @@ function SubmissionCard({
   index: number;
   defaultOpen: boolean;
 }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(defaultOpen);
   const hydrated = useHydrated();
   const passed = submission.status === "Accepted";
-  const submittedAtLabel = hydrated ? formatDate(submission.submittedAt) : "—";
+  const submittedAtLabel = hydrated ? formatDate(submission.submittedAt, t.detail.noTimestamp) : "—";
   const meta = [
     submission.language,
     submission.runtimeMs != null ? `${submission.runtimeMs} ms` : null,
@@ -87,10 +91,10 @@ function SubmissionCard({
         <>
           {hasFailureDetail(submission) && (
             <div className="space-y-2 border-t border-border bg-danger/5 px-4 py-3 text-xs">
-              <FailureDetail label="Error" value={submission.errorMessage} />
-              <FailureDetail label="Failed testcase" value={submission.failedTestcase} />
-              <FailureDetail label="Expected" value={submission.expectedOutput} />
-              <FailureDetail label="Actual" value={submission.actualOutput} />
+              <FailureDetail label={t.detail.error} value={submission.errorMessage} />
+              <FailureDetail label={t.detail.failedTestcase} value={submission.failedTestcase} />
+              <FailureDetail label={t.detail.expected} value={submission.expectedOutput} />
+              <FailureDetail label={t.detail.actual} value={submission.actualOutput} />
             </div>
           )}
           <div className="relative border-t border-border">
@@ -129,24 +133,29 @@ function FullscreenButton({
   language?: string | null;
   title?: string;
 }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const mounted = useHydrated();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, close]);
+  }, [open]);
+
+  useDialogA11y({
+    open,
+    onClose: close,
+    containerRef: dialogRef,
+    initialFocusRef: closeRef,
+  });
 
   const modal =
     open &&
@@ -155,9 +164,11 @@ function FullscreenButton({
       <div className="fixed inset-0 z-[100] flex flex-col bg-black/60 p-3 backdrop-blur-sm sm:p-6" role="presentation">
         <button type="button" aria-hidden className="absolute inset-0" onClick={close} />
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
-          aria-label="Submission code"
+          aria-label={t.detail.submissionCode}
+          tabIndex={-1}
           className="relative z-[101] mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
           onClick={(e) => e.stopPropagation()}
         >
@@ -166,13 +177,15 @@ function FullscreenButton({
               {title && <span className="truncate text-muted">{title}</span>}
               <span className="font-mono text-muted">{language}</span>
             </div>
-            <button
-              type="button"
+            <Button
+              ref={closeRef}
+              variant="ghost"
+              size="xs"
               onClick={close}
-              className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:bg-subtle hover:text-fg"
+              className="shrink-0"
             >
-              Close <span aria-hidden>✕</span>
-            </button>
+              {t.common.close} <span aria-hidden>✕</span>
+            </Button>
           </div>
           <HighlightedCode code={code} language={language} className="min-h-0 flex-1" />
         </div>
@@ -182,14 +195,14 @@ function FullscreenButton({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        size="xs"
         onClick={() => setOpen(true)}
-        aria-label="Expand code to fullscreen"
-        className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md border border-border bg-surface/80 px-2 py-1 text-[11px] text-muted backdrop-blur transition-colors hover:bg-subtle hover:text-fg"
+        aria-label={t.detail.expandCode}
+        className="absolute right-2 top-2 z-10 bg-surface/85 text-muted backdrop-blur"
       >
-        <span aria-hidden>⤢</span> Fullscreen
-      </button>
+        <span aria-hidden>⤢</span> {t.detail.fullscreen}
+      </Button>
       {modal}
     </>
   );

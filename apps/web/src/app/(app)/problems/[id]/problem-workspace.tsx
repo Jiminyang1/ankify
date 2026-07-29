@@ -27,11 +27,32 @@ export function ProblemWorkspace({
   const { t } = useLanguage();
   const [active, setActive] = useState(defaultTab ?? panels[0]?.id);
 
+  const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabButtons = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    );
+    const currentIndex = tabButtons.indexOf(event.target as HTMLButtonElement);
+    if (currentIndex < 0 || tabButtons.length === 0) return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabButtons.length - 1
+          : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabButtons.length) %
+            tabButtons.length;
+    const next = tabButtons[nextIndex];
+    next?.focus();
+    next?.click();
+  };
+
   return (
     <section className="flex h-[42rem] max-h-[calc(100vh-3rem)] min-h-[28rem] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
       <div
         role="tablist"
         aria-label={t.detail.problemContent}
+        onKeyDown={moveFocus}
         className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2"
       >
         {panels.map((p) => {

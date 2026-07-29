@@ -15,6 +15,7 @@ import {
   type QuizItem,
 } from "@ankify/core";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/pill";
@@ -70,6 +71,9 @@ export function QuizPanel({
   const [savingMissed, setSavingMissed] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const generationElapsedSeconds = useElapsedSeconds(generating, generationStartedAt);
 
   const loadSession = useCallback(async () => {
@@ -179,9 +183,8 @@ export function QuizPanel({
   }
 
   async function resetHistory() {
-    if (typeof window !== "undefined" && !window.confirm(t.quiz.resetConfirm)) {
-      return;
-    }
+    setResetting(true);
+    setResetError(null);
     setError(null);
     try {
       const res = await fetch(`/api/problems/${problemId}/quiz`, { method: "DELETE" });
@@ -195,10 +198,32 @@ export function QuizPanel({
       setFeedback(null);
       setCurrentIndex(0);
       setShowResults(false);
+      setResetDialogOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedReset);
+      setResetError(e instanceof Error ? e.message : t.quiz.failedReset);
+    } finally {
+      setResetting(false);
     }
   }
+
+  const resetDialog = (
+    <ConfirmDialog
+      open={resetDialogOpen}
+      title={t.quiz.resetHistory}
+      description={t.quiz.resetConfirm}
+      cancelLabel={t.common.cancel}
+      confirmLabel={resetting ? t.common.loading : t.quiz.resetHistory}
+      busy={resetting}
+      error={resetError}
+      onClose={() => {
+        if (!resetting) {
+          setResetDialogOpen(false);
+          setResetError(null);
+        }
+      }}
+      onConfirm={() => void resetHistory()}
+    />
+  );
 
   async function submitAnswer(item: QuizItem, selectedIndex: number) {
     if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
@@ -347,6 +372,7 @@ export function QuizPanel({
     const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map((scope) => formatQuizScope(scope, t));
     return (
       <div className="flex h-full flex-col overflow-hidden">
+        {resetDialog}
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <Surface className="p-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -366,7 +392,10 @@ export function QuizPanel({
                 <Button
                   size="sm"
                   disabled={generating}
-                  onClick={() => void resetHistory()}
+                  onClick={() => {
+                    setResetError(null);
+                    setResetDialogOpen(true);
+                  }}
                   title={t.quiz.resetHistoryTitle}
                   className="text-muted hover:bg-danger/10 hover:text-danger"
                 >
@@ -472,6 +501,7 @@ export function QuizPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {resetDialog}
       <div className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -515,7 +545,10 @@ export function QuizPanel({
               variant="ghost"
               size="sm"
               disabled={generating}
-              onClick={() => void resetHistory()}
+              onClick={() => {
+                setResetError(null);
+                setResetDialogOpen(true);
+              }}
               title={t.quiz.resetHistoryTitle}
               className="text-muted hover:bg-danger/10 hover:text-danger"
             >
