@@ -10,6 +10,7 @@ import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildQuizPrompt } from "@/lib/quiz-prompt";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { MAX_QUIZ_SESSIONS_PER_PROBLEM } from "@/lib/resource-limits";
+import { getGenerationSettings } from "@/lib/settings";
 
 export const maxDuration = 180;
 
@@ -247,10 +248,19 @@ async function loadPromptContext(userId: string, problemId: string) {
 async function generateQuizItems(userId: string, problemId: string, history: QuizSession[] = []): Promise<QuizItem[]> {
   const tag = `[quiz ${problemId}]`;
   const t0 = Date.now();
-  const { problem, cards, submissions } = await loadPromptContext(userId, problemId);
-  const { model, settings } = await getActiveModel(userId);
+  const [{ problem, cards, submissions }, { model, settings }, generation] = await Promise.all([
+    loadPromptContext(userId, problemId),
+    getActiveModel(userId),
+    getGenerationSettings(userId),
+  ]);
   const mode = settings.provider === "deepseek" ? "json" : "auto";
-  const prompt = buildQuizPrompt({ problem, cards, submissions, history });
+  const prompt = buildQuizPrompt({
+    problem,
+    cards,
+    submissions,
+    history,
+    generationLanguage: generation.language,
+  });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), QUIZ_GENERATION_TIMEOUT_MS);
   const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";

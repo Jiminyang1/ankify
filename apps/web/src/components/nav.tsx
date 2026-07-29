@@ -13,7 +13,6 @@ import {
 } from "@/lib/review-queue-event";
 import { BrandLockup } from "./brand";
 import { ThemeToggle } from "./ThemeToggle";
-import { LanguageToggle } from "./LanguageToggle";
 import { useLanguage } from "./LanguageProvider";
 import { UserAvatar } from "./user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
@@ -213,10 +212,7 @@ export function Nav({
             </div>
           )}
           {isPublicPage && (
-            <>
-              <LanguageToggle />
-              <ThemeToggle />
-            </>
+            <ThemeToggle />
           )}
         </div>
       </nav>

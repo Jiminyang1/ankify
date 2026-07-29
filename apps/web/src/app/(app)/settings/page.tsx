@@ -1,10 +1,11 @@
 import { requirePageUser } from "@/lib/auth";
 import { getRequestTranslations } from "@/lib/i18n-server";
-import { getAiSettings, getReviewSettings } from "@/lib/settings";
+import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/lib/settings";
 import {
   AccountDataForm,
   AiSettingsForm,
   AppearanceSettingsForm,
+  LanguageRegionSettingsForm,
   ReviewSettingsForm,
 } from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -19,7 +20,12 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requirePageUser();
-  const [ai, review, t] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id), getRequestTranslations()]);
+  const [ai, generation, review, t] = await Promise.all([
+    getAiSettings(user.id),
+    getGenerationSettings(user.id),
+    getReviewSettings(user.id),
+    getRequestTranslations(),
+  ]);
   const displayName = getUserDisplayName(user.name, user.email);
   return (
     <PageFrame width="standard" className="space-y-6">
@@ -48,6 +54,15 @@ export default async function SettingsPage() {
         <div className="divide-y divide-border">
           <SettingsSection title={t.settings.appearance}>
             <AppearanceSettingsForm />
+          </SettingsSection>
+
+          <SettingsSection title={t.settings.languageRegion}>
+            <LanguageRegionSettingsForm
+              initial={{
+                generationLanguage: generation.language,
+                timeZone: review.timeZone,
+              }}
+            />
           </SettingsSection>
 
           <SettingsSection
@@ -79,7 +94,7 @@ export default async function SettingsPage() {
           </SettingsSection>
 
           <SettingsSection title={t.settings.reviewSchedule}>
-            <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit, timeZone: review.timeZone }} />
+            <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit }} />
           </SettingsSection>
 
           <SettingsSection title={t.settings.accountData}>

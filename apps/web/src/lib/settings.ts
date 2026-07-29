@@ -4,6 +4,7 @@ import { cache } from "react";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
+import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "./i18n";
 
 export interface AiSettings {
   provider: AiProvider;
@@ -25,6 +26,10 @@ export interface ReviewSettings {
   timeZoneConfigured: boolean;
 }
 
+export interface GenerationSettings {
+  language: Language;
+}
+
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   provider: "",
   model: "",
@@ -37,8 +42,13 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   timeZoneConfigured: false,
 };
 
+export const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
+  language: DEFAULT_LANGUAGE,
+};
+
 const KEY_AI = "ai";
 const KEY_REVIEW = "review";
+const KEY_GENERATION = "generation";
 
 export async function getAiSettings(userId: string): Promise<AiSettings> {
   const db = getDb();
@@ -137,6 +147,39 @@ export async function setReviewSettings(
   await db
     .insert(schema.settings)
     .values({ userId, key: KEY_REVIEW, value: next })
+    .onConflictDoUpdate({
+      target: [schema.settings.userId, schema.settings.key],
+      set: { value: next, updatedAt: new Date() },
+    });
+}
+
+async function readGenerationSettings(userId: string): Promise<GenerationSettings> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.settings)
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_GENERATION)));
+  const row = rows[0];
+  if (!row) return DEFAULT_GENERATION_SETTINGS;
+  const value = row.value as Partial<GenerationSettings>;
+  return { language: normalizeLanguage(value.language) };
+}
+
+export const getGenerationSettings = cache(readGenerationSettings);
+
+export async function setGenerationSettings(
+  userId: string,
+  value: Partial<GenerationSettings>,
+) {
+  const db = getDb();
+  const existing = await readGenerationSettings(userId);
+  const next: GenerationSettings = {
+    language:
+      value.language === undefined ? existing.language : normalizeLanguage(value.language),
+  };
+  await db
+    .insert(schema.settings)
+    .values({ userId, key: KEY_GENERATION, value: next })
     .onConflictDoUpdate({
       target: [schema.settings.userId, schema.settings.key],
       set: { value: next, updatedAt: new Date() },

@@ -1,5 +1,6 @@
 import type { Card, Problem, Submission } from "@ankify/db";
 import type { QuizAnswer, QuizItem } from "@ankify/core";
+import type { Language } from "./i18n";
 
 const TEXT_MAX = 3000;   // problem statement (most LeetCode statements fit; long ones get truncated)
 const NOTE_MAX = 1600;   // user notes — kept generous since they're high-signal
@@ -38,8 +39,12 @@ export function buildQuizPrompt(args: {
     itemsJson: QuizItem[];
     answersJson: QuizAnswer[];
   }[];
+  generationLanguage?: Language;
 }): { system: string; user: string } {
   const { problem, cards, submissions, history = [] } = args;
+  const generationLanguage = args.generationLanguage ?? "en";
+  const outputLanguage =
+    generationLanguage === "zh" ? "Simplified Chinese" : "English";
 
   // Section 1: problem metadata + the official statement.
   const problemLines = [
@@ -134,7 +139,7 @@ Self-check before finishing each item:
 
 Rules:
 - Each item must have exactly 4 choices and exactly one correct answer.
-- All user-facing item fields (question, choices, explanation) must be written in Simplified Chinese.
+- All user-facing item fields (question, choices, explanation) must be written in ${outputLanguage}.
 - Keep code identifiers, variable names, API names, complexity notation, and short English terms unchanged when that is clearer.
 - Use GitHub Flavored Markdown in question, choices, and explanation when useful.
 - Wrap formulas, complexity expressions, DP states, and code-like variables in inline code, for example: \`O(amount * len(coins))\`, \`dp[i]\`, \`memo[rem]\`, \`amount + 1\`.
@@ -165,7 +170,7 @@ Examples (just for the source/scope distinction):
     cardLines.join("\n"),
     submissionLines.join("\n"),
     historyLines.join("\n"),
-    "Generate the quiz now in Simplified Chinese.",
+    `Generate the quiz now in ${outputLanguage}.`,
   ]
     .filter(Boolean)
     .join("\n\n");

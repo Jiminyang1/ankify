@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import { getTranslations, type Language } from "@/lib/i18n";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -11,20 +12,15 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Select } from "@/components/ui/field";
 import { InfoTip } from "@/components/ui/info-tip";
+import { TimeZonePicker } from "./time-zone-picker";
 
 export function AppearanceSettingsForm() {
   const { t } = useLanguage();
 
   return (
-    <div className="max-w-2xl divide-y divide-border">
-      <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 py-2 first:pt-0">
-        <div className="text-sm font-medium text-fg">{t.language.label}</div>
-        <LanguageToggle className="w-fit" size="md" />
-      </div>
-      <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 py-2 last:pb-0">
-        <div className="text-sm font-medium text-fg">{t.theme.label}</div>
-        <ThemeToggle className="w-fit" size="md" />
-      </div>
+    <div className="flex min-h-14 max-w-2xl flex-wrap items-center justify-between gap-3">
+      <div className="text-sm font-medium text-fg">{t.theme.label}</div>
+      <ThemeToggle className="w-fit" size="md" />
     </div>
   );
 }
@@ -445,11 +441,112 @@ export function AiSettingsForm({
   );
 }
 
-export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number; timeZone: string } }) {
+export function LanguageRegionSettingsForm({
+  initial,
+}: {
+  initial: {
+    generationLanguage: Language;
+    timeZone: string;
+  };
+}) {
+  const router = useRouter();
+  const { language, setLanguage, t } = useLanguage();
+  const [interfaceLanguage, setInterfaceLanguage] = useState<Language>(language);
+  const [generationLanguage, setGenerationLanguage] = useState<Language>(
+    initial.generationLanguage,
+  );
+  const [timeZone, setTimeZone] = useState(initial.timeZone);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ generationLanguage, timeZone }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (interfaceLanguage !== language) setLanguage(interfaceLanguage);
+      setMsg(getTranslations(interfaceLanguage).common.saved);
+      router.refresh();
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : t.settings.failedToSave);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="max-w-2xl space-y-5">
+      <div className="rounded-lg border border-accent/25 bg-accent-soft/60 px-4 py-3">
+        <p className="text-sm font-medium text-fg">{t.settings.languageImpactTitle}</p>
+        <p className="mt-1 text-sm leading-6 text-muted">{t.settings.languageImpactDescription}</p>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <div>
+            <div className="text-sm font-medium text-fg">{t.settings.interfaceLanguage}</div>
+            <p className="mt-1 text-xs leading-5 text-muted">{t.settings.interfaceLanguageHelp}</p>
+          </div>
+          <LanguageToggle
+            className="w-fit"
+            size="md"
+            value={interfaceLanguage}
+            onChange={setInterfaceLanguage}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <label htmlFor="generation-language" className="text-sm font-medium text-fg">
+              {t.settings.generationLanguage}
+            </label>
+            <p className="mt-1 text-xs leading-5 text-muted">{t.settings.generationLanguageHelp}</p>
+          </div>
+          <Select
+            id="generation-language"
+            value={generationLanguage}
+            onChange={(event) => setGenerationLanguage(event.target.value as Language)}
+          >
+            <option value="en">{t.settings.generationLanguageEnglish}</option>
+            <option value="zh">{t.settings.generationLanguageChinese}</option>
+          </Select>
+        </div>
+
+        <div className="space-y-2 sm:col-span-2">
+          <div className="flex items-center gap-1.5 text-sm">
+            <label htmlFor="review-time-zone" className="font-medium text-fg">
+              {t.settings.timeZone}
+            </label>
+            <InfoTip label={t.settings.timeZoneHelp} align="left" />
+          </div>
+          <TimeZonePicker
+            id="review-time-zone"
+            value={timeZone}
+            onChange={setTimeZone}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="primary" disabled={saving}>
+          {saving ? t.common.saving : t.settings.saveLanguageRegion}
+        </Button>
+        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
+      </div>
+    </form>
+  );
+}
+
+export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number } }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [dailyReviewLimit, setDailyReviewLimit] = useState(initial.dailyReviewLimit);
-  const [timeZone, setTimeZone] = useState(initial.timeZone);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -461,7 +558,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dailyReviewLimit, timeZone }),
+        body: JSON.stringify({ dailyReviewLimit }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
@@ -474,42 +571,21 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   }
 
   return (
-    <form onSubmit={save} className="max-w-2xl">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5 text-sm">
-            <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
-            <InfoTip label={t.settings.dailyReviewHelp} align="left" />
-          </div>
-          <Input
-            id="daily-review-limit"
-            type="number"
-            min={1}
-            max={100}
-            value={dailyReviewLimit}
-            onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
-            className="tabular-nums"
-          />
+    <form onSubmit={save} className="max-w-sm">
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 text-sm">
+          <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
+          <InfoTip label={t.settings.dailyReviewHelp} align="left" />
         </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5 text-sm">
-            <label htmlFor="review-time-zone">{t.settings.timeZone}</label>
-            <InfoTip label={t.settings.timeZoneHelp} align="left" />
-          </div>
-          <Input
-            id="review-time-zone"
-            list="review-time-zone-options"
-            value={timeZone}
-            onChange={(e) => setTimeZone(e.target.value)}
-            placeholder="Asia/Shanghai"
-          />
-          <datalist id="review-time-zone-options">
-            {["UTC", "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "America/New_York", "America/Los_Angeles"].map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-        </div>
+        <Input
+          id="daily-review-limit"
+          type="number"
+          min={1}
+          max={100}
+          value={dailyReviewLimit}
+          onChange={(e) => setDailyReviewLimit(Number(e.target.value))}
+          className="tabular-nums"
+        />
       </div>
 
       <div className="mt-5 flex items-center gap-3">

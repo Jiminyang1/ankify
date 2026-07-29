@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   getAiSettings,
+  getGenerationSettings,
   getReviewSettings,
   setAiSettings,
+  setGenerationSettings,
   setReviewSettings,
 } from "@/lib/settings";
 import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
@@ -18,11 +20,16 @@ const settingsSchema = z
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
+    generationLanguage: z.enum(["en", "zh"]).optional(),
   })
   .refine(
-    (value) => value.dailyReviewLimit != null || value.timeZone != null || Boolean(value.provider && value.model),
+    (value) =>
+      value.dailyReviewLimit != null ||
+      value.timeZone != null ||
+      value.generationLanguage != null ||
+      Boolean(value.provider && value.model),
     {
-      message: "Provide AI provider/model or review settings.",
+      message: "Provide AI provider/model, review settings, or generation settings.",
     },
   );
 
@@ -30,7 +37,11 @@ export async function GET(req: Request) {
   const user = await getRequestSessionUser(req);
   if (!user) return unauthorizedResponse();
 
-  const [ai, review] = await Promise.all([getAiSettings(user.id), getReviewSettings(user.id)]);
+  const [ai, review, generation] = await Promise.all([
+    getAiSettings(user.id),
+    getReviewSettings(user.id),
+    getGenerationSettings(user.id),
+  ]);
   // Don't leak the key back to the client; just whether one is set
   return NextResponse.json({
     ai: {
@@ -40,6 +51,7 @@ export async function GET(req: Request) {
       hasApiKey: Boolean(ai.encryptedApiKey),
     },
     review,
+    generation,
   });
 }
 
@@ -65,6 +77,9 @@ export async function POST(req: Request) {
       dailyReviewLimit: parsed.data.dailyReviewLimit,
       timeZone: parsed.data.timeZone,
     });
+  }
+  if (parsed.data.generationLanguage != null) {
+    await setGenerationSettings(user.id, { language: parsed.data.generationLanguage });
   }
   return NextResponse.json({ ok: true });
 }

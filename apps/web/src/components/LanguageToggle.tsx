@@ -12,11 +12,17 @@ const OPTIONS: { value: Language; labelKey: "en" | "zh" }[] = [
 export function LanguageToggle({
   className,
   size = "sm",
+  value,
+  onChange,
 }: {
   className?: string;
   size?: "sm" | "md";
+  value?: Language;
+  onChange?: (language: Language) => void;
 }) {
   const { language, setLanguage, t } = useLanguage();
+  const selectedLanguage = value ?? language;
+  const selectLanguage = onChange ?? setLanguage;
 
   return (
     <div
@@ -31,13 +37,13 @@ export function LanguageToggle({
         <button
           key={option.value}
           type="button"
-          onClick={() => setLanguage(option.value)}
+          onClick={() => selectLanguage(option.value)}
           className={cn(
             "font-medium transition",
             size === "md" ? "min-h-10 min-w-12 rounded-md px-3 py-1.5 text-sm" : "min-h-9 rounded-md px-2 py-1 text-[11px]",
-            language === option.value ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg",
+            selectedLanguage === option.value ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg",
           )}
-          aria-pressed={language === option.value}
+          aria-pressed={selectedLanguage === option.value}
         >
           {t.language[option.labelKey]}
         </button>

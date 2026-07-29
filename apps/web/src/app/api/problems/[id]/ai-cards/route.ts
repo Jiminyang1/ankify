@@ -10,6 +10,7 @@ import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
 import { buildAiCardDraftPrompt } from "@/lib/card-prompt";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { MAX_CARDS_PER_PROBLEM } from "@/lib/resource-limits";
+import { getGenerationSettings } from "@/lib/settings";
 
 export const maxDuration = 180;
 
@@ -179,8 +180,11 @@ async function generateAiDraft(args: {
 }): Promise<CardDraft> {
   const tag = `[ai-card ${args.problemId}]`;
   const t0 = Date.now();
-  const { problem, submissions } = await loadPromptContext(args.userId, args.problemId);
-  const { model, settings } = await getActiveModel(args.userId);
+  const [{ problem, submissions }, { model, settings }, generation] = await Promise.all([
+    loadPromptContext(args.userId, args.problemId),
+    getActiveModel(args.userId),
+    getGenerationSettings(args.userId),
+  ]);
   const mode = settings.provider === "deepseek" ? "json" : "auto";
   const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";
 
@@ -191,6 +195,7 @@ async function generateAiDraft(args: {
     rawText: args.rawText,
     draft: args.draft,
     instruction: args.instruction,
+    generationLanguage: generation.language,
   });
 
   const controller = new AbortController();

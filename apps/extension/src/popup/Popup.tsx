@@ -315,7 +315,7 @@ const EXT_I18N = {
     settings: {
       appearance: "Appearance",
       appearanceHelp: "Language and theme for this extension.",
-      languageHelp: "Interface language",
+      languageHelp: "Changes only the extension interface. New AI cards and quizzes use the Generation language saved in web Settings.",
       themeHelp: "Popup color mode",
       connection: "Connection",
       connectionHelp: "The extension securely reuses your ankify web login session. No API token is needed.",
@@ -514,7 +514,7 @@ const EXT_I18N = {
     settings: {
       appearance: "外观",
       appearanceHelp: "扩展里的语言和主题。",
-      languageHelp: "界面语言",
+      languageHelp: "只改变扩展界面；新生成的 AI 卡片和测验使用 Web Settings 中保存的“生成内容语言”。",
       themeHelp: "弹窗颜色模式",
       connection: "连接",
       connectionHelp: "扩展会安全复用 ankify 网页登录会话，不再需要 API token。",
@@ -3673,7 +3673,7 @@ function SettingsTab({
         <div className="settings-preference-list">
           <div className="settings-preference-row">
             <div className="settings-preference-copy">
-              <SettingsTitle>{t.language.label}</SettingsTitle>
+              <SettingsTitle info={t.settings.languageHelp}>{t.language.label}</SettingsTitle>
             </div>
             <div className="theme-control language-control" aria-label={t.language.label}>
               {(["en", "zh"] as const).map((language) => (
