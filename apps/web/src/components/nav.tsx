@@ -12,7 +12,6 @@ import {
   type ReviewQueueUpdatedEvent,
 } from "@/lib/review-queue-event";
 import { BrandLockup } from "./brand";
-import { ThemeToggle } from "./ThemeToggle";
 import { useLanguage } from "./LanguageProvider";
 import { UserAvatar } from "./user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
@@ -141,10 +140,7 @@ export function Nav({
         )}
 
         <div
-          className={cn(
-            "flex items-center justify-self-end gap-2",
-            isPublicPage && "col-span-2 w-full justify-end sm:col-auto sm:w-auto",
-          )}
+          className="flex items-center justify-self-end gap-2"
         >
           {!isPublicPage && user && (
             <div className="relative" ref={accountMenuRef}>
@@ -210,9 +206,6 @@ export function Nav({
                 </div>
               )}
             </div>
-          )}
-          {isPublicPage && (
-            <ThemeToggle />
           )}
         </div>
       </nav>

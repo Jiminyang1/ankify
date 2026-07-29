@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requirePageUser } from "@/lib/auth";
 import { getRequestTranslations } from "@/lib/i18n-server";
 import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/lib/settings";
@@ -17,6 +18,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
 
 export const dynamic = "force-dynamic";
+const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export default async function SettingsPage() {
   const user = await requirePageUser();
@@ -86,7 +88,9 @@ export default async function SettingsPage() {
                 href={getExtensionInstallUrl()}
                 target="_blank"
                 rel="noreferrer"
-                className={buttonClasses({ size: "sm", className: "mt-4" })}
+                className={buttonClasses({
+                  className: `mt-4 ${SETTINGS_ACTION_CLASS}`,
+                })}
               >
                 {t.settings.installExtension}
               </a>
@@ -102,6 +106,15 @@ export default async function SettingsPage() {
           </SettingsSection>
         </div>
       </Surface>
+
+      <footer className="flex items-center justify-center gap-5 pb-4 text-xs text-muted">
+        <Link href="/privacy" className="transition-colors hover:text-fg">
+          {t.settings.privacyPolicy}
+        </Link>
+        <Link href="/terms" className="transition-colors hover:text-fg">
+          {t.settings.termsOfUse}
+        </Link>
+      </footer>
     </PageFrame>
   );
 }

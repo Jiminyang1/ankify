@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { getTranslations, type Language } from "@/lib/i18n";
-import { LanguageToggle } from "@/components/LanguageToggle";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useTheme } from "@/components/ThemeProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Select } from "@/components/ui/field";
@@ -16,11 +14,24 @@ import { TimeZonePicker } from "./time-zone-picker";
 
 export function AppearanceSettingsForm() {
   const { t } = useLanguage();
+  const { theme, setTheme } = useTheme();
 
   return (
-    <div className="flex min-h-14 max-w-2xl flex-wrap items-center justify-between gap-3">
-      <div className="text-sm font-medium text-fg">{t.theme.label}</div>
-      <ThemeToggle className="w-fit" size="md" />
+    <div className="max-w-2xl space-y-2">
+      <label className="block text-sm font-medium text-fg" htmlFor="appearance-theme">
+        {t.theme.label}
+      </label>
+      <Select
+        id="appearance-theme"
+        value={theme}
+        onChange={(event) =>
+          setTheme(event.target.value as "system" | "light" | "dark")
+        }
+      >
+        <option value="system">{t.theme.system}</option>
+        <option value="light">{t.theme.light}</option>
+        <option value="dark">{t.theme.dark}</option>
+      </Select>
     </div>
   );
 }
@@ -39,6 +50,7 @@ const MODEL_PRESETS: Record<AiProvider, string[]> = {
 };
 
 type ModelEntry = { id: string; label?: string };
+const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export function AiSettingsForm({
   initial,
@@ -227,7 +239,7 @@ export function AiSettingsForm({
   const isCustomModel = !models.some((m) => m.id === model);
 
   return (
-    <form onSubmit={save} className="max-w-2xl space-y-4">
+    <form onSubmit={save} className="max-w-2xl space-y-5">
       <ConfirmDialog
         open={removeKeyDialogOpen}
         title={t.settings.removeApiKey}
@@ -244,8 +256,10 @@ export function AiSettingsForm({
         }}
         onConfirm={() => void removeApiKey()}
       />
-      <div className="space-y-1">
-        <label className="block text-sm" htmlFor="ai-provider">{t.settings.provider}</label>
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-fg" htmlFor="ai-provider">
+          {t.settings.provider}
+        </label>
         <Select
           id="ai-provider"
           value={provider}
@@ -262,28 +276,16 @@ export function AiSettingsForm({
           }}
         >
           <option value="">{t.settings.chooseProvider}</option>
-          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
           <option value="deepseek">DeepSeek</option>
         </Select>
       </div>
 
-      <div className="space-y-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <label className="block text-sm" htmlFor="ai-model">{t.settings.model}</label>
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span>{modelsSourceLabel}</span>
-            <Button
-              size="sm"
-              onClick={refreshModels}
-              disabled={refreshingModels || !canRefreshModels}
-              title={!canRefreshModels ? t.settings.setProviderKeyFirst : undefined}
-              className="px-2 py-0.5"
-            >
-              {refreshingModels ? t.settings.refreshing : live ? t.settings.refresh : t.settings.loadFromProvider}
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-fg" htmlFor="ai-model">
+          {t.settings.model}
+        </label>
         <Select
           id="ai-model"
           value={isCustomModel ? "__custom__" : model}
@@ -314,49 +316,52 @@ export function AiSettingsForm({
             className="font-mono"
           />
         )}
+        <div className="flex min-h-7 items-center justify-between gap-3">
+          <span className="text-xs text-muted">{modelsSourceLabel}</span>
+          <Button
+            className={SETTINGS_ACTION_CLASS}
+            onClick={refreshModels}
+            disabled={refreshingModels || !canRefreshModels}
+            title={!canRefreshModels ? t.settings.setProviderKeyFirst : undefined}
+          >
+            {refreshingModels
+              ? t.settings.refreshing
+              : live
+                ? t.settings.refresh
+                : t.settings.loadFromProvider}
+          </Button>
+        </div>
         {modelsError && (
           <p className="text-xs text-danger" role="alert">{t.settings.couldNotLoadModels(modelsError)}</p>
         )}
       </div>
 
       {showGenerationMode && (
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-sm">
-            <span>{t.settings.generationMode}</span>
+            <label htmlFor="ai-reasoning-mode" className="font-medium text-fg">
+              {t.settings.generationMode}
+            </label>
             <InfoTip label={t.settings.deepseekOnly} align="left" />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setReasoningMode("fast")}
-              className={
-                "h-10 rounded-lg border px-3 text-sm font-medium transition " +
-                (reasoningMode === "fast"
-                  ? "border-accent/40 bg-accent-soft text-accent shadow-card"
-                  : "border-border bg-surface text-muted shadow-card hover:border-accent/25 hover:bg-subtle hover:text-fg")
-              }
-            >
-              {t.settings.fast}
-            </button>
-            <button
-              type="button"
-              onClick={() => setReasoningMode("thinking")}
-              className={
-                "h-10 rounded-lg border px-3 text-sm font-medium transition " +
-                (reasoningMode === "thinking"
-                  ? "border-accent/40 bg-accent-soft text-accent shadow-card"
-                  : "border-border bg-surface text-muted shadow-card hover:border-accent/25 hover:bg-subtle hover:text-fg")
-              }
-            >
-              {t.settings.thinking}
-            </button>
-          </div>
+          <Select
+            id="ai-reasoning-mode"
+            value={reasoningMode}
+            onChange={(event) =>
+              setReasoningMode(event.target.value as AiReasoningMode)
+            }
+          >
+            <option value="fast">{t.settings.fast}</option>
+            <option value="thinking">{t.settings.thinking}</option>
+          </Select>
         </div>
       )}
 
-      <div className="space-y-1">
+      <div className="space-y-2">
         <div className="flex items-center gap-1.5 text-sm">
-          <label htmlFor="ai-api-key">{t.settings.apiKey}</label>
+          <label htmlFor="ai-api-key" className="font-medium text-fg">
+            {t.settings.apiKey}
+          </label>
           {hasUsableStoredKey && <InfoTip label={t.settings.apiKeySet} align="left" />}
         </div>
         <Input
@@ -365,7 +370,7 @@ export function AiSettingsForm({
           type="text"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder={hasUsableStoredKey ? "****" : "sk-..."}
+          placeholder={hasUsableStoredKey ? "••••••••••••••••••••" : "sk-..."}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="none"
@@ -382,14 +387,20 @@ export function AiSettingsForm({
           </p>
         )}
         {hasUsableStoredKey && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <div className="flex min-h-7 items-center text-xs">
             <span className="inline-flex items-center gap-1.5 font-medium text-success">
               <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
               {t.settings.apiKeySaved}
             </span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        <div className="mr-auto flex items-center gap-3">
+          {hasUsableStoredKey && (
             <Button
-              variant="danger"
-              size="xs"
+              className={SETTINGS_ACTION_CLASS}
               onClick={() => {
                 setRemoveKeyError(null);
                 setRemoveKeyDialogOpen(true);
@@ -398,22 +409,29 @@ export function AiSettingsForm({
             >
               {removingKey ? t.settings.removingApiKey : t.settings.removeApiKey}
             </Button>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" disabled={saving}>
-          {saving ? t.common.saving : t.common.save}
-        </Button>
+          )}
+          {msg && (
+            <span className="text-sm text-muted" role="status" aria-live="polite">
+              {msg}
+            </span>
+          )}
+        </div>
         <Button
+          className={SETTINGS_ACTION_CLASS}
           onClick={testConnection}
           disabled={testing || !canTest}
           title={!canTest ? t.settings.setAiFirst : undefined}
         >
           {testing ? t.settings.testing : t.settings.testConnection}
         </Button>
-        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
+        <Button
+          type="submit"
+          variant="primary"
+          className={SETTINGS_ACTION_CLASS}
+          disabled={saving}
+        >
+          {saving ? t.common.saving : t.common.save}
+        </Button>
       </div>
 
       {testResult && (
@@ -482,18 +500,22 @@ export function LanguageRegionSettingsForm({
 
   return (
     <form onSubmit={save} className="max-w-2xl space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-sm">
-            <span className="font-medium text-fg">{t.settings.interfaceLanguage}</span>
+            <label htmlFor="interface-language" className="font-medium text-fg">
+              {t.settings.interfaceLanguage}
+            </label>
             <InfoTip label={t.settings.interfaceLanguageHelp} align="left" />
           </div>
-          <LanguageToggle
-            className="w-fit"
-            size="md"
+          <Select
+            id="interface-language"
             value={interfaceLanguage}
-            onChange={setInterfaceLanguage}
-          />
+            onChange={(event) => setInterfaceLanguage(event.target.value as Language)}
+          >
+            <option value="en">English</option>
+            <option value="zh">简体中文</option>
+          </Select>
         </div>
 
         <div className="space-y-2">
@@ -513,7 +535,7 @@ export function LanguageRegionSettingsForm({
           </Select>
         </div>
 
-        <div className="space-y-2 sm:col-span-2">
+        <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-sm">
             <label htmlFor="review-time-zone" className="font-medium text-fg">
               {t.settings.timeZone}
@@ -528,11 +550,20 @@ export function LanguageRegionSettingsForm({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" variant="primary" disabled={saving}>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {msg && (
+          <span className="mr-auto text-sm text-muted" role="status" aria-live="polite">
+            {msg}
+          </span>
+        )}
+        <Button
+          type="submit"
+          variant="primary"
+          className={SETTINGS_ACTION_CLASS}
+          disabled={saving}
+        >
           {saving ? t.common.saving : t.settings.saveLanguageRegion}
         </Button>
-        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
       </div>
     </form>
   );
@@ -566,8 +597,8 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   }
 
   return (
-    <form onSubmit={save} className="max-w-sm">
-      <div className="space-y-1">
+    <form onSubmit={save} className="max-w-2xl space-y-5">
+      <div className="max-w-sm space-y-1">
         <div className="flex items-center gap-1.5 text-sm">
           <label htmlFor="daily-review-limit">{t.settings.dailyReviewLimit}</label>
           <InfoTip label={t.settings.dailyReviewHelp} align="left" />
@@ -583,11 +614,20 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         />
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
-        <Button type="submit" variant="primary" disabled={saving}>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {msg && (
+          <span className="mr-auto text-sm text-muted" role="status" aria-live="polite">
+            {msg}
+          </span>
+        )}
+        <Button
+          type="submit"
+          variant="primary"
+          className={SETTINGS_ACTION_CLASS}
+          disabled={saving}
+        >
           {saving ? t.common.saving : t.settings.saveReviewSettings}
         </Button>
-        {msg && <span className="text-sm text-muted" role="status" aria-live="polite">{msg}</span>}
       </div>
     </form>
   );
@@ -651,54 +691,71 @@ export function AccountDataForm({ email }: { email: string }) {
         <a
           href="/api/account/export"
           download
-          className={buttonClasses({ variant: "secondary" })}
+          className={buttonClasses({
+            variant: "secondary",
+            className: SETTINGS_ACTION_CLASS,
+          })}
         >
           {t.settings.exportData}
         </a>
         <p className="text-sm text-muted">{t.settings.exportDataHelp}</p>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-sm">
-        <Link href="/privacy" className="font-medium text-accent hover:underline">
-          {t.settings.privacyPolicy}
-        </Link>
-        <Link href="/terms" className="font-medium text-accent hover:underline">
-          {t.settings.termsOfUse}
-        </Link>
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-danger/25 bg-danger/5 p-4">
-        <div>
-          <h3 className="text-sm font-medium text-danger">
-            {t.settings.deleteAccount}
-          </h3>
-          <p className="mt-1 text-sm text-muted">
-            {t.settings.deleteAccountHelp}
-          </p>
-        </div>
-        <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
-          <Input
-            type="email"
-            value={confirmationEmail}
-            onChange={(event) => setConfirmationEmail(event.target.value)}
-            placeholder={t.settings.typeEmailToDelete(email)}
-            autoComplete="off"
-            className="min-w-0 flex-1"
-          />
-          <Button
-            variant="danger"
-            onClick={() => {
-              setMessage(null);
-              setDeleteDialogOpen(true);
-            }}
-            disabled={!matches || deleting}
-            className="shrink-0"
+      <details className="group overflow-hidden rounded-lg border border-border bg-surface">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-muted transition hover:bg-subtle hover:text-fg [&::-webkit-details-marker]:hidden">
+          <span>{t.settings.advancedAccountActions}</span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            fill="none"
+            className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
           >
-            {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
-          </Button>
+            <path
+              d="m6 8 4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </summary>
+        <div className="space-y-3 border-t border-border bg-danger/5 p-4">
+          <div>
+            <h3 className="text-sm font-medium text-danger">
+              {t.settings.deleteAccount}
+            </h3>
+            <p className="mt-1 text-sm text-muted">
+              {t.settings.deleteAccountHelp}
+            </p>
+          </div>
+          <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
+            <Input
+              type="email"
+              value={confirmationEmail}
+              onChange={(event) => setConfirmationEmail(event.target.value)}
+              placeholder={t.settings.typeEmailToDelete(email)}
+              autoComplete="off"
+              className="min-w-0 flex-1"
+            />
+            <Button
+              variant="danger"
+              onClick={() => {
+                setMessage(null);
+                setDeleteDialogOpen(true);
+              }}
+              disabled={!matches || deleting}
+              className={`${SETTINGS_ACTION_CLASS} shrink-0`}
+            >
+              {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
+            </Button>
+          </div>
+          {message && !deleteDialogOpen && (
+            <p className="text-sm text-danger" role="alert">
+              {message}
+            </p>
+          )}
         </div>
-        {message && !deleteDialogOpen && <p className="text-sm text-danger" role="alert">{message}</p>}
-      </div>
+      </details>
     </div>
   );
 }

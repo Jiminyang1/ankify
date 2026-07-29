@@ -9,7 +9,7 @@ import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/field";
-import { cn } from "@/lib/utils";
+import { Tabs } from "@/components/ui/tabs";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -22,6 +22,7 @@ type Candidate = Card & {
 };
 
 const CARD_GENERATION_TARGET_SECONDS = 60;
+const COMPOSER_ACTION_CLASS = "min-w-24";
 
 function hydrateCandidate(card: Card): Candidate {
   return { ...card, instruction: "", localError: null, busy: null };
@@ -285,7 +286,7 @@ export function UserCardButton({
         <button
           type="button"
           aria-hidden
-          className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           onClick={closePanel}
         />
         <div
@@ -294,114 +295,146 @@ export function UserCardButton({
           aria-modal="true"
           aria-labelledby="card-composer-title"
           tabIndex={-1}
-          className="relative z-[101] flex max-h-[min(94vh,900px)] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+          className="relative z-[101] flex max-h-[min(92vh,820px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-5">
             <div className="min-w-0">
-              <span id="card-composer-title" className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <h2 id="card-composer-title" className="text-lg font-semibold text-fg">
                 {t.detail.newCard}
-              </span>
-              <h3 className="truncate text-base font-semibold">{problemTitle}</h3>
+              </h2>
+              <p className="mt-1 truncate text-sm text-muted">{problemTitle}</p>
             </div>
-            <Button ref={closeButtonRef} variant="ghost" size="sm" onClick={closePanel} disabled={!!busy} className="text-muted">
-              {t.common.close}
+            <Button
+              ref={closeButtonRef}
+              variant="ghost"
+              size="icon"
+              onClick={closePanel}
+              disabled={!!busy}
+              aria-label={t.common.close}
+              title={t.common.close}
+            >
+              <span aria-hidden className="text-lg leading-none">×</span>
             </Button>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
-            <div className="border-b border-border px-5 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <ModeButton active={mode === "manual"} onClick={() => setMode("manual")}>
-                  {t.detail.manualCard}
-                </ModeButton>
-                <ModeButton active={mode === "ai"} onClick={() => setMode("ai")}>
-                  {t.detail.aiCandidates}
-                  {candidateCount > 0 && (
-                    <span className="ml-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
-                      {candidateCount}
+          <div className="shrink-0 border-b border-border px-6 pb-4">
+            <Tabs
+              tabs={[
+                { id: "manual", label: t.detail.manualCard },
+                {
+                  id: "ai",
+                  label: (
+                    <span className="inline-flex items-center gap-1.5">
+                      {t.detail.aiCandidates}
+                      {candidateCount > 0 && (
+                        <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">
+                          {candidateCount}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </ModeButton>
-              </div>
-            </div>
-
-            <div className="min-h-0 overflow-y-auto px-5 py-4">
-              <ProblemContext description={problemDescription} />
-
-              {mode === "manual" ? (
-                <div className="mt-4 space-y-4">
-                  <div className="grid gap-3">
-                    <CardTextarea label={t.review.question} value={question} onChange={setQuestion} rows={3} disabled={!!busy} />
-                    <CardTextarea label={t.review.answer} value={answer} onChange={setAnswer} rows={5} disabled={!!busy} />
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-                    {error && <span className="mr-auto text-xs text-danger">{error}</span>}
-                    <Button size="sm" disabled={!!busy} onClick={closePanel}>
-                      {t.common.cancel}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={!!busy || !question.trim() || !answer.trim()}
-                      onClick={saveManualCard}
-                    >
-                      {busy === "save" ? t.common.saving : t.detail.addCard}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 space-y-4">
-                  <Surface className="space-y-3 p-3">
-                    <CardTextarea
-                      label={t.detail.rawNote}
-                      value={rawText}
-                      onChange={(value) => setRawText(value.slice(0, 6000))}
-                      rows={4}
-                      disabled={!!busy}
-                    />
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs text-muted">{rawText.length}/6000</span>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="primary" size="sm" disabled={!!busy} onClick={() => startAiGenerate("auto")}>
-                          {busy === "auto" ? t.detail.generating : t.detail.autoGenerate}
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={!!busy || !rawText.trim()}
-                          onClick={() => startAiGenerate("note")}
-                        >
-                          {busy === "note" ? t.detail.generating : t.detail.generateFromNote}
-                        </Button>
-                      </div>
-                    </div>
-                    {generatingAi && <CardGenerationTimer elapsedSeconds={generationElapsedSeconds} />}
-                  </Surface>
-
-                  {error && <p className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger">{error}</p>}
-
-                  {candidateCount === 0 ? (
-                    <Surface className="p-8 text-center">
-                      <p className="text-sm text-muted">{t.detail.noCandidates}</p>
-                    </Surface>
-                  ) : currentCandidate ? (
-                    <CandidateReview
-                      candidate={currentCandidate}
-                      index={candidateIndex}
-                      count={candidateCount}
-                      onPrev={() => setCandidateIndex((i) => Math.max(0, i - 1))}
-                      onNext={() => setCandidateIndex((i) => Math.min(candidateCount - 1, i + 1))}
-                      onChange={(patch) => setCandidateState(currentCandidate.id, patch)}
-                      onFollowup={() => runCandidateAi(currentCandidate)}
-                      onConfirm={() => confirmCandidate(currentCandidate)}
-                      onDiscard={() => discardCandidate(currentCandidate)}
-                      followupElapsedSeconds={currentCandidateElapsedSeconds}
-                    />
-                  ) : null}
-                </div>
-              )}
-            </div>
+                  ),
+                },
+              ]}
+              active={mode}
+              onChange={(nextMode) => setMode(nextMode as Mode)}
+              className="w-fit rounded-lg border border-border bg-subtle p-1"
+            />
           </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <ProblemContext description={problemDescription} />
+
+            {mode === "manual" ? (
+              <div
+                role="tabpanel"
+                aria-labelledby="tab-manual"
+                className="mt-5 grid gap-5"
+              >
+                <CardTextarea label={t.review.question} value={question} onChange={setQuestion} rows={3} disabled={!!busy} />
+                <CardTextarea label={t.review.answer} value={answer} onChange={setAnswer} rows={5} disabled={!!busy} />
+              </div>
+            ) : (
+              <div
+                role="tabpanel"
+                aria-labelledby="tab-ai"
+                className="mt-5 space-y-4"
+              >
+                <Surface className="space-y-4 bg-subtle/30 p-4 shadow-none">
+                  <CardTextarea
+                    label={t.detail.rawNote}
+                    value={rawText}
+                    onChange={(value) => setRawText(value.slice(0, 6000))}
+                    rows={4}
+                    disabled={!!busy}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-muted">{rawText.length}/6000</span>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        className={COMPOSER_ACTION_CLASS}
+                        disabled={!!busy}
+                        onClick={() => startAiGenerate("auto")}
+                      >
+                        {busy === "auto" ? t.detail.generating : t.detail.autoGenerate}
+                      </Button>
+                      <Button
+                        className={COMPOSER_ACTION_CLASS}
+                        disabled={!!busy || !rawText.trim()}
+                        onClick={() => startAiGenerate("note")}
+                      >
+                        {busy === "note" ? t.detail.generating : t.detail.generateFromNote}
+                      </Button>
+                    </div>
+                  </div>
+                  {generatingAi && <CardGenerationTimer elapsedSeconds={generationElapsedSeconds} />}
+                </Surface>
+
+                {error && <p className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{error}</p>}
+
+                {candidateCount === 0 ? (
+                  <Surface className="bg-subtle/20 p-8 text-center shadow-none">
+                    <p className="text-sm text-muted">{t.detail.noCandidates}</p>
+                  </Surface>
+                ) : currentCandidate ? (
+                  <CandidateReview
+                    candidate={currentCandidate}
+                    index={candidateIndex}
+                    count={candidateCount}
+                    onPrev={() => setCandidateIndex((i) => Math.max(0, i - 1))}
+                    onNext={() => setCandidateIndex((i) => Math.min(candidateCount - 1, i + 1))}
+                    onChange={(patch) => setCandidateState(currentCandidate.id, patch)}
+                    onFollowup={() => runCandidateAi(currentCandidate)}
+                    onConfirm={() => confirmCandidate(currentCandidate)}
+                    onDiscard={() => discardCandidate(currentCandidate)}
+                    followupElapsedSeconds={currentCandidateElapsedSeconds}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          {mode === "manual" && (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-subtle/30 px-6 py-4">
+              {error && <span className="mr-auto text-sm text-danger">{error}</span>}
+              <Button
+                className={COMPOSER_ACTION_CLASS}
+                disabled={!!busy}
+                onClick={closePanel}
+              >
+                {t.common.cancel}
+              </Button>
+              <Button
+                variant="primary"
+                className={COMPOSER_ACTION_CLASS}
+                disabled={!!busy || !question.trim() || !answer.trim()}
+                onClick={saveManualCard}
+              >
+                {busy === "save" ? t.common.saving : t.detail.addCard}
+              </Button>
+            </div>
+          )}
         </div>
       </div>,
       document.body,
@@ -465,39 +498,28 @@ function CardGenerationTimer({ elapsedSeconds }: { elapsedSeconds: number }) {
   );
 }
 
-function ModeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "h-8 rounded-lg border px-3 text-xs font-medium transition",
-        active
-          ? "border-accent/40 bg-accent-soft text-accent shadow-card"
-          : "border-border bg-surface text-muted hover:border-accent/25 hover:bg-subtle hover:text-fg",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function ProblemContext({ description }: { description?: string | null }) {
   const { t } = useLanguage();
   return (
-    <details className="rounded-md border border-border bg-subtle/40">
-      <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted">
-        {t.review.questionStatement}
+    <details className="group overflow-hidden rounded-lg border border-border bg-subtle/30">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-muted transition hover:bg-subtle hover:text-fg [&::-webkit-details-marker]:hidden">
+        <span>{t.review.questionStatement}</span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          fill="none"
+          className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
+        >
+          <path
+            d="m6 8 4 4 4-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </summary>
-      <div className="max-h-72 overflow-auto border-t border-border px-3 py-3">
+      <div className="max-h-72 overflow-auto border-t border-border bg-surface px-4 py-4">
         {description?.trim() ? <Markdown>{description}</Markdown> : <p className="text-sm text-muted">{t.detail.noStatement}</p>}
       </div>
     </details>
@@ -583,7 +605,7 @@ function CandidateReview({
         rows={5}
       />
 
-      <div className="rounded-md border border-border bg-subtle/50 p-2">
+      <div className="rounded-lg border border-border bg-subtle/30 p-3">
         <CardTextarea
           label={t.detail.followUp}
           value={candidate.instruction}
@@ -591,9 +613,9 @@ function CandidateReview({
           onChange={(instruction) => onChange({ instruction })}
           rows={2}
         />
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <Button
-            size="sm"
+            className={COMPOSER_ACTION_CLASS}
             disabled={disabled || !candidate.question.trim() || !candidate.answer.trim() || !candidate.instruction.trim()}
             onClick={onFollowup}
           >
@@ -603,14 +625,18 @@ function CandidateReview({
         {candidate.busy === "followup" && <CardGenerationTimer elapsedSeconds={followupElapsedSeconds} />}
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-        {candidate.localError && <span className="mr-auto text-xs text-danger">{candidate.localError}</span>}
-        <Button size="sm" disabled={disabled && candidate.busy !== "discard"} onClick={onDiscard}>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {candidate.localError && <span className="mr-auto text-sm text-danger">{candidate.localError}</span>}
+        <Button
+          className={COMPOSER_ACTION_CLASS}
+          disabled={disabled && candidate.busy !== "discard"}
+          onClick={onDiscard}
+        >
           {candidate.busy === "discard" ? t.detail.discarding : t.common.discard}
         </Button>
         <Button
           variant="primary"
-          size="sm"
+          className={COMPOSER_ACTION_CLASS}
           disabled={disabled || !candidate.question.trim() || !candidate.answer.trim()}
           onClick={onConfirm}
         >
@@ -635,13 +661,13 @@ function CardTextarea({
   disabled: boolean;
 }) {
   return (
-    <label className="block text-[10px] font-medium uppercase tracking-wide text-muted">
-      {label}
+    <label className="block text-sm font-medium text-fg">
+      <span>{label}</span>
       <Textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}
-        className="mt-1 bg-subtle shadow-none"
+        className="mt-2 bg-surface"
         disabled={disabled}
       />
     </label>
