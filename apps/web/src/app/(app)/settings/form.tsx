@@ -482,16 +482,11 @@ export function LanguageRegionSettingsForm({
 
   return (
     <form onSubmit={save} className="max-w-2xl space-y-5">
-      <div className="rounded-lg border border-accent/25 bg-accent-soft/60 px-4 py-3">
-        <p className="text-sm font-medium text-fg">{t.settings.languageImpactTitle}</p>
-        <p className="mt-1 text-sm leading-6 text-muted">{t.settings.languageImpactDescription}</p>
-      </div>
-
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <div>
-            <div className="text-sm font-medium text-fg">{t.settings.interfaceLanguage}</div>
-            <p className="mt-1 text-xs leading-5 text-muted">{t.settings.interfaceLanguageHelp}</p>
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="font-medium text-fg">{t.settings.interfaceLanguage}</span>
+            <InfoTip label={t.settings.interfaceLanguageHelp} align="left" />
           </div>
           <LanguageToggle
             className="w-fit"
@@ -502,11 +497,11 @@ export function LanguageRegionSettingsForm({
         </div>
 
         <div className="space-y-2">
-          <div>
-            <label htmlFor="generation-language" className="text-sm font-medium text-fg">
+          <div className="flex items-center gap-1.5 text-sm">
+            <label htmlFor="generation-language" className="font-medium text-fg">
               {t.settings.generationLanguage}
             </label>
-            <p className="mt-1 text-xs leading-5 text-muted">{t.settings.generationLanguageHelp}</p>
+            <InfoTip label={t.settings.generationLanguageHelp} align="left" />
           </div>
           <Select
             id="generation-language"

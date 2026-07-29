@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Pure-CSS hover tooltip. Server-component safe (no hooks).
- * Renders a small "i" affordance; the explanation pops on hover/focus.
+ * Renders a small "?" affordance; the explanation pops on hover/focus.
  * Note: keep out of `overflow-hidden` containers or the popover gets clipped.
  */
 export function InfoTip({
@@ -29,7 +29,7 @@ export function InfoTip({
         aria-label={label}
         className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-border text-[9px] font-semibold leading-none text-muted transition-colors hover:border-accent hover:text-accent focus:outline-none focus-visible:border-accent focus-visible:text-accent"
       >
-        i
+        ?
       </span>
       <span
         role="tooltip"
