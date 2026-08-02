@@ -298,13 +298,7 @@ const EXT_I18N = {
         "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
       reading: "Reading...",
       captureThis: "Capture this problem",
-      add: "Add to ankify",
       saving: "Saving...",
-      back: "Back",
-      savedTitle: "Added to ankify",
-      savedBody: "Your first review is ready. ankify will schedule the next recall after you rate it.",
-      reviewNow: "Review now",
-      openToday: "Open Today",
     },
     notes: {
       title: "Notes",
@@ -502,13 +496,7 @@ const EXT_I18N = {
       helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
       reading: "读取中...",
       captureThis: "捕获这道题",
-      add: "添加到 ankify",
       saving: "保存中...",
-      back: "返回",
-      savedTitle: "已添加到 ankify",
-      savedBody: "第一次复习已经准备好。完成评分后，ankify 会安排下一次回忆。",
-      reviewNow: "立即复习",
-      openToday: "打开 Today",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
     settings: {
@@ -927,6 +915,7 @@ async function fetchProblemBySlug(
 ): Promise<{ problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews } | "not_captured"> {
   const res = await apiFetch(settings, `/api/problems/by-slug/${encodeURIComponent(slug)}`, {
     headers: authHeaders(settings),
+    cache: "no-store",
   });
   if (res.status === 404) return "not_captured";
   if (!res.ok) {
@@ -1418,7 +1407,7 @@ function ProblemTab({
   } | null;
   sticky: Sticky | null;
   onJumpToSticky: () => void;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
   const t = getExtText(settings);
@@ -3396,102 +3385,49 @@ function CaptureView({
 }: {
   slug: string;
   settings: ExtSettings;
-  onCaptured: () => void;
+  onCaptured: () => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
   const t = getExtText(settings);
-  const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<CapturedProblem | null>(null);
-  const [savedResult, setSavedResult] = useState<CaptureResult | null>(null);
+  const [phase, setPhase] = useState<"idle" | "reading" | "saving">("idle");
+  const busy = phase !== "idle";
 
-  async function readPage() {
-    setBusy(true);
+  async function captureNow() {
+    setPhase("reading");
     try {
-      setPreview(await readActiveProblem(settings));
+      const problem = await readActiveProblem(settings);
+      if (problem.leetcodeSlug !== slug) {
+        throw new Error(`Active tab is ${problem.leetcodeSlug}, not ${slug}.`);
+      }
+      setPhase("saving");
+      await saveCapturedProblem(settings, problem);
+      await onCaptured();
+      setPhase("idle");
     } catch (e) {
+      setPhase("idle");
       onError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
     }
   }
 
-  async function saveCapture() {
-    if (!preview) return;
-    setBusy(true);
-    try {
-      setSavedResult(await saveCapturedProblem(settings, preview));
-    } catch (e) {
-      onError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (savedResult) {
-    return (
-      <div className="panel">
-        <span className="section-label">{t.capture.savedTitle}</span>
-        <p className="popup-muted" style={{ marginTop: 0 }}>{t.capture.savedBody}</p>
-        <div className="capture-actions" style={{ marginTop: 16 }}>
-          <button type="button" className="btn btn-primary" onClick={onCaptured}>
-            {t.capture.reviewNow}
-          </button>
-          <a
-            href={`${settings.apiBaseUrl.replace(/\/+$/, "")}/today`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-secondary"
-          >
-            {t.capture.openToday}
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  if (!preview) {
-    return (
-      <div className="panel">
-        <span className="section-label">{t.capture.notInDeck}</span>
-        <p className="popup-muted" style={{ marginTop: 0 }}>
-          {t.capture.notCaptured(slug)}
-        </p>
-        <button type="button" onClick={readPage} disabled={busy} className="btn btn-primary" style={{ marginTop: 14 }}>
-          {busy ? t.capture.reading : t.capture.captureThis}
-        </button>
-      </div>
-    );
-  }
-
-  const accepted = preview.submissions.filter((s) => s.status === "Accepted").length;
-  const failed = preview.submissions.length - accepted;
   return (
     <div className="panel">
-      <div className="hero-row">
-        <div style={{ minWidth: 0 }}>
-          <h2 className="hero-title">
-            {preview.leetcodeId != null && (
-              <span className="problem-card-num">{preview.leetcodeId}. </span>
-            )}
-            {preview.title}
-          </h2>
-          <div className="hero-meta">
-            {difficultyLabel(preview.difficulty, t)} · {preview.topicTags.slice(0, 4).join(", ")}
-          </div>
-        </div>
-      </div>
-      <p className="capture-meta" style={{ marginTop: 12 }}>
-        {t.common.submissions(preview.submissions.length)}
-        {preview.submissions.length > 0 && ` ${t.common.acceptedFailed(accepted, failed)}`}
+      <span className="section-label">{t.capture.notInDeck}</span>
+      <p className="popup-muted" style={{ marginTop: 0 }}>
+        {t.capture.notCaptured(slug)}
       </p>
-      <div className="capture-actions" style={{ marginTop: 16 }}>
-        <button type="button" onClick={saveCapture} disabled={busy} className="btn btn-primary">
-          {busy ? t.capture.saving : t.capture.add}
-        </button>
-        <button type="button" onClick={() => setPreview(null)} disabled={busy} className="btn btn-secondary">
-          {t.capture.back}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={captureNow}
+        disabled={busy}
+        className="btn btn-primary"
+        style={{ marginTop: 14 }}
+      >
+        {phase === "reading"
+          ? t.capture.reading
+          : phase === "saving"
+            ? t.capture.saving
+            : t.capture.captureThis}
+      </button>
     </div>
   );
 }
