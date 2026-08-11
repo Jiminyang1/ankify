@@ -1,5 +1,5 @@
-import { requirePageUser } from "@/lib/auth";
-import { loadProblemsList } from "@/lib/problems-list";
+import { requirePageUser } from "@/server/auth";
+import { loadProblemsList } from "@/server/problems-list";
 import ProblemsPage from "./problems-client";
 
 export const dynamic = "force-dynamic";

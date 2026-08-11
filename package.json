@@ -12,6 +12,9 @@
     "dev:web": "pnpm db:migrate && pnpm --filter @ankify/web dev",
     "dev:all": "pnpm db:migrate && pnpm --parallel --filter @ankify/web --filter @ankify/extension dev",
     "dev:ext": "pnpm --filter @ankify/extension dev",
+    "dev:qa": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs",
+    "dev:qa:all": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --extension",
+    "qa:reset": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --reset-only",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "vitest run",
@@ -22,9 +25,11 @@
     "extension:check-manifest": "node scripts/check-extension-manifest.mjs",
     "db:generate": "pnpm --filter @ankify/db generate",
     "db:migrate": "pnpm --filter @ankify/db migrate",
+    "db:migrate:qa": "pnpm --filter @ankify/db migrate:qa",
     "db:migrate:preview": "pnpm --filter @ankify/db migrate:preview",
     "db:migrate:prod": "pnpm --filter @ankify/db migrate:prod",
     "db:studio": "pnpm --filter @ankify/db studio",
+    "db:studio:qa": "pnpm --filter @ankify/db studio:qa",
     "db:studio:preview": "pnpm --filter @ankify/db studio:preview",
     "db:studio:prod": "pnpm --filter @ankify/db studio:prod",
     "db:backup": "pnpm --filter @ankify/db backup",
@@ -37,8 +42,10 @@
   },
   "pnpm": {
     "overrides": {
+      "brace-expansion@5": "5.0.9",
       "jsondiffpatch": "0.7.2",
-      "postcss": "8.5.23",
+      "minimatch@10": "10.2.6",
+      "postcss": "8.5.26",
       "sharp": "0.35.0",
       "shell-quote": "1.10.0",
       "ws": "8.21.1"

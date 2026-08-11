@@ -2,9 +2,10 @@ import { LanguageProvider } from "@/components/LanguageProvider";
 import { Nav } from "@/components/nav";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { TimeZoneSync } from "@/components/TimeZoneSync";
-import { requirePageUser } from "@/lib/auth";
-import { getRequestLanguage } from "@/lib/i18n-server";
-import { getReviewQueueStatus } from "@/lib/review-queue";
+import { AgentShell } from "@/components/agent/agent-shell";
+import { requirePageUser } from "@/server/auth";
+import { getRequestLanguage } from "@/server/i18n";
+import { getReviewQueueStatus } from "@/server/review-queue";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <ThemeProvider>
         <TimeZoneSync userId={user.id} />
         <Nav user={user} initialDueCount={queue?.dueCount ?? 0} />
-        <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+        <AgentShell>{children}</AgentShell>
       </ThemeProvider>
     </LanguageProvider>
   );

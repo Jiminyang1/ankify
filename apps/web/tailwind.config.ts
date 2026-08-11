@@ -55,10 +55,15 @@ export default {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        indeterminate: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(350%)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 200ms ease-out",
         "slide-up": "slide-up 220ms ease-out",
+        indeterminate: "indeterminate 1.2s ease-in-out infinite",
       },
     },
   },

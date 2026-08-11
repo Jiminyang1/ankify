@@ -30,6 +30,7 @@ function repoRoot(): string {
  * Profile selection:
  *   - ANKIFY_PROFILE=production → load `.env.production.local` (writes to prod Turso)
  *   - ANKIFY_PROFILE=preview    → load `.env.preview.local`    (writes to preview Turso)
+ *   - ANKIFY_PROFILE=qa         → load `.env.qa` + `.env.qa.local` (local QA SQLite)
  *   - otherwise                  → load `.env.local`            (writes to local SQLite)
  *
  * Next.js dev server doesn't need this — it loads `.env.local` itself. This
@@ -45,30 +46,37 @@ export function loadDbEnv() {
   const root = repoRoot();
   const requestedProfile = process.env.ANKIFY_PROFILE;
   const profile =
-    requestedProfile === "production" || requestedProfile === "preview"
+    requestedProfile === "production" || requestedProfile === "preview" || requestedProfile === "qa"
       ? requestedProfile
       : "local";
-  const profileFile =
+  const profileFiles =
     profile === "production"
-      ? ".env.production.local"
+      ? [".env.production.local"]
       : profile === "preview"
-        ? ".env.preview.local"
-        : ".env.local";
+        ? [".env.preview.local"]
+        : profile === "qa"
+          ? [".env.qa", ".env.qa.local"]
+          : [".env.local"];
 
   const existingEnv = new Map(Object.entries(process.env));
   loadEnvFile(resolve(root, ".env"));
-  loadEnvFile(resolve(root, profileFile), true);
+  for (const profileFile of profileFiles) {
+    loadEnvFile(resolve(root, profileFile), true);
+  }
   for (const [key, value] of existingEnv) {
     process.env[key] = value;
   }
 
   if (!process.env.TURSO_DATABASE_URL && !process.env.LOCAL_DB_PATH) {
-    if (profile !== "local") {
+    if (profile === "production" || profile === "preview") {
       throw new Error(
-        `TURSO_DATABASE_URL missing in ${profileFile}: ${profile} profile requires Turso, not local SQLite`,
+        `TURSO_DATABASE_URL missing: ${profile} profile requires Turso, not local SQLite`,
       );
     }
-    process.env.LOCAL_DB_PATH = resolve(root, "packages/db/local.db");
+    process.env.LOCAL_DB_PATH = resolve(
+      root,
+      profile === "qa" ? "packages/db/qa.db" : "packages/db/local.db",
+    );
   }
 }
 function localDbPath(): string {

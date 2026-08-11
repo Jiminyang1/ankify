@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { LeetCodeDifficulty } from "@ankify/core";
 import type {
-  ProblemListItem,
-  ProblemsListPayload,
-} from "@/lib/problems-list";
+  ProblemListItemDto,
+  ProblemsListPayloadDto,
+} from "@ankify/contracts";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
@@ -28,10 +28,10 @@ type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
 export default function ProblemsPage({
   initialData,
 }: {
-  initialData: ProblemsListPayload;
+  initialData: ProblemsListPayloadDto;
 }) {
   const { language, t } = useLanguage();
-  const [problems, setProblems] = useState<ProblemListItem[]>(
+  const [problems, setProblems] = useState<ProblemListItemDto[]>(
     initialData.problems,
   );
   const [filters, setFilters] = useState<FilterState>({ difficulty: "all", state: "all", tag: "", search: "" });

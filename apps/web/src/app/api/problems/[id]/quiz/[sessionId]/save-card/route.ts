@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import { schemas } from "@ankify/core";
-import { getDb, schema } from "@ankify/db";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
-import { MAX_CARDS_PER_PROBLEM } from "@/lib/resource-limits";
+import { quizSaveCardRequestSchema } from "@ankify/contracts";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { saveQuizItemAsCard } from "@/server/card-commands";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; sessionId: string }> }) {
   const user = await getRequestUser(req);
@@ -12,96 +9,34 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
 
   const { id: problemId, sessionId } = await ctx.params;
   const body = await req.json().catch(() => null);
-  const parsed = schemas.quizSaveCardRequestSchema.safeParse(body);
+  const parsed = quizSaveCardRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const db = getDb();
-  const [session] = await db
-    .select()
-    .from(schema.quizSessions)
-    .where(and(eq(schema.quizSessions.userId, user.id), eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
-
-  if (!session || session.status === "archived") {
-    return NextResponse.json({ error: "quiz_session_not_found" }, { status: 404 });
+  const result = await saveQuizItemAsCard(
+    user.id,
+    problemId,
+    sessionId,
+    parsed.data.itemId,
+  );
+  if (
+    !result.ok &&
+    (result.error === "quiz_session_not_found" || result.error === "quiz_item_not_found")
+  ) {
+    return NextResponse.json({ error: result.error }, { status: 404 });
   }
-
-  const item = session.itemsJson.find((quizItem) => quizItem.id === parsed.data.itemId);
-  if (!item) return NextResponse.json({ error: "quiz_item_not_found" }, { status: 404 });
-
-  // Deterministic id: a second click for the same quiz item is idempotent —
-  // the second insert hits the primary-key constraint and we just return the
-  // existing card without writing a duplicate review event.
-  const cardId = `qz_${session.id}_${item.id}`;
-  const correctChoice = item.choices[item.answerIndex] ?? "";
-  const answer = [`**Correct answer:** ${correctChoice}`, item.explanation].filter(Boolean).join("\n\n");
-  const [existingCard] = await db
-    .select()
-    .from(schema.cards)
-    .where(and(eq(schema.cards.id, cardId), eq(schema.cards.userId, user.id)));
-  if (existingCard) {
-    return NextResponse.json({ ok: true, card: existingCard });
-  }
-
-  let cardLimitReached = false;
-  await db.transaction(async (tx) => {
-    const [{ count } = { count: 0 }] = await tx
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, user.id),
-          eq(schema.cards.problemId, problemId),
-        ),
-      );
-    if (count >= MAX_CARDS_PER_PROBLEM) {
-      cardLimitReached = true;
-      return;
-    }
-
-    const inserted = await tx
-      .insert(schema.cards)
-      .values({
-        id: cardId,
-        userId: user.id,
-        problemId,
-        aiStatus: "ready",
-        errorMessage: null,
-        question: item.question,
-        answer,
-      })
-      .onConflictDoNothing({ target: schema.cards.id })
-      .returning({ id: schema.cards.id });
-
-    if (inserted.length > 0) {
-      await tx.insert(schema.reviewEvents).values({
-        id: nanoid(12),
-        userId: user.id,
-        problemId,
-        cardId,
-        eventType: "card_created",
-        metadata: { source: "quiz", quizSessionId: session.id, quizItemId: item.id },
-      });
-    }
-  });
-
-  if (cardLimitReached) {
+  if (!result.ok && result.error === "card_limit_reached") {
     return NextResponse.json(
       {
-        error: "card_limit_reached",
-        message: `This problem already has ${MAX_CARDS_PER_PROBLEM} cards. Delete one before saving another.`,
+        error: result.error,
+        message: `This problem already has ${result.limit} cards. Delete one before saving another.`,
       },
       { status: 403 },
     );
   }
-
-  const [card] = await db
-    .select()
-    .from(schema.cards)
-    .where(and(eq(schema.cards.id, cardId), eq(schema.cards.userId, user.id)));
-  if (!card) {
-    return NextResponse.json({ error: "card_id_collision" }, { status: 409 });
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 409 });
   }
-  return NextResponse.json({ ok: true, card });
+  return NextResponse.json({ ok: true, card: result.card });
 }

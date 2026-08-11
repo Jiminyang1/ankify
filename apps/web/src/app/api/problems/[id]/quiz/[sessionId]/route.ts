@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
-import { schemas, type QuizAnswer } from "@ankify/core";
-import { getDb, schema } from "@ankify/db";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { quizAnswerRequestSchema } from "@ankify/contracts";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { answerQuizItem } from "@/server/quiz-commands";
+
+const ERROR_STATUS = {
+  quiz_session_not_found: 404,
+  quiz_session_not_active: 400,
+  quiz_item_not_found: 404,
+  quiz_item_already_answered: 400,
+  quiz_answer_conflict: 409,
+} as const;
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; sessionId: string }> }) {
   const user = await getRequestUser(req);
@@ -10,75 +17,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; s
 
   const { id: problemId, sessionId } = await ctx.params;
   const body = await req.json().catch(() => null);
-  const parsed = schemas.quizAnswerRequestSchema.safeParse(body);
+  const parsed = quizAnswerRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const db = getDb();
-  const [session] = await db
-    .select()
-    .from(schema.quizSessions)
-    .where(and(eq(schema.quizSessions.userId, user.id), eq(schema.quizSessions.id, sessionId), eq(schema.quizSessions.problemId, problemId)));
-
-  if (!session || session.status === "archived") {
-    return NextResponse.json({ error: "quiz_session_not_found" }, { status: 404 });
+  const result = await answerQuizItem(user.id, problemId, sessionId, parsed.data);
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error },
+      { status: ERROR_STATUS[result.error] },
+    );
   }
-  if (session.status !== "active") {
-    return NextResponse.json({ error: "quiz_session_not_active" }, { status: 400 });
-  }
-
-  const item = session.itemsJson.find((quizItem) => quizItem.id === parsed.data.itemId);
-  if (!item) return NextResponse.json({ error: "quiz_item_not_found" }, { status: 404 });
-  if (session.answersJson.some((answer) => answer.itemId === item.id)) {
-    return NextResponse.json({ error: "quiz_item_already_answered" }, { status: 400 });
-  }
-
-  const answer: QuizAnswer = {
-    itemId: item.id,
-    selectedIndex: parsed.data.selectedIndex,
-    correct: parsed.data.selectedIndex === item.answerIndex,
-    answeredAt: new Date().toISOString(),
-  };
-  const expectedLen = session.answersJson.length;
-  const answers = [...session.answersJson, answer];
-  const completed = answers.length === session.itemsJson.length;
-  const score = completed ? answers.filter((a) => a.correct).length : null;
-  const now = new Date();
-
-  // CAS on answersJson length so concurrent PATCHes can't silently overwrite
-  // each other's appended answer.
-  const updated = await db
-    .update(schema.quizSessions)
-    .set({
-      answersJson: answers,
-      status: completed ? "completed" : "active",
-      score,
-      updatedAt: now,
-      completedAt: completed ? now : null,
-    })
-    .where(
-      and(
-        eq(schema.quizSessions.id, session.id),
-        eq(schema.quizSessions.userId, user.id),
-        sql`json_array_length(${schema.quizSessions.answersJson}) = ${expectedLen}`,
-      ),
-    )
-    .returning({ id: schema.quizSessions.id });
-
-  if (updated.length === 0) {
-    return NextResponse.json({ error: "quiz_answer_conflict" }, { status: 409 });
-  }
-
-  const [refreshed] = await db
-    .select()
-    .from(schema.quizSessions)
-    .where(and(eq(schema.quizSessions.id, session.id), eq(schema.quizSessions.userId, user.id)));
-  return NextResponse.json({
-    ok: true,
-    answer,
-    item,
-    completed,
-    session: refreshed,
-  });
+  return NextResponse.json(result);
 }

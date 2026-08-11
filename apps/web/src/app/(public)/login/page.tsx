@@ -1,7 +1,7 @@
 import { Surface } from "@/components/ui/surface";
 import { BrandLockup } from "@/components/brand";
-import { getOptionalPageUser, isSignupEnabled } from "@/lib/auth";
-import { getRequestTranslations } from "@/lib/i18n-server";
+import { getOptionalPageUser, isSignupEnabled } from "@/server/auth";
+import { getRequestTranslations } from "@/server/i18n";
 import { GoogleSignInButton } from "./google-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";

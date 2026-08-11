@@ -1,4 +1,4 @@
-import type { CapturedProblem, CapturedSubmission, SubmissionStatus } from "../shared/messages";
+import type { CaptureProblemInput, CaptureSubmissionInput } from "@ankify/contracts";
 
 /**
  * LeetCode page extraction.
@@ -183,8 +183,8 @@ async function fetchSubmissionDetails(submissionId: string) {
   return data.submissionDetails;
 }
 
-function normaliseStatus(s: string): SubmissionStatus {
-  const known: SubmissionStatus[] = [
+function normaliseStatus(s: string): CaptureSubmissionInput["status"] {
+  const known: CaptureSubmissionInput["status"][] = [
     "Accepted",
     "Wrong Answer",
     "Time Limit Exceeded",
@@ -192,7 +192,7 @@ function normaliseStatus(s: string): SubmissionStatus {
     "Runtime Error",
     "Compile Error",
   ];
-  return (known.find((k) => k === s) ?? "Other") as SubmissionStatus;
+  return known.find((k) => k === s) ?? "Other";
 }
 
 function parseRuntimeMs(s: string | null): number | undefined {
@@ -223,7 +223,7 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, mapper: (ite
   return results;
 }
 
-export async function captureCurrent(): Promise<CapturedProblem> {
+export async function captureCurrent(): Promise<CaptureProblemInput> {
   const slug = slugFromUrl();
   if (!slug) throw new Error("Not a LeetCode problem page");
 
@@ -236,7 +236,7 @@ export async function captureCurrent(): Promise<CapturedProblem> {
   const recent = await fetchRecentSubmissions(slug, 20);
   console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
 
-  const detailResults = await mapConcurrent(recent, 4, async (s): Promise<CapturedSubmission | null> => {
+  const detailResults = await mapConcurrent(recent, 4, async (s): Promise<CaptureSubmissionInput | null> => {
     try {
       const d = await fetchSubmissionDetails(s.id);
       if (!d) {
@@ -261,7 +261,7 @@ export async function captureCurrent(): Promise<CapturedProblem> {
       return null;
     }
   });
-  const submissions = detailResults.filter((submission): submission is CapturedSubmission => submission != null);
+  const submissions = detailResults.filter((submission): submission is CaptureSubmissionInput => submission != null);
   console.log(`[ankify] captured ${submissions.length} submission details`);
 
   let similarSlugs: string[] = [];

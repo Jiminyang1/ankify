@@ -26,18 +26,33 @@ The root `scripts` in `package.json` delegate to workspace packages via pnpm fil
 
 ## Architecture
 
-Monorepo with three layers:
+Modular monolith: one Next.js deployment plus the Chrome extension. Browser-safe
+contracts and HTTP helpers are shared packages; database and application logic
+stay inside explicit server boundaries.
+
+### `packages/contracts` - Transport contracts
+
+- Zod request schemas and JSON-safe response DTOs shared by Web, Extension, and DB JSON columns.
+- Transport dates are ISO strings. Browser code must not import `@ankify/db` types.
+- Do not return raw Drizzle rows from public APIs; select/map only the fields in the relevant DTO.
+
+### `packages/api-client` - Shared HTTP client
+
+- Isomorphic client code used by both Web and Extension for durable AI job creation, polling, and errors.
+- The caller supplies the request function, so Web keeps same-origin URLs and Extension keeps its credentialed base URL/auth handling.
 
 ### `packages/db` - Database layer
 
-- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, `settings`)
+- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `ai_jobs`, `review_events`, `settings`)
 - `client.ts` exposes a singleton `getDb()`. Production requires `TURSO_DATABASE_URL`; `LOCAL_DB_PATH` is a development-only SQLite fallback.
 - `migrate.ts` applies `drizzle/` migrations; run via `pnpm db:migrate`
 - Schema infer types are re-exported (e.g. `Problem`, `Card`, `QuizSession`, `ReviewEvent`, etc.)
 
 **Business data isolation**: all user-owned tables carry `userId`: `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, and `settings`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
 
-**Cards table** (9 columns): `id`, `userId`, `problemId`, `question` (front), `answer` (back), `aiStatus` (candidate/failed/ready), `errorMessage`, `createdAt`, `updatedAt`. No extra metadata - just Q&A with lifecycle tracking.
+**Cards table**: simple Q&A plus `aiStatus` lifecycle and an integer `version` used for optimistic concurrency on edits, confirmation, and AI follow-up commits.
+
+**AI jobs table**: durable, user-scoped Card/Quiz generation commands. Inputs are AES-GCM encrypted; queue messages contain only `jobId`. Idempotency, active-resource deduplication, leases, attempts, results, errors, and terminal state are persisted. A partial unique index allows only one `running` job per user.
 
 **Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
 
@@ -47,7 +62,6 @@ Monorepo with three layers:
 
 - `fsrs.ts`: wraps `ts-fsrs` - `rate()` computes next review for one rating, `preview()` returns all 4 rating outcomes at once via `repeat()`, `retrievability()` returns 1 for new cards, `emptyCardState()`
 - `types.ts`: shared TypeScript types (`LeetCodeDifficulty`, `AiProvider`, `FsrsRating`)
-- `schemas.ts`: Zod schemas for capture, card drafts, synchronous AI card generation/follow-up, manual cards, card updates, review rating, quiz generation (`generate | regenerate | nextBatch`), quiz answers, scoped quiz items, and quiz save-as-card
 - `quiz-format.ts`: small Markdown formatter that wraps complexity expressions, DP states, and code-like variables in inline code before rendering quiz text.
 
 ### `apps/web` - Next.js 16 App Router
@@ -68,8 +82,11 @@ Monorepo with three layers:
   - `problems/[id]/` - PATCH notes (`{ notes }`) for autosave from review.
   - `problems/by-slug/[slug]/` - extension lookup by LeetCode slug. Returns problem, ready cards, candidates, FSRS previews, and queue state.
   - `problems/[id]/user-card/` - POST saves a manual card directly as `ready` (just `question` + `answer`).
-  - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. POST synchronously runs AI for `single/generate` (auto or from rawText) or `single/followup` with instruction. AI produces `candidate` drafts; user confirms to `ready`.
-  - `problems/[id]/quiz/` - GET current non-archived quiz session; POST `{ action: "generate" | "regenerate" | "nextBatch" }`. `nextBatch` requires the current session to be completed, archives existing non-archived sessions, and uses recent completed quiz history for prompt context.
+  - `ai-jobs/` - POST creates an idempotent asynchronous Card/Quiz generation job and publishes `{ jobId }` to Vercel Queues; GET lists user-owned jobs for a problem.
+  - `ai-jobs/[id]/` - GET polls one user-owned job; DELETE requests cancellation.
+  - `queues/ai-generation/` - Vercel Queue consumer. Claims a lease, runs the generator, and commits the business result plus terminal job state atomically.
+  - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. AI generation does not run through this route.
+  - `problems/[id]/quiz/` - GET current non-archived quiz session; DELETE resets quiz history. AI generation does not run through this route.
   - `problems/[id]/quiz/[sessionId]/` - PATCH one quiz answer. Repeated answers return 400; the fifth answer completes the session and computes score.
   - `problems/[id]/quiz/[sessionId]/save-card/` - POST `{ itemId }` to save a quiz item directly as a `ready` card and record a `card_created` event.
   - `cards/` - DELETE one or more cards by id.
@@ -79,13 +96,14 @@ Monorepo with three layers:
   - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`.
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
 - **`src/proxy.ts`**: lightweight auth gate and credentialed Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages and extension API requests require the same Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data.
-- **`src/lib/`**:
+- **`src/server/`**: all DB, auth, settings, queue, AI, prompt, query, and transactional command implementations. Pages call server query functions directly; API routes stay as thin HTTP adapters.
   - `ai.ts`: loads AI provider/model from DB, builds `LanguageModelV1`. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
   - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.
   - `quiz-prompt.ts`: builds Chinese 5-question quiz prompts from problem title/difficulty/slug/tags/statement, notes, ready cards, recent submissions, failed submission details, and recent completed quiz history. Prompts require scoped items and at least one complexity question.
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. Server env provider keys are intentionally not used as runtime fallbacks.
+- **`src/lib/`**: browser-safe UI helpers only (auth client, i18n, autosave, hooks, URL/format utilities). It must not import DB or server modules.
 - **Pages**:
   - `/` - static public landing page; authenticated sessions redirect to `/today`
   - `/today` - authenticated home: due queue, progress, daily stats
@@ -103,8 +121,8 @@ Monorepo with three layers:
   - Top nav: `Today`, `Problem`, `Settings`.
   - Theme control: `System`, `Light`, `Dark`.
   - `Problem` has compact `Review` / `Manage` modes.
-  - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation is synchronous; if the user switches tabs while generation is pending, the Quiz tab shows pending state until the session appears. Completed quizzes can create a new batch and bulk-create cards for missed items.
-  - `Manage` contains manual card creation, synchronous AI candidate generation/follow-up/confirm/discard, pending-state preservation for in-flight AI calls, and existing card management.
+  - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation creates a durable job and polls it; reopening the popup resumes from the server job state. Completed quizzes can create a new batch and bulk-create cards for missed items.
+  - `Manage` contains manual card creation, asynchronous AI candidate generation/follow-up/confirm/discard, and existing card management.
   - `Settings` stores only the API base URL and preferences. Test connection calls `/api/me` with the shared web session and shows the signed-in email.
   - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
@@ -122,14 +140,14 @@ Monorepo with three layers:
 
 **Manual**: Write question + answer directly -> POST `/api/problems/:id/user-card` -> saved as `ready`.
 
-**AI**: Click Auto generate or write raw text -> POST `/api/problems/:id/ai-cards` with `{ mode: "single", action: "generate", rawText? }`. The request waits for AI and inserts one `candidate` card only on success. User can edit, Follow-up (rewrite with instruction), Confirm (PATCH `aiStatus: "ready"`), or Discard (DELETE).
+**AI**: Click Auto generate or write raw text -> POST `/api/ai-jobs` with a `card_generate` command -> poll `/api/ai-jobs/:id`. The queue worker inserts one `candidate` card on success. Follow-up is another version-guarded job; Confirm uses a version-guarded card PATCH; Discard deletes the candidate.
 
-There is no AI-card batch generation, background card generation, polling, `polish`, or `generating` card status. Historical `generating` rows are removed by migration.
+There is no AI-card batch generation, `polish`, or `generating` card status. Job lifecycle lives only in `ai_jobs`; card lifecycle remains `candidate | failed | ready`.
 
 ### Quiz review
 
 1. `GET /api/problems/:id/quiz` returns the current active/completed quiz session or `null`.
-2. `POST /api/problems/:id/quiz` generates exactly 5 Simplified Chinese single-choice questions. Each item has a source and scope. AI failure returns an error and writes no DB rows.
+2. `POST /api/ai-jobs` creates a quiz generation command. The queue worker generates exactly 5 single-choice questions in the configured generation language. Each item has a source and scope. AI failure writes no quiz session.
 3. Answering a choice PATCHes `/api/problems/:id/quiz/:sessionId` immediately. The API stores correctness and returns the explanation.
 4. After 5 answers, the session becomes `completed`; score maps to suggested rating: `0-1 Again`, `2 Hard`, `3-4 Good`, `5 Easy`.
 5. Suggested rating is only guidance. FSRS is still updated only by manual rating.
@@ -154,7 +172,8 @@ There is no AI-card batch generation, background card generation, polling, `poli
 - **AI card generation is user-gated**: AI card generation creates `candidate`; only confirmed cards become `ready`.
 - **Quiz save-as-card is direct**: quiz items are already answered/reviewed by the user, so saving one creates a `ready` card immediately.
 - **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
-- **Quiz is synchronous V1**: no background jobs. Pending is UI state while the foreground request runs.
+- **AI generation is asynchronous**: Vercel Queues provides at-least-once delivery; `ai_jobs` leases, idempotency keys, resource CAS checks, and atomic result/job commits provide application-level correctness.
+- **Per-user execution is serialized**: the database permits only one running AI job per user; other queued jobs are retried later.
 - **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
 - **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history.
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.

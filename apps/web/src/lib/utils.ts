@@ -27,10 +27,16 @@ export function formatRelative(date: Date | string | null | undefined) {
 }
 
 /** Compact interval string for next-review previews: "10m", "1d", "3w", "2mo" */
-export function formatInterval(date: Date | string | null | undefined) {
+export function formatInterval(
+  date: Date | string | null | undefined,
+  referenceDate: Date | string | number = Date.now(),
+) {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
-  const ms = d.getTime() - Date.now();
+  const reference = typeof referenceDate === "number"
+    ? referenceDate
+    : new Date(referenceDate).getTime();
+  const ms = d.getTime() - reference;
   if (ms <= 0) return "now";
   const min = 60 * 1000;
   const hr = 60 * min;
@@ -53,5 +59,4 @@ export function formatAbsolute(date: Date | string | null | undefined) {
     minute: "2-digit",
   });
 }
-
 

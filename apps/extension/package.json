@@ -1,6 +1,6 @@
 {
   "name": "@ankify/extension",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ankify/api-client": "workspace:*",
+    "@ankify/contracts": "workspace:*",
     "@ankify/core": "workspace:*",
     "react": "19.2.8",
     "react-dom": "19.2.8",

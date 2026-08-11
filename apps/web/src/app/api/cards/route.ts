@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray } from "drizzle-orm";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 
 const deleteSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(500),

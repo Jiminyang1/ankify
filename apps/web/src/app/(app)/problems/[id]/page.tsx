@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, isNull } from "drizzle-orm";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
@@ -9,14 +7,16 @@ import { SubmissionList } from "@/components/submission-list";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProblemWorkspace, type WorkspacePanel } from "./problem-workspace";
-import { requirePageUser } from "@/lib/auth";
-import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
+import { ProblemDetailLayout } from "./problem-detail-layout";
+import { requirePageUser } from "@/server/auth";
+import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { cn, formatRelative } from "@/lib/utils";
 import { UserCardButton } from "./user-card-button";
 import { CardList } from "./card-list";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
+import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
 
@@ -38,34 +38,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
   const { id } = await params;
-  const db = getDb();
-  const problemRows = await db
-    .select()
-    .from(schema.problems)
-    .where(and(eq(schema.problems.id, id), eq(schema.problems.userId, user.id)));
-  const problem = problemRows[0];
-  if (!problem) notFound();
-
-  const [submissions, cards, reviewHistory] = await Promise.all([
-    db
-      .select()
-      .from(schema.submissions)
-      .where(and(eq(schema.submissions.userId, user.id), eq(schema.submissions.problemId, id)))
-      .orderBy(desc(schema.submissions.submittedAt))
-      .limit(10),
-    db
-      .select()
-      .from(schema.cards)
-      .where(and(eq(schema.cards.userId, user.id), eq(schema.cards.problemId, id), eq(schema.cards.aiStatus, "ready")))
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(50),
-    db
-      .select()
-      .from(schema.reviewEvents)
-      .where(and(eq(schema.reviewEvents.userId, user.id), eq(schema.reviewEvents.problemId, id), eq(schema.reviewEvents.eventType, "self_recall_rated"), isNull(schema.reviewEvents.undoneAt)))
-      .orderBy(desc(schema.reviewEvents.occurredAt))
-      .limit(20),
-  ]);
+  const detail = await loadProblemDetail(user.id, id);
+  if (!detail) notFound();
+  const { problem, submissions, cards, reviewHistory } = detail;
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
 
@@ -145,9 +120,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        {/* Identity + scheduling — the "what am I managing" rail */}
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+      <ProblemDetailLayout
+        rail={
+          <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Surface className="p-5">
             <div className="flex flex-wrap items-center gap-2">
               <DifficultyPill difficulty={problem.difficulty} language={language} />
@@ -220,11 +195,17 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             <ArchiveProblemButton problemId={problem.id} archived={problem.archivedAt != null} />
             <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
           </div>
-        </aside>
-
-        {/* Content workspace — one panel at a time, like a console */}
-        <ProblemWorkspace defaultTab="statement" panels={panels} />
-      </div>
+          </aside>
+        }
+        workspace={
+          <ProblemWorkspace
+            defaultTab="statement"
+            panels={panels}
+            problemId={problem.id}
+            problemTitle={problem.title}
+          />
+        }
+      />
     </div>
   );
 }

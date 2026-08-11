@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Card } from "@ankify/db";
+import type { CardDto } from "@ankify/contracts";
 import { Markdown } from "@/components/ui/markdown";
 import { Surface } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,12 @@ import { useLanguage } from "@/components/LanguageProvider";
 
 type EditForm = {
   id: string;
+  version: number;
   question: string;
   answer: string;
 };
 
-export function CardList({ cards }: { cards: Card[] }) {
+export function CardList({ cards }: { cards: CardDto[] }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -81,6 +82,7 @@ export function CardList({ cards }: { cards: Card[] }) {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          expectedVersion: editForm.version,
           question: editForm.question,
           answer: editForm.answer,
         }),
@@ -187,6 +189,7 @@ export function CardList({ cards }: { cards: Card[] }) {
                               ? setEditForm(null)
                               : setEditForm({
                                   id: c.id,
+                                  version: c.version,
                                   question: c.question,
                                   answer: c.answer,
                                 })

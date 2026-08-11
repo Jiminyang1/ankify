@@ -44,7 +44,9 @@ export async function proxy(req: NextRequest) {
     pathname === "/welcome" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
-    pathname.startsWith("/api/auth/");
+    (process.env.ANKIFY_PROFILE === "qa" && pathname === "/api/qa/login") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/queues/");
 
   if (isApi && req.method === "OPTIONS") {
     return withApiCors(req, new NextResponse(null, { status: 204 }));

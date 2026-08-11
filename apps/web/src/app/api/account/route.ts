@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@ankify/db";
-import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
 
 const deleteAccountSchema = z
   .object({

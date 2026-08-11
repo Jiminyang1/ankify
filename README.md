@@ -90,6 +90,36 @@ Load the unpacked extension from `apps/extension/dist/` (`chrome://extensions` â
 
 Use `pnpm dev:ext` while editing the extension so CRXJS can refresh extension pages and content scripts. After a production `pnpm build`, reload Ankify once in `chrome://extensions`, then refresh any already-open LeetCode tabs; production builds replace hashed content-script files.
 
+## Reusable local QA environment
+
+Use the QA profile for manual QA, browser automation, Agent testing, and
+extension integration without Google OAuth or deployed infrastructure:
+
+```bash
+pnpm dev:qa       # reset fixtures, then start Web + the local AI Job worker
+pnpm dev:qa:all   # same environment plus extension watch mode
+pnpm qa:reset     # restore deterministic fixtures while preserving AI settings
+```
+
+Open `http://localhost:3000/api/qa/login` to enter the fixed `qa@ankify.local`
+account. Web and the extension then reuse the same Better Auth cookie. The QA
+profile has its own `packages/db/qa.db`, auth secret, and encryption secret.
+
+To make real model calls, create the gitignored `.env.qa.local` file:
+
+```bash
+ANKIFY_QA_AI_PROVIDER="openai"
+ANKIFY_QA_AI_MODEL="gpt-5-mini"
+ANKIFY_QA_AI_REASONING_MODE="fast"
+ANKIFY_QA_AI_API_KEY="<provider-key>"
+```
+
+These may match Production's provider configuration, but QA never connects to
+the Production database, Better Auth session store, or Queue. AI jobs remain
+durable rows in the QA SQLite database and are processed by the local worker.
+The worker tests application behavior; deployed Queue delivery/retry semantics
+remain part of Preview/Production verification.
+
 ## Isolated local, Preview, and Production profiles
 
 The repo separates local development, Vercel Preview, and Production so a local
@@ -98,10 +128,12 @@ command cannot silently fall back to or mutate a deployed database.
 | Profile | DB | Auth URL | Env file | Used by |
 | --- | --- | --- | --- | --- |
 | `local` (default) | SQLite at `LOCAL_DB_PATH` | `http://localhost:3000` | `.env.local` | `pnpm dev`, `db:migrate`, `db:studio`, `db:generate` |
+| `qa` | isolated SQLite at `packages/db/qa.db` | fixed local session | `.env.qa` + `.env.qa.local` | `pnpm dev:qa`, `pnpm dev:qa:all`, `pnpm qa:reset` |
 | `preview` | dedicated Preview Turso DB | stable Preview branch domain | `.env.preview.local` | `db:migrate:preview`, `db:studio:preview` |
-| `production` | Turso (`TURSO_DATABASE_URL`) | your Vercel URL | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
+| `production` | Turso (`TURSO_DATABASE_URL`) | `https://ankify-pi.vercel.app` | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
 
-`pnpm dev` always runs against `local`. Vercel reads its runtime variables from
+`pnpm dev` always runs against `local`; `pnpm dev:qa` always runs against the
+isolated QA database. Vercel reads its runtime variables from
 the dashboard; the two deployed `.env.*.local` files are only for explicitly
 running migrations from your laptop and must never be committed. Each
 environment needs its own database, auth secret, and encryption secret.
@@ -115,7 +147,7 @@ Use Turso for production. Do not deploy with local SQLite on Vercel.
 1. Create a Turso database and token.
 2. Configure **Production** variables in Vercel:
    - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-   - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
+   - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=https://ankify-pi.vercel.app`
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
    - `AI_KEY_ENCRYPTION_SECRET`
    - `ANKIFY_DEPLOYMENT_ENV=production`
@@ -139,16 +171,16 @@ Use Turso for production. Do not deploy with local SQLite on Vercel.
 5. Import the repo on Vercel with root directory `apps/web` and keep
    **Include source files outside the Root Directory** enabled. The committed
    `apps/web/vercel.json` pins the framework, frozen-lockfile install, validated
-   build command, and Fluid compute. Node 24 and pnpm 10.25 are pinned from the
+   build command, and Fluid compute. Node 22 and pnpm 10.25 are pinned in the
    root package metadata.
 6. Add OAuth redirect URIs in Google Cloud Console:
    - local: `http://localhost:3000/api/auth/callback/google`
-   - production: `https://your-domain.com/api/auth/callback/google`
+   - production: `https://ankify-pi.vercel.app/api/auth/callback/google`
    Set the Production OAuth audience to External, use the public root page as
    the app homepage, link `/privacy` and `/terms`, and verify the domain.
 7. Sign in with any Google account and save your AI provider/model/key in Settings.
-8. In the Chrome extension, point API Base URL at your Vercel URL and click
-   `Continue with Google`. An existing web login is detected automatically.
+8. Build the Chrome extension with the canonical Production API origin below
+   and click `Continue with Google`. An existing web login is detected automatically.
 
 The web UI and Chrome extension use the same Better Auth Google session. The
 extension sends credentialed requests only to the exact configured API origin;
@@ -158,13 +190,14 @@ Before uploading the extension to the Chrome Web Store, build it with the
 Production API origin and use the public policy URL from the deployed web app:
 
 ```bash
-ANKIFY_EXTENSION_API_ORIGIN=https://your-domain.com pnpm --filter @ankify/extension build
+ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm --filter @ankify/extension build
 ```
 
-- Privacy policy: `https://your-domain.com/privacy`
-- Terms: `https://your-domain.com/terms`
-- The manifest asks for exact LeetCode and Production API hosts. Any custom API
-  origin is requested from Chrome only after the user explicitly saves or tests it.
+- Privacy policy: `https://ankify-pi.vercel.app/privacy`
+- Terms: `https://ankify-pi.vercel.app/terms`
+- The manifest asks for exact LeetCode and Production API hosts. The API origin
+  is a build-time release setting; users cannot redirect the extension
+  to a different server from Chrome storage.
 - Users can export their data as NDJSON and permanently delete their account
   from Settings.
 

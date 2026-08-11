@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { Card } from "@ankify/db";
+import type { CardDto } from "@ankify/contracts";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -13,9 +13,15 @@ import { Tabs } from "@/components/ui/tabs";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useLanguage } from "@/components/LanguageProvider";
+import {
+  getActiveAiJob,
+  requireSucceededAiJob,
+  startAiJob,
+  waitForAiJob,
+} from "@/lib/ai-job-client";
 
 type Mode = "manual" | "ai";
-type Candidate = Card & {
+type Candidate = CardDto & {
   instruction: string;
   localError: string | null;
   busy: "followup" | "confirm" | "discard" | null;
@@ -24,7 +30,7 @@ type Candidate = Card & {
 const CARD_GENERATION_TARGET_SECONDS = 60;
 const COMPOSER_ACTION_CLASS = "min-w-24";
 
-function hydrateCandidate(card: Card): Candidate {
+function hydrateCandidate(card: CardDto): Candidate {
   return { ...card, instruction: "", localError: null, busy: null };
 }
 
@@ -65,7 +71,7 @@ export function UserCardButton({
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
 
-    const nextCards = json.candidates as Card[];
+    const nextCards = json.candidates as CardDto[];
     setCandidates((prev) => {
       const prevById = new Map(prev.map((c) => [c.id, c]));
       return nextCards.map((card) => ({
@@ -85,6 +91,26 @@ export function UserCardButton({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadCandidates]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const job = await getActiveAiJob(problemId, "card");
+        if (!job) return;
+        setBusy("auto");
+        setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
+        try {
+          requireSucceededAiJob(await waitForAiJob(job));
+          await loadCandidates();
+        } finally {
+          setBusy(null);
+          setGenerationStartedAt(null);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t.detail.failed);
+      }
+    })();
+  }, [loadCandidates, problemId, t.detail.failed]);
 
   const resetManual = useCallback(() => {
     setRawText("");
@@ -149,24 +175,15 @@ export function UserCardButton({
     setError(null);
     setMode("ai");
     try {
-      const res = await fetch(`/api/problems/${problemId}/ai-cards`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mode: "single",
-          action: "generate",
-          ...(kind === "note" ? { rawText: rawText.trim() } : {}),
-        }),
+      const job = await startAiJob({
+        action: "card_generate",
+        problemId,
+        requestId: crypto.randomUUID(),
+        ...(kind === "note" ? { rawText: rawText.trim() } : {}),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; card?: Card };
-      if (!res.ok) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
-      const card = json.card as Card | undefined;
-      if (card) {
-        setCandidates((prev) => [hydrateCandidate(card), ...prev.filter((c) => c.id !== card.id)]);
-        setCandidateIndex(0);
-      } else {
-        await loadCandidates();
-      }
+      requireSucceededAiJob(await waitForAiJob(job));
+      await loadCandidates();
+      setCandidateIndex(0);
       if (kind === "note") setRawText("");
     } catch (e) {
       setError(e instanceof Error ? e.message : t.detail.failed);
@@ -184,29 +201,21 @@ export function UserCardButton({
     setCandidateState(candidate.id, { busy: "followup", localError: null });
     setCandidateBusyStartedAt((prev) => ({ ...prev, [candidate.id]: Date.now() }));
     try {
-      const res = await fetch(`/api/problems/${problemId}/ai-cards`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mode: "single",
-          action: "followup",
-          cardId: candidate.id,
-          draft: {
-            question: candidate.question.trim(),
-            answer: candidate.answer.trim(),
-          },
-          instruction: candidate.instruction.trim(),
-        }),
+      const job = await startAiJob({
+        action: "card_followup",
+        problemId,
+        requestId: crypto.randomUUID(),
+        cardId: candidate.id,
+        expectedCardVersion: candidate.version,
+        draft: {
+          question: candidate.question.trim(),
+          answer: candidate.answer.trim(),
+        },
+        instruction: candidate.instruction.trim(),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; message?: string; card?: Card };
-      if (!res.ok) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
-      const card = json.card as Card | undefined;
-      if (card) {
-        setCandidateState(candidate.id, { ...card, instruction: "", busy: null, localError: null });
-      } else {
-        setCandidateState(candidate.id, { instruction: "", busy: null });
-        await loadCandidates();
-      }
+      requireSucceededAiJob(await waitForAiJob(job));
+      setCandidateState(candidate.id, { instruction: "", busy: null });
+      await loadCandidates();
     } catch (e) {
       setCandidateState(candidate.id, {
         busy: null,
@@ -229,6 +238,7 @@ export function UserCardButton({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          expectedVersion: candidate.version,
           aiStatus: "ready",
           question: candidate.question.trim(),
           answer: candidate.answer.trim(),

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import { requirePageUser } from "@/lib/auth";
-import { getRequestLanguage } from "@/lib/i18n-server";
+import { requirePageUser } from "@/server/auth";
+import { getRequestLanguage } from "@/server/i18n";
 import { Surface } from "@/components/ui/surface";
 
 export const dynamic = "force-dynamic";

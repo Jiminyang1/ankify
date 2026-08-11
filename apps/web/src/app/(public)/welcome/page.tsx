@@ -3,8 +3,8 @@ import { ArrowRight, BookOpenCheck, Chrome, Sparkles } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
 import { Surface } from "@/components/ui/surface";
 import { buttonClasses } from "@/components/ui/button";
-import { getOptionalPageUser } from "@/lib/auth";
-import { getRequestLanguage } from "@/lib/i18n-server";
+import { getOptionalPageUser } from "@/server/auth";
+import { getRequestLanguage } from "@/server/i18n";
 
 export const dynamic = "force-dynamic";
 

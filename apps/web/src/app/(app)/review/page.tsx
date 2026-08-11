@@ -1,5 +1,5 @@
-import { requirePageUser } from "@/lib/auth";
-import { loadNextReview } from "@/lib/next-review";
+import { requirePageUser } from "@/server/auth";
+import { loadNextReview } from "@/server/next-review";
 import ReviewPage from "./review-client";
 
 export const dynamic = "force-dynamic";

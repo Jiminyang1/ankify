@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { requirePageUser } from "@/lib/auth";
-import { getRequestTranslations } from "@/lib/i18n-server";
-import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/lib/settings";
+import { requirePageUser } from "@/server/auth";
+import { getRequestTranslations } from "@/server/i18n";
+import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/server/settings";
 import {
   AccountDataForm,
   AiSettingsForm,

@@ -4,12 +4,18 @@ import { proxy } from "./proxy";
 
 const extensionOrigin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
 const originalOrigins = process.env.ANKIFY_EXTENSION_ORIGINS;
+const originalProfile = process.env.ANKIFY_PROFILE;
 
 afterEach(() => {
   if (originalOrigins === undefined) {
     delete process.env.ANKIFY_EXTENSION_ORIGINS;
   } else {
     process.env.ANKIFY_EXTENSION_ORIGINS = originalOrigins;
+  }
+  if (originalProfile === undefined) {
+    delete process.env.ANKIFY_PROFILE;
+  } else {
+    process.env.ANKIFY_PROFILE = originalProfile;
   }
 });
 
@@ -30,6 +36,30 @@ describe("extension session CORS", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.has("location")).toBe(false);
+  });
+
+  it("lets Vercel Queue callbacks reach the queue SDK without a user cookie", async () => {
+    const response = await proxy(
+      new NextRequest("https://ankify.example.com/api/queues/ai-generation", {
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("opens the fixed-session login only in the QA profile", async () => {
+    process.env.ANKIFY_PROFILE = "qa";
+    const qaResponse = await proxy(
+      new NextRequest("http://localhost:3000/api/qa/login"),
+    );
+    expect(qaResponse.status).toBe(200);
+
+    process.env.ANKIFY_PROFILE = "local";
+    const localResponse = await proxy(
+      new NextRequest("http://localhost:3000/api/qa/login"),
+    );
+    expect(localResponse.status).toBe(401);
   });
 
   it("allows credentialed preflight only for configured extension origins", async () => {

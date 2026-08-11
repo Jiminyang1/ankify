@@ -36,7 +36,7 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const config: NextConfig = {
-  transpilePackages: ["@ankify/core", "@ankify/db"],
+  transpilePackages: ["@ankify/api-client", "@ankify/contracts", "@ankify/core", "@ankify/db"],
   poweredByHeader: false,
   async headers() {
     return [

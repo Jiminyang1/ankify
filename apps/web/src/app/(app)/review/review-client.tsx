@@ -6,16 +6,20 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
-  type PointerEvent as ReactPointerEvent,
   type SetStateAction,
 } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { Card, Submission } from "@ankify/db";
+import type {
+  CardDto,
+  ReviewPayloadDto,
+  ReviewProblemDto,
+  ReviewRateResponseDto,
+  SubmissionDto,
+} from "@ankify/contracts";
 import type { FsrsRating } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -24,17 +28,19 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { Markdown } from "@/components/ui/markdown";
 import { useLanguage } from "@/components/LanguageProvider";
+import { AgentSidebar } from "@/components/agent/agent-sidebar";
+import {
+  useAgentPageContext,
+  useAgentShellControls,
+  useEmbeddedAgentPanel,
+} from "@/components/agent/agent-shell";
 import { cn, formatInterval } from "@/lib/utils";
-import type { ReviewPayload, ReviewProblem } from "@/lib/next-review";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 import { ShortcutsHelp } from "./shortcuts-help";
+import type { ReviewWorkspaceLayoutProps } from "./review-workspace-layout";
 import type { QuizKeyInterface } from "./quiz-panel";
 
-type RateResult = {
-  ok: true;
-  nextDue: string;
-  queue?: { dueCount: number; totalDue: number };
-};
+type RateResult = ReviewRateResponseDto;
 type Stage = "loading" | "review" | "result" | "empty";
 type WorkspaceTab = "quiz" | "cards" | "submissions" | "notes";
 type WorkspaceResource = Exclude<WorkspaceTab, "quiz">;
@@ -89,6 +95,18 @@ const LazyNotesEditor = dynamic(
   },
 );
 
+const ReviewWorkspaceLayout = dynamic<ReviewWorkspaceLayoutProps>(
+  () => import("./review-workspace-layout").then((module) => module.ReviewWorkspaceLayout),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[420px] items-center justify-center lg:h-[calc(100dvh-85px)] lg:min-h-[620px]">
+        <Spinner />
+      </div>
+    ),
+  },
+);
+
 function getRatingButtons(t: ReviewLabels): { rating: FsrsRating; label: string; hint: string }[] {
   return [
     { rating: 1, label: t.rating.again, hint: t.rating.hints.again },
@@ -105,10 +123,6 @@ function suggestedRatingForScore(score: number): FsrsRating {
   return 4;
 }
 
-const MIN_CONTEXT_SPLIT = 35;
-const MAX_CONTEXT_SPLIT = 70;
-const MIN_CONTEXT_WIDTH = 360;
-const MIN_CARD_WIDTH = 360;
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
 const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "cards";
 const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
@@ -134,19 +148,19 @@ export default function ReviewPage({
   initialData,
   initialTargetId,
 }: {
-  initialData: ReviewPayload;
+  initialData: ReviewPayloadDto;
   initialTargetId: string | null;
 }) {
   const { language, t } = useLanguage();
-  const [data, setData] = useState<ReviewPayload | null>(initialData);
+  const [data, setData] = useState<ReviewPayloadDto | null>(initialData);
   const [stage, setStage] = useState<Stage>(
     initialData.problem ? "review" : "empty",
   );
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating | null>(null);
   const [quizSuggestedRating, setQuizSuggestedRating] = useState<FsrsRating | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(DEFAULT_WORKSPACE_TAB);
-  const [cards, setCards] = useState<Card[] | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[] | null>(null);
+  const [cards, setCards] = useState<CardDto[] | null>(null);
+  const [submissions, setSubmissions] = useState<SubmissionDto[] | null>(null);
   const [notes, setNotes] = useState<string | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState<
     Partial<Record<WorkspaceResource, boolean>>
@@ -160,12 +174,22 @@ export default function ReviewPage({
   const [result, setResult] = useState<RateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [splitPercent, setSplitPercent] = useState(58);
-  const reviewLayoutRef = useRef<HTMLDivElement | null>(null);
   const quizKeysRef = useRef<QuizKeyInterface | null>(null);
   const ratingRequestRef = useRef<{ problemId: string; requestId: string } | null>(null);
   const workspaceRequestsRef = useRef(new Set<string>());
   const currentProblemIdRef = useRef(initialData.problem?.id ?? null);
+
+  const agentPageContext = stage !== "loading" && data?.problem
+    ? {
+        problemId: data.problem.id,
+        problemTitle: data.problem.title,
+        page: "review" as const,
+        activePanel: workspaceTab,
+      }
+    : null;
+  useAgentPageContext(agentPageContext);
+  const { open: coachOpen, setOpen: setCoachOpen } = useAgentShellControls();
+  useEmbeddedAgentPanel(stage === "review" && Boolean(data?.problem));
 
   const loadNext = useCallback(async (targetId?: string | null) => {
     setStage("loading");
@@ -196,7 +220,7 @@ export default function ReviewPage({
       window.location.assign("/login?next=/review");
       return;
     }
-    const json = (await res.json()) as ReviewPayload;
+    const json = (await res.json()) as ReviewPayloadDto;
     currentProblemIdRef.current = json.problem?.id ?? null;
     setData(json);
     setStage(json.problem ? "review" : "empty");
@@ -239,8 +263,8 @@ export default function ReviewPage({
         { cache: "no-store" },
       );
       const json = (await res.json().catch(() => null)) as {
-        cards?: Card[];
-        submissions?: Submission[];
+        cards?: CardDto[];
+        submissions?: SubmissionDto[];
         notes?: string;
         error?: string;
       } | null;
@@ -296,61 +320,6 @@ export default function ReviewPage({
     } catch {}
     selectWorkspaceTab(preferred);
   }, [selectWorkspaceTab, data?.problem?.id]);
-
-  const getSplitBounds = useCallback(() => {
-    const layout = reviewLayoutRef.current;
-    if (!layout) return { min: MIN_CONTEXT_SPLIT, max: MAX_CONTEXT_SPLIT };
-    const rect = layout.getBoundingClientRect();
-    if (rect.width <= 0) return { min: MIN_CONTEXT_SPLIT, max: MAX_CONTEXT_SPLIT };
-
-    const minByContextWidth = (MIN_CONTEXT_WIDTH / rect.width) * 100;
-    const maxByCardWidth = 100 - (MIN_CARD_WIDTH / rect.width) * 100;
-    const min = Math.max(MIN_CONTEXT_SPLIT, minByContextWidth);
-    const max = Math.max(min, Math.min(MAX_CONTEXT_SPLIT, maxByCardWidth));
-    return { min, max };
-  }, []);
-
-  const updateSplit = useCallback((clientX: number) => {
-    const layout = reviewLayoutRef.current;
-    if (!layout) return;
-    const rect = layout.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const next = ((clientX - rect.left) / rect.width) * 100;
-    const bounds = getSplitBounds();
-    setSplitPercent(clamp(next, bounds.min, bounds.max));
-  }, [getSplitBounds]);
-
-  const startResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    updateSplit(event.clientX);
-
-    const previousCursor = document.body.style.cursor;
-    const previousUserSelect = document.body.style.userSelect;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const handlePointerMove = (moveEvent: PointerEvent) => updateSplit(moveEvent.clientX);
-    const stopResize = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopResize);
-      window.removeEventListener("pointercancel", stopResize);
-      document.body.style.cursor = previousCursor;
-      document.body.style.userSelect = previousUserSelect;
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopResize, { once: true });
-    window.addEventListener("pointercancel", stopResize, { once: true });
-  }, [updateSplit]);
-
-  const resizeWithKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const delta = event.key === "ArrowLeft" ? -4 : 4;
-    const bounds = getSplitBounds();
-    setSplitPercent((current) => clamp(current + delta, bounds.min, bounds.max));
-  }, [getSplitBounds]);
 
   const submitRating = useCallback(async () => {
     if (!data?.problem || !userFsrsRating) return;
@@ -508,7 +477,7 @@ export default function ReviewPage({
     return () => window.removeEventListener("keydown", handler);
   }, [stage, workspaceTab, cardCount, loadNext, submitRating, userFsrsRating]);
 
-  const handleQuizCardSaved = useCallback((card: Card) => {
+  const handleQuizCardSaved = useCallback((card: CardDto) => {
     setCards((current) => {
       if (!current) return current;
       if (current.some((existing) => existing.id === card.id)) return current;
@@ -536,94 +505,101 @@ export default function ReviewPage({
   return (
     <div className="space-y-4">
       <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      {/* Header */}
-      <ReviewHeader
-        problem={problem}
-        cardTotal={cards?.length ?? null}
-        dueCount={result?.queue?.dueCount ?? data.queue?.dueCount ?? 0}
-        language={language}
-      />
 
       {stage === "review" && (
-        <>
-          {/* Main: left problem / right flashcard */}
-          <div
-            ref={reviewLayoutRef}
-            className="flex flex-col gap-4 lg:h-[calc(100vh_-_150px)] lg:flex-row lg:gap-0"
-            style={{ "--context-pane-width": `${splitPercent}%` } as CSSProperties}
-          >
-            {/* Left: Problem statement + rating (both problem-level) */}
-            <div className="min-w-0 lg:min-w-[360px] lg:basis-[var(--context-pane-width)] lg:shrink-0">
-              <StatementPanel
-                problem={problem}
-                previews={data.previews}
-                userFsrsRating={userFsrsRating}
-                quizSuggestedRating={quizSuggestedRating}
-                setUserFsrsRating={setUserFsrsRating}
-                error={error}
-                submitting={submitting}
-                onSubmitRating={submitRating}
-                onOpenShortcuts={() => setShortcutsOpen(true)}
-              />
-            </div>
-
-            <div
-              role="separator"
-              aria-label="Resize review panels"
-              aria-orientation="vertical"
-              tabIndex={0}
-              onPointerDown={startResize}
-              onKeyDown={resizeWithKeyboard}
-              className="group hidden w-5 shrink-0 cursor-col-resize items-stretch justify-center px-2 outline-none lg:flex"
-            >
-              <div className="my-1 w-px rounded-full bg-border transition group-hover:bg-accent group-focus-visible:bg-accent" />
-            </div>
-
-            {/* Right: review workspace */}
-            <div className="min-h-[620px] min-w-0 lg:min-h-0 lg:flex-1">
-              <WorkspacePanel
-                activeTab={workspaceTab}
-                onTabChange={selectWorkspaceTab}
-                cards={cards}
-                currentCard={currentCard}
-                cardIdx={cardIdx}
-                setCardIdx={setCardIdx}
-                flipped={flipped}
-                setFlipped={setFlipped}
-                submissions={submissions}
-                notes={notes}
-                setNotes={setNotes}
-                loading={workspaceLoading}
-                errors={workspaceErrors}
-                onRetry={(resource) => void loadWorkspaceResource(resource, true)}
-                problemId={problem.id}
-                onQuizCardSaved={handleQuizCardSaved}
-                quizKeysRef={quizKeysRef}
-                onQuizCompleted={(score) => setQuizSuggestedRating(suggestedRatingForScore(score))}
-              />
-            </div>
-          </div>
-        </>
+        <ReviewWorkspaceLayout
+          question={(
+            <StatementPanel
+              problem={problem}
+              previews={data.previews}
+              previewedAt={data.previewedAt}
+              userFsrsRating={userFsrsRating}
+              quizSuggestedRating={quizSuggestedRating}
+              setUserFsrsRating={setUserFsrsRating}
+              error={error}
+              submitting={submitting}
+              onSubmitRating={submitRating}
+              onOpenShortcuts={() => setShortcutsOpen(true)}
+              cardTotal={cards?.length ?? null}
+              dueCount={data.queue?.dueCount ?? 0}
+              language={language}
+            />
+          )}
+          study={(
+            <WorkspacePanel
+              activeTab={workspaceTab}
+              onTabChange={selectWorkspaceTab}
+              cards={cards}
+              currentCard={currentCard}
+              cardIdx={cardIdx}
+              setCardIdx={setCardIdx}
+              flipped={flipped}
+              setFlipped={setFlipped}
+              submissions={submissions}
+              notes={notes}
+              setNotes={setNotes}
+              loading={workspaceLoading}
+              errors={workspaceErrors}
+              onRetry={(resource) => void loadWorkspaceResource(resource, true)}
+              problemId={problem.id}
+              onQuizCardSaved={handleQuizCardSaved}
+              quizKeysRef={quizKeysRef}
+              onQuizCompleted={(score) => setQuizSuggestedRating(suggestedRatingForScore(score))}
+            />
+          )}
+          coach={(
+            <AgentSidebar
+              embedded
+              open={coachOpen}
+              onClose={() => setCoachOpen(false)}
+              pageContext={{
+                problemId: problem.id,
+                problemTitle: problem.title,
+                page: "review",
+                activePanel: workspaceTab,
+              }}
+            />
+          )}
+          coachOpen={coachOpen}
+          onCoachOpenChange={setCoachOpen}
+          labels={{
+            layouts: t.review.layouts,
+            question: t.review.questionStatement,
+            study: t.review.studyPanel,
+            coach: t.agent.title,
+            show: t.review.showPanel,
+            hide: t.review.hidePanel,
+            reset: t.review.resetLayout,
+          }}
+        />
       )}
 
       {stage === "result" && result && (
-        <Surface className="p-8 text-center">
-          <h2 className="text-xl font-semibold">{t.review.done}</h2>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <Summary label={t.review.rating} value={getRatingButtons(t).find((b) => b.rating === userFsrsRating)?.label ?? userFsrsRating} />
-            <Summary label={t.review.nextReview} value={formatInterval(result.nextDue)} />
-            <Summary label={t.review.remainingToday} value={result.queue?.dueCount ?? 0} />
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-2">
-            <Button size="lg" disabled={submitting} onClick={() => void undoRating()}>
-              {t.review.undo}
-            </Button>
-            <Button variant="primary" size="lg" onClick={() => loadNext()}>
-              {t.common.next}
-            </Button>
-          </div>
-          {error && <p className="mt-3 text-xs text-danger">{error}</p>}
-        </Surface>
+        <div className="space-y-4">
+          <ReviewHeader
+            problem={problem}
+            cardTotal={cards?.length ?? null}
+            dueCount={result.queue?.dueCount ?? 0}
+            language={language}
+          />
+          <Surface className="p-8 text-center">
+            <h2 className="text-xl font-semibold">{t.review.done}</h2>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Summary label={t.review.rating} value={getRatingButtons(t).find((b) => b.rating === userFsrsRating)?.label ?? userFsrsRating} />
+              <Summary label={t.review.nextReview} value={formatInterval(result.nextDue)} />
+              <Summary label={t.review.remainingToday} value={result.queue?.dueCount ?? 0} />
+            </div>
+            <div className="mt-6 flex items-center justify-center gap-2">
+              <Button size="lg" disabled={submitting} onClick={() => void undoRating()}>
+                {t.review.undo}
+              </Button>
+              <Button variant="primary" size="lg" onClick={() => loadNext()}>
+                {t.common.next}
+              </Button>
+            </div>
+            {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+          </Surface>
+        </div>
       )}
 
     </div>
@@ -633,7 +609,7 @@ export default function ReviewPage({
 function ReviewHeader({
   problem, cardTotal, dueCount, language,
 }: {
-  problem: ReviewProblem;
+  problem: ReviewProblemDto;
   cardTotal: number | null;
   dueCount: number;
   language: "en" | "zh";
@@ -684,6 +660,7 @@ function ReviewHeader({
 function StatementPanel({
   problem,
   previews,
+  previewedAt,
   userFsrsRating,
   quizSuggestedRating,
   setUserFsrsRating,
@@ -691,9 +668,13 @@ function StatementPanel({
   submitting,
   onSubmitRating,
   onOpenShortcuts,
+  cardTotal,
+  dueCount,
+  language,
 }: {
-  problem: ReviewProblem;
-  previews: ReviewPayload["previews"];
+  problem: ReviewProblemDto;
+  previews: ReviewPayloadDto["previews"];
+  previewedAt: string;
   userFsrsRating: FsrsRating | null;
   quizSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
@@ -701,10 +682,21 @@ function StatementPanel({
   submitting: boolean;
   onSubmitRating: () => void;
   onOpenShortcuts: () => void;
+  cardTotal: number | null;
+  dueCount: number;
+  language: "en" | "zh";
 }) {
   const { t } = useLanguage();
   return (
     <Surface className="flex h-full min-h-[420px] flex-col overflow-hidden lg:min-h-0">
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <ReviewHeader
+          problem={problem}
+          cardTotal={cardTotal}
+          dueCount={dueCount}
+          language={language}
+        />
+      </div>
       <div className="shrink-0 border-b border-border px-4 py-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
           {t.review.questionStatement}
@@ -722,6 +714,7 @@ function StatementPanel({
       {/* Rating is problem-level — lives alongside the problem statement */}
       <CompactRating
         previews={previews}
+        previewedAt={previewedAt}
         userFsrsRating={userFsrsRating}
         quizSuggestedRating={quizSuggestedRating}
         setUserFsrsRating={setUserFsrsRating}
@@ -756,20 +749,20 @@ function WorkspacePanel({
 }: {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
-  cards: Card[] | null;
-  currentCard: Card | null;
+  cards: CardDto[] | null;
+  currentCard: CardDto | null;
   cardIdx: number;
   setCardIdx: Dispatch<SetStateAction<number>>;
   flipped: boolean;
   setFlipped: Dispatch<SetStateAction<boolean>>;
-  submissions: Submission[] | null;
+  submissions: SubmissionDto[] | null;
   notes: string | null;
   setNotes: (value: string) => void;
   loading: Partial<Record<WorkspaceResource, boolean>>;
   errors: Partial<Record<WorkspaceResource, string>>;
   onRetry: (resource: WorkspaceResource) => void;
   problemId: string;
-  onQuizCardSaved: (card: Card) => void;
+  onQuizCardSaved: (card: CardDto) => void;
   quizKeysRef: MutableRefObject<QuizKeyInterface | null>;
   onQuizCompleted: (score: number) => void;
 }) {
@@ -942,6 +935,7 @@ function ReviewTabButton({
 
 function CompactRating({
   previews,
+  previewedAt,
   userFsrsRating,
   quizSuggestedRating,
   setUserFsrsRating,
@@ -950,7 +944,8 @@ function CompactRating({
   onSubmitRating,
   onOpenShortcuts,
 }: {
-  previews: ReviewPayload["previews"];
+  previews: ReviewPayloadDto["previews"];
+  previewedAt: string;
   userFsrsRating: FsrsRating | null;
   quizSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
@@ -1002,7 +997,7 @@ function CompactRating({
                 <span className="mr-1 text-[9px] font-normal text-muted tabular-nums">{button.rating}</span>
                 {button.label}
               </div>
-              <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">{due ? formatInterval(due) : "-"}</div>
+              <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">{due ? formatInterval(due, previewedAt) : "-"}</div>
             </button>
           );
         })}
@@ -1048,9 +1043,6 @@ function Summary({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
 
 function stripConstraints(markdown: string | null | undefined) {
   if (!markdown) return "";

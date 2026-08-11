@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
-import type { AuthUser } from "@/lib/auth";
+import type { AuthUserDto } from "@ankify/contracts";
 import {
   REVIEW_QUEUE_UPDATED_EVENT,
   type ReviewQueueUpdatedEvent,
@@ -28,7 +28,7 @@ export function Nav({
   user,
   initialDueCount = 0,
 }: {
-  user: AuthUser | null;
+  user: AuthUserDto | null;
   initialDueCount?: number;
 }) {
   const pathname = usePathname();

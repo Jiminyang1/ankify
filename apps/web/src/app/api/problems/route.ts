@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import {
   DEFAULT_PROBLEMS_PAGE_SIZE,
   InvalidProblemsCursorError,
   loadProblemsList,
-} from "@/lib/problems-list";
+} from "@/server/problems-list";
 
 /** GET /api/problems?search=&archived=1&cursor=&limit= — paginated
  *  metadata-only problem list with card counts.

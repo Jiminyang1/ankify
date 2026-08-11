@@ -1,69 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatQuizMarkdown } from "@ankify/core";
-import type { BackgroundRequest, CapturedProblem, ContentResponse, ExtSettings } from "../shared/messages";
+import { createAiJobClient } from "@ankify/api-client";
+import { formatQuizMarkdown, type FsrsRating } from "@ankify/core";
+import type {
+  AiJobCreateRequestInput,
+  AuthUserDto as AuthAccount,
+  CaptureProblemInput,
+  CaptureResultDto as CaptureResult,
+  CardDto as ApiCard,
+  FsrsPreviewsDto as Previews,
+  ProblemDto as ApiProblem,
+  ProblemLookupPayloadDto,
+  PublicAiJobDto,
+  QueueProblemDto as QueueProblem,
+  QuizAnswer,
+  QuizItem,
+  QuizSessionDto as QuizSession,
+  ReviewQueuePayloadDto as QueueResponse,
+} from "@ankify/contracts";
+import type { BackgroundRequest, ContentResponse, ExtSettings } from "../shared/messages";
 import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
 import { PopupMarkdown } from "./PopupMarkdown";
 
-type ApiCard = {
-  id: string;
-  aiStatus: "candidate" | "failed" | "ready";
-  errorMessage: string | null;
-  question: string;
-  answer: string;
-};
 type LocalCandidate = ApiCard & {
   instruction: string;
   busy: string | null;
   localError: string | null;
 };
-type ApiProblem = {
-  id: string;
-  leetcodeSlug: string;
-  leetcodeId: number | null;
-  title: string;
-  difficulty: "Easy" | "Medium" | "Hard";
-  fsrsState: "new" | "learning" | "review" | "relearning";
-  fsrsDue: string | null;
-  fsrsReps: number;
-  fsrsLapses: number;
-  fsrsStability: number | null;
-  notes: string | null;
-};
-type FsrsRating = 1 | 2 | 3 | 4;
-type Previews = Record<FsrsRating, { due: string }>;
 type ThemePreference = "system" | "light" | "dark";
 type Language = ExtSettings["language"];
-type QuizItem = {
-  id: string;
-  question: string;
-  choices: string[];
-  answerIndex: number;
-  explanation: string;
-  source: "statement" | "submission" | "notes" | "card";
-  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
-};
-type QuizAnswer = {
-  itemId: string;
-  selectedIndex: number;
-  correct: boolean;
-  answeredAt: string;
-};
-type QuizSession = {
-  id: string;
-  problemId: string;
-  status: "active" | "completed" | "archived";
-  itemsJson: QuizItem[];
-  answersJson: QuizAnswer[];
-  score: number | null;
-  createdAt: string;
-  updatedAt: string | null;
-  completedAt: string | null;
-};
-type CaptureResult = {
-  problemId: string;
-  created: boolean;
-  importedSubmissions: number;
-};
 
 type State =
   | { kind: "detecting" }
@@ -72,12 +36,6 @@ type State =
   | { kind: "not-saved"; slug: string }
   | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
   | { kind: "error"; msg: string };
-
-type AuthAccount = {
-  id: string;
-  email: string;
-  name: string;
-};
 
 type AuthState =
   | { kind: "loading" }
@@ -97,28 +55,6 @@ type Sticky = {
 };
 
 type NavTab = "today" | "problem" | "settings";
-
-type QueueStats = {
-  dailyReviewLimit: number;
-  doneToday: number;
-  remaining: number;
-  totalDue: number;
-  dueCount: number;
-};
-type QueueProblem = {
-  id: string;
-  leetcodeSlug: string;
-  title: string;
-  difficulty: "Easy" | "Medium" | "Hard";
-  url: string;
-  fsrsState: "new" | "learning" | "review" | "relearning";
-  fsrsDue: string | null;
-  fsrsStability: number | null;
-  fsrsReps: number;
-  fsrsLapses: number;
-  cardCount: number;
-};
-type QueueResponse = { queue: QueueStats; problems: QueueProblem[] };
 
 const EXT_I18N = {
   en: {
@@ -601,7 +537,7 @@ function getRatingButtons(t: ReturnType<typeof getExtText>): { rating: FsrsRatin
   ];
 }
 
-function difficultyLabel(difficulty: ApiProblem["difficulty"] | CapturedProblem["difficulty"], t: ReturnType<typeof getExtText>) {
+function difficultyLabel(difficulty: ApiProblem["difficulty"] | CaptureProblemInput["difficulty"], t: ReturnType<typeof getExtText>) {
   return t.difficulty[difficulty];
 }
 
@@ -623,17 +559,8 @@ const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" 
   { value: "dark", key: "dark" },
 ];
 
-const QUIZ_PENDING_TTL_MS = 125_000;
-const AI_CARD_PENDING_TTL_MS = 65_000;
 const CARD_GENERATION_TARGET_SECONDS = 60;
-const PENDING_OPERATION_EVENT = "ankify:pending-operation";
 const AUTH_REQUIRED_EVENT = "ankify:auth-required";
-
-type PendingOperation = {
-  id: string;
-  kind: string;
-  startedAt: number;
-};
 
 /* ── helpers ── */
 
@@ -659,6 +586,23 @@ async function apiFetch(settings: ExtSettings, path: string, init?: RequestInit)
   return response;
 }
 
+function aiJobs(settings: ExtSettings) {
+  return createAiJobClient((path, init) => apiFetch(settings, path, init));
+}
+
+function startAiJob(settings: ExtSettings, input: AiJobCreateRequestInput) {
+  return aiJobs(settings).start(input);
+}
+
+function getActiveAiJobs(settings: ExtSettings, problemId: string, kind: "card" | "quiz") {
+  return aiJobs(settings).listActive(problemId, kind);
+}
+
+async function waitForAiJob(settings: ExtSettings, initial: PublicAiJobDto) {
+  const client = aiJobs(settings);
+  return client.requireSucceeded(await client.wait(initial));
+}
+
 async function loadSessionAccount(apiBaseUrl: string): Promise<AuthAccount | null> {
   const base = apiBaseUrl.replace(/\/+$/, "");
   const response = await fetch(`${base}/api/me`, {
@@ -681,7 +625,7 @@ async function markExtensionConnected(apiBaseUrl: string) {
   });
 }
 
-/* Per-field caps mirror packages/core/src/schemas.ts captureProblemSchema. */
+/* Per-field caps mirror packages/contracts/src/schemas.ts captureProblemSchema. */
 const CAPTURE_LIMITS = {
   descriptionMd: 200_000,
   code: 100_000,
@@ -696,7 +640,7 @@ function clip(value: string | undefined, max: number): string | undefined {
   return value.length > max ? value.slice(0, max) : value;
 }
 
-function trimCapturePayload(p: CapturedProblem): CapturedProblem {
+function trimCapturePayload(p: CaptureProblemInput): CaptureProblemInput {
   return {
     ...p,
     descriptionMd: clip(p.descriptionMd, CAPTURE_LIMITS.descriptionMd),
@@ -711,7 +655,7 @@ function trimCapturePayload(p: CapturedProblem): CapturedProblem {
   };
 }
 
-function encodeCapturePayload(problem: CapturedProblem): string {
+function encodeCapturePayload(problem: CaptureProblemInput): string {
   const payload = trimCapturePayload(problem);
   let body = JSON.stringify(payload);
   const encoder = new TextEncoder();
@@ -742,7 +686,7 @@ function isMissingContentScriptError(error: unknown): boolean {
   );
 }
 
-async function readActiveProblem(settings: ExtSettings): Promise<CapturedProblem> {
+async function readActiveProblem(settings: ExtSettings): Promise<CaptureProblemInput> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab.");
   let resp: ContentResponse;
@@ -762,7 +706,7 @@ async function readActiveProblem(settings: ExtSettings): Promise<CapturedProblem
   return resp.data;
 }
 
-async function saveCapturedProblem(settings: ExtSettings, problem: CapturedProblem): Promise<CaptureResult> {
+async function saveCapturedProblem(settings: ExtSettings, problem: CaptureProblemInput): Promise<CaptureResult> {
   const res = await apiFetch(settings, "/api/capture", {
     method: "POST",
     headers: jsonHeaders(settings),
@@ -780,63 +724,6 @@ async function saveCapturedProblem(settings: ExtSettings, problem: CapturedProbl
     /* background unavailable — the next content-script check reconciles */
   }
   return (await res.json()) as CaptureResult;
-}
-
-function pendingQuizKey(problemId: string) {
-  return `ankify.pending.quiz.${problemId}`;
-}
-
-function pendingAiCardKey(problemId: string) {
-  return `ankify.pending.aiCard.${problemId}`;
-}
-
-function pendingCandidateAiKey(problemId: string, cardId: string) {
-  return `ankify.pending.aiCandidate.${problemId}.${cardId}`;
-}
-
-function readPendingOperation(key: string): PendingOperation | null {
-  const raw = window.sessionStorage.getItem(key);
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as PendingOperation;
-    if (!value?.id || !value.kind || !value.startedAt) {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-    if (Date.now() - value.startedAt > pendingOperationTtlMs(key)) {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-    return value;
-  } catch {
-    window.sessionStorage.removeItem(key);
-    return null;
-  }
-}
-
-function pendingOperationTtlMs(key: string) {
-  return key.startsWith("ankify.pending.quiz.") ? QUIZ_PENDING_TTL_MS : AI_CARD_PENDING_TTL_MS;
-}
-
-function writePendingOperation(key: string, kind: string): PendingOperation {
-  const operation: PendingOperation = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    kind,
-    startedAt: Date.now(),
-  };
-  window.sessionStorage.setItem(key, JSON.stringify(operation));
-  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
-  return operation;
-}
-
-function clearPendingOperation(key: string) {
-  window.sessionStorage.removeItem(key);
-  window.dispatchEvent(new CustomEvent(PENDING_OPERATION_EVENT, { detail: { key } }));
-}
-
-function isSessionNewerThanPending(session: QuizSession | null, pending: PendingOperation | null) {
-  if (!session || !pending) return false;
-  return new Date(session.createdAt).getTime() >= pending.startedAt - 1000;
 }
 
 function useElapsedSeconds(active: boolean, startedAt: number | null) {
@@ -864,12 +751,10 @@ function apiErrorMessage(json: { error?: string; message?: string } | null, fall
 function mergeCandidatePendingState(
   card: ApiCard,
   previous: LocalCandidate | undefined,
-  problemId: string,
 ): Pick<LocalCandidate, "instruction" | "busy" | "localError"> {
-  const pending = readPendingOperation(pendingCandidateAiKey(problemId, card.id));
   return {
     instruction: previous?.instruction ?? "",
-    busy: pending ? "followup" : previous?.busy === "followup" ? null : previous?.busy ?? null,
+    busy: previous?.busy ?? null,
     localError: previous?.localError ?? null,
   };
 }
@@ -912,7 +797,7 @@ function formatInterval(date: Date | string | null | undefined): string {
 async function fetchProblemBySlug(
   settings: ExtSettings,
   slug: string,
-): Promise<{ problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews } | "not_captured"> {
+): Promise<ProblemLookupPayloadDto | "not_captured"> {
   const res = await apiFetch(settings, `/api/problems/by-slug/${encodeURIComponent(slug)}`, {
     headers: authHeaders(settings),
     cache: "no-store",
@@ -922,12 +807,7 @@ async function fetchProblemBySlug(
     const j = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(j?.error ?? `HTTP ${res.status}`);
   }
-  return (await res.json()) as {
-    problem: ApiProblem;
-    cards: ApiCard[];
-    candidates: ApiCard[];
-    previews: Previews;
-  };
+  return (await res.json()) as ProblemLookupPayloadDto;
 }
 
 /* ── Collapse (used only for ready cards) ── */
@@ -1821,7 +1701,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   const [session, setSession] = useState<QuizSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [pendingQuiz, setPendingQuiz] = useState<PendingOperation | null>(null);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [submittingItem, setSubmittingItem] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
@@ -1832,14 +1712,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   const [error, setError] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const pendingElapsedSeconds = useElapsedSeconds(Boolean(pendingQuiz), pendingQuiz?.startedAt ?? null);
-
-  const refreshPendingQuiz = useCallback(() => {
-    const pending = readPendingOperation(pendingQuizKey(problem.id));
-    setPendingQuiz(pending);
-    setGenerating(Boolean(pending));
-    return pending;
-  }, [problem.id]);
+  const generationElapsedSeconds = useElapsedSeconds(generating, generationStartedAt);
 
   const loadSession = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -1853,15 +1726,6 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
       const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
       const nextSession = json?.session ?? null;
-      const pending = readPendingOperation(pendingQuizKey(problem.id));
-      if (isSessionNewerThanPending(nextSession, pending) && nextSession?.status === "active") {
-        clearPendingOperation(pendingQuizKey(problem.id));
-        setPendingQuiz(null);
-        setGenerating(false);
-      } else {
-        setPendingQuiz(pending);
-        setGenerating(Boolean(pending));
-      }
       const pendingFeedback = getStoredQuizFeedback(problem.id, nextSession);
       setSession(nextSession);
       setFeedback(pendingFeedback);
@@ -1876,69 +1740,52 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
   }, [problem.id, settings]);
 
   useEffect(() => {
-    refreshPendingQuiz();
-    void loadSession();
-  }, [loadSession, refreshPendingQuiz]);
-
-  useEffect(() => {
-    const key = pendingQuizKey(problem.id);
-    const handlePendingChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ key?: string }>).detail;
-      if (detail?.key && detail.key !== key) return;
-      refreshPendingQuiz();
-    };
-    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-  }, [problem.id, refreshPendingQuiz]);
-
-  useEffect(() => {
-    if (!pendingQuiz) return;
-    const timer = window.setInterval(() => {
-      const pending = readPendingOperation(pendingQuizKey(problem.id));
-      if (!pending) {
-        setPendingQuiz(null);
+    void (async () => {
+      let generationError: string | null = null;
+      try {
+        const [job] = await getActiveAiJobs(settings, problem.id, "quiz");
+        if (job) {
+          setLoading(false);
+          setGenerating(true);
+          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
+          await waitForAiJob(settings, job);
+        }
+      } catch (e) {
+        generationError = e instanceof Error ? e.message : t.quiz.failedGenerate;
+      } finally {
         setGenerating(false);
-        setError(t.quiz.timedOut);
-        return;
+        setGenerationStartedAt(null);
+        await loadSession();
+        if (generationError) setError(generationError);
       }
-      void loadSession({ silent: true });
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [loadSession, pendingQuiz, problem.id]);
+    })();
+  }, [loadSession, problem.id, settings]);
 
   async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
-    const pendingKey = pendingQuizKey(problem.id);
-    const operation = writePendingOperation(pendingKey, action);
-    setPendingQuiz(operation);
     setGenerating(true);
+    setGenerationStartedAt(Date.now());
     setError(null);
     setFeedback(null);
     setShowResults(false);
     try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ action }),
+      const job = await startAiJob(settings, {
+        action: action === "generate"
+          ? "quiz_generate"
+          : action === "regenerate"
+            ? "quiz_regenerate"
+            : "quiz_next_batch",
+        problemId: problem.id,
+        requestId: crypto.randomUUID(),
+        expectedQuizSessionId: session?.id ?? null,
       });
-      const json = (await res.json().catch(() => null)) as {
-        session?: QuizSession;
-        error?: string;
-        message?: string;
-      } | null;
-      if (!res.ok || !json?.session) throw new Error(apiErrorMessage(json, `HTTP ${res.status}`));
+      await waitForAiJob(settings, job);
       if (session) clearStoredQuizFeedback(problem.id, session.id);
-      clearStoredQuizFeedback(problem.id, json.session.id);
-      clearPendingOperation(pendingKey);
-      setPendingQuiz(null);
-      setSession(json.session);
-      setSavedItemIds(new Set());
-      setCurrentIndex(getFirstUnansweredQuizIndex(json.session));
+      await loadSession();
     } catch (e) {
-      clearPendingOperation(pendingKey);
-      setPendingQuiz(null);
       setError(e instanceof Error ? e.message : t.quiz.failedGenerate);
     } finally {
       setGenerating(false);
+      setGenerationStartedAt(null);
     }
   }
 
@@ -1955,8 +1802,6 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
       if (session) clearStoredQuizFeedback(problem.id, session.id);
-      clearPendingOperation(pendingQuizKey(problem.id));
-      setPendingQuiz(null);
       setSession(null);
       setSavedItemIds(new Set());
       setFeedback(null);
@@ -2081,13 +1926,13 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     return <div className="quiz-empty"><p className="popup-muted">{t.quiz.loading}</p></div>;
   }
 
-  if (pendingQuiz) {
+  if (generating) {
     return (
       <div className="quiz-empty">
         <div className="quiz-pending-bar"><span /></div>
         <div className="quiz-empty-title">{t.quiz.generating}</div>
         <p className="popup-muted">{t.quiz.switchHint}</p>
-        <div className="quiz-pending-timer">{t.quiz.pendingTimer(formatElapsedSeconds(pendingElapsedSeconds))}</div>
+        <div className="quiz-pending-timer">{t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds))}</div>
       </div>
     );
   }
@@ -2938,7 +2783,8 @@ function AddCardForm({
   const slug = problem.leetcodeSlug;
   const [mode, setMode] = useState<"manual" | "ai">("ai");
   const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
-  const [pendingAiCard, setPendingAiCard] = useState<PendingOperation | null>(null);
+  const [checkingJob, setCheckingJob] = useState(true);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /* manual */
@@ -2949,7 +2795,10 @@ function AddCardForm({
   const [rawText, setRawText] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const userEditedRef = useRef(false);
-  const pendingAiCardElapsedSeconds = useElapsedSeconds(Boolean(pendingAiCard), pendingAiCard?.startedAt ?? null);
+  const generationElapsedSeconds = useElapsedSeconds(
+    busy === "auto" || busy === "note",
+    generationStartedAt,
+  );
 
   useEffect(() => {
     userEditedRef.current = false;
@@ -2968,44 +2817,28 @@ function AddCardForm({
     return () => clearTimeout(t);
   }, [rawText, slug, hydrated]);
 
-  const refreshPendingAiCard = useCallback(() => {
-    const pending = readPendingOperation(pendingAiCardKey(problem.id));
-    setPendingAiCard(pending);
-    if (pending?.kind === "auto" || pending?.kind === "note") {
-      setBusy(pending.kind);
-    } else {
-      setBusy((current) => (current === "auto" || current === "note" ? false : current));
-    }
-    return pending;
-  }, [problem.id]);
-
   useEffect(() => {
-    refreshPendingAiCard();
-  }, [refreshPendingAiCard]);
-
-  useEffect(() => {
-    const key = pendingAiCardKey(problem.id);
-    const handlePendingChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ key?: string }>).detail;
-      if (detail?.key && detail.key !== key) return;
-      refreshPendingAiCard();
-    };
-    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-  }, [problem.id, refreshPendingAiCard]);
-
-  useEffect(() => {
-    if (!pendingAiCard) return;
-    const timer = window.setInterval(() => {
-      const pending = readPendingOperation(pendingAiCardKey(problem.id));
-      if (!pending) {
-        setPendingAiCard(null);
-        setBusy((current) => (current === "auto" || current === "note" ? false : current));
-        setError(t.cards.timedOut);
+    void (async () => {
+      try {
+        const jobs = await getActiveAiJobs(settings, problem.id, "card");
+        const job = jobs.find((candidate) => candidate.action === "card_generate");
+        if (job) {
+          setBusy("auto");
+          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
+          await waitForAiJob(settings, job);
+        }
+        // Manage may have been unmounted while the job finished. Revalidate
+        // candidates even when there is no longer an active job to resume.
+        onAdded();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t.cards.aiFailed);
+      } finally {
+        setBusy(false);
+        setGenerationStartedAt(null);
+        setCheckingJob(false);
       }
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [pendingAiCard, problem.id]);
+    })();
+  }, [problem.id, settings]);
 
   const updateRawText = (v: string) => {
     userEditedRef.current = true;
@@ -3044,35 +2877,24 @@ function AddCardForm({
 
   async function handleAiGenerate(kind: "auto" | "note") {
     if (kind === "note" && !rawText.trim()) return;
-    const pendingKey = pendingAiCardKey(problem.id);
-    const operation = writePendingOperation(pendingKey, kind);
-    setPendingAiCard(operation);
     setBusy(kind);
+    setGenerationStartedAt(Date.now());
     setError(null);
     try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/ai-cards`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({
-          mode: "single",
-          action: "generate",
-          ...(kind === "note" ? { rawText: rawText.trim() } : {}),
-        }),
+      const job = await startAiJob(settings, {
+        action: "card_generate",
+        problemId: problem.id,
+        requestId: crypto.randomUUID(),
+        ...(kind === "note" ? { rawText: rawText.trim() } : {}),
       });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
-      }
+      await waitForAiJob(settings, job);
       if (kind === "note") await clearLocalDraft();
-      clearPendingOperation(pendingKey);
-      setPendingAiCard(null);
       onAdded();
     } catch (e) {
-      clearPendingOperation(pendingKey);
-      setPendingAiCard(null);
       setError(e instanceof Error ? e.message : t.common.unknownError);
     } finally {
       setBusy(false);
+      setGenerationStartedAt(null);
     }
   }
 
@@ -3097,7 +2919,7 @@ function AddCardForm({
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={t.cards.questionPlaceholder}
-              disabled={!!busy}
+              disabled={checkingJob || !!busy}
             />
           </label>
           <label className="field-label">
@@ -3108,14 +2930,14 @@ function AddCardForm({
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder={t.cards.answerPlaceholder}
-              disabled={!!busy}
+              disabled={checkingJob || !!busy}
             />
           </label>
           {error && <div className="err-banner">{error}</div>}
           <button
             type="button"
             onClick={handleManualSave}
-            disabled={!!busy || !question.trim() || !answer.trim()}
+            disabled={checkingJob || !!busy || !question.trim() || !answer.trim()}
             className="btn btn-primary"
           >
             {busy ? t.quiz.saving : t.cards.saveCard}
@@ -3133,35 +2955,35 @@ function AddCardForm({
               value={rawText}
               onChange={(e) => updateRawText(e.target.value)}
               placeholder={t.cards.notesPlaceholder}
-              disabled={!!busy}
+              disabled={checkingJob || !!busy}
             />
           </label>
           <div className="ai-toolbar">
             <span className="draft-hint">
-              {pendingAiCard ? t.cards.generatingCandidate : `${rawText.length}/6000${rawText.trim() && hydrated ? ` · ${t.cards.autosaved}` : ""}`}
+              {busy === "auto" || busy === "note" ? t.cards.generatingCandidate : `${rawText.length}/6000${rawText.trim() && hydrated ? ` · ${t.cards.autosaved}` : ""}`}
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               {rawText.trim() && (
-                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={!!busy}>
+                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={checkingJob || !!busy}>
                   {t.cards.clear}
                 </button>
               )}
-              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={!!busy} className="btn btn-ghost">
+              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={checkingJob || !!busy} className="btn btn-ghost">
                 {busy === "auto" ? t.quiz.generating : t.cards.autoGenerate}
               </button>
               <button
                 type="button"
                 onClick={() => handleAiGenerate("note")}
-                disabled={!rawText.trim() || !!busy}
+                disabled={checkingJob || !rawText.trim() || !!busy}
                 className="btn btn-primary"
               >
                 {busy === "note" ? t.quiz.generating : t.cards.generateFromNote}
               </button>
             </div>
           </div>
-          {pendingAiCard && (
+          {(busy === "auto" || busy === "note") && (
             <div className="operation-timer">
-              {t.quiz.pendingTimer(formatElapsedSeconds(pendingAiCardElapsedSeconds)).replace("02:00", formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS))}
+              {t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds)).replace("02:00", formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS))}
             </div>
           )}
 
@@ -3187,31 +3009,47 @@ function CandidateList({
 }) {
   const t = getExtText(settings);
   const [local, setLocal] = useState<LocalCandidate[]>([]);
-  const [pendingVersion, setPendingVersion] = useState(0);
+  const [clock, setClock] = useState(Date.now());
+  const [jobStartedAt, setJobStartedAt] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setLocal((prev) => {
       const prevById = new Map(prev.map((c) => [c.id, c]));
       return candidates.map((c) => ({
         ...c,
-        ...mergeCandidatePendingState(c, prevById.get(c.id), problem.id),
+        ...mergeCandidatePendingState(c, prevById.get(c.id)),
       }));
     });
-  }, [candidates, pendingVersion, problem.id]);
+  }, [candidates]);
 
   useEffect(() => {
-    const handlePendingChange = (event: Event) => {
-      const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-      if (key && !key.startsWith(`ankify.pending.aiCandidate.${problem.id}.`)) return;
-      setPendingVersion((value) => value + 1);
-    };
-    window.addEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-    return () => window.removeEventListener(PENDING_OPERATION_EVENT, handlePendingChange);
-  }, [problem.id]);
+    void getActiveAiJobs(settings, problem.id, "card")
+      .then((jobs) => {
+        const followups = jobs.filter((job) => job.action === "card_followup" && job.targetCardId);
+        for (const job of followups) {
+          const cardId = job.targetCardId!;
+          update(cardId, { busy: "followup", localError: null });
+          setJobStartedAt((prev) => ({
+            ...prev,
+            [cardId]: Date.parse(job.startedAt ?? job.queuedAt),
+          }));
+          void waitForAiJob(settings, job)
+            .then(() => {
+              update(cardId, { busy: null, instruction: "" });
+              onRefresh();
+            })
+            .catch((e) => update(cardId, {
+              busy: null,
+              localError: e instanceof Error ? e.message : t.cards.aiFailed,
+            }));
+        }
+      })
+      .catch((error) => console.error("[ai-job] failed to resume follow-up", error));
+  }, [problem.id, settings]);
 
   useEffect(() => {
     if (!local.some((card) => card.busy === "followup")) return;
-    const timer = window.setInterval(() => setPendingVersion((value) => value + 1), 1000);
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [local]);
 
@@ -3235,41 +3073,38 @@ function CandidateList({
     card: LocalCandidate,
     instruction?: string,
   ) {
-    const pendingKey = pendingCandidateAiKey(problem.id, card.id);
-    writePendingOperation(pendingKey, "followup");
     update(card.id, { busy: "followup", localError: null });
+    setJobStartedAt((prev) => ({ ...prev, [card.id]: Date.now() }));
     try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/ai-cards`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({
-          mode: "single",
-          action: "followup",
-          cardId: card.id,
-          draft: { question: card.question.trim(), answer: card.answer.trim() },
-          instruction,
-        }),
+      const job = await startAiJob(settings, {
+        action: "card_followup",
+        problemId: problem.id,
+        requestId: crypto.randomUUID(),
+        cardId: card.id,
+        expectedCardVersion: card.version,
+        draft: { question: card.question.trim(), answer: card.answer.trim() },
+        instruction: instruction ?? "",
       });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
-      }
-      clearPendingOperation(pendingKey);
+      await waitForAiJob(settings, job);
       update(card.id, { busy: null, instruction: "" });
       onRefresh();
     } catch (e) {
-      clearPendingOperation(pendingKey);
       update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.aiFailed });
     }
   }
 
-  async function confirm(id: string, q: string, a: string) {
-    update(id, { busy: "confirm", localError: null });
+  async function confirm(card: LocalCandidate) {
+    update(card.id, { busy: "confirm", localError: null });
     try {
-      await patchCard(id, { aiStatus: "ready", question: q.trim(), answer: a.trim() });
+      await patchCard(card.id, {
+        expectedVersion: card.version,
+        aiStatus: "ready",
+        question: card.question.trim(),
+        answer: card.answer.trim(),
+      });
       onRefresh();
     } catch (e) {
-      update(id, { busy: null, localError: e instanceof Error ? e.message : t.cards.confirmFailed });
+      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.confirmFailed });
     }
   }
 
@@ -3298,8 +3133,10 @@ function CandidateList({
       </div>
       {local.map((c) => {
         const disabled = !!c.busy;
-        const pending = readPendingOperation(pendingCandidateAiKey(problem.id, c.id));
-        const elapsedSeconds = pending ? Math.max(0, Math.floor((Date.now() - pending.startedAt) / 1000)) : 0;
+        const startedAt = jobStartedAt[c.id];
+        const elapsedSeconds = startedAt
+          ? Math.max(0, Math.floor((clock - startedAt) / 1000))
+          : 0;
         return (
           <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
             <div
@@ -3353,7 +3190,7 @@ function CandidateList({
                   type="button"
                   className="btn-xs btn-xs-accent"
                   disabled={disabled || !c.question.trim() || !c.answer.trim()}
-                  onClick={() => confirm(c.id, c.question, c.answer)}
+                  onClick={() => confirm(c)}
                 >
                   {c.busy === "confirm" ? "…" : t.cards.confirm}
                 </button>

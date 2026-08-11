@@ -4,5 +4,17 @@
   "regions": ["hnd1"],
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm build:vercel",
-  "fluid": true
+  "fluid": true,
+  "functions": {
+    "src/app/api/queues/ai-generation/route.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "ankify-ai-generation",
+          "retryAfterSeconds": 60,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
+  }
 }

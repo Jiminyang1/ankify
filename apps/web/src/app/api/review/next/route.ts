@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
-import { loadNextReview } from "@/lib/next-review";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { loadNextReview } from "@/server/next-review";
 
 /**
  * Returns a problem to review with FSRS scheduling previews for each rating.

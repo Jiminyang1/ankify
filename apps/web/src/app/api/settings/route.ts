@@ -7,16 +7,16 @@ import {
   setAiSettings,
   setGenerationSettings,
   setReviewSettings,
-} from "@/lib/settings";
-import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
-import { schemas } from "@ankify/core";
-import { isValidTimeZone } from "@/lib/time-zone";
+} from "@/server/settings";
+import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
+import { aiProviderEnum, aiReasoningModeEnum } from "@ankify/contracts";
+import { isValidTimeZone } from "@/server/time-zone";
 
 const settingsSchema = z
   .object({
-    provider: schemas.aiProviderEnum.optional(),
+    provider: aiProviderEnum.optional(),
     model: z.string().min(1).optional(),
-    reasoningMode: schemas.aiReasoningModeEnum.optional(),
+    reasoningMode: aiReasoningModeEnum.optional(),
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),

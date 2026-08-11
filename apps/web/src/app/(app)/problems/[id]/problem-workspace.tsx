@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useAgentPageContext } from "@/components/agent/agent-shell";
 import { cn } from "@/lib/utils";
 
 export type WorkspacePanel = {
@@ -20,12 +21,26 @@ export type WorkspacePanel = {
 export function ProblemWorkspace({
   panels,
   defaultTab,
+  problemId,
+  problemTitle,
 }: {
   panels: WorkspacePanel[];
   defaultTab?: string;
+  problemId: string;
+  problemTitle: string;
 }) {
   const { t } = useLanguage();
   const [active, setActive] = useState(defaultTab ?? panels[0]?.id);
+  const activePanel =
+    active === "cards" || active === "submissions" || active === "notes"
+      ? active
+      : "overview";
+  useAgentPageContext({
+    problemId,
+    problemTitle,
+    page: "problem",
+    activePanel,
+  });
 
   const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;

@@ -1,0 +1,7 @@
+.claude/
+.ds-sync/
+.pnpm-store/
+apps/web/ds-bundle/
+apps/web/dts/
+backups/
+docs/

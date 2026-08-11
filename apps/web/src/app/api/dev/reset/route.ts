@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 
 /** POST /api/dev/reset
  *  Wipes all user data: review_events → quiz_sessions → cards → submissions → problems.

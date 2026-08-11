@@ -12,7 +12,7 @@ import {
   Trophy,
 } from "lucide-react";
 import type { AiProvider } from "@ankify/core";
-import type { OnboardingProgress } from "@/lib/onboarding";
+import type { OnboardingProgressDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -163,7 +163,7 @@ export function OnboardingCard({
   installUrl,
   language,
 }: {
-  initialProgress: OnboardingProgress;
+  initialProgress: OnboardingProgressDto;
   initialAi: {
     provider: AiProvider;
     model: string;
@@ -184,7 +184,7 @@ export function OnboardingCard({
   const refreshProgress = useCallback(async () => {
     const response = await fetch("/api/onboarding", { cache: "no-store" }).catch(() => null);
     if (!response?.ok) return;
-    const data = (await response.json()) as { onboarding: OnboardingProgress };
+    const data = (await response.json()) as { onboarding: OnboardingProgressDto };
     setProgress(data.onboarding);
   }, []);
 
@@ -224,7 +224,7 @@ export function OnboardingCard({
         body: JSON.stringify({ action: "skip_ai" }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = (await response.json()) as { onboarding: OnboardingProgress };
+      const data = (await response.json()) as { onboarding: OnboardingProgressDto };
       setProgress(data.onboarding);
       setShowAi(false);
       setAiMessage(null);

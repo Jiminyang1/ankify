@@ -1,195 +1,17 @@
 import Link from "next/link";
-import { getDb, schema } from "@ankify/db";
-import { and, eq, gt, gte, isNull, sql } from "drizzle-orm";
-import { retrievability, type FsrsCardState } from "@ankify/core";
 import { DashboardCharts } from "./charts";
 import { DevResetButton } from "./dev-reset";
-import { dueProblemCondition } from "@/lib/due-problems";
-import { requirePageUser } from "@/lib/auth";
-import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
+import { requirePageUser } from "@/server/auth";
+import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative } from "@/lib/utils";
-import { getReviewSettings } from "@/lib/settings";
-import { formatDateKeyInTimeZone } from "@/lib/time-zone";
 import { PageFrame, PageHeader } from "@/components/ui/page";
+import { loadAnalysis, type AnalysisData } from "@/server/analysis";
 
 const isDev = process.env.NODE_ENV !== "production";
 
 export const dynamic = "force-dynamic";
-
-/** Only the columns the risk table and the retrievability curve actually need.
- *  Selecting the full row would drag every problem's statement Markdown across
- *  the wire just to render eight rows. */
-const riskProblemColumns = {
-  id: schema.problems.id,
-  title: schema.problems.title,
-  difficulty: schema.problems.difficulty,
-  fsrsDue: schema.problems.fsrsDue,
-  fsrsStability: schema.problems.fsrsStability,
-  fsrsDifficulty: schema.problems.fsrsDifficulty,
-  fsrsElapsedDays: schema.problems.fsrsElapsedDays,
-  fsrsScheduledDays: schema.problems.fsrsScheduledDays,
-  fsrsLearningSteps: schema.problems.fsrsLearningSteps,
-  fsrsReps: schema.problems.fsrsReps,
-  fsrsLapses: schema.problems.fsrsLapses,
-  fsrsState: schema.problems.fsrsState,
-  fsrsLastReview: schema.problems.fsrsLastReview,
-} as const;
-
-type ReviewedProblem = {
-  [K in keyof typeof riskProblemColumns]: (typeof schema.problems.$inferSelect)[K];
-};
-
-type RiskProblem = ReviewedProblem & {
-  retrievabilityNow: number;
-  riskScore: number;
-};
-
-type StabilityBucket = { label: string; count: number; pct: number };
-
-function toFsrsState(problem: ReviewedProblem): FsrsCardState {
-  return {
-    due: problem.fsrsDue,
-    stability: problem.fsrsStability,
-    difficulty: problem.fsrsDifficulty,
-    elapsedDays: problem.fsrsElapsedDays,
-    scheduledDays: problem.fsrsScheduledDays,
-    learningSteps: problem.fsrsLearningSteps,
-    reps: problem.fsrsReps,
-    lapses: problem.fsrsLapses,
-    state: problem.fsrsState,
-    lastReview: problem.fsrsLastReview,
-  };
-}
-
-const STABILITY_BUCKET_LABELS = ["New", "< 1d", "1—7d", "7—30d", "30d+"] as const;
-
-async function loadAnalysis(userId: string) {
-  const db = getDb();
-  const now = new Date();
-  const nowMs = now.getTime();
-  const thirtyDaysAgo = nowMs - 30 * 24 * 60 * 60 * 1000;
-  const nextWeekMs = nowMs + 7 * 24 * 60 * 60 * 1000;
-
-  const reps = schema.problems.fsrsReps;
-  const stability = sql`coalesce(${schema.problems.fsrsStability}, 0)`;
-  const owns = and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt));
-
-  // Everything that doesn't need the FSRS retrievability curve is aggregated in
-  // SQL — counts, sums, stability buckets, 7-day burden — so we never pull the
-  // whole deck into memory just to reduce it. retrievability() is a JS-only
-  // curve computation, and new (reps=0) cards always sit at r=1 with ~0 risk,
-  // so the per-row JS pass runs over reviewed problems only.
-  const [aggRows, stateRows, dueRow, dailyReviewEvents, reviewedProblems, reviewSettings] = await Promise.all([
-    db
-      .select({
-        total: sql<number>`count(*)`,
-        totalReps: sql<number>`coalesce(sum(case when ${reps} > 0 then ${reps} else 0 end), 0)`,
-        totalLapses: sql<number>`coalesce(sum(case when ${reps} > 0 then ${schema.problems.fsrsLapses} else 0 end), 0)`,
-        burden7d: sql<number>`coalesce(sum(case when ${reps} > 0 and ${schema.problems.fsrsDue} is not null and ${schema.problems.fsrsDue} <= ${nextWeekMs} then 1 else 0 end), 0)`,
-        bNew: sql<number>`coalesce(sum(case when ${reps} = 0 then 1 else 0 end), 0)`,
-        bLt1: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 0.01 and ${stability} <= 1 then 1 else 0 end), 0)`,
-        b1to7: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 1 and ${stability} <= 7 then 1 else 0 end), 0)`,
-        b7to30: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 7 and ${stability} <= 30 then 1 else 0 end), 0)`,
-        b30plus: sql<number>`coalesce(sum(case when ${reps} > 0 and ${stability} > 30 then 1 else 0 end), 0)`,
-      })
-      .from(schema.problems)
-      .where(owns),
-    db
-      .select({ state: schema.problems.fsrsState, count: sql<number>`count(*)` })
-      .from(schema.problems)
-      .where(owns)
-      .groupBy(schema.problems.fsrsState),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.problems)
-      .where(dueProblemCondition(userId, now)),
-    db
-      .select({ occurredAt: schema.reviewEvents.occurredAt })
-      .from(schema.reviewEvents)
-      .where(
-        and(
-          eq(schema.reviewEvents.userId, userId),
-          eq(schema.reviewEvents.eventType, "self_recall_rated"),
-          isNull(schema.reviewEvents.undoneAt),
-          gte(schema.reviewEvents.occurredAt, new Date(thirtyDaysAgo)),
-        ),
-      ),
-    db
-      .select(riskProblemColumns)
-      .from(schema.problems)
-      .where(and(owns, gt(schema.problems.fsrsReps, 0))),
-    getReviewSettings(userId),
-  ]);
-
-  const reviewCounts = new Map<string, number>();
-  for (const event of dailyReviewEvents) {
-    const day = formatDateKeyInTimeZone(event.occurredAt, reviewSettings.timeZone);
-    reviewCounts.set(day, (reviewCounts.get(day) ?? 0) + 1);
-  }
-  const dailyReviews = [...reviewCounts.entries()]
-    .map(([day, count]) => ({ day, count }))
-    .sort((a, b) => a.day.localeCompare(b.day));
-
-  const agg = aggRows[0];
-  const total = agg?.total ?? 0;
-
-  /* lapse rate */
-  const totalReps = agg?.totalReps ?? 0;
-  const lapseRate = totalReps > 0 ? Math.round(((agg?.totalLapses ?? 0) / totalReps) * 100) : null;
-
-  /* stability distribution — counts come from SQL, percent is over the deck */
-  const bucketCounts = [agg?.bNew ?? 0, agg?.bLt1 ?? 0, agg?.b1to7 ?? 0, agg?.b7to30 ?? 0, agg?.b30plus ?? 0];
-  const bucketDenom = total || 1;
-  const stabilityDist: StabilityBucket[] = STABILITY_BUCKET_LABELS.map((label, i) => ({
-    label,
-    count: bucketCounts[i]!,
-    pct: Math.round((bucketCounts[i]! / bucketDenom) * 100),
-  }));
-
-  /* state counts */
-  const stateCounts = { new: 0, learning: 0, review: 0, relearning: 0 };
-  for (const row of stateRows) stateCounts[row.state] = row.count;
-
-  /* per-reviewed-problem retrievability — computed once, reused below */
-  const reviewed = reviewedProblems.map((problem) => ({
-    problem,
-    r: retrievability(toFsrsState(problem), now),
-  }));
-
-  const riskProblems: RiskProblem[] = reviewed
-    .map(({ problem, r }) => {
-      const lapsePenalty = Math.min(problem.fsrsLapses, 4) * 0.08;
-      const difficulty = problem.fsrsDifficulty ?? 0;
-      const riskScore = (1 - r) + difficulty / 20 + lapsePenalty;
-      return { ...problem, retrievabilityNow: r, riskScore };
-    })
-    .sort((a, b) => b.riskScore - a.riskScore)
-    .slice(0, 8);
-
-  const memoryScore =
-    reviewed.length > 0
-      ? Math.round((reviewed.reduce((sum, x) => sum + x.r, 0) / reviewed.length) * 100)
-      : null;
-
-  /* problems whose recall has slipped below 70% */
-  const atRiskCount = reviewed.filter((x) => x.r < 0.7).length;
-
-  return {
-    totalProblems: total,
-    dueCount: dueRow[0]?.count ?? 0,
-    reviewedCount: reviewed.length,
-    memoryScore,
-    lapseRate,
-    atRiskCount,
-    riskProblems,
-    dailyReviews,
-    stabilityDist,
-    stateCounts,
-    burden7d: agg?.burden7d ?? 0,
-  };
-}
 
 /** Red → gold → green by how durable the memory is. */
 const STABILITY_BAR_COLOR: Record<string, string> = {
@@ -209,7 +31,7 @@ function recallToneClass(pct: number): string {
 
 type Headline = { text: string; tone: "default" | "accent" | "success" | "danger" };
 
-function buildHeadline(data: Awaited<ReturnType<typeof loadAnalysis>>, t: Awaited<ReturnType<typeof getRequestTranslations>>): Headline {
+function buildHeadline(data: AnalysisData, t: Awaited<ReturnType<typeof getRequestTranslations>>): Headline {
   const mem = data.memoryScore != null ? `${data.memoryScore}%` : "—";
   if (data.totalProblems === 0) {
     return { text: t.analysis.headlines.empty, tone: "default" };
@@ -236,7 +58,7 @@ const HEADLINE_TONE: Record<Headline["tone"], string> = {
 export default async function AnalysisPage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
-  let data: Awaited<ReturnType<typeof loadAnalysis>>;
+  let data: AnalysisData;
   try {
     data = await loadAnalysis(user.id);
   } catch {

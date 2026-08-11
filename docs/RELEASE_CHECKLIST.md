@@ -3,6 +3,10 @@
 Use this checklist for the first public release and for later releases that
 change authentication, storage, migrations, permissions, or data handling.
 
+Canonical Production Web/API origin: `https://ankify-pi.vercel.app`.
+`ANKIFY_EXTENSION_API_ORIGIN` is an Extension build-time variable, not a Vercel
+runtime variable.
+
 ## 1. Prepare Preview
 
 - [ ] Create a dedicated Preview Turso database. Never point Preview at Production.
@@ -19,7 +23,7 @@ change authentication, storage, migrations, permissions, or data handling.
 - [ ] Run the release gate locally:
 
   ```bash
-  ANKIFY_EXTENSION_API_ORIGIN=https://your-domain.com pnpm release:check
+  ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm release:check
   ```
 
 ## 2. Verify Preview
@@ -58,7 +62,8 @@ change authentication, storage, migrations, permissions, or data handling.
 
 - [ ] In Vercel, use `apps/web` as Root Directory and enable source files from
       outside the root directory.
-- [ ] Confirm all Production variables and `ANKIFY_DEPLOYMENT_ENV=production`.
+- [ ] Confirm all Production variables, `BETTER_AUTH_URL=https://ankify-pi.vercel.app`,
+      and `ANKIFY_DEPLOYMENT_ENV=production`.
 - [ ] Confirm `ANKIFY_EXTENSION_ORIGINS` contains the exact stable extension ID;
       cookie-session CORS and Better Auth trusted origins depend on it.
 - [ ] Deploy only after CI and `pnpm release:check` pass.
@@ -77,14 +82,14 @@ change authentication, storage, migrations, permissions, or data handling.
 - [ ] Build with the exact HTTPS Production API origin:
 
   ```bash
-  ANKIFY_EXTENSION_API_ORIGIN=https://your-domain.com pnpm --filter @ankify/extension build
+  ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm --filter @ankify/extension build
   ```
 
 - [ ] Inspect `apps/extension/dist/manifest.json`: exact LeetCode/API hosts only,
       no localhost, wildcard Vercel, `activeTab`, or `scripting` permissions.
 - [ ] Load the packaged build, test automatic web-session login and capture/review, then refresh
       already-open LeetCode tabs after updating the extension.
-- [ ] Use `https://your-domain.com/privacy` as the Chrome Web Store privacy-policy URL.
+- [ ] Use `https://ankify-pi.vercel.app/privacy` as the Chrome Web Store privacy-policy URL.
 - [ ] Complete the Chrome Web Store privacy disclosures for authentication data,
       website content, user code/submissions, and remote AI processing.
 - [ ] If the Web Store ID differs from the unpacked-build ID, update Production

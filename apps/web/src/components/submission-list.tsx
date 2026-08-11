@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Submission } from "@ankify/db";
+import type { SubmissionDto } from "@ankify/contracts";
 import { Pill } from "@/components/ui/pill";
 import { HighlightedCode } from "@/components/ui/highlighted-code";
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,12 @@ function formatMemory(memoryKb: number) {
   return `${(memoryKb / 1024).toFixed(1)} MB`;
 }
 
-function formatDate(value: Submission["submittedAt"], missingLabel: string) {
+function formatDate(value: SubmissionDto["submittedAt"], missingLabel: string) {
   if (!value) return missingLabel;
   return new Date(value).toLocaleString();
 }
 
-function hasFailureDetail(s: Submission) {
+function hasFailureDetail(s: SubmissionDto) {
   return Boolean(s.errorMessage || s.failedTestcase || s.expectedOutput || s.actualOutput);
 }
 
@@ -30,7 +30,7 @@ function hasFailureDetail(s: Submission) {
  * expand to a fullscreen overlay for focused reading. Shared by the problem
  * detail page and the review workspace so both render submissions identically.
  */
-export function SubmissionList({ submissions }: { submissions: Submission[] }) {
+export function SubmissionList({ submissions }: { submissions: SubmissionDto[] }) {
   return (
     <ul className="space-y-3">
       {submissions.map((s, i) => (
@@ -50,7 +50,7 @@ function SubmissionCard({
   index,
   defaultOpen,
 }: {
-  submission: Submission;
+  submission: SubmissionDto;
   index: number;
   defaultOpen: boolean;
 }) {

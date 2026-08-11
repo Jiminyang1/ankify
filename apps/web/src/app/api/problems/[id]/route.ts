@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { schemas } from "@ankify/core";
+import { problemPatchSchema } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
-import { getRequestUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
@@ -10,7 +10,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const { id: problemId } = await ctx.params;
   const body = await req.json().catch(() => null);
-  const parsed = schemas.problemPatchSchema.safeParse(body);
+  const parsed = problemPatchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }

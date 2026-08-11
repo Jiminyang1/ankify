@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import type {
+  AgentNavigation,
+  AgentPageContext,
+  AgentProposal,
+  QuizAnswer,
+  QuizItem,
+} from "@ankify/contracts";
 
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
@@ -216,6 +223,7 @@ export const cards = sqliteTable(
       .notNull()
       .default("ready"),
     errorMessage: text("error_message"),
+    version: integer("version").notNull().default(1),
     createdAt: ts("created_at"),
     updatedAt: optTs("updated_at"),
   },
@@ -281,23 +289,6 @@ export const reviewEvents = sqliteTable(
  * Per-problem review quiz sessions. V1 keeps quiz items and answers as JSON so
  * the feature can iterate without normalizing every quiz item into its own row.
  * ──────────────────────────────────────────────────────────────────────────── */
-export type QuizItem = {
-  id: string;
-  question: string;
-  choices: string[];
-  answerIndex: number;
-  explanation: string;
-  source: "statement" | "submission" | "notes" | "card";
-  scope: "approach" | "invariant" | "edge_case" | "complexity" | "implementation" | "mistake_review";
-};
-
-export type QuizAnswer = {
-  itemId: string;
-  selectedIndex: number;
-  correct: boolean;
-  answeredAt: string;
-};
-
 export const quizSessions = sqliteTable(
   "quiz_sessions",
   {
@@ -325,6 +316,200 @@ export const quizSessions = sqliteTable(
     currentSessionIdx: uniqueIndex("quiz_sessions_user_problem_current_unique")
       .on(t.userId, t.problemId)
       .where(sql`${t.status} <> 'archived'`),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ai_jobs
+ * Durable source of truth for asynchronous Card / Quiz generation. Queue
+ * messages contain only the job id; all ownership, inputs and results live in
+ * this user-scoped table so delivery can safely be at-least-once.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type EncryptedJobInput = {
+  v: 1;
+  iv: string;
+  ciphertext: string;
+};
+
+export const aiJobs = sqliteTable(
+  "ai_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["card", "quiz"] }).notNull(),
+    action: text("action", {
+      enum: [
+        "card_generate",
+        "card_followup",
+        "quiz_generate",
+        "quiz_regenerate",
+        "quiz_next_batch",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: ["queued", "running", "succeeded", "failed", "cancelled", "superseded"],
+    })
+      .notNull()
+      .default("queued"),
+
+    idempotencyKey: text("idempotency_key").notNull(),
+    // Non-null only while the job owns a logical generation slot. Clearing it
+    // on every terminal transition lets a later user action create a new job.
+    activeDedupKey: text("active_dedup_key"),
+    inputEnvelope: text("input_envelope", { mode: "json" }).$type<EncryptedJobInput>().notNull(),
+
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    model: text("model").notNull(),
+    reasoningMode: text("reasoning_mode", { enum: ["fast", "thinking"] }).notNull(),
+    generationLanguage: text("generation_language", { enum: ["en", "zh"] }).notNull(),
+
+    expectedCardId: text("expected_card_id"),
+    expectedCardVersion: integer("expected_card_version"),
+    expectedQuizSessionId: text("expected_quiz_session_id"),
+
+    attempt: integer("attempt").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    runAfter: ts("run_after"),
+    workerId: text("worker_id"),
+    leaseExpiresAt: optTs("lease_expires_at"),
+    cancelRequestedAt: optTs("cancel_requested_at"),
+
+    resultCardId: text("result_card_id").references(() => cards.id, { onDelete: "set null" }),
+    resultQuizSessionId: text("result_quiz_session_id").references(() => quizSessions.id, {
+      onDelete: "set null",
+    }),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+
+    queuedAt: ts("queued_at"),
+    startedAt: optTs("started_at"),
+    finishedAt: optTs("finished_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userIdx: index("ai_jobs_user_idx").on(t.userId),
+    userStatusCreatedIdx: index("ai_jobs_user_status_created_idx").on(t.userId, t.status, t.createdAt),
+    statusRunAfterIdx: index("ai_jobs_status_run_after_idx").on(t.status, t.runAfter),
+    problemStatusIdx: index("ai_jobs_problem_status_idx").on(t.problemId, t.status),
+    userIdempotencyIdx: uniqueIndex("ai_jobs_user_idempotency_unique").on(t.userId, t.idempotencyKey),
+    userActiveDedupIdx: uniqueIndex("ai_jobs_user_active_dedup_unique").on(t.userId, t.activeDedupKey),
+    userRunningIdx: uniqueIndex("ai_jobs_user_running_unique")
+      .on(t.userId)
+      .where(sql`${t.status} = 'running'`),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * agent_sessions / agent_runs / agent_messages / agent_steps
+ * Persistent Study Coach conversations. Page and problem context belong to
+ * individual runs, so one session can continue across the entire web app.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const agentSessions = sqliteTable(
+  "agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userUpdatedIdx: index("agent_sessions_user_updated_idx").on(t.userId, t.updatedAt),
+  }),
+);
+
+export const agentRuns = sqliteTable(
+  "agent_runs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    status: text("status", { enum: ["running", "succeeded", "failed"] })
+      .notNull()
+      .default("running"),
+    contextJson: text("context_json", { mode: "json" }).$type<AgentPageContext>().notNull(),
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    model: text("model").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    responseMessagesJson: text("response_messages_json", { mode: "json" }).$type<unknown[]>(),
+    startedAt: ts("started_at"),
+    finishedAt: optTs("finished_at"),
+  },
+  (t) => ({
+    userRequestIdx: uniqueIndex("agent_runs_user_request_unique").on(t.userId, t.requestId),
+    sessionStartedIdx: index("agent_runs_session_started_idx").on(t.sessionId, t.startedAt),
+    sessionRunningIdx: uniqueIndex("agent_runs_session_running_unique")
+      .on(t.sessionId)
+      .where(sql`${t.status} = 'running'`),
+  }),
+);
+
+export const agentMessages = sqliteTable(
+  "agent_messages",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    content: text("content").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    sessionCreatedIdx: index("agent_messages_session_created_idx").on(t.sessionId, t.createdAt),
+    runRoleIdx: uniqueIndex("agent_messages_run_role_unique").on(t.runId, t.role),
+  }),
+);
+
+export const agentSteps = sqliteTable(
+  "agent_steps",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    kind: text("kind", { enum: ["read", "navigation", "proposal"] }).notNull(),
+    toolName: text("tool_name").notNull(),
+    status: text("status", {
+      enum: ["completed", "pending", "accepted", "dismissed", "failed"],
+    }).notNull(),
+    summary: text("summary").notNull(),
+    navigationJson: text("navigation_json", { mode: "json" }).$type<AgentNavigation>(),
+    proposalJson: text("proposal_json", { mode: "json" }).$type<AgentProposal>(),
+    aiJobId: text("ai_job_id").references(() => aiJobs.id, { onDelete: "set null" }),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    runSequenceIdx: uniqueIndex("agent_steps_run_sequence_unique").on(t.runId, t.sequence),
+    userStatusIdx: index("agent_steps_user_status_idx").on(t.userId, t.status),
   }),
 );
 
@@ -359,6 +544,16 @@ export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
+export type AiJob = typeof aiJobs.$inferSelect;
+export type NewAiJob = typeof aiJobs.$inferInsert;
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type NewAgentSession = typeof agentSessions.$inferInsert;
+export type AgentRun = typeof agentRuns.$inferSelect;
+export type NewAgentRun = typeof agentRuns.$inferInsert;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+export type NewAgentMessage = typeof agentMessages.$inferInsert;
+export type AgentStep = typeof agentSteps.$inferSelect;
+export type NewAgentStep = typeof agentSteps.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;
 export type User = typeof user.$inferSelect;
 export type Session = typeof session.$inferSelect;

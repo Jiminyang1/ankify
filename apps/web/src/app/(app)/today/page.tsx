@@ -1,93 +1,28 @@
 import Link from "next/link";
-import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { requirePageUser } from "@/lib/auth";
-import { dueProblemCondition } from "@/lib/due-problems";
-import { getRequestLanguage, getRequestTranslations } from "@/lib/i18n-server";
-import { getReviewQueueStatus } from "@/lib/review-queue";
+import { requirePageUser } from "@/server/auth";
+import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { formatRelative } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { getUserFirstName } from "@/lib/user-identity";
 import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
-import { getAiSettings } from "@/lib/settings";
-import { getOnboardingProgress } from "@/lib/onboarding";
+import { getAiSettings } from "@/server/settings";
+import { getOnboardingProgress } from "@/server/onboarding";
 import { OnboardingCard } from "./onboarding-card";
+import { loadToday } from "@/server/today";
 
 export const dynamic = "force-dynamic";
-
-async function getHomeData(userId: string) {
-  try {
-    const db = getDb();
-    const now = new Date();
-
-    const [queue, totalRows, allDueProblems] = await Promise.all([
-      getReviewQueueStatus(userId),
-      db
-        .select({ count: sql<number>`count(*)` })
-        .from(schema.problems)
-        .where(and(eq(schema.problems.userId, userId), isNull(schema.problems.archivedAt))),
-      db
-        .select()
-        .from(schema.problems)
-        .where(dueProblemCondition(userId, now))
-        .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`), desc(schema.problems.createdAt))
-        .limit(8),
-    ]);
-    const totalRow = totalRows[0];
-    const dueProblems = allDueProblems.slice(0, Math.min(8, queue.remaining));
-
-    const dueProblemIds = dueProblems.map((problem) => problem.id);
-    const cardStats = dueProblemIds.length
-      ? await db
-          .select({
-            problemId: schema.cards.problemId,
-            total: sql<number>`count(*)`,
-          })
-          .from(schema.cards)
-          .where(
-            and(
-              eq(schema.cards.userId, userId),
-              eq(schema.cards.aiStatus, "ready"),
-              inArray(schema.cards.problemId, dueProblemIds),
-            ),
-          )
-          .groupBy(schema.cards.problemId)
-      : [];
-
-    return {
-      totalProblems: totalRow?.count ?? 0,
-      dueCount: queue.dueCount,
-      totalDue: queue.totalDue,
-      doneToday: queue.doneToday,
-      dailyReviewLimit: queue.dailyReviewLimit,
-      dueProblems,
-      cardsByProblem: new Map(cardStats.map((m) => [m.problemId, m.total ?? 0])),
-    };
-  } catch {
-    return {
-      totalProblems: 0,
-      dueCount: 0,
-      totalDue: 0,
-      doneToday: 0,
-      dailyReviewLimit: 20,
-      dueProblems: [],
-      cardsByProblem: new Map<string, number>(),
-      error: true,
-    } as const;
-  }
-}
 
 export default async function HomePage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
 
   const [data, onboarding, ai] = await Promise.all([
-    getHomeData(user.id),
+    loadToday(user.id),
     getOnboardingProgress(user.id),
     getAiSettings(user.id),
   ]);

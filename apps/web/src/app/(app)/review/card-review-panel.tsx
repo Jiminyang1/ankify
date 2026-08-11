@@ -2,7 +2,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import Link from "next/link";
-import type { Card } from "@ankify/db";
+import type { CardDto } from "@ankify/contracts";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
@@ -17,8 +17,8 @@ export function CardReviewPanel({
   setFlipped,
   problemId,
 }: {
-  cards: Card[];
-  currentCard: Card | null;
+  cards: CardDto[];
+  currentCard: CardDto | null;
   cardIdx: number;
   setCardIdx: Dispatch<SetStateAction<number>>;
   flipped: boolean;

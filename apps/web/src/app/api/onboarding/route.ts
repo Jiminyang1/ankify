@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getRequestSessionUser, unauthorizedResponse } from "@/lib/auth";
+import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
 import {
   getOnboardingProgress,
   markAiSkipped,
   markExtensionConnected,
-} from "@/lib/onboarding";
+} from "@/server/onboarding";
 
 const actionSchema = z.object({
   action: z.enum(["extension_connected", "skip_ai"]),

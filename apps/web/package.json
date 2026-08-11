@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
+    "qa:seed": "tsx scripts/qa-seed.ts",
+    "qa:worker": "tsx scripts/qa-worker.ts",
     "build": "next build",
     "build:vercel": "node ../../scripts/check-vercel-env.mjs && next build",
     "start": "next start",
@@ -11,20 +13,23 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.0.6",
-    "@ai-sdk/openai": "^1.0.11",
-    "@ai-sdk/openai-compatible": "^0.1.7",
+    "@ai-sdk/anthropic": "^4.0.36",
+    "@ai-sdk/openai": "^4.0.36",
+    "@ai-sdk/openai-compatible": "^3.0.27",
+    "@ankify/api-client": "workspace:*",
+    "@ankify/contracts": "workspace:*",
     "@ankify/core": "workspace:*",
     "@ankify/db": "workspace:*",
-    "@libsql/client": "^0.17.4",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/queue": "^0.4.0",
     "@vercel/speed-insights": "^2.0.0",
-    "ai": "^4.0.20",
-    "better-auth": "1.6.25",
+    "ai": "^7.0.58",
+    "better-auth": "1.6.26",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
+    "flexlayout-react": "0.10.1",
     "lucide-react": "^0.469.0",
-    "nanoid": "^5.0.9",
+    "nanoid": "^5.1.16",
     "next": "16.2.11",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -35,7 +40,7 @@
     "remark-gfm": "^4.0.1",
     "shiki": "^4.0.2",
     "tailwind-merge": "^2.6.0",
-    "zod": "^3.24.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -46,6 +51,7 @@
     "eslint-config-next": "16.2.11",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

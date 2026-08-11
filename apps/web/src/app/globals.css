@@ -88,6 +88,76 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.ankify-review-layout .flexlayout__layout {
+  --color-text: rgb(var(--fg));
+  --color-background: rgb(var(--bg));
+  --color-base: rgb(var(--surface));
+  --color-1: rgb(var(--surface));
+  --color-2: rgb(var(--subtle));
+  --color-3: rgb(var(--border));
+  --color-4: rgb(var(--border));
+  --color-5: rgb(var(--muted));
+  --color-6: rgb(var(--muted));
+  --color-drag1: rgb(var(--accent));
+  --color-drag2: rgb(var(--accent));
+  --color-drag1-background: rgb(var(--accent) / 0.12);
+  --color-drag2-background: rgb(var(--accent) / 0.08);
+  --color-focus: rgb(var(--accent));
+  --color-tabset-background: rgb(var(--surface));
+  --color-tabset-background-selected: rgb(var(--surface));
+  --color-tabset-background-maximized: rgb(var(--surface));
+  --color-tabset-divider-line: rgb(var(--border));
+  --color-tab-content: rgb(var(--surface));
+  --color-tab-selected: rgb(var(--fg));
+  --color-tab-selected-background: rgb(var(--surface));
+  --color-tab-unselected: rgb(var(--muted));
+  --color-tab-unselected-background: transparent;
+  --color-splitter: rgb(var(--bg));
+  --color-splitter-hover: rgb(var(--accent) / 0.45);
+  --color-splitter-drag: rgb(var(--accent) / 0.65);
+  --color-drag-rect-border: rgb(var(--accent));
+  --color-drag-rect-background: rgb(var(--accent-soft));
+  --color-drag-rect: rgb(var(--fg));
+  --color-icon: rgb(var(--muted));
+  --color-toolbar-button-hover: rgb(var(--subtle));
+  --font-family: var(--font-ui);
+  --font-size: 12px;
+  --font-weight: 500;
+  --splitter-size: 10px;
+  --splitter-active-size: 10px;
+  --splitter-handle-visibility: hidden;
+}
+
+.ankify-review-layout .flexlayout__tabset {
+  border-radius: 0.75rem;
+}
+
+.ankify-review-layout .flexlayout__tabset-selected,
+.ankify-review-layout .flexlayout__tabset-maximized {
+  background-image: none;
+}
+
+.ankify-review-layout .flexlayout__tabset_tabbar_outer {
+  min-height: 34px;
+}
+
+.ankify-review-layout .flexlayout__tab_button {
+  gap: 0.35rem;
+  padding: 0 0.65rem;
+}
+
+.ankify-review-layout .flexlayout__tab_button--selected {
+  color: rgb(var(--accent));
+}
+
+.ankify-review-layout .flexlayout__splitter_horz {
+  border-inline: 1px solid transparent;
+}
+
+.ankify-review-layout .flexlayout__splitter_horz:hover {
+  border-color: rgb(var(--accent) / 0.35);
+}
+
 @layer base {
   h1,
   h2,

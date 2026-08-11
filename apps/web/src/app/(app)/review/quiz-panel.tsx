@@ -7,37 +7,30 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
-import type { Card } from "@ankify/db";
+import type { CardDto, QuizAnswer, QuizItem, QuizSessionDto } from "@ankify/contracts";
 import {
   formatQuizMarkdown,
   type FsrsRating,
-  type QuizAnswer,
-  type QuizItem,
 } from "@ankify/core";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IndeterminateProgress } from "@/components/ui/indeterminate-progress";
 import { Markdown } from "@/components/ui/markdown";
 import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { useLanguage } from "@/components/LanguageProvider";
 import { cn } from "@/lib/utils";
+import {
+  getActiveAiJob,
+  requireSucceededAiJob,
+  startAiJob,
+  waitForAiJob,
+} from "@/lib/ai-job-client";
 
 export type QuizKeyInterface = {
   answer: (choiceIndex: number) => void;
   advance: () => boolean;
-};
-
-type QuizSessionPayload = {
-  id: string;
-  problemId: string;
-  status: "active" | "completed" | "archived";
-  itemsJson: QuizItem[];
-  answersJson: QuizAnswer[];
-  score: number | null;
-  createdAt: string;
-  updatedAt: string | null;
-  completedAt: string | null;
 };
 
 type ReviewLabels = ReturnType<typeof useLanguage>["t"];
@@ -50,7 +43,7 @@ export function QuizPanel({
   onCompleted,
 }: {
   problemId: string;
-  onCardSaved: (card: Card) => void;
+  onCardSaved: (card: CardDto) => void;
   /** Start generation as soon as the panel loads without a resumable session,
    *  so the wait overlaps with reading the problem statement. */
   autoStart?: boolean;
@@ -59,8 +52,9 @@ export function QuizPanel({
   onCompleted?: (score: number) => void;
 }) {
   const { t } = useLanguage();
-  const [session, setSession] = useState<QuizSessionPayload | null>(null);
+  const [session, setSession] = useState<QuizSessionDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [checkingJob, setCheckingJob] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
   const [submittingItem, setSubmittingItem] = useState(false);
@@ -85,7 +79,7 @@ export function QuizPanel({
     setShowResults(false);
     try {
       const res = await fetch(`/api/problems/${problemId}/quiz`, { cache: "no-store" });
-      const json = (await res.json().catch(() => null)) as { session?: QuizSessionPayload | null; error?: string } | null;
+      const json = (await res.json().catch(() => null)) as { session?: QuizSessionDto | null; error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? t.quiz.failedLoad);
       const nextSession = json?.session ?? null;
       const pendingFeedback = getStoredQuizFeedback(problemId, nextSession);
@@ -106,13 +100,31 @@ export function QuizPanel({
     return () => window.clearTimeout(timer);
   }, [loadSession]);
 
+  useEffect(() => {
+    void getActiveAiJob(problemId, "quiz")
+      .then(async (job) => {
+        if (!job) return;
+        setGenerating(true);
+        setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
+        setCheckingJob(false);
+        requireSucceededAiJob(await waitForAiJob(job));
+        await loadSession();
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : t.quiz.failedGenerate))
+      .finally(() => {
+        setGenerating(false);
+        setGenerationStartedAt(null);
+        setCheckingJob(false);
+      });
+  }, [loadSession, problemId, t.quiz.failedGenerate]);
+
   // Auto-start generation once per problem: a missing session gets a first
   // batch, a completed one (from a previous review) gets the next batch. An
   // active session is resumed instead, and generation failures stay manual so
   // a misconfigured AI provider can't retry-loop.
   const autoStartedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!autoStart || loading) return;
+    if (!autoStart || loading || checkingJob) return;
     if (autoStartedForRef.current === problemId) return;
     autoStartedForRef.current = problemId;
     if (generating) return;
@@ -122,7 +134,7 @@ export function QuizPanel({
       void generateQuiz("nextBatch");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, loading, generating, session, problemId]);
+  }, [autoStart, loading, checkingJob, generating, session, problemId]);
 
   // Keep the page-level keyboard bridge in sync with the latest quiz state.
   useEffect(() => {
@@ -158,22 +170,19 @@ export function QuizPanel({
     setFeedback(null);
     setShowResults(false);
     try {
-      const res = await fetch(`/api/problems/${problemId}/quiz`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action }),
+      const job = await startAiJob({
+        action: action === "generate"
+          ? "quiz_generate"
+          : action === "regenerate"
+            ? "quiz_regenerate"
+            : "quiz_next_batch",
+        problemId,
+        requestId: crypto.randomUUID(),
+        expectedQuizSessionId: session?.id ?? null,
       });
-      const json = (await res.json().catch(() => null)) as {
-        session?: QuizSessionPayload;
-        error?: string;
-        message?: string;
-      } | null;
-      if (!res.ok || !json?.session) throw new Error(apiErrorMessage(json, t.quiz.failedGenerate));
+      requireSucceededAiJob(await waitForAiJob(job));
       if (session) clearStoredQuizFeedback(problemId, session.id);
-      clearStoredQuizFeedback(problemId, json.session.id);
-      setSession(json.session);
-      setSavedItemIds(new Set());
-      setCurrentIndex(getFirstUnansweredIndex(json.session));
+      await loadSession();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.quiz.failedGenerate);
     } finally {
@@ -241,7 +250,7 @@ export function QuizPanel({
         return;
       }
       const json = (await res.json().catch(() => null)) as {
-        session?: QuizSessionPayload;
+        session?: QuizSessionDto;
         item?: QuizItem;
         answer?: QuizAnswer;
         error?: string;
@@ -272,7 +281,7 @@ export function QuizPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ itemId: item.id }),
       });
-      const json = (await res.json().catch(() => null)) as { card?: Card; error?: string } | null;
+      const json = (await res.json().catch(() => null)) as { card?: CardDto; error?: string } | null;
       if (!res.ok) throw new Error(json?.error ?? t.quiz.failedSave);
       if (json?.card) onCardSaved(json.card);
       setSavedItemIds((prev) => new Set(prev).add(item.id));
@@ -311,7 +320,7 @@ export function QuizPanel({
     setCurrentIndex(clamp(index, 0, session.itemsJson.length - 1));
   }
 
-  if (loading) {
+  if (loading || checkingJob) {
     return (
       <div className="flex h-full items-center justify-center">
         <EmptyState title={t.quiz.loading} />
@@ -323,9 +332,10 @@ export function QuizPanel({
     return (
       <div className="flex h-full items-center justify-center p-6">
         <Surface className="w-full max-w-md p-5 text-center">
-          <div className="mx-auto h-1.5 w-32 overflow-hidden rounded-full bg-subtle">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/80" />
-          </div>
+          <IndeterminateProgress
+            label={t.quiz.pendingTitle}
+            className="mx-auto w-32"
+          />
           <h3 className="mt-4 text-sm font-semibold">{t.quiz.pendingTitle}</h3>
           <p className="mt-2 text-sm leading-relaxed text-muted">
             {t.quiz.pendingBody}
@@ -686,10 +696,6 @@ function formatElapsedSeconds(totalSeconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function apiErrorMessage(json: { error?: string; message?: string } | null, fallback: string) {
-  return json?.message ?? json?.error ?? fallback;
-}
-
 function QuizResultItem({
   index,
   item,
@@ -754,14 +760,14 @@ function QuizBreakdown({ label, items }: { label: string; items: { label: string
   );
 }
 
-function getMissedQuizItems(session: QuizSessionPayload) {
+function getMissedQuizItems(session: QuizSessionDto) {
   return session.itemsJson.filter((item) => {
     const answer = session.answersJson.find((a) => a.itemId === item.id);
     return answer && !answer.correct;
   });
 }
 
-function getQuizBreakdown(session: QuizSessionPayload, field: "scope" | "source", t: ReviewLabels) {
+function getQuizBreakdown(session: QuizSessionDto, field: "scope" | "source", t: ReviewLabels) {
   const counts = new Map<string, number>();
   session.itemsJson.forEach((item) => {
     const key = field === "scope" ? formatQuizScope(item.scope, t) : formatQuizSource(item.source, t);
@@ -778,23 +784,23 @@ function formatQuizSource(source: QuizItem["source"], t: ReviewLabels) {
   return t.quiz.sources[source];
 }
 
-function getFirstUnansweredIndex(session: QuizSessionPayload | null) {
+function getFirstUnansweredIndex(session: QuizSessionDto | null) {
   if (!session) return 0;
   const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
   return idx === -1 ? 0 : idx;
 }
 
-function getNextUnansweredIndex(session: QuizSessionPayload, currentIndex: number) {
+function getNextUnansweredIndex(session: QuizSessionDto, currentIndex: number) {
   const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
   if (afterCurrent !== -1) return afterCurrent;
   return getFirstUnansweredIndex(session);
 }
 
-function isQuizItemAnswered(session: QuizSessionPayload, itemId: string) {
+function isQuizItemAnswered(session: QuizSessionDto, itemId: string) {
   return session.answersJson.some((answer) => answer.itemId === itemId);
 }
 
-function getQuizItemIndex(session: QuizSessionPayload | null, itemId: string) {
+function getQuizItemIndex(session: QuizSessionDto | null, itemId: string) {
   if (!session) return 0;
   const idx = session.itemsJson.findIndex((item) => item.id === itemId);
   return idx === -1 ? getFirstUnansweredIndex(session) : idx;
@@ -814,7 +820,7 @@ function clearStoredQuizFeedback(problemId: string, sessionId: string) {
   window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
 }
 
-function getStoredQuizFeedback(problemId: string, session: QuizSessionPayload | null) {
+function getStoredQuizFeedback(problemId: string, session: QuizSessionDto | null) {
   if (!session || typeof window === "undefined") return null;
   const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
   if (!itemId) return null;
