@@ -6,7 +6,7 @@ Every problem you grind on LeetCode comes with three things you'll forget within
 
 It's two surfaces against one shared deck:
 
-- a **web app** for daily review, full-screen quizzes, flashcards, notes, and an FSRS-6 memory dashboard
+- a **web app** for daily review, a cross-page Study Coach agent, flexible quizzes/cards/submissions/notes workspaces, and an FSRS-6 memory dashboard
 - a **Chrome extension** that lives next to LeetCode, captures the problem + your submissions in one click, and lets you do quick reviews without leaving the page
 
 ![ankify side panel reviewing a LeetCode problem](images/extension-overview-dark.png)
@@ -34,13 +34,19 @@ Open the dashboard and the system tells you exactly how many problems are due to
 
 ### 2 · Focused review workspace
 
-Click `Start session` (or `Review now` from the queue) and you land on a split-pane workspace: the problem statement on the left, your review tools on the right. Tabs for Quiz, Cards, Submissions, and Notes — everything about this problem in one place. Rate at the bottom and FSRS schedules the next visit.
+Click `Start session` (or `Review now` from the queue) and you land on a flexible workspace. Question, Quiz/Cards/Submissions/Notes, and Study Coach are sibling panels: resize them, hide either study panel, or close Coach without covering the remaining content. Rate at the bottom and FSRS schedules the next visit.
 
 ![Review workspace with AI quiz](images/web-review-light.png)
 
 The quiz on the right is freshly generated for this session — five focused multiple-choice questions covering the approach, invariants, edge cases, complexity, and any failed submissions you've made. The system requires at least four different question scopes per batch and at least one complexity question, so quizzes don't degenerate into trivia.
 
-### 3 · One-click capture from LeetCode
+### 3 · Study Coach across the web app
+
+Study Coach is an optional, resizable right-hand panel available from every authenticated page. It uses Vercel AI SDK's `ToolLoopAgent` to inspect the current page context, review queue, saved problems, submissions, notes, cards, and answered quiz results. It can navigate to another problem immediately and can propose Card or Quiz generation, while actual writes remain explicit user-confirmed actions.
+
+Conversation sessions persist independently of pages. Every run stores its own page/problem context, so one session can follow the user from Today to Review or a problem detail page without incorrectly pinning the whole conversation to one problem.
+
+### 4 · One-click capture from LeetCode
 
 Open the extension on any LeetCode problem page. It scrapes the title, statement, and every accepted and failed submission you've made — code, runtime, and the actual failing test case — and sends it to your deck. From the same panel you can review the problem without ever switching tabs.
 
@@ -48,7 +54,7 @@ Open the extension on any LeetCode problem page. It scrapes the title, statement
 
 The popup mirrors the web app: Quiz / Cards / Notes tabs, a rating bar, and a `Refresh` button. Notes save locally first so typing is never blocked on the network.
 
-### 4 · Memory dashboard, not just a spreadsheet
+### 5 · Memory dashboard, not just a spreadsheet
 
 `/analysis` is built on the same FSRS state that schedules your reviews. It shows total memory health, lapse rate, what's about to slip out of memory, and a per-problem risk table sorted by retrievability — so you can see *which* problems are about to be forgotten, not just *how many* are due.
 
@@ -61,10 +67,10 @@ The popup mirrors the web app: Quiz / Cards / Notes tabs, a rating bar, and a `R
 | Layer | What |
 | --- | --- |
 | Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6, state stored on the `problems` row. Cards and quizzes feed recall but only the problem is scheduled. |
-| AI | Vercel AI SDK with Claude, OpenAI, DeepSeek (V4 thinking + non-thinking), or any OpenAI-compatible provider. User-supplied keys, encrypted at rest with AES-256-GCM. |
+| AI | Vercel AI SDK `ToolLoopAgent` plus durable Card/Quiz jobs with Claude, OpenAI, DeepSeek, or any OpenAI-compatible provider. User-supplied keys, encrypted at rest with AES-256-GCM. |
 | Capture | Content script on `leetcode.com/problems/*` reads the GraphQL endpoint for problem + submission detail. |
 | Auth | Better Auth + Google OAuth with public signup. The extension reuses the same secure web session, so users never create or paste a separate token. |
-| Data | Turso / libSQL for production, local SQLite for dev. Drizzle ORM. Every business table scoped by `userId`. |
+| Data | Turso / libSQL through the Vercel Turso integration for production, local SQLite for dev. Drizzle ORM. Every business table scoped by `userId`. |
 | Web + API | Next.js 16 App Router, TypeScript, Tailwind. |
 | Extension | Chrome MV3, Vite, React. |
 
@@ -86,7 +92,7 @@ pnpm dev:ext                       # extension dev server with HMR
 
 Fill `.env.local` with Better Auth + Google OAuth credentials and `AI_KEY_ENCRYPTION_SECRET`. Leave `TURSO_*` empty so the app uses the local SQLite. AI provider keys are saved per-user from the Settings page, never read from server env vars.
 
-Load the unpacked extension from `apps/extension/dist/` (`chrome://extensions` → Developer mode → Load unpacked). Set the extension's API base URL to `http://localhost:3000`, sign into the web app with Google, and open the extension. It detects the shared session automatically.
+Load the development extension from `apps/extension/dist/` (`chrome://extensions` → Developer mode → Load unpacked), sign into the web app with Google, and open the extension. Development mode targets `http://localhost:3000` automatically; the API origin is fixed at build time and is not user-editable. The extension detects the shared session automatically.
 
 Use `pnpm dev:ext` while editing the extension so CRXJS can refresh extension pages and content scripts. After a production `pnpm build`, reload Ankify once in `chrome://extensions`, then refresh any already-open LeetCode tabs; production builds replace hashed content-script files.
 
@@ -130,7 +136,7 @@ command cannot silently fall back to or mutate a deployed database.
 | `local` (default) | SQLite at `LOCAL_DB_PATH` | `http://localhost:3000` | `.env.local` | `pnpm dev`, `db:migrate`, `db:studio`, `db:generate` |
 | `qa` | isolated SQLite at `packages/db/qa.db` | fixed local session | `.env.qa` + `.env.qa.local` | `pnpm dev:qa`, `pnpm dev:qa:all`, `pnpm qa:reset` |
 | `preview` | dedicated Preview Turso DB | stable Preview branch domain | `.env.preview.local` | `db:migrate:preview`, `db:studio:preview` |
-| `production` | Turso (`TURSO_DATABASE_URL`) | `https://ankify-pi.vercel.app` | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
+| `production` | Vercel-managed Turso integration (`database-ankify`) | `https://ankify-pi.vercel.app` | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
 
 `pnpm dev` always runs against `local`; `pnpm dev:qa` always runs against the
 isolated QA database. Vercel reads its runtime variables from
@@ -142,9 +148,15 @@ rotating it without re-encryption orphans every stored AI key.
 
 ## Deploy to Vercel
 
-Use Turso for production. Do not deploy with local SQLite on Vercel.
+Use the Vercel Turso integration for production. The current Production database
+is `database-ankify` in the `vercel-icfg-mdehlkeeqefnm8sqwfj1zlce`
+organization. The personal `ankify-prod` database is legacy and is not used by
+Vercel. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) before any Production
+database operation.
 
-1. Create a Turso database and token.
+1. Provision Turso through the Vercel integration. For the current deployment,
+   retain the canonical `database-ankify` integration database and do not point
+   `TURSO_*` at the legacy personal database.
 2. Configure **Production** variables in Vercel:
    - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
    - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=https://ankify-pi.vercel.app`
@@ -159,8 +171,10 @@ Use Turso for production. Do not deploy with local SQLite on Vercel.
    branch domain for `BETTER_AUTH_URL`, and normally
    `ANKIFY_DISABLE_SIGNUP=true`. Register that domain's Google callback URL if
    Preview login is required.
-4. Before the first Production deployment—and before every deployment that
-   contains a new migration—back up and migrate from one controlled terminal:
+4. Before every deployment that contains a new migration, explicitly switch the
+   Turso CLI to the integration organization, verify `database-ankify` and its
+   current row/migration counts, then back up and migrate from one controlled
+   terminal:
    ```bash
    pnpm db:release
    ```
@@ -201,8 +215,9 @@ ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm --filter @ankify/e
 - Users can export their data as NDJSON and permanently delete their account
   from Settings.
 
-See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the complete
-Preview-to-Production runbook.
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for Production identity and
+database operations, and [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+for the complete Preview-to-Production checklist.
 
 ---
 

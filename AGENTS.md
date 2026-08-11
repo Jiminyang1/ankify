@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ```bash
 pnpm install                # install deps (pnpm workspaces)
-cp .env.example .env.local  # fill in TURSO_*, Better Auth/Google, encryption secret
+cp .env.example .env.local  # local SQLite: fill Better Auth/Google + encryption secret; leave TURSO_* empty
 
 pnpm db:generate            # drizzle-kit generate (after schema changes)
 pnpm db:migrate             # apply migrations to local/remote Turso
@@ -30,6 +30,21 @@ Modular monolith: one Next.js deployment plus the Chrome extension. Browser-safe
 contracts and HTTP helpers are shared packages; database and application logic
 stay inside explicit server boundaries.
 
+### Production deployment identity
+
+- Canonical Web/API origin: `https://ankify-pi.vercel.app`.
+- Production data is Turso provisioned through the Vercel Turso integration:
+  organization `vercel-icfg-mdehlkeeqefnm8sqwfj1zlce`, database
+  `database-ankify`.
+- The personal Turso database `ankify-prod` is legacy, write-blocked, and not
+  connected to Vercel Production. Never infer the target from the Turso CLI's
+  current organization or a plausible database name.
+- Runtime uses only `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
+  `ANKIFY_NEW_DB_TURSO_*` variables are not application inputs.
+- Before a Production write, follow `docs/DEPLOYMENT.md`: explicitly switch to
+  the integration organization, verify the URL and read-only row/migration
+  counts, then run `pnpm db:release` with a short-lived token.
+
 ### `packages/contracts` - Transport contracts
 
 - Zod request schemas and JSON-safe response DTOs shared by Web, Extension, and DB JSON columns.
@@ -43,16 +58,18 @@ stay inside explicit server boundaries.
 
 ### `packages/db` - Database layer
 
-- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; and business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `ai_jobs`, `review_events`, `settings`)
+- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `ai_jobs`, `review_events`, `settings`; and persistent Agent tables `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps`)
 - `client.ts` exposes a singleton `getDb()`. Production requires `TURSO_DATABASE_URL`; `LOCAL_DB_PATH` is a development-only SQLite fallback.
 - `migrate.ts` applies `drizzle/` migrations; run via `pnpm db:migrate`
 - Schema infer types are re-exported (e.g. `Problem`, `Card`, `QuizSession`, `ReviewEvent`, etc.)
 
-**Business data isolation**: all user-owned tables carry `userId`: `problems`, `submissions`, `cards`, `quiz_sessions`, `review_events`, and `settings`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
+**Business data isolation**: all user-owned tables carry `userId`, including AI jobs and every Agent table. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
 
 **Cards table**: simple Q&A plus `aiStatus` lifecycle and an integer `version` used for optimistic concurrency on edits, confirmation, and AI follow-up commits.
 
 **AI jobs table**: durable, user-scoped Card/Quiz generation commands. Inputs are AES-GCM encrypted; queue messages contain only `jobId`. Idempotency, active-resource deduplication, leases, attempts, results, errors, and terminal state are persisted. A partial unique index allows only one `running` job per user.
+
+**Agent tables**: Study Coach conversations are user-owned sessions. Each turn creates an idempotent run with its own page/problem context, model identity, status, usage, messages, and ordered tool steps. A session is not permanently bound to one problem, so it can continue across the web app. Only one run may be active per session; stale runs are failed on snapshot/begin-turn recovery.
 
 **Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
 
@@ -85,6 +102,9 @@ stay inside explicit server boundaries.
   - `ai-jobs/` - POST creates an idempotent asynchronous Card/Quiz generation job and publishes `{ jobId }` to Vercel Queues; GET lists user-owned jobs for a problem.
   - `ai-jobs/[id]/` - GET polls one user-owned job; DELETE requests cancellation.
   - `queues/ai-generation/` - Vercel Queue consumer. Claims a lease, runs the generator, and commits the business result plus terminal job state atomically.
+  - `agent/sessions/` and `agent/sessions/[id]/` - list active Study Coach sessions and load one persistent session snapshot.
+  - `agent/turns/` - starts/resumes a ToolLoopAgent turn and streams newline-delimited Agent events. Request disconnect aborts the model call; stale runs recover as failed.
+  - `agent/steps/[id]/approve/` and `dismiss/` - resolve user-confirmed Card/Quiz proposals. Navigation and read tools do not require approval.
   - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. AI generation does not run through this route.
   - `problems/[id]/quiz/` - GET current non-archived quiz session; DELETE resets quiz history. AI generation does not run through this route.
   - `problems/[id]/quiz/[sessionId]/` - PATCH one quiz answer. Repeated answers return 400; the fifth answer completes the session and computes score.
@@ -97,7 +117,8 @@ stay inside explicit server boundaries.
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
 - **`src/proxy.ts`**: lightweight auth gate and credentialed Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages and extension API requests require the same Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data.
 - **`src/server/`**: all DB, auth, settings, queue, AI, prompt, query, and transactional command implementations. Pages call server query functions directly; API routes stay as thin HTTP adapters.
-  - `ai.ts`: loads AI provider/model from DB, builds `LanguageModelV1`. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
+  - `ai.ts`: loads AI provider/model from DB and builds the AI SDK language model. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
+  - `agent/`: persistent Study Coach store, ToolLoopAgent runtime, page/problem-aware tools, proposal steps, and quiz-context privacy rules.
   - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.
   - `quiz-prompt.ts`: builds Chinese 5-question quiz prompts from problem title/difficulty/slug/tags/statement, notes, ready cards, recent submissions, failed submission details, and recent completed quiz history. Prompts require scoped items and at least one complexity question.
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
@@ -107,7 +128,7 @@ stay inside explicit server boundaries.
 - **Pages**:
   - `/` - static public landing page; authenticated sessions redirect to `/today`
   - `/today` - authenticated home: due queue, progress, daily stats
-  - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes
+  - `/review` - dynamic sibling panels for Question, Quiz/Cards/Submissions/Notes, and optional Study Coach; panels can be hidden and resized
   - `/problems` - list with difficulty/state/tag/search filters
   - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline
   - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
@@ -123,7 +144,9 @@ stay inside explicit server boundaries.
   - `Problem` has compact `Review` / `Manage` modes.
   - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation creates a durable job and polls it; reopening the popup resumes from the server job state. Completed quizzes can create a new batch and bulk-create cards for missed items.
   - `Manage` contains manual card creation, asynchronous AI candidate generation/follow-up/confirm/discard, and existing card management.
-  - `Settings` stores only the API base URL and preferences. Test connection calls `/api/me` with the shared web session and shows the signed-in email.
+  - `Settings` stores user preferences. The API origin is fixed at build time;
+    legacy saved API URLs are retired. Test connection calls `/api/me` with the
+    shared web session and shows the signed-in email.
   - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
 
@@ -162,6 +185,15 @@ There is no AI-card batch generation, `polish`, or `generating` card status. Job
 3. `POST /api/review/rate` records the rating and applies FSRS scheduling. Notes are saved to `problems.notes`.
 4. Meaningful interactions write to `review_events`.
 
+### Study Coach session
+
+1. `AgentShell` lives in the authenticated app layout, so Coach can open from any web page as a sibling right panel rather than an overlay.
+2. The UI lists only persisted non-empty sessions; a new session row is created by the first submitted message, not by repeatedly clicking New session.
+3. `POST /api/agent/turns` stores the run context and user message, then `ToolLoopAgent` iterates over read, navigation, and proposal tools while streaming events.
+4. Page/problem context belongs to the run. Continuing the same session after navigation uses the new run's context without rewriting prior context.
+5. Read tools execute immediately. Navigation emits an executable destination. Card/Quiz writes are proposals and require explicit approval before creating an AI job.
+6. Assistant output, tool steps, terminal status, usage, and resumable model messages are persisted. Disconnect/timeout/failure never leaves an indefinitely running session.
+
 ## Key Design Decisions
 
 - **Multi-user deployment**: public Better Auth Google OAuth and per-user data isolation across all business tables.
@@ -174,6 +206,8 @@ There is no AI-card batch generation, `polish`, or `generating` card status. Job
 - **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
 - **AI generation is asynchronous**: Vercel Queues provides at-least-once delivery; `ai_jobs` leases, idempotency keys, resource CAS checks, and atomic result/job commits provide application-level correctness.
 - **Per-user execution is serialized**: the database permits only one running AI job per user; other queued jobs are retried later.
+- **Agent sessions are cross-page, not per-problem**: sessions hold conversation history while each run snapshots the current page and optional problem focus.
+- **Agent writes are user-gated**: Coach may read and navigate directly, but Card/Quiz generation is recorded as a proposal and starts only after explicit approval.
 - **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
 - **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history.
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.
@@ -190,7 +224,7 @@ The web app and the extension popup share one typographic language. **Default ev
 **Use mono (Tailwind `font-mono` in web; `var(--font-mono)` in extension popup CSS) only for:**
 1. Real code: `<pre>` blocks and inline `<code>` rendered by Markdown components, submission code displays.
 2. Shell commands and env-path tokens inside copy: `<code>pnpm db:migrate</code>`, `<code>.env.local</code>`.
-3. Identifier-shaped inputs: API key, model id, API base URL. Slug displays (`two-sum`).
+3. Identifier-shaped inputs: API key and model id. Slug displays (`two-sum`).
 4. Programming-language labels rendered next to code (`python`, `cpp`).
 
 Anything else in `font-mono` is a bug - it splits the visual register and looks terminal-ish against the rest of the app.

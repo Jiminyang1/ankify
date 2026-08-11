@@ -7,6 +7,12 @@ Canonical Production Web/API origin: `https://ankify-pi.vercel.app`.
 `ANKIFY_EXTENSION_API_ORIGIN` is an Extension build-time variable, not a Vercel
 runtime variable.
 
+Canonical Production data target: the Vercel Turso integration database
+`database-ankify` in organization
+`vercel-icfg-mdehlkeeqefnm8sqwfj1zlce`. The personal `ankify-prod` database is
+legacy and must not be used for Production migrations. Follow
+[`DEPLOYMENT.md`](DEPLOYMENT.md) for the full identity and verification runbook.
+
 ## 1. Prepare Preview
 
 - [ ] Create a dedicated Preview Turso database. Never point Preview at Production.
@@ -44,8 +50,14 @@ runtime variable.
 
 ## 3. Prepare Production data
 
-- [ ] Confirm Production uses its own Turso database, auth secret, Google OAuth
-      credentials, and encryption secret.
+- [ ] Run `turso org switch vercel-icfg-mdehlkeeqefnm8sqwfj1zlce` and confirm
+      `turso db list` returns `database-ankify` with the canonical integration URL.
+- [ ] Run read-only migration/user/problem counts against `database-ankify` and
+      compare them with the Drizzle journal and authenticated Production UI.
+- [ ] Confirm Vercel Production uses `TURSO_DATABASE_URL` and
+      `TURSO_AUTH_TOKEN`. Do not use legacy `ANKIFY_NEW_DB_TURSO_*` variables.
+- [ ] Confirm Production has its own auth secret, Google OAuth credentials, and
+      encryption secret.
 - [ ] Keep `AI_KEY_ENCRYPTION_SECRET` backed up and stable for this database.
 - [ ] Back up and migrate before deploying code that depends on a new schema:
 
@@ -69,8 +81,14 @@ runtime variable.
 - [ ] Deploy only after CI and `pnpm release:check` pass.
 - [ ] Verify `/login`, `/privacy`, `/terms`, OAuth callback, app redirects,
       authenticated API access, CSP/security headers, and one complete review flow.
-- [ ] Confirm Vercel runtime logs show correlation IDs instead of raw AI/provider errors.
-- [ ] Confirm the deployment is connected to the intended Production Turso database.
+- [ ] Confirm Vercel runtime logs contain neither provider response bodies nor
+      API-key fragments; retain only classified error codes and safe request identifiers.
+- [ ] Confirm the authenticated deployment shows recognizable data from
+      `database-ankify`, not the legacy personal `ankify-prod` database.
+- [ ] Open Study Coach and complete one real Agent turn with a valid provider
+      key, including a read-only tool call and streaming response.
+- [ ] Confirm the `ankify-ai-generation` Queue trigger is deployed and one
+      queued Card or Quiz job reaches a terminal success state.
 - [ ] In Google Auth Platform, set the audience to External and publish the app.
 - [ ] Use the public root URL as the OAuth homepage, `/privacy` as the privacy
       policy, and `/terms` as the terms URL. Verify domain ownership in Search Console.

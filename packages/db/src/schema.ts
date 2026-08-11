@@ -515,8 +515,8 @@ export const agentSteps = sqliteTable(
 
 /* ────────────────────────────────────────────────────────────────────────────
  * settings
- * Single-row k/v table for V1 (single user, no auth). Holds AI provider choice,
- * API keys (if user prefers DB-stored over env), FSRS params, etc.
+ * Per-user k/v settings. Holds encrypted AI provider configuration, review
+ * preferences, onboarding state, and other user-scoped application settings.
  * ──────────────────────────────────────────────────────────────────────────── */
 export const settings = sqliteTable(
   "settings",
