@@ -3,20 +3,26 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Actions,
   DockLocation,
   Layout,
   Model,
   type Action,
+  type BorderNode,
   type IJsonModel,
   type IJsonTabNode,
+  type ITabSetRenderValues,
   type TabNode,
+  type TabSetNode,
 } from "flexlayout-react";
 import { Eye, EyeOff, PanelsTopLeft, RotateCcw } from "lucide-react";
 
@@ -181,21 +187,147 @@ export function ReviewWorkspaceLayout({
   }, [coach, question, study]);
 
   const visibleCount = PANEL_IDS.filter(panelVisible).length;
-  const toolbar = (
-    <div className="flex h-9 shrink-0 items-center justify-end">
-      <details className="group relative z-30">
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg shadow-card transition hover:border-accent/35 hover:bg-subtle [&::-webkit-details-marker]:hidden">
-          <PanelsTopLeft className="h-3.5 w-3.5 text-accent" aria-hidden />
-          {labels.layouts}
-        </summary>
-        <div className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-card-hover">
+  const layoutMenu = useMemo(() => (
+    <LayoutMenu
+      key="review-layout-menu"
+      labels={labels}
+      panelVisible={panelVisible}
+      visibleCount={visibleCount}
+      onTogglePanel={togglePanel}
+      onReset={resetLayout}
+    />
+  ), [labels, panelVisible, resetLayout, togglePanel, visibleCount]);
+
+  const onRenderTabSet = useCallback((node: TabSetNode | BorderNode, values: ITabSetRenderValues) => {
+    const owner = panelVisible("coach")
+      ? "coach"
+      : panelVisible("study")
+        ? "study"
+        : "question";
+    const ownerTabSetId = model.getNodeById(TAB_IDS[owner])?.getParent()?.getId();
+    if (node.getId() === ownerTabSetId) values.buttons.unshift(layoutMenu);
+  }, [layoutMenu, model, panelVisible]);
+
+  if (!desktop) {
+    return (
+      <div className="relative space-y-4">
+        <div className="fixed bottom-5 left-5 z-40 rounded-lg border border-border bg-surface p-1 shadow-card">
+          {layoutMenu}
+        </div>
+        {panelVisible("question") && question}
+        {panelVisible("study") && study}
+        {panelVisible("coach") && <div className="h-[min(42rem,calc(100dvh-6rem))] overflow-hidden rounded-xl border border-border">{coach}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[calc(100dvh-85px)] min-h-[620px]">
+      <div className="ankify-review-layout flexlayout__theme_dark relative h-full min-h-0 overflow-hidden rounded-xl border border-border bg-bg">
+        <Layout
+          key={layoutRevision}
+          model={model}
+          factory={factory}
+          onAction={onAction}
+          onRenderTabSet={onRenderTabSet}
+          realtimeResize
+          supportsPopout={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+function LayoutMenu({
+  labels,
+  panelVisible,
+  visibleCount,
+  onTogglePanel,
+  onReset,
+}: {
+  labels: ReviewWorkspaceLabels;
+  panelVisible: (panel: ReviewPanelId) => boolean;
+  visibleCount: number;
+  onTogglePanel: (panel: ReviewPanelId) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<CSSProperties>({});
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!buttonRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const toggleMenu = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = buttonRef.current!.getBoundingClientRect();
+    const horizontal = rect.right >= 224
+      ? { right: Math.max(8, window.innerWidth - rect.right) }
+      : { left: Math.max(8, rect.left) };
+    const vertical = window.innerHeight - rect.bottom >= 232
+      ? { top: rect.bottom + 8 }
+      : { bottom: window.innerHeight - rect.top + 8 };
+    setPosition({ ...horizontal, ...vertical });
+    setOpen(true);
+  };
+
+  return (
+    <div
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggleMenu}
+        aria-label={labels.layouts}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title={labels.layouts}
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted transition hover:border-border hover:bg-subtle hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
+        <PanelsTopLeft className="h-3.5 w-3.5" aria-hidden />
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={labels.layouts}
+          style={position}
+          className="fixed z-50 w-52 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-card-hover"
+        >
+          <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+            {labels.layouts}
+          </div>
           {PANEL_IDS.map((panel) => {
             const visible = panelVisible(panel);
             return (
               <button
                 key={panel}
                 type="button"
-                onClick={() => togglePanel(panel)}
+                role="menuitem"
+                onClick={() => onTogglePanel(panel)}
                 disabled={visible && visibleCount === 1}
                 className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -210,41 +342,19 @@ export function ReviewWorkspaceLayout({
           <div className="my-1 border-t border-border" />
           <button
             type="button"
-            onClick={resetLayout}
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onReset();
+            }}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-muted transition hover:bg-subtle hover:text-fg"
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden />
             {labels.reset}
           </button>
-        </div>
-      </details>
-    </div>
-  );
-
-  if (!desktop) {
-    return (
-      <div className="space-y-4">
-        {toolbar}
-        {panelVisible("question") && question}
-        {panelVisible("study") && study}
-        {panelVisible("coach") && <div className="h-[min(42rem,calc(100dvh-6rem))] overflow-hidden rounded-xl border border-border">{coach}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-[calc(100dvh-85px)] min-h-[620px] flex-col">
-      {toolbar}
-      <div className="ankify-review-layout flexlayout__theme_dark relative min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-bg">
-        <Layout
-          key={layoutRevision}
-          model={model}
-          factory={factory}
-          onAction={onAction}
-          realtimeResize
-          supportsPopout={false}
-        />
-      </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

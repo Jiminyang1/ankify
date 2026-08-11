@@ -138,16 +138,36 @@ body {
 }
 
 .ankify-review-layout .flexlayout__tabset_tabbar_outer {
-  min-height: 34px;
+  min-height: 38px;
+  background-color: rgb(var(--surface));
 }
 
 .ankify-review-layout .flexlayout__tab_button {
+  position: relative;
+  height: 100%;
   gap: 0.35rem;
-  padding: 0 0.65rem;
+  padding: 0 0.75rem;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
 .ankify-review-layout .flexlayout__tab_button--selected {
   color: rgb(var(--accent));
+}
+
+.ankify-review-layout .flexlayout__tab_button--selected::after {
+  position: absolute;
+  right: 0.75rem;
+  bottom: -1px;
+  left: 0.75rem;
+  height: 2px;
+  border-radius: 9999px 9999px 0 0;
+  background: rgb(var(--accent));
+  content: "";
+}
+
+.ankify-review-layout .flexlayout__tab_toolbar {
+  gap: 0.2rem;
+  padding-right: 0.35rem;
 }
 
 .ankify-review-layout .flexlayout__splitter_horz {
