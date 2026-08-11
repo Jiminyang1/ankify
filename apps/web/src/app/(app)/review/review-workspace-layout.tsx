@@ -63,13 +63,14 @@ export function ReviewWorkspaceLayout({
   onCoachOpenChange,
   labels,
 }: ReviewWorkspaceLayoutProps) {
-  const [model, setModel] = useState(() => createModel(labels, coachOpen));
+  const [initialLayout] = useState(() => loadInitialLayout(labels, coachOpen));
+  const [model, setModel] = useState(initialLayout.model);
+  const [layoutRevision, remountLayout] = useReducer((revision: number) => revision + 1, 0);
   const [, refreshToolbar] = useReducer((revision: number) => revision + 1, 0);
   const [desktop, setDesktop] = useState(
     () => window.matchMedia(DESKTOP_LAYOUT_QUERY).matches,
   );
-  const initialModelRef = useRef(model);
-  const storageReadyRef = useRef(false);
+  const coachStateReadyRef = useRef(coachOpen === initialLayout.coachOpen);
 
   useEffect(() => {
     const media = window.matchMedia(DESKTOP_LAYOUT_QUERY);
@@ -79,28 +80,13 @@ export function ReviewWorkspaceLayout({
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (!saved) {
-      storageReadyRef.current = true;
+    if (coachStateReadyRef.current) return;
+    if (coachOpen !== initialLayout.coachOpen) {
+      onCoachOpenChange(initialLayout.coachOpen);
       return;
     }
-
-    try {
-      const restoredModel = Model.fromJson(
-        JSON.parse(saved) as IJsonModel,
-        initialModelRef.current,
-      );
-      const frame = requestAnimationFrame(() => {
-        setModel(restoredModel);
-        onCoachOpenChange(restoredModel.getNodeById(TAB_IDS.coach) !== undefined);
-        storageReadyRef.current = true;
-      });
-      return () => cancelAnimationFrame(frame);
-    } catch {
-      localStorage.removeItem(LAYOUT_STORAGE_KEY);
-      storageReadyRef.current = true;
-    }
-  }, [onCoachOpenChange]);
+    coachStateReadyRef.current = true;
+  }, [coachOpen, initialLayout.coachOpen, onCoachOpenChange]);
 
   const panelVisible = useCallback(
     (panel: ReviewPanelId) => model.getNodeById(TAB_IDS[panel]) !== undefined,
@@ -109,9 +95,7 @@ export function ReviewWorkspaceLayout({
 
   const syncModelState = useCallback(() => {
     refreshToolbar();
-    if (storageReadyRef.current) {
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(model.toJson()));
-    }
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(model.toJson()));
     const nextCoachOpen = panelVisible("coach");
     if (nextCoachOpen !== coachOpen) onCoachOpenChange(nextCoachOpen);
   }, [coachOpen, model, onCoachOpenChange, panelVisible]);
@@ -146,6 +130,7 @@ export function ReviewWorkspaceLayout({
   }, [model, panelVisible]);
 
   useEffect(() => {
+    if (!coachStateReadyRef.current) return;
     if (coachOpen) restorePanel("coach");
     else hidePanel("coach");
   }, [coachOpen, hidePanel, restorePanel]);
@@ -184,6 +169,7 @@ export function ReviewWorkspaceLayout({
   const resetLayout = useCallback(() => {
     const nextModel = createModel(labels, coachOpen);
     setModel(nextModel);
+    remountLayout();
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
     refreshToolbar();
   }, [coachOpen, labels]);
@@ -251,6 +237,7 @@ export function ReviewWorkspaceLayout({
       {toolbar}
       <div className="ankify-review-layout flexlayout__theme_dark relative min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-bg">
         <Layout
+          key={layoutRevision}
           model={model}
           factory={factory}
           onAction={onAction}
@@ -260,6 +247,31 @@ export function ReviewWorkspaceLayout({
       </div>
     </div>
   );
+}
+
+function loadInitialLayout(labels: ReviewWorkspaceLabels, coachOpen: boolean) {
+  const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
+  if (!saved) return createReviewWorkspaceModel(null, labels, coachOpen);
+
+  try {
+    return createReviewWorkspaceModel(JSON.parse(saved) as IJsonModel, labels, coachOpen);
+  } catch {
+    localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    return createReviewWorkspaceModel(null, labels, coachOpen);
+  }
+}
+
+export function createReviewWorkspaceModel(
+  saved: IJsonModel | null,
+  labels: ReviewWorkspaceLabels,
+  coachOpen: boolean,
+) {
+  const model = saved ? Model.fromJson(saved) : createModel(labels, coachOpen);
+  model.setSplitterSize(10);
+  return {
+    model,
+    coachOpen: model.getNodeById(TAB_IDS.coach) !== undefined,
+  };
 }
 
 function createModel(labels: ReviewWorkspaceLabels, includeCoach: boolean) {
@@ -291,7 +303,6 @@ function createModel(labels: ReviewWorkspaceLabels, includeCoach: boolean) {
       })),
     },
   });
-  model.setSplitterSize(10);
   return model;
 }
 
