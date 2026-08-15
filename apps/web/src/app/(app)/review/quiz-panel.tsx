@@ -331,7 +331,7 @@ export function QuizPanel({
   if (generating && !session) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <Surface className="w-full max-w-md p-5 text-center">
+        <Surface className="w-full max-w-md border-0 bg-subtle p-6 text-center shadow-none">
           <IndeterminateProgress
             label={t.quiz.pendingTitle}
             className="mx-auto w-32"
@@ -349,7 +349,7 @@ export function QuizPanel({
   if (!session) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <Surface className="w-full max-w-md p-5 text-center">
+        <Surface className="w-full max-w-md border-0 bg-subtle p-6 text-center shadow-none">
           <Pill tone="accent">Quiz</Pill>
           <EmptyState
             className="px-0 pb-0 pt-3"

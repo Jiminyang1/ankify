@@ -82,7 +82,6 @@ export async function POST(req: Request) {
             problemId: parsed.data.context.problemId,
             sessionId: started.session.id,
             runId: started.run.id,
-            context: parsed.data.context,
             model: activeModel.model,
             abortSignal: runAbortController.signal,
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),

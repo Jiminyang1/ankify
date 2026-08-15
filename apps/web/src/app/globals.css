@@ -129,7 +129,7 @@ body {
 }
 
 .ankify-review-layout .flexlayout__tabset {
-  border-radius: 0.75rem;
+  border-radius: 0;
 }
 
 .ankify-review-layout .flexlayout__tabset-selected,
@@ -138,31 +138,31 @@ body {
 }
 
 .ankify-review-layout .flexlayout__tabset_tabbar_outer {
-  min-height: 38px;
+  min-height: 32px;
   background-color: rgb(var(--surface));
 }
 
 .ankify-review-layout .flexlayout__tab_button {
   position: relative;
   height: 100%;
-  gap: 0.35rem;
-  padding: 0 0.75rem;
+  gap: 0.3rem;
+  padding: 0 0.65rem;
   transition: color 150ms ease, background-color 150ms ease;
 }
 
 .ankify-review-layout .flexlayout__tab_button--selected {
-  color: rgb(var(--accent));
+  color: rgb(var(--fg));
+  font-weight: 600;
 }
 
-.ankify-review-layout .flexlayout__tab_button--selected::after {
-  position: absolute;
-  right: 0.75rem;
-  bottom: -1px;
-  left: 0.75rem;
-  height: 2px;
-  border-radius: 9999px 9999px 0 0;
-  background: rgb(var(--accent));
-  content: "";
+.ankify-review-layout .flexlayout__tab_button_trailing {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.ankify-review-layout .flexlayout__tab_button:hover .flexlayout__tab_button_trailing,
+.ankify-review-layout .flexlayout__tab_button:focus-within .flexlayout__tab_button_trailing {
+  opacity: 0.55;
 }
 
 .ankify-review-layout .flexlayout__tab_toolbar {

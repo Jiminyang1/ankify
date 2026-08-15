@@ -1,0 +1,4 @@
+export const AGENT_SESSION_BOUNDARY_RUNS = 18;
+export const AGENT_MODEL_RUN_LIMIT = 24;
+export const AGENT_COMPACTION_BATCH_RUNS = 16;
+export const AGENT_DETAILED_TOOL_RUNS = 6;

@@ -9,10 +9,11 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   Check,
+  ChevronDown,
   CircleAlert,
   LoaderCircle,
   Plus,
@@ -43,13 +44,22 @@ type AgentSidebarProps = {
 };
 
 const ACTIVE_SESSION_KEY = "ankify:agent-session-id";
+const boundaryDismissedKey = (sessionId: string) =>
+  `ankify:agent-session-boundary:${sessionId}`;
 
-export function AgentSidebar({ open, onClose, pageContext, embedded = false }: AgentSidebarProps) {
+export function AgentSidebar({
+  open,
+  onClose,
+  pageContext,
+  embedded = false,
+}: AgentSidebarProps) {
   const { t } = useLanguage();
   const router = useRouter();
   const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [boundaryDismissedAt, setBoundaryDismissedAt] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -62,6 +72,7 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
   const turnAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const notifiedJobsRef = useRef(new Set<string>());
+  const sessionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const loadSnapshot = useCallback(async (
     sessionId: string,
@@ -80,6 +91,14 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
         snapshot: AgentSessionSnapshotDto;
       };
       setSnapshot(body.snapshot);
+      const boundaryKey = boundaryDismissedKey(body.snapshot.session.id);
+      if (body.snapshot.session.suggestNewSession) {
+        const stored = sessionStorage.getItem(boundaryKey);
+        setBoundaryDismissedAt(stored ? Number(stored) : null);
+      } else {
+        sessionStorage.removeItem(boundaryKey);
+        setBoundaryDismissedAt(null);
+      }
       setSessions((current) => sortSessions(mergeById(current, body.snapshot.session)));
     } catch (loadError) {
       if (loadError instanceof DOMException && loadError.name === "AbortError") return;
@@ -92,6 +111,23 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
   useEffect(() => {
     return () => turnAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!sessionMenuOpen) return;
+    const ownerDocument = sessionMenuRef.current!.ownerDocument;
+    const closeMenu = (event: PointerEvent) => {
+      if (!sessionMenuRef.current?.contains(event.target as Node)) setSessionMenuOpen(false);
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setSessionMenuOpen(false);
+    };
+    ownerDocument.addEventListener("pointerdown", closeMenu);
+    ownerDocument.addEventListener("keydown", closeOnEscape);
+    return () => {
+      ownerDocument.removeEventListener("pointerdown", closeMenu);
+      ownerDocument.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [sessionMenuOpen]);
 
   useEffect(() => {
     if (!open || sessionsLoaded) return;
@@ -201,6 +237,8 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
 
   const handleStreamEvent = useCallback((event: AgentStreamEvent) => {
     if (event.type === "run_started") {
+      const storedBoundary = sessionStorage.getItem(boundaryDismissedKey(event.session.id));
+      setBoundaryDismissedAt(storedBoundary ? Number(storedBoundary) : null);
       setActiveRunId(event.run.id);
       setActiveSessionId(event.session.id);
       sessionStorage.setItem(ACTIVE_SESSION_KEY, event.session.id);
@@ -223,19 +261,24 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
       );
       if (event.step.kind === "navigation" && event.step.navigation) {
         const problemId = encodeURIComponent(event.step.navigation.problemId);
-        router.push(
-          event.step.navigation.destination === "review"
-            ? `/review?problemId=${problemId}`
-            : `/problems/${problemId}`,
-        );
+        const href = event.step.navigation.destination === "review"
+          ? `/review?problemId=${problemId}`
+          : `/problems/${problemId}`;
+        router.push(href);
       }
       return;
     }
     if (event.type === "done") {
+      if (!event.session.suggestNewSession) {
+        sessionStorage.removeItem(boundaryDismissedKey(event.session.id));
+        setBoundaryDismissedAt(null);
+      }
+      setSessions((current) => sortSessions(mergeById(current, event.session)));
       setSnapshot((current) =>
         current
           ? {
               ...current,
+              session: event.session,
               messages: mergeById(current.messages, event.message),
               runs: replaceById(current.runs, event.run),
             }
@@ -292,13 +335,22 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
   const createSession = useCallback(() => {
     if (streaming || persistedRunActive || !activeSessionId) return;
     setActiveSessionId(null);
+    setBoundaryDismissedAt(null);
     setSnapshot(null);
     setJobs({});
     setPartialResponse("");
     setError(null);
     setLoading(false);
     sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+    setSessionMenuOpen(false);
   }, [activeSessionId, persistedRunActive, streaming]);
+
+  const continueSession = useCallback(() => {
+    if (!activeSessionId || !snapshot) return;
+    const runCount = snapshot.session.contextRunCount;
+    sessionStorage.setItem(boundaryDismissedKey(activeSessionId), String(runCount));
+    setBoundaryDismissedAt(runCount);
+  }, [activeSessionId, snapshot]);
 
   const switchSession = useCallback((sessionId: string) => {
     if (streaming || persistedRunActive || sessionId === activeSessionId) return;
@@ -307,6 +359,7 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
     setJobs({});
     setError(null);
     sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    setSessionMenuOpen(false);
     void loadSnapshot(sessionId);
   }, [activeSessionId, loadSnapshot, persistedRunActive, streaming]);
 
@@ -317,7 +370,7 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
     void sendMessage(message);
   };
 
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
@@ -376,6 +429,7 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
   };
 
   const runs = snapshot?.runs ?? [];
+  const activeSessionTitle = snapshot?.session.title ?? t.agent.untitledSession;
 
   return (
     <aside
@@ -394,46 +448,83 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
             : "hidden md:flex md:pointer-events-none md:invisible md:opacity-0",
       )}
     >
-        <header className="shrink-0 border-b border-border bg-surface px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/12 text-accent">
-              <Sparkles className="h-4 w-4" aria-hidden />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold text-fg">{t.agent.title}</h2>
-              <p className="truncate text-xs text-muted">
-                {pageContext.problemTitle ?? pageContext.contextLabel}
-              </p>
-            </div>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label={t.agent.close}>
-              <X className="h-4 w-4" aria-hidden />
-            </Button>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <select
-              value={activeSessionId ?? ""}
-              onChange={(event) => switchSession(event.target.value)}
-              disabled={streaming || persistedRunActive || sessions.length === 0}
+        <header className="relative shrink-0 border-b border-border bg-surface px-3 py-2">
+          <div ref={sessionMenuRef} className="flex items-center gap-1.5">
+            {!embedded && (
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setSessionMenuOpen((current) => !current)}
+              disabled={streaming || persistedRunActive}
               aria-label={t.agent.session}
-              className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-fg outline-none focus:border-accent/45 disabled:opacity-60"
+              aria-expanded={sessionMenuOpen}
+              aria-haspopup="menu"
+              title={activeSessionTitle}
+              className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-lg px-1.5 text-left transition hover:bg-subtle disabled:opacity-60"
             >
-              <option value="" disabled>{t.agent.untitledSession}</option>
-              {sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.title ?? t.agent.untitledSession}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={createSession}
-              disabled={streaming || persistedRunActive || !activeSessionId}
-              aria-label={t.agent.newSession}
-              title={t.agent.newSession}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
+              <span className="min-w-0 truncate text-sm font-semibold text-fg">
+                {embedded ? activeSessionTitle : t.agent.title}
+              </span>
+              {(pageContext.problemTitle ?? pageContext.contextLabel) && (
+                <span className="min-w-0 truncate text-xs text-muted">
+                  · {pageContext.problemTitle ?? pageContext.contextLabel}
+                </span>
+              )}
+              <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+            </button>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label={t.agent.close}>
+              <X className="h-3.5 w-3.5" aria-hidden />
             </Button>
+
+            {sessionMenuOpen && (
+              <div
+                role="menu"
+                aria-label={t.agent.session}
+                className="absolute left-3 right-3 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-card-hover"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={createSession}
+                  disabled={streaming || persistedRunActive || !activeSessionId}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-fg transition hover:bg-subtle disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5 text-accent" aria-hidden />
+                  {t.agent.newSession}
+                </button>
+                {sessions.length > 0 && (
+                  <>
+                    <div className="my-1 border-t border-border" />
+                    <div className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                      {t.agent.recentSessions}
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {sessions.map((session) => (
+                        <button
+                          key={session.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={session.id === activeSessionId}
+                          onClick={() => switchSession(session.id)}
+                          disabled={streaming || persistedRunActive}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:opacity-50"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {session.title ?? t.agent.untitledSession}
+                          </span>
+                          {session.id === activeSessionId && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </header>
 
@@ -496,6 +587,35 @@ export function AgentSidebar({ open, onClose, pageContext, embedded = false }: A
           <div className="mx-4 mb-2 flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/8 px-3 py-2 text-xs text-danger">
             <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>{error}</span>
+          </div>
+        )}
+
+        {snapshot?.session.suggestNewSession && boundaryDismissedAt === null && (
+          <div className="mx-3 mb-3 rounded-xl border border-accent/25 bg-accent/6 p-3">
+            <p className="text-xs font-semibold text-fg">{t.agent.sessionBoundaryTitle}</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              {t.agent.sessionBoundaryBody}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="primary"
+                onClick={createSession}
+                disabled={streaming || persistedRunActive}
+              >
+                {t.agent.newSession}
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={continueSession}
+                disabled={streaming || persistedRunActive}
+              >
+                {t.agent.continueSession}
+              </Button>
+            </div>
           </div>
         )}
 

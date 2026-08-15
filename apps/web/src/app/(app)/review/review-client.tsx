@@ -629,30 +629,38 @@ function ReviewHeader({
   }
 
   return (
-    <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <h1 className="max-w-[32rem] truncate text-lg font-semibold tracking-tight">
-        {problem.leetcodeId != null && (
-          <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
+    <header className="space-y-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <h1 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
+          {problem.leetcodeId != null && (
+            <span className="text-muted tabular-nums">{problem.leetcodeId}. </span>
+          )}
+          {problem.title}
+        </h1>
+        <div className="flex shrink-0 items-center gap-2">
+          <DifficultyPill difficulty={problem.difficulty} language={language} />
+          <FsrsStatePill state={problem.fsrsState} language={language} />
+          <span className="text-xs uppercase tracking-wider text-muted">
+            {language === "zh" ? `${dueCount} 到期` : `${dueCount} due`}
+          </span>
+        </div>
+      </div>
+      <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+        {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
+          <span key={tag} className="shrink-0 text-xs text-muted">#{tag}</span>
+        ))}
+        {cardTotal !== null && (
+          <span className="shrink-0 text-xs text-muted">· {t.common.cards(cardTotal)}</span>
         )}
-        {problem.title}
-      </h1>
-      <DifficultyPill difficulty={problem.difficulty} language={language} />
-      <FsrsStatePill state={problem.fsrsState} language={language} />
-      {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
-        <span key={tag} className="text-xs text-muted">#{tag}</span>
-      ))}
-      {cardTotal !== null && (
-        <span className="text-xs text-muted">· {t.common.cards(cardTotal)}</span>
-      )}
-      <button
-        type="button"
-        onClick={toggleTags}
-        className="ml-auto text-[11px] text-muted hover:text-fg transition-colors"
-        title={tagsHidden ? t.review.showTopicTags : t.review.hideTopicTags}
-      >
-        {tagsHidden ? t.review.showTags : t.review.hideTags}
-      </button>
-      <span className="text-xs uppercase tracking-wider text-muted">{language === "zh" ? `${dueCount} 到期` : `${dueCount} due`}</span>
+        <button
+          type="button"
+          onClick={toggleTags}
+          className="ml-auto shrink-0 text-[11px] text-muted transition-colors hover:text-fg"
+          title={tagsHidden ? t.review.showTopicTags : t.review.hideTopicTags}
+        >
+          {tagsHidden ? t.review.showTags : t.review.hideTags}
+        </button>
+      </div>
     </header>
   );
 }
@@ -688,8 +696,8 @@ function StatementPanel({
 }) {
   const { t } = useLanguage();
   return (
-    <Surface className="flex h-full min-h-[420px] flex-col overflow-hidden lg:min-h-0">
-      <div className="shrink-0 border-b border-border px-4 py-3">
+    <Surface className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-none border-0 shadow-none lg:min-h-0">
+      <div className="shrink-0 border-b border-border px-5 py-4">
         <ReviewHeader
           problem={problem}
           cardTotal={cardTotal}
@@ -697,13 +705,7 @@ function StatementPanel({
           language={language}
         />
       </div>
-      <div className="shrink-0 border-b border-border px-4 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted">
-          {t.review.questionStatement}
-        </span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {problem.descriptionMd ? (
           <Markdown className="[&_code]:break-words">{stripConstraints(problem.descriptionMd)}</Markdown>
         ) : (
@@ -775,12 +777,12 @@ function WorkspacePanel({
   ];
 
   return (
-    <Surface className="flex h-full min-h-[620px] flex-col overflow-hidden lg:min-h-0">
-      <div className="shrink-0 border-b border-border px-4 py-3">
+    <Surface className="flex h-full min-h-[620px] flex-col overflow-hidden rounded-none border-0 shadow-none lg:min-h-0">
+      <div className="shrink-0 border-b border-border px-5 pt-2">
         <div
           role="tablist"
           aria-label={t.review.workspace}
-          className="flex rounded-lg bg-subtle p-1"
+          className="flex items-end gap-6 overflow-x-auto"
           onKeyDown={(event) => moveTabFocus(event)}
         >
           {tabs.map((tab) => (
@@ -923,12 +925,18 @@ function ReviewTabButton({
       aria-label={count != null ? `${label} ${count}` : label}
       onClick={onClick}
       className={cn(
-        "min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
-        active ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg",
+        "relative flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-0.5 text-sm font-medium transition",
+        active
+          ? "border-accent text-fg"
+          : "border-transparent text-muted hover:border-border hover:text-fg",
       )}
     >
       <span className="truncate">{label}</span>
-      {count != null && <span className="ml-1 text-[10px] text-muted">{count}</span>}
+      {count != null && (
+        <span className="rounded-full bg-subtle px-1.5 py-0.5 text-[10px] leading-none text-muted tabular-nums">
+          {count}
+        </span>
+      )}
     </button>
   );
 }

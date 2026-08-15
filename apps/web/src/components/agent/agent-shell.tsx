@@ -162,6 +162,7 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
           onClick={() => setOpen(true)}
           className="fixed bottom-5 right-5 z-40 inline-flex h-11 items-center gap-2 rounded-full border border-accent/35 bg-surface px-4 text-sm font-medium text-fg shadow-card-hover transition hover:border-accent/60 hover:bg-subtle sm:bottom-6 sm:right-6"
           aria-label={t.agent.open}
+          title={t.agent.open}
         >
           <Sparkles className="h-4 w-4 text-accent" aria-hidden />
           <span>{t.agent.title}</span>

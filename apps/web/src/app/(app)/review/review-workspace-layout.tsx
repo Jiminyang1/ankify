@@ -47,7 +47,9 @@ export type ReviewWorkspaceLayoutProps = {
   labels: ReviewWorkspaceLabels;
 };
 
-const LAYOUT_STORAGE_KEY = "ankify.review.layout.v1";
+// v3 resets older nested-tab arrangements so visible panels reopen in their
+// default sibling positions after the visual hierarchy cleanup.
+const LAYOUT_STORAGE_KEY = "ankify.review.layout.v3";
 const DESKTOP_LAYOUT_QUERY = "(min-width: 1024px)";
 const PANEL_IDS: ReviewPanelId[] = ["question", "study", "coach"];
 const TAB_IDS: Record<ReviewPanelId, string> = {

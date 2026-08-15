@@ -103,9 +103,9 @@ Production smoke testing.
 4. Sign in and verify `/today`, `/review`, `/problems`, and `/settings` against
    recognizable Production data.
 5. Open Study Coach from a global page and a problem page. Verify session list,
-   one ToolLoopAgent turn, a read-only tool call, streaming completion, and
-   navigation. A valid provider/model/key must be saved in the current user's
-   Production Settings before this test.
+   page-context updates, one ToolLoopAgent turn, a read-only tool call,
+   streaming completion, and navigation. A valid provider/model/key must be
+   saved in the current user's Production Settings before this test.
 6. Verify the `ankify-ai-generation` Queue trigger exists, then run one queued
    Card or Quiz job through `queued -> running -> succeeded`.
 7. Inspect Vercel runtime logs and clean up any sessions or candidate content

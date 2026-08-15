@@ -19,10 +19,14 @@ pnpm dev:ext                # Chrome extension build in watch mode
 
 pnpm typecheck              # run tsc --noEmit across all packages
 pnpm lint                   # run linter across all packages
-pnpm build                  # production build across all packages
+ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm build
+                            # production build across all packages
 ```
 
 The root `scripts` in `package.json` delegate to workspace packages via pnpm filters (`--filter @ankify/web`, `--filter @ankify/extension`, `--filter @ankify/db`).
+A bare Production extension or root build intentionally fails closed: always
+pass the canonical `ANKIFY_EXTENSION_API_ORIGIN` shown above. Development watch
+mode defaults to `http://localhost:3000` and does not require the variable.
 
 ## Architecture
 

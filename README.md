@@ -42,9 +42,11 @@ The quiz on the right is freshly generated for this session — five focused mul
 
 ### 3 · Study Coach across the web app
 
-Study Coach is an optional, resizable right-hand panel available from every authenticated page. It uses Vercel AI SDK's `ToolLoopAgent` to inspect the current page context, review queue, saved problems, submissions, notes, cards, and answered quiz results. It can navigate to another problem immediately and can propose Card or Quiz generation, while actual writes remain explicit user-confirmed actions.
+Study Coach is available from every authenticated page as an optional, resizable right-hand panel. It uses Vercel AI SDK's `ToolLoopAgent` to inspect the current page context, review queue, saved problems, submissions, notes, cards, and answered quiz results. It can navigate to another problem immediately and can propose Card or Quiz generation, while actual writes remain explicit user-confirmed actions.
 
-Conversation sessions persist independently of pages. Every run stores its own page/problem context, so one session can follow the user from Today to Review or a problem detail page without incorrectly pinning the whole conversation to one problem.
+Conversation sessions persist independently of pages. Every run stores its own page/problem context, so one session can follow the user from Today to Review or a problem detail page without incorrectly pinning the whole conversation to one problem. Agent instructions stay stable; the server attaches each run's trusted context to that turn when building model history, while tools remain scoped to the current user and problem.
+
+After 18 uncompacted runs, Coach suggests starting a fresh session without forcing a switch. If the user continues past the 24-run model window, the oldest 16 runs are condensed into a session summary and the latest 8 completed turns remain verbatim. Reasoning is never carried forward, and full tool results are retained only for the latest 6 completed runs; durable problem data is reloaded through tools when needed. The complete conversation remains stored for the UI and account export.
 
 ### 4 · One-click capture from LeetCode
 
@@ -255,8 +257,10 @@ pnpm db:release      # back up Production, then apply Production migrations
 ## Verification
 
 ```bash
-pnpm release:check
+ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm release:check
 ```
 
 This runs type checking, lint, tests, all Production builds, and fails on any
-high/critical production dependency advisory.
+high/critical production dependency advisory. Production extension builds fail
+closed when `ANKIFY_EXTENSION_API_ORIGIN` is omitted; development watch mode
+continues to target `http://localhost:3000` automatically.

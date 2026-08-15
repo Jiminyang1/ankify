@@ -13,6 +13,9 @@ export type AgentSessionDto = {
   id: string;
   title: string | null;
   status: "active" | "archived";
+  runCount: number;
+  contextRunCount: number;
+  suggestNewSession: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -71,7 +74,7 @@ export type AgentStreamEvent =
     }
   | { type: "text_delta"; delta: string }
   | { type: "step"; step: AgentStepDto }
-  | { type: "done"; message: AgentMessageDto; run: AgentRunDto }
+  | { type: "done"; session: AgentSessionDto; message: AgentMessageDto; run: AgentRunDto }
   | { type: "error"; run: AgentRunDto; message: string };
 
 export type CardDto = {

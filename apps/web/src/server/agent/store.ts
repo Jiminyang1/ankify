@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { ModelMessage } from "ai";
 import type {
@@ -20,9 +20,20 @@ import {
   type AgentStep,
 } from "@ankify/db";
 import type { AiRuntimeSettings } from "@/server/settings";
+import {
+  buildAgentUserContent,
+  buildCompressedSessionMessages,
+  prepareAgentResponseMessages,
+  type AgentSummaryTurn,
+} from "./prompt";
+import {
+  AGENT_COMPACTION_BATCH_RUNS,
+  AGENT_DETAILED_TOOL_RUNS,
+  AGENT_MODEL_RUN_LIMIT,
+  AGENT_SESSION_BOUNDARY_RUNS,
+} from "./limits";
 
 const SNAPSHOT_RUN_LIMIT = 50;
-const MODEL_RUN_LIMIT = 24;
 const STALE_RUN_MS = 240_000;
 
 function interruptedRunUpdate(now: Date) {
@@ -191,6 +202,7 @@ export async function beginAgentTurn(args: {
       .update(schema.agentSessions)
       .set({
         title: activeSession.title ?? makeSessionTitle(args.message),
+        runCount: sql`${schema.agentSessions.runCount} + 1`,
         updatedAt: now,
       })
       .where(eq(schema.agentSessions.id, activeSession.id))
@@ -277,11 +289,29 @@ export async function getAgentSessionSnapshot(
 
 export async function getAgentModelMessages(userId: string, sessionId: string) {
   const db = getDb();
+  const [session] = await db
+    .select({
+      summaryText: schema.agentSessions.summaryText,
+      runCount: schema.agentSessions.runCount,
+      summarizedRunCount: schema.agentSessions.summarizedRunCount,
+    })
+    .from(schema.agentSessions)
+    .where(
+      and(
+        eq(schema.agentSessions.id, sessionId),
+        eq(schema.agentSessions.userId, userId),
+      ),
+    )
+    .limit(1);
+  if (!session) throw new AgentRequestError("session_not_found", "Agent session not found.", 404);
+
+  const contextRunCount = session.runCount - session.summarizedRunCount;
   const runs = (
     await db
       .select({
         id: schema.agentRuns.id,
         status: schema.agentRuns.status,
+        contextJson: schema.agentRuns.contextJson,
         responseMessagesJson: schema.agentRuns.responseMessagesJson,
         startedAt: schema.agentRuns.startedAt,
       })
@@ -292,10 +322,12 @@ export async function getAgentModelMessages(userId: string, sessionId: string) {
           eq(schema.agentRuns.sessionId, sessionId),
         ),
       )
-      .orderBy(desc(schema.agentRuns.startedAt))
-      .limit(MODEL_RUN_LIMIT)
+      .orderBy(desc(schema.agentRuns.startedAt), desc(schema.agentRuns.id))
+      .limit(Math.min(contextRunCount, AGENT_MODEL_RUN_LIMIT))
   ).reverse();
-  if (runs.length === 0) return [];
+  if (runs.length === 0) {
+    return session.summaryText ? buildCompressedSessionMessages(session.summaryText) : [];
+  }
 
   const userMessages = await db
     .select({ runId: schema.agentMessages.runId, content: schema.agentMessages.content })
@@ -309,15 +341,123 @@ export async function getAgentModelMessages(userId: string, sessionId: string) {
     );
   const userContentByRun = new Map(userMessages.map((message) => [message.runId, message.content]));
 
-  return runs.flatMap<ModelMessage>((run) => {
+  const detailedToolRunIds = new Set(
+    runs
+      .filter((run) => run.status === "succeeded")
+      .slice(-AGENT_DETAILED_TOOL_RUNS)
+      .map((run) => run.id),
+  );
+  const messages = runs.flatMap<ModelMessage>((run) => {
     const messages: ModelMessage[] = [
-      { role: "user", content: userContentByRun.get(run.id)! },
+      {
+        role: "user",
+        content: buildAgentUserContent(run.contextJson, userContentByRun.get(run.id)!),
+      },
     ];
     if (run.status === "succeeded") {
-      messages.push(...(run.responseMessagesJson as ModelMessage[]));
+      messages.push(
+        ...prepareAgentResponseMessages(
+          run.responseMessagesJson as ModelMessage[],
+          detailedToolRunIds.has(run.id),
+        ),
+      );
     }
     return messages;
   });
+  return session.summaryText
+    ? [...buildCompressedSessionMessages(session.summaryText), ...messages]
+    : messages;
+}
+
+export async function getAgentCompactionBatch(userId: string, sessionId: string) {
+  const db = getDb();
+  const [session] = await db
+    .select({
+      summaryText: schema.agentSessions.summaryText,
+      runCount: schema.agentSessions.runCount,
+      summarizedRunCount: schema.agentSessions.summarizedRunCount,
+    })
+    .from(schema.agentSessions)
+    .where(
+      and(
+        eq(schema.agentSessions.id, sessionId),
+        eq(schema.agentSessions.userId, userId),
+      ),
+    )
+    .limit(1);
+  if (!session) throw new AgentRequestError("session_not_found", "Agent session not found.", 404);
+  if (session.runCount - session.summarizedRunCount <= AGENT_MODEL_RUN_LIMIT) return null;
+
+  const runs = await db
+    .select({
+      id: schema.agentRuns.id,
+      context: schema.agentRuns.contextJson,
+    })
+    .from(schema.agentRuns)
+    .where(
+      and(
+        eq(schema.agentRuns.userId, userId),
+        eq(schema.agentRuns.sessionId, sessionId),
+      ),
+    )
+    .orderBy(asc(schema.agentRuns.startedAt), asc(schema.agentRuns.id))
+    .limit(AGENT_COMPACTION_BATCH_RUNS)
+    .offset(session.summarizedRunCount);
+  const messages = await db
+    .select({
+      runId: schema.agentMessages.runId,
+      role: schema.agentMessages.role,
+      content: schema.agentMessages.content,
+    })
+    .from(schema.agentMessages)
+    .where(
+      and(
+        eq(schema.agentMessages.userId, userId),
+        inArray(schema.agentMessages.runId, runs.map((run) => run.id)),
+      ),
+    );
+  const messagesByRun = new Map<string, { user?: string; assistant?: string }>();
+  for (const message of messages) {
+    const current = messagesByRun.get(message.runId) ?? {};
+    current[message.role] = message.content;
+    messagesByRun.set(message.runId, current);
+  }
+  const turns: AgentSummaryTurn[] = runs.map((run) => ({
+    context: run.context,
+    userMessage: messagesByRun.get(run.id)!.user!,
+    assistantMessage: messagesByRun.get(run.id)?.assistant ?? null,
+  }));
+  return {
+    previousSummary: session.summaryText,
+    summarizedRunCount: session.summarizedRunCount,
+    turns,
+  };
+}
+
+export async function saveAgentSessionSummary(args: {
+  userId: string;
+  sessionId: string;
+  previousSummarizedRunCount: number;
+  summarizedTurnCount: number;
+  summary: string;
+}) {
+  const db = getDb();
+  const [session] = await db
+    .update(schema.agentSessions)
+    .set({
+      summaryText: args.summary,
+      summarizedRunCount: args.previousSummarizedRunCount + args.summarizedTurnCount,
+    })
+    .where(
+      and(
+        eq(schema.agentSessions.id, args.sessionId),
+        eq(schema.agentSessions.userId, args.userId),
+        eq(schema.agentSessions.summarizedRunCount, args.previousSummarizedRunCount),
+      ),
+    )
+    .returning();
+  if (!session) throw new Error("agent_session_summary_conflict");
+  return toAgentSessionDto(session);
 }
 
 export async function createAgentStep(args: {
@@ -392,11 +532,16 @@ export async function finishAgentRun(args: {
       )
       .returning();
     if (!run) throw new Error("agent_run_not_running");
-    await tx
+    const [session] = await tx
       .update(schema.agentSessions)
       .set({ updatedAt: now })
-      .where(eq(schema.agentSessions.id, args.sessionId));
-    return { message: toAgentMessageDto(message!), run: toAgentRunDto(run) };
+      .where(eq(schema.agentSessions.id, args.sessionId))
+      .returning();
+    return {
+      session: toAgentSessionDto(session!),
+      message: toAgentMessageDto(message!),
+      run: toAgentRunDto(run),
+    };
   });
 }
 
@@ -480,10 +625,14 @@ export async function dismissAgentProposal(userId: string, stepId: string) {
 }
 
 export function toAgentSessionDto(session: AgentSession): AgentSessionDto {
+  const contextRunCount = session.runCount - session.summarizedRunCount;
   return {
     id: session.id,
     title: session.title,
     status: session.status,
+    runCount: session.runCount,
+    contextRunCount,
+    suggestNewSession: contextRunCount >= AGENT_SESSION_BOUNDARY_RUNS,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
   };
