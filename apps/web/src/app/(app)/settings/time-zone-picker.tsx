@@ -69,8 +69,7 @@ export function TimeZonePicker({
     <Select
       id={id}
       value={value}
-      onChange={(event) => {
-        const nextValue = event.target.value;
+      onValueChange={(nextValue) => {
         onChange(
           nextValue === "__device__" && detectedTimeZone
             ? detectedTimeZone

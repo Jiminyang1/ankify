@@ -1,4 +1,6 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
+import { ActiveIndicator } from "./motion";
 
 export type TabItem = {
   id: string;
@@ -21,6 +23,8 @@ export function Tabs({
   onChange: (id: string) => void;
   className?: string;
 }) {
+  const indicatorId = useId();
+
   const moveFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     const tabButtons = Array.from(
@@ -58,13 +62,19 @@ export function Tabs({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(t.id)}
             className={cn(
-              "h-8 rounded-lg px-3 text-sm font-medium transition",
+              "relative isolate h-8 rounded-lg px-3 text-sm font-medium transition-colors",
               selected
-                ? "bg-surface text-fg shadow-card"
+                ? "text-fg"
                 : "text-muted hover:bg-subtle hover:text-fg",
             )}
           >
-            {t.label}
+            {selected && (
+              <ActiveIndicator
+                layoutId={`tabs-${indicatorId}`}
+                className="absolute inset-0 z-0 rounded-lg bg-surface shadow-card"
+              />
+            )}
+            <span className="relative z-10">{t.label}</span>
           </button>
         );
       })}

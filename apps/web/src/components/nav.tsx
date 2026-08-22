@@ -15,6 +15,7 @@ import { BrandLockup } from "./brand";
 import { useLanguage } from "./LanguageProvider";
 import { UserAvatar } from "./user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
+import { ActiveIndicator, MotionPresence } from "@/components/ui/motion";
 
 const LINKS = [
   { href: "/today", key: "today" },
@@ -121,15 +122,21 @@ export function Nav({
                   href={l.href as Route}
                   prefetch={false}
                   className={cn(
-                    "relative min-h-9 rounded-md px-1.5 py-2 text-center transition font-ui sm:min-h-0 sm:px-3 sm:py-1.5",
+                    "relative isolate min-h-9 rounded-md px-1.5 py-2 text-center transition-colors font-ui sm:min-h-0 sm:px-3 sm:py-1.5",
                     active
-                      ? "bg-accent-soft text-accent"
+                      ? "text-accent"
                       : "text-muted hover:bg-subtle hover:text-fg",
                   )}
                 >
-                  {t.nav[l.key]}
+                  {active && (
+                    <ActiveIndicator
+                      layoutId="primary-nav-active"
+                      className="absolute inset-0 z-0 rounded-md bg-accent-soft"
+                    />
+                  )}
+                  <span className="relative z-10">{t.nav[l.key]}</span>
                   {showBadge && (
-                    <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-contrast">
+                    <span className="relative z-10 ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-contrast">
                       {dueCount > 99 ? "99+" : dueCount}
                     </span>
                   )}
@@ -139,9 +146,7 @@ export function Nav({
           </div>
         )}
 
-        <div
-          className="flex items-center justify-self-end gap-2"
-        >
+        <div className="flex items-center justify-self-end gap-2">
           {!isPublicPage && user && (
             <div className="relative" ref={accountMenuRef}>
               <button
@@ -169,42 +174,41 @@ export function Nav({
                 </span>
               </button>
 
-              {accountOpen && (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-[calc(100%+0.5rem)] w-64 overflow-hidden rounded-xl border border-border bg-surface p-2 shadow-card-hover"
-                >
-                  <div className="flex items-center gap-3 border-b border-border px-2 pb-3 pt-1">
-                    <UserAvatar
-                      name={user.name}
-                      email={user.email}
-                      image={user.image}
-                      size="md"
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-fg">{displayName}</div>
-                      <div className="truncate text-xs text-muted">{user.email}</div>
-                    </div>
+              <MotionPresence
+                show={accountOpen}
+                role="menu"
+                className="absolute right-0 top-[calc(100%+0.5rem)] w-64 overflow-hidden rounded-xl border border-border bg-surface p-2 shadow-card-hover"
+              >
+                <div className="flex items-center gap-3 border-b border-border px-2 pb-3 pt-1">
+                  <UserAvatar
+                    name={user.name}
+                    email={user.email}
+                    image={user.image}
+                    size="md"
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-fg">{displayName}</div>
+                    <div className="truncate text-xs text-muted">{user.email}</div>
                   </div>
-                  <Link
-                    href="/settings"
-                    prefetch={false}
-                    role="menuitem"
-                    onClick={() => setAccountOpen(false)}
-                    className="mt-2 block rounded-lg px-3 py-2 text-sm text-fg transition hover:bg-subtle"
-                  >
-                    {t.nav.accountSettings}
-                  </Link>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}
-                    className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted transition hover:bg-subtle hover:text-fg"
-                  >
-                    {t.nav.signOut}
-                  </button>
                 </div>
-              )}
+                <Link
+                  href="/settings"
+                  prefetch={false}
+                  role="menuitem"
+                  onClick={() => setAccountOpen(false)}
+                  className="mt-2 block rounded-lg px-3 py-2 text-sm text-fg transition hover:bg-subtle"
+                >
+                  {t.nav.accountSettings}
+                </Link>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.assign("/login") } })}
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm text-muted transition hover:bg-subtle hover:text-fg"
+                >
+                  {t.nav.signOut}
+                </button>
+              </MotionPresence>
             </div>
           )}
         </div>

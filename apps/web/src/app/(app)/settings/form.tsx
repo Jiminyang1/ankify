@@ -24,9 +24,7 @@ export function AppearanceSettingsForm() {
       <Select
         id="appearance-theme"
         value={theme}
-        onChange={(event) =>
-          setTheme(event.target.value as "system" | "light" | "dark")
-        }
+        onValueChange={(value) => setTheme(value as "system" | "light" | "dark")}
       >
         <option value="system">{t.theme.system}</option>
         <option value="light">{t.theme.light}</option>
@@ -263,8 +261,8 @@ export function AiSettingsForm({
         <Select
           id="ai-provider"
           value={provider}
-          onChange={(e) => {
-            const p = e.target.value as typeof provider;
+          onValueChange={(value) => {
+            const p = value as typeof provider;
             setProvider(p);
             const first = MODEL_PRESETS[p]?.[0];
             setModel(first ?? "");
@@ -289,14 +287,13 @@ export function AiSettingsForm({
         <Select
           id="ai-model"
           value={isCustomModel ? "__custom__" : model}
-          onChange={(e) => {
-            if (e.target.value === "__custom__") {
+          onValueChange={(value) => {
+            if (value === "__custom__") {
               setModel("");
             } else {
-              setModel(e.target.value);
+              setModel(value);
             }
           }}
-          autoComplete="off"
           className="font-mono"
         >
           {models.map((m) => (
@@ -347,9 +344,7 @@ export function AiSettingsForm({
           <Select
             id="ai-reasoning-mode"
             value={reasoningMode}
-            onChange={(event) =>
-              setReasoningMode(event.target.value as AiReasoningMode)
-            }
+            onValueChange={(value) => setReasoningMode(value as AiReasoningMode)}
           >
             <option value="fast">{t.settings.fast}</option>
             <option value="thinking">{t.settings.thinking}</option>
@@ -511,7 +506,7 @@ export function LanguageRegionSettingsForm({
           <Select
             id="interface-language"
             value={interfaceLanguage}
-            onChange={(event) => setInterfaceLanguage(event.target.value as Language)}
+            onValueChange={(value) => setInterfaceLanguage(value as Language)}
           >
             <option value="en">English</option>
             <option value="zh">简体中文</option>
@@ -528,7 +523,7 @@ export function LanguageRegionSettingsForm({
           <Select
             id="generation-language"
             value={generationLanguage}
-            onChange={(event) => setGenerationLanguage(event.target.value as Language)}
+            onValueChange={(value) => setGenerationLanguage(value as Language)}
           >
             <option value="en">{t.settings.generationLanguageEnglish}</option>
             <option value="zh">{t.settings.generationLanguageChinese}</option>

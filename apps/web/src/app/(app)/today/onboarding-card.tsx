@@ -355,8 +355,8 @@ export function OnboardingCard({
                 <Field label={t.provider}>
                   <Select
                     value={provider}
-                    onChange={(event) => {
-                      const next = event.target.value as AiProvider;
+                    onValueChange={(value) => {
+                      const next = value as AiProvider;
                       setProvider(next);
                       setModel(next ? (MODEL_PRESETS[next][0] ?? "") : "");
                       setApiKey("");

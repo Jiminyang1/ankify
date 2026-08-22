@@ -40,7 +40,7 @@ export function buttonClasses({
   className?: string;
 } = {}) {
   return cn(
-    "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border font-medium leading-none transition-[background-color,border-color,color,box-shadow,filter,transform] duration-150 active:translate-y-px disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-45 motion-reduce:transform-none",
+    "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border font-medium leading-none transition-[background-color,border-color,color,box-shadow,filter,transform] duration-150 active:translate-y-px active:scale-[0.98] disabled:pointer-events-none disabled:translate-y-0 disabled:scale-100 disabled:opacity-45 motion-reduce:transform-none",
     VARIANT[variant],
     SIZE[size],
     className,

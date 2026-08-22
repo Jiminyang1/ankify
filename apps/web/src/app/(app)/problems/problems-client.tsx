@@ -12,6 +12,7 @@ import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { ActiveIndicator } from "@/components/ui/motion";
 import { PageFrame, PageHeader } from "@/components/ui/page";
 import { useLanguage } from "@/components/LanguageProvider";
 import { cn, formatRelative } from "@/lib/utils";
@@ -289,13 +290,19 @@ export default function ProblemsPage({
               type="button"
               onClick={() => setFilters((f) => ({ ...f, difficulty: o.value }))}
               className={cn(
-                "h-8 rounded-lg px-3 text-xs font-medium transition",
+                "relative isolate h-8 rounded-lg px-3 text-xs font-medium transition-colors",
                 filters.difficulty === o.value
-                  ? "bg-surface text-fg shadow-card"
+                  ? "text-fg"
                   : "text-muted hover:bg-surface/60 hover:text-fg",
               )}
             >
-              {o.label}
+              {filters.difficulty === o.value && (
+                <ActiveIndicator
+                  layoutId="problem-difficulty-active"
+                  className="absolute inset-0 z-0 rounded-lg bg-surface shadow-card"
+                />
+              )}
+              <span className="relative z-10">{o.label}</span>
             </button>
           ))}
         </div>
@@ -304,7 +311,7 @@ export default function ProblemsPage({
         <Select
           aria-label={t.problems.filterStateAria}
           value={filters.state}
-          onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value as FilterState["state"] }))}
+          onValueChange={(value) => setFilters((f) => ({ ...f, state: value as FilterState["state"] }))}
           className="w-auto"
         >
           {stateOptions.map((o) => (
@@ -316,7 +323,7 @@ export default function ProblemsPage({
         <Select
           aria-label={t.problems.filterTagAria}
           value={filters.tag}
-          onChange={(e) => setFilters((f) => ({ ...f, tag: e.target.value }))}
+          onValueChange={(value) => setFilters((f) => ({ ...f, tag: value }))}
           className="w-auto"
         >
           <option value="">{t.problems.allTags}</option>

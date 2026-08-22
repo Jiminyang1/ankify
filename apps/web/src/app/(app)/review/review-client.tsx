@@ -26,6 +26,7 @@ import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
+import { ActiveIndicator } from "@/components/ui/motion";
 import { Markdown } from "@/components/ui/markdown";
 import { useLanguage } from "@/components/LanguageProvider";
 import { AgentSidebar } from "@/components/agent/agent-sidebar";
@@ -925,12 +926,18 @@ function ReviewTabButton({
       aria-label={count != null ? `${label} ${count}` : label}
       onClick={onClick}
       className={cn(
-        "relative flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-0.5 text-sm font-medium transition",
+        "relative flex h-11 shrink-0 items-center gap-1.5 px-0.5 text-sm font-medium transition-colors",
         active
-          ? "border-accent text-fg"
-          : "border-transparent text-muted hover:border-border hover:text-fg",
+          ? "text-fg"
+          : "text-muted hover:text-fg",
       )}
     >
+      {active && (
+        <ActiveIndicator
+          layoutId="review-workspace-active"
+          className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-accent"
+        />
+      )}
       <span className="truncate">{label}</span>
       {count != null && (
         <span className="rounded-full bg-subtle px-1.5 py-0.5 text-[10px] leading-none text-muted tabular-nums">

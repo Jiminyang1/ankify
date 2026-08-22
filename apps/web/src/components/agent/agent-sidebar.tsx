@@ -32,6 +32,7 @@ import type {
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Markdown } from "@/components/ui/markdown";
+import { IconSwap, MotionPresence } from "@/components/ui/motion";
 import { notifyAgentJobUpdated } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
 import type { AgentClientContext } from "./agent-shell";
@@ -473,58 +474,63 @@ export function AgentSidebar({
                   · {pageContext.problemTitle ?? pageContext.contextLabel}
                 </span>
               )}
-              <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+              <ChevronDown
+                className={cn(
+                  "ml-auto h-3.5 w-3.5 shrink-0 text-muted transition-transform",
+                  sessionMenuOpen && "rotate-180",
+                )}
+                aria-hidden
+              />
             </button>
             <Button variant="ghost" size="icon" onClick={onClose} aria-label={t.agent.close}>
               <X className="h-3.5 w-3.5" aria-hidden />
             </Button>
 
-            {sessionMenuOpen && (
-              <div
-                role="menu"
-                aria-label={t.agent.session}
-                className="absolute left-3 right-3 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-card-hover"
+            <MotionPresence
+              show={sessionMenuOpen}
+              role="menu"
+              aria-label={t.agent.session}
+              className="absolute left-3 right-3 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-card-hover"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={createSession}
+                disabled={streaming || persistedRunActive || !activeSessionId}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-fg transition hover:bg-subtle disabled:opacity-40"
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={createSession}
-                  disabled={streaming || persistedRunActive || !activeSessionId}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-fg transition hover:bg-subtle disabled:opacity-40"
-                >
-                  <Plus className="h-3.5 w-3.5 text-accent" aria-hidden />
-                  {t.agent.newSession}
-                </button>
-                {sessions.length > 0 && (
-                  <>
-                    <div className="my-1 border-t border-border" />
-                    <div className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-                      {t.agent.recentSessions}
-                    </div>
-                    <div className="max-h-56 overflow-y-auto">
-                      {sessions.map((session) => (
-                        <button
-                          key={session.id}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={session.id === activeSessionId}
-                          onClick={() => switchSession(session.id)}
-                          disabled={streaming || persistedRunActive}
-                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:opacity-50"
-                        >
-                          <span className="min-w-0 flex-1 truncate">
-                            {session.title ?? t.agent.untitledSession}
-                          </span>
-                          {session.id === activeSessionId && (
-                            <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+                <Plus className="h-3.5 w-3.5 text-accent" aria-hidden />
+                {t.agent.newSession}
+              </button>
+              {sessions.length > 0 && (
+                <>
+                  <div className="my-1 border-t border-border" />
+                  <div className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                    {t.agent.recentSessions}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {sessions.map((session) => (
+                      <button
+                        key={session.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={session.id === activeSessionId}
+                        onClick={() => switchSession(session.id)}
+                        disabled={streaming || persistedRunActive}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:opacity-50"
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {session.title ?? t.agent.untitledSession}
+                        </span>
+                        {session.id === activeSessionId && (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </MotionPresence>
           </div>
         </header>
 
@@ -638,11 +644,13 @@ export function AgentSidebar({
               disabled={streaming || persistedRunActive || !draft.trim()}
               aria-label={t.agent.send}
             >
-              {streaming ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Send className="h-4 w-4" aria-hidden />
-              )}
+              <IconSwap swapKey={streaming ? "streaming" : "ready"}>
+                {streaming ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Send className="h-4 w-4" aria-hidden />
+                )}
+              </IconSwap>
             </Button>
           </div>
         </form>

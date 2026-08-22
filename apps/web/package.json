@@ -29,6 +29,7 @@
     "drizzle-orm": "^0.45.2",
     "flexlayout-react": "0.10.1",
     "lucide-react": "^0.469.0",
+    "motion": "^12.43.0",
     "nanoid": "^5.1.16",
     "next": "16.2.11",
     "react": "19.2.8",
