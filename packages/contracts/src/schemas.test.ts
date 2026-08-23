@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentNavigationSchema,
   agentProposalSchema,
+  agentSessionPatchSchema,
   agentTurnRequestSchema,
   aiJobCreateRequestSchema,
   captureProblemSchema,
@@ -61,6 +62,15 @@ describe("Agent contracts", () => {
         problemId: "problem-1",
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts a compact session title and rejects empty or oversized titles", () => {
+    expect(agentSessionPatchSchema.safeParse({ title: "  Greedy review  " }).data).toEqual({
+      title: "Greedy review",
+    });
+    expect(agentSessionPatchSchema.safeParse({ title: "   " }).success).toBe(false);
+    expect(agentSessionPatchSchema.safeParse({ title: "x".repeat(81) }).success).toBe(false);
+    expect(agentSessionPatchSchema.safeParse({ title: "Review", status: "archived" }).success).toBe(false);
   });
 });
 

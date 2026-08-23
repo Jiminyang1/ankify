@@ -79,6 +79,13 @@ export const agentTurnRequestSchema = z
   .strict();
 export type AgentTurnRequestInput = z.infer<typeof agentTurnRequestSchema>;
 
+export const agentSessionPatchSchema = z
+  .object({
+    title: z.string().trim().min(1).max(80),
+  })
+  .strict();
+export type AgentSessionPatchInput = z.infer<typeof agentSessionPatchSchema>;
+
 export const agentProposalSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("card_generate"),

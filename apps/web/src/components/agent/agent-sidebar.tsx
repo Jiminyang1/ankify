@@ -16,9 +16,11 @@ import {
   ChevronDown,
   CircleAlert,
   LoaderCircle,
+  Pencil,
   Plus,
   Send,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import type {
@@ -31,6 +33,8 @@ import type {
 } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/field";
 import { Markdown } from "@/components/ui/markdown";
 import { IconSwap, MotionPresence } from "@/components/ui/motion";
 import { notifyAgentJobUpdated } from "@/lib/agent-events";
@@ -60,6 +64,12 @@ export function AgentSidebar({
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [sessionBusy, setSessionBusy] = useState<string | null>(null);
+  const [sessionActionError, setSessionActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AgentSessionDto | null>(null);
+  const [deleteSessionError, setDeleteSessionError] = useState<string | null>(null);
   const [boundaryDismissedAt, setBoundaryDismissedAt] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,14 +123,21 @@ export function AgentSidebar({
     return () => turnAbortRef.current?.abort();
   }, []);
 
+  const closeSessionMenu = useCallback(() => {
+    setSessionMenuOpen(false);
+    setRenamingSessionId(null);
+    setRenameDraft("");
+    setSessionActionError(null);
+  }, []);
+
   useEffect(() => {
     if (!sessionMenuOpen) return;
     const ownerDocument = sessionMenuRef.current!.ownerDocument;
     const closeMenu = (event: PointerEvent) => {
-      if (!sessionMenuRef.current?.contains(event.target as Node)) setSessionMenuOpen(false);
+      if (!sessionMenuRef.current?.contains(event.target as Node)) closeSessionMenu();
     };
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setSessionMenuOpen(false);
+      if (event.key === "Escape") closeSessionMenu();
     };
     ownerDocument.addEventListener("pointerdown", closeMenu);
     ownerDocument.addEventListener("keydown", closeOnEscape);
@@ -128,7 +145,7 @@ export function AgentSidebar({
       ownerDocument.removeEventListener("pointerdown", closeMenu);
       ownerDocument.removeEventListener("keydown", closeOnEscape);
     };
-  }, [sessionMenuOpen]);
+  }, [closeSessionMenu, sessionMenuOpen]);
 
   useEffect(() => {
     if (!open || sessionsLoaded) return;
@@ -343,8 +360,8 @@ export function AgentSidebar({
     setError(null);
     setLoading(false);
     sessionStorage.removeItem(ACTIVE_SESSION_KEY);
-    setSessionMenuOpen(false);
-  }, [activeSessionId, persistedRunActive, streaming]);
+    closeSessionMenu();
+  }, [activeSessionId, closeSessionMenu, persistedRunActive, streaming]);
 
   const continueSession = useCallback(() => {
     if (!activeSessionId || !snapshot) return;
@@ -354,15 +371,115 @@ export function AgentSidebar({
   }, [activeSessionId, snapshot]);
 
   const switchSession = useCallback((sessionId: string) => {
-    if (streaming || persistedRunActive || sessionId === activeSessionId) return;
+    if (streaming || persistedRunActive) return;
+    if (sessionId === activeSessionId) {
+      closeSessionMenu();
+      return;
+    }
     setActiveSessionId(sessionId);
     setSnapshot(null);
     setJobs({});
     setError(null);
     sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-    setSessionMenuOpen(false);
+    closeSessionMenu();
     void loadSnapshot(sessionId);
-  }, [activeSessionId, loadSnapshot, persistedRunActive, streaming]);
+  }, [activeSessionId, closeSessionMenu, loadSnapshot, persistedRunActive, streaming]);
+
+  const beginRenameSession = (session: AgentSessionDto) => {
+    setRenamingSessionId(session.id);
+    setRenameDraft(session.title ?? t.agent.untitledSession);
+    setSessionActionError(null);
+  };
+
+  const submitSessionRename = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const sessionId = renamingSessionId;
+    const title = renameDraft.trim();
+    if (!sessionId || !title || sessionBusy) return;
+
+    setSessionBusy(sessionId);
+    setSessionActionError(null);
+    try {
+      const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const body = (await response.json()) as {
+        session?: AgentSessionDto;
+        message?: string;
+        error?: string;
+      };
+      if (!response.ok || !body.session) {
+        throw new Error(body.message ?? body.error ?? t.common.saveFailed);
+      }
+      setSessions((current) => sortSessions(mergeById(current, body.session!)));
+      setSnapshot((current) =>
+        current?.session.id === sessionId ? { ...current, session: body.session! } : current,
+      );
+      setRenamingSessionId(null);
+      setRenameDraft("");
+    } catch (renameError) {
+      setSessionActionError(
+        renameError instanceof Error ? renameError.message : t.common.saveFailed,
+      );
+    } finally {
+      setSessionBusy(null);
+    }
+  };
+
+  const requestDeleteSession = (session: AgentSessionDto) => {
+    closeSessionMenu();
+    setDeleteSessionError(null);
+    setDeleteTarget(session);
+  };
+
+  const confirmDeleteSession = async () => {
+    const target = deleteTarget;
+    if (!target || sessionBusy) return;
+
+    setSessionBusy(target.id);
+    setDeleteSessionError(null);
+    try {
+      const response = await fetch(`/api/agent/sessions/${encodeURIComponent(target.id)}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json()) as { message?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(body.message ?? body.error ?? t.common.deleteFailed);
+      }
+
+      const remainingSessions = sessions.filter((session) => session.id !== target.id);
+      setSessions(remainingSessions);
+      sessionStorage.removeItem(boundaryDismissedKey(target.id));
+
+      if (target.id === activeSessionId) {
+        const fallback = remainingSessions[0] ?? null;
+        setSnapshot(null);
+        setJobs({});
+        setPartialResponse("");
+        setBoundaryDismissedAt(null);
+        setDraft("");
+        setError(null);
+        if (fallback) {
+          setActiveSessionId(fallback.id);
+          sessionStorage.setItem(ACTIVE_SESSION_KEY, fallback.id);
+          await loadSnapshot(fallback.id);
+        } else {
+          setActiveSessionId(null);
+          setLoading(false);
+          sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+      }
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      setDeleteSessionError(
+        deleteError instanceof Error ? deleteError.message : t.common.deleteFailed,
+      );
+    } finally {
+      setSessionBusy(null);
+    }
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -449,6 +566,23 @@ export function AgentSidebar({
             : "hidden md:flex md:pointer-events-none md:invisible md:opacity-0",
       )}
     >
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          title={t.agent.deleteSessionTitle}
+          description={t.agent.deleteSessionDescription(
+            deleteTarget?.title ?? t.agent.untitledSession,
+          )}
+          cancelLabel={t.common.cancel}
+          confirmLabel={sessionBusy === deleteTarget?.id ? t.agent.deletingSession : t.common.delete}
+          busy={sessionBusy === deleteTarget?.id}
+          error={deleteSessionError}
+          onClose={() => {
+            if (sessionBusy === deleteTarget?.id) return;
+            setDeleteTarget(null);
+            setDeleteSessionError(null);
+          }}
+          onConfirm={() => void confirmDeleteSession()}
+        />
         <header className="relative shrink-0 border-b border-border bg-surface px-3 py-2">
           <div ref={sessionMenuRef} className="flex items-center gap-1.5">
             {!embedded && (
@@ -458,7 +592,10 @@ export function AgentSidebar({
             )}
             <button
               type="button"
-              onClick={() => setSessionMenuOpen((current) => !current)}
+              onClick={() => {
+                if (sessionMenuOpen) closeSessionMenu();
+                else setSessionMenuOpen(true);
+              }}
               disabled={streaming || persistedRunActive}
               aria-label={t.agent.session}
               aria-expanded={sessionMenuOpen}
@@ -509,25 +646,108 @@ export function AgentSidebar({
                     {t.agent.recentSessions}
                   </div>
                   <div className="max-h-56 overflow-y-auto">
-                    {sessions.map((session) => (
-                      <button
-                        key={session.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={session.id === activeSessionId}
-                        onClick={() => switchSession(session.id)}
-                        disabled={streaming || persistedRunActive}
-                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:opacity-50"
-                      >
-                        <span className="min-w-0 flex-1 truncate">
-                          {session.title ?? t.agent.untitledSession}
-                        </span>
-                        {session.id === activeSessionId && (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
-                        )}
-                      </button>
-                    ))}
+                    {sessions.map((session) => {
+                      const sessionTitle = session.title ?? t.agent.untitledSession;
+                      if (renamingSessionId === session.id) {
+                        return (
+                          <form
+                            key={session.id}
+                            role="none"
+                            onSubmit={(event) => void submitSessionRename(event)}
+                            className="flex items-center gap-1 rounded-lg bg-subtle p-1"
+                          >
+                            <Input
+                              autoFocus
+                              value={renameDraft}
+                              maxLength={80}
+                              aria-label={t.agent.renameSessionPlaceholder}
+                              onChange={(event) => setRenameDraft(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Escape") return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setRenamingSessionId(null);
+                                setRenameDraft("");
+                                setSessionActionError(null);
+                              }}
+                              className="h-8 min-h-8 px-2 py-1 text-xs"
+                            />
+                            <Button
+                              type="submit"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t.common.save}
+                              disabled={!renameDraft.trim() || sessionBusy === session.id}
+                            >
+                              {sessionBusy === session.id ? (
+                                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                              ) : (
+                                <Check className="h-3.5 w-3.5 text-accent" aria-hidden />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t.common.cancel}
+                              disabled={sessionBusy === session.id}
+                              onClick={() => {
+                                setRenamingSessionId(null);
+                                setRenameDraft("");
+                                setSessionActionError(null);
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden />
+                            </Button>
+                          </form>
+                        );
+                      }
+
+                      return (
+                        <div key={session.id} role="none" className="group flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={session.id === activeSessionId}
+                            onClick={() => switchSession(session.id)}
+                            disabled={streaming || persistedRunActive || Boolean(sessionBusy)}
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-fg transition hover:bg-subtle disabled:opacity-50"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{sessionTitle}</span>
+                            {session.id === activeSessionId && (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            aria-label={t.agent.renameSession(sessionTitle)}
+                            title={t.agent.renameSession(sessionTitle)}
+                            onClick={() => beginRenameSession(session)}
+                            disabled={streaming || persistedRunActive || Boolean(sessionBusy)}
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted transition hover:bg-subtle hover:text-fg disabled:opacity-40"
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            aria-label={t.agent.deleteSession(sessionTitle)}
+                            title={t.agent.deleteSession(sessionTitle)}
+                            onClick={() => requestDeleteSession(session)}
+                            disabled={streaming || persistedRunActive || Boolean(sessionBusy)}
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted transition hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
+                  {sessionActionError && (
+                    <p className="mx-1 mt-1 rounded-md bg-danger/10 px-2 py-1.5 text-[11px] text-danger" role="alert">
+                      {sessionActionError}
+                    </p>
+                  )}
                 </>
               )}
             </MotionPresence>

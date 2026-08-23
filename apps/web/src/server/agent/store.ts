@@ -80,6 +80,72 @@ export async function listAgentSessions(userId: string) {
   return sessions.map(toAgentSessionDto);
 }
 
+export async function renameAgentSession(userId: string, sessionId: string, title: string) {
+  const [session] = await getDb()
+    .update(schema.agentSessions)
+    .set({ title, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.agentSessions.id, sessionId),
+        eq(schema.agentSessions.userId, userId),
+        eq(schema.agentSessions.status, "active"),
+      ),
+    )
+    .returning();
+  if (!session) {
+    throw new AgentRequestError("session_not_found", "Agent session not found.", 404);
+  }
+  return toAgentSessionDto(session);
+}
+
+export async function deleteAgentSession(userId: string, sessionId: string) {
+  return getDb().transaction(async (tx) => {
+    const [session] = await tx
+      .select({ id: schema.agentSessions.id })
+      .from(schema.agentSessions)
+      .where(
+        and(
+          eq(schema.agentSessions.id, sessionId),
+          eq(schema.agentSessions.userId, userId),
+          eq(schema.agentSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!session) {
+      throw new AgentRequestError("session_not_found", "Agent session not found.", 404);
+    }
+
+    const [running] = await tx
+      .select({ id: schema.agentRuns.id })
+      .from(schema.agentRuns)
+      .where(
+        and(
+          eq(schema.agentRuns.sessionId, sessionId),
+          eq(schema.agentRuns.userId, userId),
+          eq(schema.agentRuns.status, "running"),
+        ),
+      )
+      .limit(1);
+    if (running) {
+      throw new AgentRequestError(
+        "agent_busy",
+        "Wait for the Study Coach response to finish before deleting this session.",
+        409,
+      );
+    }
+
+    await tx
+      .delete(schema.agentSessions)
+      .where(
+        and(
+          eq(schema.agentSessions.id, sessionId),
+          eq(schema.agentSessions.userId, userId),
+        ),
+      );
+    return { id: session.id };
+  });
+}
+
 export async function beginAgentTurn(args: {
   userId: string;
   sessionId: string | null;
