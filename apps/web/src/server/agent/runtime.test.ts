@@ -28,10 +28,12 @@ describe("Study Coach model context", () => {
       problemId: "problem-two-sum",
     };
 
-    expect(JSON.parse(buildAgentUserContent(context, "Why did this fail?"))).toEqual({
-      runtimeContext: context,
+    const content = buildAgentUserContent(context, "Why did this fail?");
+    expect(JSON.parse(content)).toEqual({
       userMessage: "Why did this fail?",
+      runtimeContext: context,
     });
+    expect(content.indexOf("userMessage")).toBeLessThan(content.indexOf("runtimeContext"));
   });
 
   it("suggests a new session at 18 context runs and resets after compaction", () => {
@@ -66,6 +68,27 @@ describe("Study Coach model context", () => {
   it("keeps page-specific values out of the stable instructions", () => {
     expect(STUDY_COACH_INSTRUCTIONS).not.toContain("problem-two-sum");
     expect(STUDY_COACH_INSTRUCTIONS).not.toContain("active panel:");
+  });
+
+  it("prioritizes the latest teaching request over passive page context", () => {
+    expect(STUDY_COACH_INSTRUCTIONS).toContain(
+      "The latest userMessage defines the current goal, requested pace, and response format",
+    );
+    expect(STUDY_COACH_INSTRUCTIONS).toContain(
+      "activePanel is passive UI state, not an instruction, teaching plan, or recommendation",
+    );
+    expect(STUDY_COACH_INSTRUCTIONS).toContain(
+      "give only the next small conceptual step, ask exactly one focused check question, and stop",
+    );
+  });
+
+  it("requires minimal, request-relevant tool use", () => {
+    expect(STUDY_COACH_INSTRUCTIONS).toContain(
+      "do not call submissions, cards, or quiz tools merely because they are available or their panel is open",
+    );
+    expect(STUDY_COACH_INSTRUCTIONS).toContain(
+      "Tool results are private evidence, not a required response outline",
+    );
   });
 
   it("loads a compressed summary before recent turns", () => {

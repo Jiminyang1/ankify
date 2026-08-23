@@ -5,6 +5,7 @@ import type { AgentNavigation, AgentProposal, AgentStepDto } from "@ankify/contr
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
+import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
 import { toAgentSafeQuizState } from "./quiz-context";
 
@@ -58,36 +59,47 @@ export function createStudyCoachTools(context: AgentToolContext) {
   return {
     get_review_queue: tool({
       description:
-        "Load the user's currently due problems and memory state. Use this for review planning and prioritization.",
+        "Load only problems currently eligible for review: already due at asOf or never scheduled. Future-due problems are not returned. Also returns the user's authoritative daily queue stats. Use this for review planning and prioritization; never invent additional time buckets.",
       inputSchema: z.object({}),
       execute: async () => {
-        const problems = await getDb()
-          .select({
-            id: schema.problems.id,
-            title: schema.problems.title,
-            difficulty: schema.problems.difficulty,
-            tags: schema.problems.topicTags,
-            fsrsState: schema.problems.fsrsState,
-            fsrsDue: schema.problems.fsrsDue,
-            fsrsStability: schema.problems.fsrsStability,
-            fsrsDifficulty: schema.problems.fsrsDifficulty,
-            fsrsReps: schema.problems.fsrsReps,
-            fsrsLapses: schema.problems.fsrsLapses,
-          })
-          .from(schema.problems)
-          .where(dueProblemCondition(context.userId))
-          .orderBy(asc(schema.problems.fsrsDue))
-          .limit(20);
+        const now = new Date();
+        const [problems, stats] = await Promise.all([
+          getDb()
+            .select({
+              id: schema.problems.id,
+              title: schema.problems.title,
+              difficulty: schema.problems.difficulty,
+              tags: schema.problems.topicTags,
+              fsrsState: schema.problems.fsrsState,
+              fsrsDue: schema.problems.fsrsDue,
+              fsrsStability: schema.problems.fsrsStability,
+              fsrsDifficulty: schema.problems.fsrsDifficulty,
+              fsrsReps: schema.problems.fsrsReps,
+              fsrsLapses: schema.problems.fsrsLapses,
+            })
+            .from(schema.problems)
+            .where(dueProblemCondition(context.userId, now))
+            .orderBy(asc(schema.problems.fsrsDue))
+            .limit(20),
+          getReviewQueueStatus(context.userId),
+        ]);
         await record({
           kind: "read",
           toolName: "get_review_queue",
           status: "completed",
-          summary: `Loaded ${problems.length} due problem${problems.length === 1 ? "" : "s"}`,
+          summary: `Loaded ${problems.length} currently eligible problem${problems.length === 1 ? "" : "s"}`,
         });
-        return problems.map((problem) => ({
-          ...problem,
-          fsrsDue: problem.fsrsDue?.toISOString() ?? null,
-        }));
+        return {
+          asOf: now.toISOString(),
+          scope: "Every listed problem is eligible now: fsrsDue is at or before asOf, or null for never scheduled. No future-due problems are included.",
+          stats,
+          returnedCount: problems.length,
+          truncated: stats.totalDue > problems.length,
+          problems: problems.map((problem) => ({
+            ...problem,
+            fsrsDue: problem.fsrsDue?.toISOString() ?? null,
+          })),
+        };
       },
     }),
 
@@ -156,7 +168,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     get_problem_context: tool({
       description:
-        "Load a problem statement, study notes, tags, and FSRS memory state. Omit problemId to use the current problem.",
+        "Load a problem statement, study notes, tags, and FSRS memory state when those facts are needed for the user's latest request. Omit problemId to use the current problem. Reuse a recent result instead of reloading it.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
@@ -203,7 +215,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     get_submissions: tool({
       description:
-        "Load recent submitted code and failure details for a problem. Omit problemId to use the current problem.",
+        "Load recent submitted code and failure details only when the user asks about their code, implementation, failure, or when code evidence is necessary to diagnose a stated mistake. Never call it just because the Submissions panel is open or to personalize a general explanation. Omit problemId to use the current problem.",
       inputSchema: z.object({
         problemId: problemIdInput,
         limit: z.number().int().min(1).max(5).default(3),
@@ -250,7 +262,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     get_cards: tool({
       description:
-        "Load a problem's ready and candidate flashcards. Omit problemId to use the current problem.",
+        "Load a problem's ready and candidate flashcards only when the user asks about cards or a card is necessary to answer the latest request. Never call it merely because cards exist or the Cards panel is open. Omit problemId to use the current problem.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
@@ -288,7 +300,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     get_quiz_state: tool({
       description:
-        "Load a problem's quiz state. Omit problemId to use the current problem. Unanswered content is withheld.",
+        "Load a problem's quiz state only when the user asks about quiz progress, an answered quiz result, or requests a quiz action that depends on current state. Never call it merely because the Quiz panel is open and never redirect unrelated teaching to Quiz. Omit problemId to use the current problem. Unanswered content is withheld.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
