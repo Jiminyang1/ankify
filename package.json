@@ -15,6 +15,8 @@
     "dev:qa": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs",
     "dev:qa:all": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --extension",
     "qa:reset": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --reset-only",
+    "dev:demo": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --demo",
+    "demo:reset": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --demo --reset-only",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "vitest run",

@@ -276,3 +276,23 @@ select:focus-visible,
 .highlighted-code code {
   font-family: inherit;
 }
+
+/* Theme-matched marketing screenshots. Dark is the default theme, so the dark
+ * capture shows unless the page is explicitly or systemically light. */
+.theme-light-only {
+  display: none;
+}
+[data-theme="light"] .theme-light-only {
+  display: block;
+}
+[data-theme="light"] .theme-dark-only {
+  display: none;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .theme-light-only {
+    display: block;
+  }
+  :root:not([data-theme]) .theme-dark-only {
+    display: none;
+  }
+}

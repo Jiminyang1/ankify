@@ -16,6 +16,7 @@ pnpm dev                    # apply local DB migrations, then start Next.js web 
 pnpm dev:web                # same as pnpm dev
 pnpm dev:all                # apply local DB migrations, then run web + extension watch together
 pnpm dev:ext                # Chrome extension build in watch mode
+pnpm dev:demo               # English demo deck on the QA DB (README/landing screenshots); login at /api/qa/login
 
 pnpm typecheck              # run tsc --noEmit across all packages
 pnpm lint                   # run linter across all packages

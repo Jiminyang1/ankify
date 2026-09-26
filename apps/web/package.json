@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbo",
     "qa:seed": "tsx scripts/qa-seed.ts",
+    "demo:seed": "tsx scripts/demo-seed.ts",
     "qa:worker": "tsx scripts/qa-worker.ts",
     "build": "next build",
     "build:vercel": "node ../../scripts/check-vercel-env.mjs && next build",

@@ -34,7 +34,7 @@ function run(commandArgs) {
 }
 
 await run(["db:migrate:qa"]);
-await run(["--filter", "@ankify/web", "qa:seed"]);
+await run(["--filter", "@ankify/web", args.has("--demo") ? "demo:seed" : "qa:seed"]);
 
 if (args.has("--reset-only")) {
   process.exit(0);
