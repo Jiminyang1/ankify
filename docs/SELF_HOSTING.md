@@ -101,7 +101,9 @@ database operation.
    - `ANKIFY_EXTENSION_ORIGINS=chrome-extension://<extension-id>`
    - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
      emergency kill switch for new accounts; existing users can still sign in.
-3. Configure the same names under **Preview**, but use a separate Turso
+3. Branch and PR preview deployments are turned off in `apps/web/vercel.json`
+   (`git.deploymentEnabled` only allows `main`). To use Preview, remove that
+   rule and configure the same names under **Preview**, but use a separate Turso
    database, separate secrets, `ANKIFY_DEPLOYMENT_ENV=preview`, a stable Preview
    branch domain for `BETTER_AUTH_URL`, and normally
    `ANKIFY_DISABLE_SIGNUP=true`. Register that domain's Google callback URL if
