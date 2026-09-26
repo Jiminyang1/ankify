@@ -8,6 +8,7 @@ import {
 import type { AgentStepDto } from "@ankify/contracts";
 import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
+import { createStepTextBuffer } from "./step-text";
 import { finishAgentRun, getAgentModelMessages } from "./store";
 import { createStudyCoachTools } from "./tools";
 
@@ -54,17 +55,20 @@ export async function runStudyCoach(args: {
     timeout: AGENT_TIMEOUT_MS,
   });
 
-  let content = "";
+  const text = createStepTextBuffer();
   for await (const part of result.stream) {
-    if (part.type === "text-delta") {
-      content += part.text;
-      args.onTextDelta(part.text);
+    if (part.type === "start-step") {
+      text.startStep();
+    } else if (part.type === "text-delta") {
+      const delta = text.push(part.text);
+      if (delta) args.onTextDelta(delta);
     } else if (part.type === "error") {
       throw part.error;
     } else if (part.type === "abort") {
       throw new DOMException("Agent run aborted", "AbortError");
     }
   }
+  let content = text.content;
   if (!content.trim()) {
     if (!runState.navigationStep) throw new Error("agent_empty_response");
     content = runState.navigationStep.summary;

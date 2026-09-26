@@ -5,6 +5,12 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm build:vercel",
   "fluid": true,
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "functions": {
     "src/app/api/queues/ai-generation/route.ts": {
       "experimentalTriggers": [

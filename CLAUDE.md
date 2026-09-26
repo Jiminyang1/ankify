@@ -17,6 +17,7 @@ pnpm db:backup              # dump prod Turso into backups/ankify-prod-<ts>.db (
 
 pnpm dev                    # Next.js web app on :3000 (LOCAL profile)
 pnpm dev:ext                # Chrome extension build in watch mode
+pnpm dev:demo               # English demo deck on the QA DB (README/landing screenshots); login at /api/qa/login
 
 pnpm typecheck              # run tsc --noEmit across all packages
 pnpm lint                   # run linter across all packages

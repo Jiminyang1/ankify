@@ -1,266 +1,140 @@
+<div align="center">
+
 # ankify
 
-> Spaced repetition for the LeetCode problems you actually solve.
+**Remember the reasoning behind every LeetCode problem you solve.**
 
-Every problem you grind on LeetCode comes with three things you'll forget within a week: the trick that finally made it click, the edge case that broke your first solution, and the complexity argument you handwaved past. ankify captures all three the moment you submit, then quietly brings them back at the right moment so they stick.
+ankify captures your problems, submissions, and failed test cases from LeetCode,<br>
+then brings each one back with spaced repetition, AI quizzes built from your own mistakes, and a Study Coach that has read your code.
 
-It's two surfaces against one shared deck:
+[**Open the web app**](https://ankify-pi.vercel.app) · [**Add to Chrome**](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb) · [Self-host](docs/SELF_HOSTING.md)
 
-- a **web app** for daily review, a cross-page Study Coach agent, flexible quizzes/cards/submissions/notes workspaces, and an FSRS-6 memory dashboard
-- a **Chrome extension** that lives next to LeetCode, captures the problem + your submissions in one click, and lets you do quick reviews without leaving the page
+<br>
 
-![ankify side panel reviewing a LeetCode problem](images/extension-overview-dark.png)
+![Reviewing Coin Change in ankify: answer a quiz built from a failed submission, open Study Coach, rate recall, and FSRS schedules the next review](images/hero-review-flow.gif)
 
----
-
-## Why it exists
-
-Anki is great at vocabulary; it's terrible at "how do I think about this problem". LeetCode tracks what you've solved; it doesn't help you remember it three weeks later. ankify sits between them:
-
-- **Whole-problem scheduling, not whole-deck mush.** FSRS-6 schedules each *problem*, not each card. When `Task Scheduler` is due, you see one focused review session for it: statement, your past code, your notes, and a fresh quiz — not 12 disconnected cards.
-- **AI-built quizzes from your own context.** Quiz questions are generated from the actual problem statement, *your* failed submissions, *your* notes, and *your* saved cards. Hard problems get questions about the recurrence; problems you keep failing get edge-case questions.
-- **Capture-by-click.** The Chrome extension reads the LeetCode page directly — title, statement, your accepted *and* failed submissions, the failing test cases, expected vs. actual output. No copy-paste.
-- **Bring your own LLM.** Anthropic, OpenAI, DeepSeek (more OpenAI-compatible providers slot in trivially). Keys are encrypted before they touch the database.
+</div>
 
 ---
 
-## What it looks like
+## The problem
 
-### 1 · Daily review queue
+You solve a hard problem. A week later you remember *that* you solved it, but not *how*: the trick that made it click, the edge case that broke your first attempt, the complexity argument you skipped.
 
-Open the dashboard and the system tells you exactly how many problems are due today, how many you've already cleared, and ranks the queue by review urgency.
+- **LeetCode** records what you solved, not what you still remember.
+- **Anki** handles vocabulary well, but a pile of disconnected cards is a poor way to review algorithm problems.
 
-![Daily review queue](images/web-dashboard-dark.png)
-
-### 2 · Focused review workspace
-
-Click `Start session` (or `Review now` from the queue) and you land on a flexible workspace. Question, Quiz/Cards/Submissions/Notes, and Study Coach are sibling panels: resize them, hide either study panel, or close Coach without covering the remaining content. Rate at the bottom and FSRS schedules the next visit.
-
-![Review workspace with AI quiz](images/web-review-light.png)
-
-The quiz on the right is freshly generated for this session — five focused multiple-choice questions covering the approach, invariants, edge cases, complexity, and any failed submissions you've made. The system requires at least four different question scopes per batch and at least one complexity question, so quizzes don't degenerate into trivia.
-
-### 3 · Study Coach across the web app
-
-Study Coach is available from every authenticated page as an optional, resizable right-hand panel. It uses Vercel AI SDK's `ToolLoopAgent` to inspect the current page context, review queue, saved problems, submissions, notes, cards, and answered quiz results. It can navigate to another problem immediately and can propose Card or Quiz generation, while actual writes remain explicit user-confirmed actions.
-
-Conversation sessions persist independently of pages. Every run stores its own page/problem context, so one session can follow the user from Today to Review or a problem detail page without incorrectly pinning the whole conversation to one problem. Agent instructions stay stable; the server attaches each run's trusted context to that turn when building model history, while tools remain scoped to the current user and problem.
-
-After 18 uncompacted runs, Coach suggests starting a fresh session without forcing a switch. If the user continues past the 24-run model window, the oldest 16 runs are condensed into a session summary and the latest 8 completed turns remain verbatim. Reasoning is never carried forward, and full tool results are retained only for the latest 6 completed runs; durable problem data is reloaded through tools when needed. The complete conversation remains stored for the UI and account export.
-
-### 4 · One-click capture from LeetCode
-
-Open the extension on any LeetCode problem page. It scrapes the title, statement, and every accepted and failed submission you've made — code, runtime, and the actual failing test case — and sends it to your deck. From the same panel you can review the problem without ever switching tabs.
-
-![Extension popup with quiz active](images/entension-problem-dark.png)
-
-The popup mirrors the web app: Quiz / Cards / Notes tabs, a rating bar, and a `Refresh` button. Notes save locally first so typing is never blocked on the network.
-
-### 5 · Memory dashboard, not just a spreadsheet
-
-`/analysis` is built on the same FSRS state that schedules your reviews. It shows total memory health, lapse rate, what's about to slip out of memory, and a per-problem risk table sorted by retrievability — so you can see *which* problems are about to be forgotten, not just *how many* are due.
-
-![Analysis dashboard](images/web-anlysis-light.png)
-
----
+ankify schedules the **whole problem**. When Coin Change is due, you get one focused session: the statement, your past submissions, your notes, a quiz generated for this session, and a coach who can explain what went wrong.
 
 ## How it works
 
-| Layer | What |
-| --- | --- |
-| Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6, state stored on the `problems` row. Cards and quizzes feed recall but only the problem is scheduled. |
-| AI | Vercel AI SDK `ToolLoopAgent` plus durable Card/Quiz jobs with Claude, OpenAI, DeepSeek, or any OpenAI-compatible provider. User-supplied keys, encrypted at rest with AES-256-GCM. |
-| Capture | Content script on `leetcode.com/problems/*` reads the GraphQL endpoint for problem + submission detail. |
-| Auth | Better Auth + Google OAuth with public signup. The extension reuses the same secure web session, so users never create or paste a separate token. |
-| Data | Turso / libSQL through the Vercel Turso integration for production, local SQLite for dev. Drizzle ORM. Every business table scoped by `userId`. |
-| Web + API | Next.js 16 App Router, TypeScript, Tailwind. |
-| Extension | Chrome MV3, Vite, React. |
-
-**Cards** are intentionally minimal: just `question` and `answer`. AI generates *candidate* cards which you confirm into *ready* cards. Manual cards skip the candidate step. Saving a missed quiz item as a card is one click.
-
-**Quizzes** are per-problem sessions of exactly 5 multiple-choice questions. The model emits the correct option as literal text (not an integer index), which the server maps back — eliminates off-by-one mistakes that plague index-based MCQ schemas. Sessions can be archived, regenerated, or fully reset (wiping history) so the next batch starts from a clean prompt.
+| 1 · Solve | 2 · Capture | 3 · Review |
+| --- | --- | --- |
+| Work on LeetCode as usual. Accepted or not, every attempt counts. | One click in the Chrome extension saves the statement, all your submissions, and the exact failing test case with expected vs. actual output. | FSRS-6 brings the problem back just before you'd forget it. Review on the web or in the extension side panel next to LeetCode. |
 
 ---
 
-## Quick start (local dev, SQLite)
+## Features
+
+### A quiz for each review, built from your own mistakes
+
+Every review starts with five multiple-choice questions generated from *your* context: the statement, your failed submissions, your notes, and your saved cards. Each batch covers at least four different angles (approach, invariant, edge case, implementation) and always includes a complexity question. You can't pass by memorizing trivia.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/review-quiz-dark.png">
+  <img alt="Review workspace: Coin Change statement on the left, an AI-generated quiz with explanation on the right, FSRS rating bar at the bottom" src="images/review-quiz-light.png">
+</picture>
+
+Answer with `A`–`D`, rate with `1`–`4`, submit with `Enter`. A missed question becomes a flashcard in one click. Your score suggests a rating, but you always decide. If you misclick, **Undo** restores the previous schedule.
+
+### Study Coach: an AI tutor that has read your submissions
+
+Study Coach sits beside any page. It uses tools to look up the problem, your submissions, notes, cards, quiz results, and your review queue, so it answers about *your* attempt instead of a generic solution.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/study-coach-dark.png">
+  <img alt="Study Coach panel explaining why a greedy Coin Change submission failed on coins=[1,3,4], amount=6" src="images/study-coach-light.png">
+</picture>
+
+A real exchange from the screenshot above, lightly trimmed:
+
+> **You:** Why did my first attempt fail?
+>
+> **Coach** *(reads your submissions)*: Your first attempt was the greedy one, about 6 weeks ago. You sorted coins descending and always took as many of the biggest coin as fit. That only works for "canonical" coin systems. It fails on `coins = [1,3,4], amount = 6`:
+>
+> - Greedy: take `4`, then `1`, then `1` → **3 coins**
+> - Optimal: `3 + 3` → **2 coins**
+>
+> Your plain recursion was correct but exponential. It hit TLE on `[1,2,5] / 100` because it re-solves the same remaining amounts, which is exactly what your accepted bottom-up `dp` fixes.
+>
+> One check for you: why does `[1,2,5]` work with greedy but `[1,3,4]` doesn't?
+
+Coach can jump to another problem or suggest a new card or quiz. Anything that writes data waits for your confirmation.
+
+### Capture from the page you're already on
+
+The extension reads the LeetCode page directly: title, statement, tags, and every accepted and failed submission. No copy-paste. If you have solved a problem but haven't saved it yet, the toolbar icon shows a gold `!`. Open the side panel to quiz, flip cards, and rate recall without leaving LeetCode.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/extension-side-panel-dark.png">
+    <img width="640" alt="ankify Chrome side panel: today's due queue, and a Coin Change quiz question with its explanation and the rating bar" src="images/extension-side-panel-light.png">
+  </picture>
+</p>
+
+### See what's about to slip
+
+`/analysis` reads the same FSRS state that drives your schedule: average recall, lapse rate, a ranked list of the problems you're most likely to forget, stability buckets, and your review history.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/analysis-dark.png">
+  <img alt="Analysis dashboard with memory score, lapse rate, needs-attention table, stability buckets, and a 30-day review activity chart" src="images/analysis-light.png">
+</picture>
+
+### And the rest
+
+- **A daily queue with a limit.** Set how many problems you review per day. The Today page ranks what's due by urgency.
+- **Flashcards that stay simple.** Each card is just a question and an answer. AI drafts are *candidates* until you confirm them.
+- **Bring your own model.** Anthropic, OpenAI, or DeepSeek. Keys are encrypted with AES-256-GCM before they reach the database, and the server never falls back to its own key.
+- **English or 简体中文.** The interface and AI output each have their own language setting.
+- **Your data stays yours.** Export everything as NDJSON or delete your account from Settings.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/today-dark.png">
+  <img alt="Today page: six due problems, done-today counter, and the review queue ranked by urgency" src="images/today-light.png">
+</picture>
+
+---
+
+## Get started
+
+1. **Sign in** at [ankify-pi.vercel.app](https://ankify-pi.vercel.app) with Google.
+2. **Add your AI key** in Settings (Anthropic, OpenAI, or DeepSeek).
+3. **Install the [Chrome extension](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb).** It reuses your web login, so there's no token to paste.
+4. **Open any LeetCode problem you've solved** and click *Capture*.
+
+A captured problem is due right away. Open **Today** and start your first session.
+
+## Built with
+
+| Layer | Stack |
+| --- | --- |
+| Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6. Each problem is scheduled as one item. Cards and quizzes support recall. |
+| AI | Vercel AI SDK: a `ToolLoopAgent` for Study Coach, durable jobs for card and quiz generation |
+| Web + API | Next.js 16 App Router, TypeScript, Tailwind |
+| Extension | Chrome MV3, Vite, React |
+| Data | Drizzle ORM on Turso / libSQL (SQLite locally). Every business table is scoped by `userId`. |
+| Auth | Better Auth + Google OAuth. The extension shares the web session. |
+
+## Self-hosting and development
+
+Local setup, the QA and demo environments, database profiles, Vercel deployment, and release checks are covered in **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
 
 ```bash
 pnpm install
-cp .env.example .env.local        # local profile (SQLite + localhost auth)
-pnpm db:migrate                    # creates packages/db/local.db
-pnpm dev                           # http://localhost:3000
-pnpm dev:ext                       # extension dev server with HMR
+cp .env.example .env.local
+pnpm db:migrate
+pnpm dev          # http://localhost:3000
 ```
 
-Fill `.env.local` with Better Auth + Google OAuth credentials and `AI_KEY_ENCRYPTION_SECRET`. Leave `TURSO_*` empty so the app uses the local SQLite. AI provider keys are saved per-user from the Settings page, never read from server env vars.
-
-Load the development extension from `apps/extension/dist/` (`chrome://extensions` → Developer mode → Load unpacked), sign into the web app with Google, and open the extension. Development mode targets `http://localhost:3000` automatically; the API origin is fixed at build time and is not user-editable. The extension detects the shared session automatically.
-
-Use `pnpm dev:ext` while editing the extension so CRXJS can refresh extension pages and content scripts. After a production `pnpm build`, reload Ankify once in `chrome://extensions`, then refresh any already-open LeetCode tabs; production builds replace hashed content-script files.
-
-## Reusable local QA environment
-
-Use the QA profile for manual QA, browser automation, Agent testing, and
-extension integration without Google OAuth or deployed infrastructure:
-
-```bash
-pnpm dev:qa       # reset fixtures, then start Web + the local AI Job worker
-pnpm dev:qa:all   # same environment plus extension watch mode
-pnpm qa:reset     # restore deterministic fixtures while preserving AI settings
-```
-
-Open `http://localhost:3000/api/qa/login` to enter the fixed `qa@ankify.local`
-account. Web and the extension then reuse the same Better Auth cookie. The QA
-profile has its own `packages/db/qa.db`, auth secret, and encryption secret.
-
-To make real model calls, create the gitignored `.env.qa.local` file:
-
-```bash
-ANKIFY_QA_AI_PROVIDER="openai"
-ANKIFY_QA_AI_MODEL="gpt-5-mini"
-ANKIFY_QA_AI_REASONING_MODE="fast"
-ANKIFY_QA_AI_API_KEY="<provider-key>"
-```
-
-These may match Production's provider configuration, but QA never connects to
-the Production database, Better Auth session store, or Queue. AI jobs remain
-durable rows in the QA SQLite database and are processed by the local worker.
-The worker tests application behavior; deployed Queue delivery/retry semantics
-remain part of Preview/Production verification.
-
-## Isolated local, Preview, and Production profiles
-
-The repo separates local development, Vercel Preview, and Production so a local
-command cannot silently fall back to or mutate a deployed database.
-
-| Profile | DB | Auth URL | Env file | Used by |
-| --- | --- | --- | --- | --- |
-| `local` (default) | SQLite at `LOCAL_DB_PATH` | `http://localhost:3000` | `.env.local` | `pnpm dev`, `db:migrate`, `db:studio`, `db:generate` |
-| `qa` | isolated SQLite at `packages/db/qa.db` | fixed local session | `.env.qa` + `.env.qa.local` | `pnpm dev:qa`, `pnpm dev:qa:all`, `pnpm qa:reset` |
-| `preview` | dedicated Preview Turso DB | stable Preview branch domain | `.env.preview.local` | `db:migrate:preview`, `db:studio:preview` |
-| `production` | Vercel-managed Turso integration (`database-ankify`) | `https://ankify-pi.vercel.app` | `.env.production.local` | `db:migrate:prod`, `db:studio:prod` |
-
-`pnpm dev` always runs against `local`; `pnpm dev:qa` always runs against the
-isolated QA database. Vercel reads its runtime variables from
-the dashboard; the two deployed `.env.*.local` files are only for explicitly
-running migrations from your laptop and must never be committed. Each
-environment needs its own database, auth secret, and encryption secret.
-`AI_KEY_ENCRYPTION_SECRET` must remain stable within one database; losing or
-rotating it without re-encryption orphans every stored AI key.
-
-## Deploy to Vercel
-
-Use the Vercel Turso integration for production. The current Production database
-is `database-ankify` in the `vercel-icfg-mdehlkeeqefnm8sqwfj1zlce`
-organization. The personal `ankify-prod` database is legacy and is not used by
-Vercel. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) before any Production
-database operation.
-
-1. Provision Turso through the Vercel integration. For the current deployment,
-   retain the canonical `database-ankify` integration database and do not point
-   `TURSO_*` at the legacy personal database.
-2. Configure **Production** variables in Vercel:
-   - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-   - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=https://ankify-pi.vercel.app`
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-   - `AI_KEY_ENCRYPTION_SECRET`
-   - `ANKIFY_DEPLOYMENT_ENV=production`
-   - `ANKIFY_EXTENSION_ORIGINS=chrome-extension://<extension-id>`
-   - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
-     emergency kill switch for new accounts; existing users can still sign in.
-3. Configure the same names under **Preview**, but use a separate Turso
-   database, separate secrets, `ANKIFY_DEPLOYMENT_ENV=preview`, a stable Preview
-   branch domain for `BETTER_AUTH_URL`, and normally
-   `ANKIFY_DISABLE_SIGNUP=true`. Register that domain's Google callback URL if
-   Preview login is required.
-4. Before every deployment that contains a new migration, explicitly switch the
-   Turso CLI to the integration organization, verify `database-ankify` and its
-   current row/migration counts, then back up and migrate from one controlled
-   terminal:
-   ```bash
-   pnpm db:release
-   ```
-   Preview migrations use `pnpm db:migrate:preview`. Database migrations never
-   run inside a Vercel build: concurrent or retried builds must remain read-only
-   with respect to schema. For breaking schema changes, use an
-   expand/deploy/contract sequence.
-5. Import the repo on Vercel with root directory `apps/web` and keep
-   **Include source files outside the Root Directory** enabled. The committed
-   `apps/web/vercel.json` pins the framework, frozen-lockfile install, validated
-   build command, and Fluid compute. Node 22 and pnpm 10.25 are pinned in the
-   root package metadata.
-6. Add OAuth redirect URIs in Google Cloud Console:
-   - local: `http://localhost:3000/api/auth/callback/google`
-   - production: `https://ankify-pi.vercel.app/api/auth/callback/google`
-   Set the Production OAuth audience to External, use the public root page as
-   the app homepage, link `/privacy` and `/terms`, and verify the domain.
-7. Sign in with any Google account and save your AI provider/model/key in Settings.
-8. Build the Chrome extension with the canonical Production API origin below
-   and click `Continue with Google`. An existing web login is detected automatically.
-
-The web UI and Chrome extension use the same Better Auth Google session. The
-extension sends credentialed requests only to the exact configured API origin;
-it does not create or store a separate ankify API token.
-
-Before uploading the extension to the Chrome Web Store, build it with the
-Production API origin and use the public policy URL from the deployed web app:
-
-```bash
-ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm --filter @ankify/extension build
-```
-
-- Privacy policy: `https://ankify-pi.vercel.app/privacy`
-- Terms: `https://ankify-pi.vercel.app/terms`
-- The manifest asks for exact LeetCode and Production API hosts. The API origin
-  is a build-time release setting; users cannot redirect the extension
-  to a different server from Chrome storage.
-- Users can export their data as NDJSON and permanently delete their account
-  from Settings.
-
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for Production identity and
-database operations, and [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
-for the complete Preview-to-Production checklist.
-
----
-
-## Layout
-
-```text
-apps/
-  web/          Next.js dashboard, API, review workspace, FSRS analysis
-  extension/    Chrome MV3 extension for LeetCode capture and quick review
-packages/
-  db/           Drizzle schema, migrations, libSQL client, profile-aware loader
-  core/         FSRS-6 wrapper, shared Zod schemas, AI generation contracts
-```
-
-## Tables
-
-- `user`, `session`, `account`, `verification`: Better Auth.
-- `problems`: LeetCode problem metadata, notes, archived flag, FSRS state.
-- `submissions`: captured accepted and failed submissions.
-- `cards`: flashcards and AI candidates (`ai_status`: `candidate | failed | ready`).
-- `quiz_sessions`: active / completed / archived quiz JSON plus answers and score.
-- `review_events`: append-only event log feeding the analysis dashboard.
-- `settings`: per-user key/value settings (encrypted AI keys, daily review limit).
-
-All user-owned business data carries `userId`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
-
-After schema changes:
-```bash
-pnpm db:generate     # generate migration files
-pnpm db:migrate      # apply locally
-pnpm db:migrate:preview # apply to the isolated Preview Turso database
-pnpm db:release      # back up Production, then apply Production migrations
-```
-
-## Verification
-
-```bash
-ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm release:check
-```
-
-This runs type checking, lint, tests, all Production builds, and fails on any
-high/critical production dependency advisory. Production extension builds fail
-closed when `ANKIFY_EXTENSION_API_ORIGIN` is omitted; development watch mode
-continues to target `http://localhost:3000` automatically.
+Want to look around without setting up Google OAuth? Run `pnpm dev:demo` and open `http://localhost:3000/api/qa/login`. The screenshots in this README come from that demo deck.
