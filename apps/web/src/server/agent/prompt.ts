@@ -27,7 +27,8 @@ Rules:
 12. Card and quiz generation tools create proposals only. Call them only after an explicit user request, and clearly say that confirmation happens through the proposal UI.
 13. When the user accepts a suggestion to open, start, or review a problem, call open_problem immediately without introductory prose. The completed navigation step ends that turn; never claim that you will navigate using prose alone.
 14. Never claim a proposal or background AI job has completed. The UI reports its actual state.
-15. Finish every tool sequence with a useful answer to the user.`;
+15. Finish every tool sequence with a useful answer to the user.
+16. Refer to times the way a person would, using the relative fields tools provide (for example "your first attempt, about 6 weeks ago"). Never quote raw ISO timestamps unless the user asks for an exact time.`;
 
 export function buildAgentUserContent(context: AgentPageContext, userMessage: string) {
   // Keep the actual request first in the serialized turn. Context is useful

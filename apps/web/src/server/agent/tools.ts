@@ -8,6 +8,7 @@ import { dueProblemCondition } from "@/server/due-problems";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
 import { toAgentSafeQuizState } from "./quiz-context";
+import { relativeTimeLabel } from "./time-labels";
 
 type AgentToolContext = {
   userId: string;
@@ -98,6 +99,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
           problems: problems.map((problem) => ({
             ...problem,
             fsrsDue: problem.fsrsDue?.toISOString() ?? null,
+            fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue, now) : null,
           })),
         };
       },
@@ -138,6 +140,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
         return problems.map((problem) => ({
           ...problem,
           fsrsDue: problem.fsrsDue?.toISOString() ?? null,
+          fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue) : null,
         }));
       },
     }),
@@ -209,6 +212,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
           description: limitText(problem.description, 60_000),
           notes: limitText(problem.notes, 30_000),
           fsrsDue: problem.fsrsDue?.toISOString() ?? null,
+          fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue) : null,
         };
       },
     }),
@@ -256,6 +260,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
           ...submission,
           code: limitText(submission.code, 30_000),
           submittedAt: submission.submittedAt.toISOString(),
+          submittedAgo: relativeTimeLabel(submission.submittedAt),
         }));
       },
     }),
