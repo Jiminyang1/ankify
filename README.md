@@ -56,13 +56,18 @@ Study Coach sits beside any page. It uses tools to look up the problem, your sub
   <img alt="Study Coach panel explaining why a greedy Coin Change submission failed on coins=[1,3,4], amount=6" src="images/study-coach-light.png">
 </picture>
 
-A real exchange from the screenshot above:
+A real exchange from the screenshot above, lightly trimmed:
 
 > **You:** Why did my first attempt fail?
 >
-> **Coach** *(reads your submissions)*: Your first attempt was the greedy one, and it failed with Wrong Answer on `coins=[1,3,4], amount=6`. It took one 4, no 3 fit, then two 1s → returned **3**. The optimal is `3 + 3` = **2 coins**. Greedy "take the biggest coin first" only works for *canonical* coin systems like 1/5/10/25. […] Your later recursion attempt had the right idea but recomputed `best(rest)` exponentially many times, so it timed out on amount 100.
+> **Coach** *(reads your submissions)*: Your first attempt was the greedy one, about 6 weeks ago. You sorted coins descending and always took as many of the biggest coin as fit. That only works for "canonical" coin systems. It fails on `coins = [1,3,4], amount = 6`:
 >
-> Quick check: in the amount=6 case, what subproblem value does `best(6)` need from `best(3)` to discover the "two 3s" answer?
+> - Greedy: take `4`, then `1`, then `1` → **3 coins**
+> - Optimal: `3 + 3` → **2 coins**
+>
+> Your plain recursion was correct but exponential. It hit TLE on `[1,2,5] / 100` because it re-solves the same remaining amounts, which is exactly what your accepted bottom-up `dp` fixes.
+>
+> One check for you: why does `[1,2,5]` work with greedy but `[1,3,4]` doesn't?
 
 Coach can jump to another problem or suggest a new card or quiz. Anything that writes data waits for your confirmation.
 
@@ -70,7 +75,12 @@ Coach can jump to another problem or suggest a new card or quiz. Anything that w
 
 The extension reads the LeetCode page directly: title, statement, tags, and every accepted and failed submission. No copy-paste. If you have solved a problem but haven't saved it yet, the toolbar icon shows a gold `!`. Open the side panel to quiz, flip cards, and rate recall without leaving LeetCode.
 
-<!-- Extension screenshot: images/extension-side-panel-dark.png (LeetCode + ankify side panel, English quiz) -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/extension-side-panel-dark.png">
+    <img width="640" alt="ankify Chrome side panel: today's due queue, and a Coin Change quiz question with its explanation and the rating bar" src="images/extension-side-panel-light.png">
+  </picture>
+</p>
 
 ### See what's about to slip
 

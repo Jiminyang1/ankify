@@ -34,7 +34,10 @@ function run(commandArgs) {
 }
 
 await run(["db:migrate:qa"]);
-await run(["--filter", "@ankify/web", args.has("--demo") ? "demo:seed" : "qa:seed"]);
+// --keep-data restarts the servers on the existing QA database without reseeding.
+if (!args.has("--keep-data")) {
+  await run(["--filter", "@ankify/web", args.has("--demo") ? "demo:seed" : "qa:seed"]);
+}
 
 if (args.has("--reset-only")) {
   process.exit(0);

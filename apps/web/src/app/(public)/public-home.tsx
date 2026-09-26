@@ -64,6 +64,18 @@ const COPY = {
         alt: "Study Coach explaining why a greedy Coin Change solution fails on coins [1, 3, 4] with amount 6",
       },
       {
+        eyebrow: "Chrome extension",
+        title: "Review right next to LeetCode.",
+        body: "The side panel shows today's queue and the problem you're on: quiz, cards, notes, and the same rating bar as the web app. A new problem is one click to capture, with all your submissions.",
+        points: [
+          "Detects the problem in your current tab",
+          "A gold ! on the toolbar icon for solved problems you haven't saved",
+          "Shares your web login, so there's no token to paste",
+        ],
+        shot: "extension-panel",
+        alt: "ankify Chrome side panel with a Coin Change quiz question, its explanation, and the rating bar",
+      },
+      {
         eyebrow: "Analysis",
         title: "See which problems are about to slip.",
         body: "The dashboard reads the same FSRS state that schedules your reviews: average recall, lapse rate, and a list of the problems you're most likely to forget next.",
@@ -77,7 +89,7 @@ const COPY = {
       },
     ] satisfies Showcase[],
     extras: [
-      ["Capture badge", "A gold ! on the toolbar icon when you've solved a problem you haven't saved yet."],
+      ["Keyboard-first", "Rate with 1–4, answer with A–D, flip cards with Space, submit with Enter."],
       ["Your own AI key", "Keys are encrypted before they reach the database. The server never uses its own key instead."],
       ["English or 简体中文", "The interface and AI output each have their own language setting."],
       ["Your data stays yours", "Export everything as NDJSON or delete your account from Settings."],
@@ -119,6 +131,14 @@ const COPY = {
         alt: "学习教练解释贪心解法为何在 coins [1, 3, 4]、amount 6 时失败",
       },
       {
+        eyebrow: "Chrome 扩展",
+        title: "在 LeetCode 旁边直接复习。",
+        body: "侧边栏显示今日队列和当前题目：测验、卡片、笔记，以及与网页相同的评分栏。新题一键捕获，连同你的全部提交。",
+        points: ["自动识别当前标签页的题目", "做过但未保存的题，工具栏图标显示金色 !", "与网页共用登录，无需粘贴 token"],
+        shot: "extension-panel",
+        alt: "ankify Chrome 侧边栏：带解析的 Coin Change 测验题与评分栏",
+      },
+      {
         eyebrow: "分析",
         title: "看清哪些题快要忘了。",
         body: "仪表盘读取与排期相同的 FSRS 状态：平均记忆率、遗忘率，以及最可能遗忘的题目排序。",
@@ -128,7 +148,7 @@ const COPY = {
       },
     ] satisfies Showcase[],
     extras: [
-      ["捕获提示", "做过但尚未保存的题，工具栏图标会显示金色 !。"],
+      ["键盘优先", "1–4 评分，A–D 作答，空格翻卡，Enter 提交。"],
       ["自己的 AI key", "key 在写入数据库前加密，服务器从不使用自己的 key 代替。"],
       ["English 或简体中文", "界面语言与 AI 输出语言可以分别设置。"],
       ["数据归你所有", "可在设置中导出 NDJSON，或永久删除账户。"],
@@ -145,10 +165,14 @@ const SHOT_SIZE = {
   "study-coach": [2400, 1500],
   "review-quiz": [2400, 1500],
   "coach-panel": [790, 1840],
+  "extension-panel": [800, 1950],
   analysis: [2400, 1333],
 } as const;
 
 type ShotName = keyof typeof SHOT_SIZE;
+
+/** Tall captures sit beside their text instead of below it. */
+const SIDE_SHOTS = new Set<ShotName>(["coach-panel", "extension-panel"]);
 
 /** Light and dark captures of the same screen; CSS shows the one that matches the active theme. */
 function ThemedShot({
@@ -250,13 +274,13 @@ export function PublicHome() {
       </section>
 
       {copy.showcases.map((item) =>
-        item.shot === "coach-panel" ? (
-          <section key={item.shot} className="grid items-center gap-10 md:grid-cols-[1fr_minmax(0,22rem)]">
+        SIDE_SHOTS.has(item.shot) ? (
+          <section key={item.shot} className="grid items-center gap-10 md:grid-cols-[1fr_minmax(0,24rem)]">
             <div className="space-y-6">
               <ShowcaseText item={item} />
             </div>
             <div className="mx-auto w-full max-w-sm">
-              <ThemedShot name={item.shot} alt={item.alt} sizes="(min-width: 768px) 352px, 100vw" />
+              <ThemedShot name={item.shot} alt={item.alt} sizes="(min-width: 768px) 384px, 100vw" />
             </div>
           </section>
         ) : (

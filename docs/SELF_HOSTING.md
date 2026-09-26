@@ -39,7 +39,8 @@ pnpm dev:demo     # load the demo deck, then start Web + the local AI Job worker
 pnpm demo:reset   # reload the demo deck without starting servers
 ```
 
-`pnpm qa:reset` switches back to the regular QA fixtures.
+`pnpm qa:reset` switches back to the regular QA fixtures. Add `--keep-data` to
+`pnpm dev:qa` or `pnpm dev:demo` to restart the servers without reseeding.
 
 Open `http://localhost:3000/api/qa/login` to enter the fixed `qa@ankify.local`
 account. Web and the extension then reuse the same Better Auth cookie. The QA
