@@ -48,6 +48,11 @@ const MODEL_PRESETS: Record<AiProvider, string[]> = {
 };
 
 type ModelEntry = { id: string; label?: string };
+const PROVIDER_LABELS: Partial<Record<AiProvider, string>> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  deepseek: "DeepSeek",
+};
 const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export function AiSettingsForm({
@@ -72,6 +77,9 @@ export function AiSettingsForm({
   const [storedKeyProvider, setStoredKeyProvider] = useState<AiProvider>(
     initial.hasApiKey ? initial.provider : "",
   );
+  // Users on starter credits don't need the provider form, so it starts
+  // collapsed behind "Use my own key".
+  const [showKeyForm, setShowKeyForm] = useState(!(starter.enabled && !initial.hasApiKey));
   const [saving, setSaving] = useState(false);
   const [removingKey, setRemovingKey] = useState(false);
   const [removeKeyDialogOpen, setRemoveKeyDialogOpen] = useState(false);
@@ -238,12 +246,36 @@ export function AiSettingsForm({
   /** Whether the current model value doesn't match any listed option. */
   const isCustomModel = !models.some((m) => m.id === model);
 
+  const onStarter = starter.enabled && !hasStoredApiKey;
+  const sourceStatus = onStarter ? (
+    <p className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
+      {t.settings.starterActive(starter.remaining, starter.limit)}
+    </p>
+  ) : hasStoredApiKey && storedKeyProvider && initial.model ? (
+    <p className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-sm leading-6 text-fg">
+      {t.settings.activeOwnKey(PROVIDER_LABELS[storedKeyProvider] ?? storedKeyProvider, initial.model)}
+    </p>
+  ) : null;
+
+  if (onStarter && !showKeyForm) {
+    return (
+      <div className="max-w-2xl space-y-4">
+        {sourceStatus}
+        <Button type="button" onClick={() => setShowKeyForm(true)}>
+          {t.settings.useOwnKey}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={save} className="max-w-2xl space-y-5">
       <ConfirmDialog
         open={removeKeyDialogOpen}
         title={t.settings.removeApiKey}
-        description={t.settings.removeApiKeyConfirm}
+        description={
+          starter.enabled ? t.settings.removeApiKeyConfirmStarter(starter.remaining) : t.settings.removeApiKeyConfirm
+        }
         cancelLabel={t.common.cancel}
         confirmLabel={removingKey ? t.settings.removingApiKey : t.settings.removeApiKey}
         busy={removingKey}
@@ -256,11 +288,7 @@ export function AiSettingsForm({
         }}
         onConfirm={() => void removeApiKey()}
       />
-      {starter.enabled && !hasStoredApiKey && (
-        <p className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
-          {t.settings.starterActive(starter.remaining, starter.limit)}
-        </p>
-      )}
+      {sourceStatus}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-fg" htmlFor="ai-provider">
           {t.settings.provider}

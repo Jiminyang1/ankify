@@ -255,6 +255,12 @@ export const translations = {
       removeApiKey: "Remove",
       removingApiKey: "Removing...",
       removeApiKeyConfirm: "Remove the stored API key? AI features will stop working until you add a new key.",
+      removeApiKeyConfirmStarter: (remaining: number) =>
+        remaining > 0
+          ? `Remove the stored API key? AI features will switch to your free credits (${remaining} left).`
+          : "Remove the stored API key? Your free credits are used up, so AI features will stop working until you add a new key.",
+      activeOwnKey: (provider: string, model: string) => `Using your own key: ${provider} · ${model}. Free credits aren't used.`,
+      useOwnKey: "Use my own key",
       setAiFirst: "Set provider, model, and an API key first",
       testConnection: "Test connection",
       testing: "Testing...",
@@ -759,6 +765,12 @@ export const translations = {
       removeApiKey: "移除",
       removingApiKey: "移除中...",
       removeApiKeyConfirm: "移除已保存的 API key？在添加新的 key 前，AI 功能将无法使用。",
+      removeApiKeyConfirmStarter: (remaining: number) =>
+        remaining > 0
+          ? `移除已保存的 API key？移除后 AI 功能会改用免费额度（剩余 ${remaining} 次）。`
+          : "移除已保存的 API key？免费额度已用完，在添加新的 key 前，AI 功能将无法使用。",
+      activeOwnKey: (provider: string, model: string) => `正在使用你自己的 key：${provider} · ${model}，不消耗免费额度。`,
+      useOwnKey: "改用自己的 key",
       setAiFirst: "请先设置提供商、模型和 API key",
       testConnection: "测试连接",
       testing: "测试中...",
