@@ -48,3 +48,13 @@ apps/extension/dist-unpacked
 apps/extension/.output
 artifacts/
 .vercel
+
+# Local tooling and caches
+.claude/
+.pnpm-store/
+.ds-sync/
+apps/web/ds-bundle/
+apps/web/dts/
+
+# Personal notes
+docs/sap-interview-serverless-prep.md
