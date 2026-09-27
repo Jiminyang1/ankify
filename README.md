@@ -138,3 +138,7 @@ pnpm dev          # http://localhost:3000
 ```
 
 Want to look around without setting up Google OAuth? Run `pnpm dev:demo` and open `http://localhost:3000/api/qa/login`. The screenshots in this README come from that demo deck.
+
+## License
+
+[MIT](LICENSE)
