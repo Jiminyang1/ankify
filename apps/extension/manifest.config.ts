@@ -14,7 +14,8 @@ export default defineManifest(({ mode }) => {
     manifest_version: 3,
     minimum_chrome_version: "116",
     name: "ankify",
-    description: "One-click add LeetCode problems to your ankify spaced-repetition deck.",
+    description:
+      "Capture LeetCode problems and submissions in one click, then review them with spaced repetition and AI quizzes.",
     version: "0.2.0",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
