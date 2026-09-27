@@ -8,7 +8,8 @@ import {
 import { getDb, schema, type AiJob } from "@ankify/db";
 import { MAX_CARDS_PER_PROBLEM } from "@/server/resource-limits";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "@/server/secret-box";
-import { getAiSettings, getGenerationSettings } from "@/server/settings";
+import { getAiRuntimeSettings, getGenerationSettings, type AiRuntimeSettings } from "@/server/settings";
+import { consumeStarterAiCredit, StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { getCurrentQuizSession } from "./quiz";
 
 const MAX_ACTIVE_JOBS_PER_USER = 10;
@@ -70,17 +71,11 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
       .from(schema.problems)
       .where(and(eq(schema.problems.id, input.problemId), eq(schema.problems.userId, userId)))
       .limit(1),
-    getAiSettings(userId),
+    resolveJobAiSettings(userId),
     getGenerationSettings(userId),
   ]);
   if (!problem[0]) {
     throw new AiJobRequestError("problem_not_found", "Problem not found.", 404);
-  }
-  if (!ai.provider || !ai.model) {
-    throw new AiJobRequestError("ai_not_configured", "Configure an AI provider and model in Settings.", 400);
-  }
-  if (!ai.encryptedApiKey) {
-    throw new AiJobRequestError("ai_key_missing", "Add your provider API key in Settings.", 400);
   }
 
   const precondition = await validateJobPrecondition(userId, input);
@@ -155,6 +150,17 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
       `You already have ${MAX_ACTIVE_JOBS_PER_USER} active AI jobs. Wait for one to finish.`,
       429,
     );
+  }
+
+  if (ai.source === "starter") {
+    try {
+      await consumeStarterAiCredit(userId, ai.starterLimit ?? 0);
+    } catch (error) {
+      if (error instanceof StarterCreditsExhaustedError) {
+        throw new AiJobRequestError(error.code, error.message, 403);
+      }
+      throw error;
+    }
   }
 
   const now = new Date();
@@ -511,9 +517,25 @@ export async function failAiJob(job: AiJob, code: string, message: string) {
     );
 }
 
+/** Resolves the AI settings a new job would run with, as request errors. */
+async function resolveJobAiSettings(userId: string): Promise<AiRuntimeSettings> {
+  try {
+    return await getAiRuntimeSettings(userId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.startsWith("AI_NOT_CONFIGURED")) {
+      throw new AiJobRequestError("ai_not_configured", "Configure an AI provider and model in Settings.", 400);
+    }
+    if (message.startsWith("AI_KEY_MISSING")) {
+      throw new AiJobRequestError("ai_key_missing", "Add your provider API key in Settings.", 400);
+    }
+    throw error;
+  }
+}
+
 export async function assertJobConfiguration(job: AiJob) {
   const [ai, generation] = await Promise.all([
-    getAiSettings(job.userId),
+    getAiRuntimeSettings(job.userId),
     getGenerationSettings(job.userId),
   ]);
   if (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { agentTurnRequestSchema, type AgentStreamEvent } from "@ankify/contracts";
 import { getActiveModel } from "@/server/ai";
+import { consumeStarterAiCredit, StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { classifyAgentError, logAgentError } from "@/server/agent/errors";
 import { runStudyCoach } from "@/server/agent/runtime";
 import {
@@ -40,6 +41,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ai_key_missing", message: message.slice(16) }, { status: 400 });
     }
     throw error;
+  }
+
+  if (activeModel.settings.source === "starter") {
+    try {
+      await consumeStarterAiCredit(user.id, activeModel.settings.starterLimit ?? 0);
+    } catch (error) {
+      if (error instanceof StarterCreditsExhaustedError) {
+        return NextResponse.json({ error: error.code, message: error.message }, { status: 403 });
+      }
+      throw error;
+    }
   }
 
   let started: Awaited<ReturnType<typeof beginAgentTurn>>;

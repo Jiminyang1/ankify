@@ -40,6 +40,9 @@ type Copy = {
   aiSkipped: string;
   connectAi: string;
   skip: string;
+  starterBody: (remaining: number) => string;
+  starterUsing: (remaining: number) => string;
+  useStarter: string;
   usesAi: string;
   aiUses: string[];
   noAi: string;
@@ -85,6 +88,10 @@ const COPY: Record<"en" | "zh", Copy> = {
     aiSkipped: "Skipped for now",
     connectAi: "Connect AI",
     skip: "Skip for now",
+    starterBody: (remaining) =>
+      `You have ${remaining} free AI credits, so quizzes, AI cards, and Study Coach work right away. Add your own key anytime.`,
+    starterUsing: (remaining) => `Using free AI credits · ${remaining} left`,
+    useStarter: "Use free credits",
     usesAi: "Uses AI",
     aiUses: ["Generate quizzes", "Draft AI cards", "Rewrite cards with follow-up instructions"],
     noAi: "Does not use AI",
@@ -128,6 +135,9 @@ const COPY: Record<"en" | "zh", Copy> = {
     aiSkipped: "暂时跳过",
     connectAi: "连接 AI",
     skip: "暂时跳过",
+    starterBody: (remaining) => `你有 ${remaining} 次免费 AI 额度，测验、AI 卡片和 Study Coach 可以直接使用。随时可以换成自己的 key。`,
+    starterUsing: (remaining) => `正在使用免费 AI 额度 · 剩余 ${remaining} 次`,
+    useStarter: "先用免费额度",
     usesAi: "会使用 AI",
     aiUses: ["生成 Quiz", "生成 AI Card 草稿", "根据 Follow-up 指令改写 Card"],
     noAi: "不会使用 AI",
@@ -160,6 +170,7 @@ const COPY: Record<"en" | "zh", Copy> = {
 export function OnboardingCard({
   initialProgress,
   initialAi,
+  starter,
   installUrl,
   language,
 }: {
@@ -169,6 +180,7 @@ export function OnboardingCard({
     model: string;
     hasApiKey: boolean;
   };
+  starter: { enabled: boolean; remaining: number; limit: number };
   installUrl: string;
   language: "en" | "zh";
 }) {
@@ -195,6 +207,7 @@ export function OnboardingCard({
   }, [refreshProgress]);
 
   const aiHandled = progress.aiChoice !== "not_started";
+  const hasStarterCredits = starter.enabled && starter.remaining > 0;
   const doneCount = [
     Boolean(progress.extensionConnectedAt),
     aiHandled,
@@ -329,8 +342,12 @@ export function OnboardingCard({
             progress.aiChoice === "configured"
               ? t.aiConfigured
               : progress.aiChoice === "skipped"
-                ? t.aiSkipped
-                : t.aiBody
+                ? hasStarterCredits
+                  ? t.starterUsing(starter.remaining)
+                  : t.aiSkipped
+                : hasStarterCredits
+                  ? t.starterBody(starter.remaining)
+                  : t.aiBody
           }
         >
           {!showAi && progress.aiChoice !== "configured" && (
@@ -340,7 +357,7 @@ export function OnboardingCard({
               </Button>
               {progress.aiChoice === "not_started" && (
                 <Button size="sm" onClick={() => void skipAi()} disabled={aiBusy}>
-                  {t.skip}
+                  {hasStarterCredits ? t.useStarter : t.skip}
                 </Button>
               )}
             </div>
@@ -404,7 +421,7 @@ export function OnboardingCard({
                 </Button>
                 <Button size="sm" disabled={aiBusy} onClick={() => setShowAi(false)}>{t.cancel}</Button>
                 {progress.aiChoice === "not_started" && (
-                  <Button size="sm" variant="ghost" disabled={aiBusy} onClick={() => void skipAi()}>{t.skip}</Button>
+                  <Button size="sm" variant="ghost" disabled={aiBusy} onClick={() => void skipAi()}>{hasStarterCredits ? t.useStarter : t.skip}</Button>
                 )}
               </div>
               {aiMessage && (

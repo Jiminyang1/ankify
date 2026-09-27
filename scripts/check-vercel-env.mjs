@@ -67,6 +67,18 @@ if (env.LOCAL_DB_PATH?.trim()) {
   errors.push("LOCAL_DB_PATH must not be set on Vercel");
 }
 
+// Optional starter AI credits: off unless ANKIFY_STARTER_AI_API_KEY is set.
+if (env.ANKIFY_STARTER_AI_API_KEY?.trim()) {
+  const starterProvider = env.ANKIFY_STARTER_AI_PROVIDER?.trim() || "deepseek";
+  if (!["anthropic", "openai", "deepseek"].includes(starterProvider)) {
+    errors.push("ANKIFY_STARTER_AI_PROVIDER must be anthropic, openai, or deepseek");
+  }
+  const starterCredits = env.ANKIFY_STARTER_AI_CREDITS?.trim();
+  if (starterCredits && !/^\d+$/.test(starterCredits)) {
+    errors.push("ANKIFY_STARTER_AI_CREDITS must be a non-negative integer");
+  }
+}
+
 const signupDisabled = /^(1|true|yes)$/i.test(
   env.ANKIFY_DISABLE_SIGNUP?.trim() ?? "",
 );

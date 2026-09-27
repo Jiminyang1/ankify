@@ -48,14 +48,15 @@ interface BuildModelOptions {
   disableThinking?: boolean;
 }
 
-type BuildModelSettings = Omit<AiRuntimeSettings, "reasoningMode"> & {
+type BuildModelSettings = Pick<AiRuntimeSettings, "provider" | "model" | "apiKey"> & {
   reasoningMode?: AiRuntimeSettings["reasoningMode"];
 };
 
 /**
- * Build a language model from the current provider settings. The active provider
- * is chosen in the dashboard; the API key is the current user's encrypted key
- * from settings. Server provider env keys are intentionally not used.
+ * Build a language model from the current provider settings: the user's own
+ * encrypted key when configured, otherwise the server's starter-credit key
+ * (see starter-ai.ts). Callers starting new AI work spend a starter credit
+ * when `settings.source` is "starter".
  */
 export async function getActiveModel(userId: string, opts: BuildModelOptions = {}): Promise<{ model: LanguageModel; settings: AiRuntimeSettings }> {
   const settings = await getAiRuntimeSettings(userId);

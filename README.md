@@ -95,7 +95,7 @@ The extension reads the LeetCode page directly: title, statement, tags, and ever
 
 - **A daily queue with a limit.** Set how many problems you review per day. The Today page ranks what's due by urgency.
 - **Flashcards that stay simple.** Each card is just a question and an answer. AI drafts are *candidates* until you confirm them.
-- **Bring your own model.** Anthropic, OpenAI, or DeepSeek. Keys are encrypted with AES-256-GCM before they reach the database, and the server never falls back to its own key.
+- **Start on free AI credits, then bring your own model.** New accounts get free credits to try quizzes and Study Coach. After that, add your own Anthropic, OpenAI, or DeepSeek key. Keys are encrypted with AES-256-GCM before they reach the database, and your own key always takes priority.
 - **English or 简体中文.** The interface and AI output each have their own language setting.
 - **Your data stays yours.** Export everything as NDJSON or delete your account from Settings.
 
@@ -109,7 +109,7 @@ The extension reads the LeetCode page directly: title, statement, tags, and ever
 ## Get started
 
 1. **Sign in** at [ankify-pi.vercel.app](https://ankify-pi.vercel.app) with Google.
-2. **Add your AI key** in Settings (Anthropic, OpenAI, or DeepSeek).
+2. **Try the AI features on free credits.** When they run out, add your own Anthropic, OpenAI, or DeepSeek key in Settings.
 3. **Install the [Chrome extension](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb).** It reuses your web login, so there's no token to paste.
 4. **Open any LeetCode problem you've solved** and click *Capture*.
 
