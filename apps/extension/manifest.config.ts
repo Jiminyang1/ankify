@@ -16,7 +16,7 @@ export default defineManifest(({ mode }) => {
     name: "ankify",
     description:
       "Capture LeetCode problems and submissions in one click, then review them with spaced repetition and AI quizzes.",
-    version: "0.2.0",
+    version: "0.2.1",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
