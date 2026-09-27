@@ -226,7 +226,11 @@ export const translations = {
       extensionConnectionHelp: "The Chrome extension automatically reuses this web login session. Open the extension and continue with Google—there is no token to create or paste.",
       installExtension: "Extension setup guide",
       reviewSchedule: "Review schedule",
-      keySecurity: "API keys are encrypted before they are stored. Each user must provide their own provider key.",
+      keySecurity: "API keys are encrypted before they are stored. Your own key always takes priority over free credits.",
+      starterActive: (remaining: number, limit: number) =>
+        remaining > 0
+          ? `You're using free AI credits: ${remaining} of ${limit} left. Each quiz, AI card, or Study Coach message uses one. Add your own key below to keep using AI after that.`
+          : `You've used all ${limit} free AI credits. Add your own key below to keep generating quizzes and cards and to keep using Study Coach.`,
       provider: "Provider",
       chooseProvider: "Choose a provider",
       model: "Model",
@@ -726,7 +730,11 @@ export const translations = {
       extensionConnectionHelp: "Chrome 扩展会自动复用当前网页登录会话。打开扩展并使用 Google 继续即可，不需要创建或粘贴 token。",
       installExtension: "扩展安装指南",
       reviewSchedule: "复习计划",
-      keySecurity: "API key 会加密后存储。每个用户都需要提供自己的提供商 key。",
+      keySecurity: "API key 会加密后存储。配置了自己的 key 后会优先使用，不再消耗免费额度。",
+      starterActive: (remaining: number, limit: number) =>
+        remaining > 0
+          ? `你正在使用免费 AI 额度：剩余 ${remaining} / ${limit} 次。每生成一次测验、一张 AI 卡片或发一条 Study Coach 消息消耗 1 次。用完后可在下方填入自己的 key 继续使用。`
+          : `${limit} 次免费 AI 额度已用完。在下方填入自己的 key，就能继续生成测验、卡片和使用 Study Coach。`,
       provider: "提供商",
       chooseProvider: "选择提供商",
       model: "模型",

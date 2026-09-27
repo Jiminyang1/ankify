@@ -52,6 +52,7 @@ const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export function AiSettingsForm({
   initial,
+  starter,
 }: {
   initial: {
     provider: AiProvider;
@@ -59,6 +60,7 @@ export function AiSettingsForm({
     reasoningMode: AiReasoningMode;
     hasApiKey: boolean;
   };
+  starter: { enabled: boolean; remaining: number; limit: number };
 }) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -254,6 +256,11 @@ export function AiSettingsForm({
         }}
         onConfirm={() => void removeApiKey()}
       />
+      {starter.enabled && !hasStoredApiKey && (
+        <p className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
+          {t.settings.starterActive(starter.remaining, starter.limit)}
+        </p>
+      )}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-fg" htmlFor="ai-provider">
           {t.settings.provider}

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { cache } from "react";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
+import { readStarterAiConfig } from "./starter-ai";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
 import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "@/lib/i18n";
 
@@ -18,6 +19,10 @@ export interface AiRuntimeSettings {
   model: string;
   reasoningMode: AiReasoningMode;
   apiKey: string;
+  /** "user" = the user's own key; "starter" = the server's starter-credit key. */
+  source: "user" | "starter";
+  /** Starter-credit allowance per user; only set when source is "starter". */
+  starterLimit?: number;
 }
 
 interface ReviewSettings {
@@ -65,20 +70,38 @@ export async function getAiSettings(userId: string): Promise<AiSettings> {
   };
 }
 
+/**
+ * The provider, model, and key an AI call should use. A user's own complete
+ * configuration always wins; otherwise the server's starter-credit key is used
+ * when it is configured. Callers that start new AI work must spend a starter
+ * credit when `source` is "starter".
+ */
 export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSettings> {
   const settings = await getAiSettings(userId);
+  if (settings.provider && settings.model && settings.encryptedApiKey) {
+    return {
+      provider: settings.provider,
+      model: settings.model,
+      reasoningMode: settings.reasoningMode,
+      apiKey: decryptSecret(settings.encryptedApiKey),
+      source: "user",
+    };
+  }
+  const starter = readStarterAiConfig();
+  if (starter) {
+    return {
+      provider: starter.provider,
+      model: starter.model,
+      reasoningMode: "fast",
+      apiKey: starter.apiKey,
+      source: "starter",
+      starterLimit: starter.credits,
+    };
+  }
   if (!settings.provider || !settings.model) {
     throw new Error("AI_NOT_CONFIGURED: Configure AI provider and model in Settings.");
   }
-  if (!settings.encryptedApiKey) {
-    throw new Error("AI_KEY_MISSING: Add your provider API key in Settings.");
-  }
-  return {
-    provider: settings.provider,
-    model: settings.model,
-    reasoningMode: settings.reasoningMode,
-    apiKey: decryptSecret(settings.encryptedApiKey),
-  };
+  throw new Error("AI_KEY_MISSING: Add your provider API key in Settings.");
 }
 
 export async function setAiSettings(

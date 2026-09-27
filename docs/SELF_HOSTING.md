@@ -99,6 +99,12 @@ database operation.
    - `AI_KEY_ENCRYPTION_SECRET`
    - `ANKIFY_DEPLOYMENT_ENV=production`
    - `ANKIFY_EXTENSION_ORIGINS=chrome-extension://<extension-id>`
+   - Optional starter AI credits: `ANKIFY_STARTER_AI_API_KEY` (server-owned
+     provider key; leave unset to disable), plus `ANKIFY_STARTER_AI_PROVIDER`
+     (default `deepseek`), `ANKIFY_STARTER_AI_MODEL` (default
+     `deepseek-v4-flash`), and `ANKIFY_STARTER_AI_CREDITS` (default `30` per
+     user). Top up the provider account with only what you're willing to spend;
+     its prepaid balance is the overall cap.
    - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
      emergency kill switch for new accounts; existing users can still sign in.
 3. Branch and PR preview deployments are turned off in `apps/web/vercel.json`
