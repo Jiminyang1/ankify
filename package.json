@@ -2,6 +2,7 @@
   "name": "ankify",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Personal LeetCode/CS spaced-repetition app with FSRS-6, AI MCQs, and a Chrome extension",
   "packageManager": "pnpm@10.25.0",
   "engines": {
