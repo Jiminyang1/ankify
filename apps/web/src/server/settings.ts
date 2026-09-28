@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { cache } from "react";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
-import { normalizeModelId } from "./ai-model-aliases";
+import { normalizeModelId } from "./ai/providers/registry";
 import { readStarterAiConfig } from "./starter-ai";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
 import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "@/lib/i18n";
@@ -36,10 +36,11 @@ interface GenerationSettings {
   language: Language;
 }
 
+// Thinking stays on by default: current models reason adaptively.
 const DEFAULT_AI_SETTINGS: AiSettings = {
   provider: "",
   model: "",
-  reasoningMode: "fast",
+  reasoningMode: "thinking",
 };
 
 const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
@@ -94,7 +95,7 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
     return {
       provider: starter.provider,
       model: starter.model,
-      reasoningMode: "fast",
+      reasoningMode: "thinking",
       apiKey: starter.apiKey,
       source: "starter",
       starterLimit: starter.credits,

@@ -1,4 +1,5 @@
 import { isAiTimeoutError, safeErrorForLog } from "../ai-errors";
+import { classifyProviderFailure } from "../ai/errors";
 
 export function classifyAgentError(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") {
@@ -7,17 +8,11 @@ export function classifyAgentError(error: unknown) {
   if (isAiTimeoutError(error)) {
     return { code: "agent_timeout", message: "The Study Coach timed out. Try again." };
   }
-  const details = error as Error & { status?: unknown; statusCode?: unknown };
-  const status =
-    typeof details.status === "number"
-      ? details.status
-      : typeof details.statusCode === "number"
-        ? details.statusCode
-        : null;
-  if (status === 429) {
+  const failure = classifyProviderFailure(error);
+  if (failure === "rate_limited") {
     return { code: "provider_rate_limited", message: "The AI provider is rate limited. Try again shortly." };
   }
-  if (status !== null && status >= 500) {
+  if (failure === "provider_unavailable") {
     return { code: "provider_unavailable", message: "The AI provider is temporarily unavailable." };
   }
   return { code: "agent_failed", message: "The Study Coach could not finish this response." };

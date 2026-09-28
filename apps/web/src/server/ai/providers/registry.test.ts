@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModelId } from "./ai-model-aliases";
+import { normalizeModelId } from "./registry";
 
 describe("normalizeModelId", () => {
   it("maps retired DeepSeek ids to deepseek-flash", () => {

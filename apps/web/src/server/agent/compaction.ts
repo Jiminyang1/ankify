@@ -1,4 +1,5 @@
 import { generateText, type LanguageModel } from "ai";
+import type { ProviderOptions } from "@/server/ai/providers/types";
 import {
   buildSessionSummaryPrompt,
   SESSION_SUMMARY_INSTRUCTIONS,
@@ -14,6 +15,7 @@ export async function compactAgentSessionIfNeeded(args: {
   userId: string;
   sessionId: string;
   model: LanguageModel;
+  callOptions: { providerOptions?: ProviderOptions };
   abortSignal: AbortSignal;
 }) {
   const batch = await getAgentCompactionBatch(args.userId, args.sessionId);
@@ -24,6 +26,7 @@ export async function compactAgentSessionIfNeeded(args: {
     instructions: SESSION_SUMMARY_INSTRUCTIONS,
     prompt: buildSessionSummaryPrompt(batch.previousSummary, batch.turns),
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+    ...args.callOptions,
     abortSignal: args.abortSignal,
   });
   return saveAgentSessionSummary({

@@ -2,6 +2,8 @@ import { generateText, Output, tool } from "ai";
 import { z } from "zod";
 import type { AiProvider } from "@ankify/core";
 import { buildModel } from "./ai";
+import { aiCallOptions } from "./ai/call-options";
+import { classifyProviderFailure } from "./ai/errors";
 import { safeErrorForLog } from "./ai-errors";
 import { markAiVerified } from "./onboarding";
 import { decryptSecret } from "./secret-box";
@@ -61,13 +63,16 @@ export async function testAiConnection(
   const timer = setTimeout(() => controller.abort(), 175_000);
 
   try {
-    const llm = buildModel({ provider, model, apiKey }, { disableThinking: true });
+    const llm = buildModel({ provider, model, apiKey });
+    // The probe only checks reachability, so it uses the lightest reasoning the
+    // model accepts. No sampling params: newer models reject them.
+    const probeOptions = aiCallOptions({ provider, model, reasoningMode: "fast" }, "lightest");
     await generateText({
       model: llm,
       output: Output.object({ schema: probeSchema }),
       system: "You are a connection probe. Respond with {\"ok\": true}.",
       prompt: 'Respond with the JSON object {"ok": true} and nothing else.',
-      temperature: 0,
+      ...probeOptions,
       abortSignal: controller.signal,
     });
     const toolProbe = await generateText({
@@ -80,17 +85,18 @@ export async function testAiConnection(
           execute: async ({ ok }) => ({ ok }),
         }),
       },
-      toolChoice: { type: "tool", toolName: "confirm_connection" },
-      temperature: 0,
+      // Forced tool choice is a 400 on current Claude models, so ask via the prompt.
+      toolChoice: "auto",
+      ...probeOptions,
       abortSignal: controller.signal,
     });
-    if (toolProbe.toolResults.length !== 1) throw new Error("tool_call_not_supported");
+    if (toolProbe.toolResults.length < 1) throw new Error("tool_call_not_supported");
 
     if (input.saveOnSuccess) {
       await setAiSettings(userId, {
         provider,
         model,
-        reasoningMode: provider === stored.provider ? stored.reasoningMode : "fast",
+        reasoningMode: provider === stored.provider ? stored.reasoningMode : "thinking",
         apiKey: input.apiKey,
       });
       await markAiVerified(userId);
@@ -134,50 +140,27 @@ function safeDecrypt(
   }
 }
 
-function classifyAiError(error: unknown): { code: string; message: string } {
-  const raw = error instanceof Error ? error.message : String(error);
-  const lower = raw.toLowerCase();
+const PROBE_FAILURE_MESSAGES = {
+  invalid_api_key: "API key was rejected by the provider.",
+  forbidden: "API key does not have access to this model.",
+  model_not_found: "Model id was not recognized by the provider.",
+  quota_or_rate_limit: "Provider returned a rate limit or quota error.",
+  timeout: "Provider did not respond within 3 minutes.",
+  network: "Could not reach the provider.",
+  unknown: "The provider rejected the test or returned an unexpected response.",
+} as const;
 
-  if (lower.includes("aborted") || lower.includes("timeout")) {
-    return { code: "timeout", message: "Provider did not respond within 3 minutes." };
-  }
-  if (
-    lower.includes("401") ||
-    lower.includes("unauthorized") ||
-    lower.includes("invalid api key") ||
-    lower.includes("authentication")
-  ) {
-    return { code: "invalid_api_key", message: "API key was rejected by the provider." };
-  }
-  if (lower.includes("403") || lower.includes("forbidden") || lower.includes("permission")) {
-    return { code: "forbidden", message: "API key does not have access to this model." };
-  }
-  if (
-    lower.includes("404") ||
-    lower.includes("not found") ||
-    lower.includes("model_not_found") ||
-    lower.includes("does not exist")
-  ) {
-    return { code: "model_not_found", message: "Model id was not recognized by the provider." };
-  }
-  if (
-    lower.includes("429") ||
-    lower.includes("rate limit") ||
-    lower.includes("quota") ||
-    lower.includes("insufficient")
-  ) {
-    return { code: "quota_or_rate_limit", message: "Provider returned a rate limit or quota error." };
-  }
-  if (
-    lower.includes("network") ||
-    lower.includes("fetch failed") ||
-    lower.includes("enotfound") ||
-    lower.includes("econnrefused")
-  ) {
-    return { code: "network", message: "Could not reach the provider." };
-  }
-  return {
-    code: "unknown",
-    message: "The provider rejected the test or returned an unexpected response.",
-  };
+function classifyAiError(error: unknown): { code: keyof typeof PROBE_FAILURE_MESSAGES; message: string } {
+  const failure = classifyProviderFailure(error);
+  const code =
+    failure === "rate_limited" || failure === "quota_exceeded"
+      ? "quota_or_rate_limit"
+      : failure === "invalid_api_key" ||
+          failure === "forbidden" ||
+          failure === "model_not_found" ||
+          failure === "timeout" ||
+          failure === "network"
+        ? failure
+        : "unknown";
+  return { code, message: PROBE_FAILURE_MESSAGES[code] };
 }
