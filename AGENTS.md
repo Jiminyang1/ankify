@@ -1,222 +1,82 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to coding agents (Codex and others) working in this repository. `CLAUDE.md` carries the same guidance for Claude Code; keep the two in sync.
 
 ## Commands
 
 ```bash
-pnpm install                # install deps (pnpm workspaces)
-cp .env.example .env.local  # local SQLite: fill Better Auth/Google + encryption secret; leave TURSO_* empty
+pnpm install                # install deps (pnpm workspaces; pnpm 10, Node 22)
+cp .env.example .env.local  # local SQLite: Better Auth/Google + encryption secret; leave TURSO_* empty
 
-pnpm db:generate            # drizzle-kit generate (after schema changes)
-pnpm db:migrate             # apply migrations to local/remote Turso
-pnpm db:studio              # drizzle-kit studio (browse DB in browser)
-
-pnpm dev                    # apply local DB migrations, then start Next.js web app on :3000
-pnpm dev:web                # same as pnpm dev
-pnpm dev:all                # apply local DB migrations, then run web + extension watch together
+pnpm dev                    # apply local migrations, then Next.js on :3000 (LOCAL profile)
+pnpm dev:all                # same, plus the extension in watch mode
 pnpm dev:ext                # Chrome extension build in watch mode
-pnpm dev:demo               # English demo deck on the QA DB (README/landing screenshots); login at /api/qa/login
+pnpm dev:qa                 # isolated QA DB + local AI worker; sign in at /api/qa/login
+pnpm dev:demo               # English demo deck on the QA DB (README/landing screenshots)
 
-pnpm typecheck              # run tsc --noEmit across all packages
-pnpm lint                   # run linter across all packages
+pnpm db:generate            # drizzle-kit generate after editing packages/db/src/schema.ts
+pnpm db:migrate             # apply migrations to local SQLite (packages/db/local.db)
+pnpm db:studio              # drizzle-kit studio against local SQLite
+pnpm db:backup              # dump Production Turso into backups/ (requires .env.production.local)
+pnpm db:release             # backup + migrate Production; follow docs/DEPLOYMENT.md first
+
+pnpm typecheck              # tsc --noEmit across all packages
+pnpm lint                   # eslint (7 known warnings in pre-existing code)
+pnpm test                   # vitest from the repo root (DB tests use throwaway SQLite files)
 ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm build
-                            # production build across all packages
+                            # production build; a bare Production extension build fails closed
+pnpm release:check          # typecheck + lint + test + build + manifest check + audit
 ```
 
-The root `scripts` in `package.json` delegate to workspace packages via pnpm filters (`--filter @ankify/web`, `--filter @ankify/extension`, `--filter @ankify/db`).
-A bare Production extension or root build intentionally fails closed: always
-pass the canonical `ANKIFY_EXTENSION_API_ORIGIN` shown above. Development watch
-mode defaults to `http://localhost:3000` and does not require the variable.
+Root scripts delegate to workspace packages via pnpm filters. `ANKIFY_PROFILE`
+selects the env file for CLI tools (`local` default, `qa`, `preview`,
+`production`); only `:prod`/`db:backup`/`db:release` scripts touch Production
+Turso. Production runtime reads Vercel env vars, never local files.
 
 ## Architecture
 
-Modular monolith: one Next.js deployment plus the Chrome extension. Browser-safe
-contracts and HTTP helpers are shared packages; database and application logic
-stay inside explicit server boundaries.
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before non-trivial changes. It
+is the single source of truth for the monorepo layout, data model, auth, FSRS
+scheduling, asynchronous AI jobs (Vercel Queues, leases, retries), Study Coach,
+and hosted AI keys. Paid AI credits (Stripe) are documented in
+[docs/PAID_AI_CREDITS.md](docs/PAID_AI_CREDITS.md); deployment and Production
+data ownership in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
+[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
-### Production deployment identity
+In one paragraph: `apps/web` (Next.js 16 App Router, logic in `src/server/`),
+`apps/extension` (Chrome MV3), `packages/db` (Drizzle + Turso/SQLite),
+`packages/core` (FSRS, types), `packages/contracts` (Zod schemas + DTOs), and
+`packages/api-client` (AI-job client). Card and quiz generation run as durable
+`ai_jobs` through a Vercel Queue; Study Coach streams tool-using agent turns.
 
-- Canonical Web/API origin: `https://ankify-pi.vercel.app`.
-- Production data is Turso provisioned through the Vercel Turso integration:
-  organization `vercel-icfg-mdehlkeeqefnm8sqwfj1zlce`, database
-  `database-ankify`.
-- The personal Turso database `ankify-prod` is legacy, write-blocked, and not
-  connected to Vercel Production. Never infer the target from the Turso CLI's
-  current organization or a plausible database name.
-- Runtime uses only `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
-  `ANKIFY_NEW_DB_TURSO_*` variables are not application inputs.
-- Before a Production write, follow `docs/DEPLOYMENT.md`: explicitly switch to
-  the integration organization, verify the URL and read-only row/migration
-  counts, then run `pnpm db:release` with a short-lived token.
+## Rules that matter when editing
 
-### `packages/contracts` - Transport contracts
-
-- Zod request schemas and JSON-safe response DTOs shared by Web, Extension, and DB JSON columns.
-- Transport dates are ISO strings. Browser code must not import `@ankify/db` types.
-- Do not return raw Drizzle rows from public APIs; select/map only the fields in the relevant DTO.
-
-### `packages/api-client` - Shared HTTP client
-
-- Isomorphic client code used by both Web and Extension for durable AI job creation, polling, and errors.
-- The caller supplies the request function, so Web keeps same-origin URLs and Extension keeps its credentialed base URL/auth handling.
-
-### `packages/db` - Database layer
-
-- Drizzle ORM schema in a single file: `src/schema.ts` (Better Auth `user`, `session`, `account`, `verification`; business tables `problems`, `submissions`, `cards`, `quiz_sessions`, `ai_jobs`, `review_events`, `settings`; and persistent Agent tables `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps`)
-- `client.ts` exposes a singleton `getDb()`. Production requires `TURSO_DATABASE_URL`; `LOCAL_DB_PATH` is a development-only SQLite fallback.
-- `migrate.ts` applies `drizzle/` migrations; run via `pnpm db:migrate`
-- Schema infer types are re-exported (e.g. `Problem`, `Card`, `QuizSession`, `ReviewEvent`, etc.)
-
-**Business data isolation**: all user-owned tables carry `userId`, including AI jobs and every Agent table. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
-
-**Cards table**: simple Q&A plus `aiStatus` lifecycle and an integer `version` used for optimistic concurrency on edits, confirmation, and AI follow-up commits.
-
-**AI jobs table**: durable, user-scoped Card/Quiz generation commands. Inputs are AES-GCM encrypted; queue messages contain only `jobId`. Idempotency, active-resource deduplication, leases, attempts, results, errors, and terminal state are persisted. A partial unique index allows only one `running` job per user.
-
-**Agent tables**: Study Coach conversations are user-owned sessions. Each turn creates an idempotent run with its own page/problem context, model identity, status, usage, messages, and ordered tool steps. A session is not permanently bound to one problem, so it can continue across the web app. Only one run may be active per session; stale runs are failed on snapshot/begin-turn recovery.
-
-**Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
-
-**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key.
-
-### `packages/core` - Shared business logic
-
-- `fsrs.ts`: wraps `ts-fsrs` - `rate()` computes next review for one rating, `preview()` returns all 4 rating outcomes at once via `repeat()`, `retrievability()` returns 1 for new cards, `emptyCardState()`
-- `types.ts`: shared TypeScript types (`LeetCodeDifficulty`, `AiProvider`, `FsrsRating`)
-- `quiz-format.ts`: small Markdown formatter that wraps complexity expressions, DP states, and code-like variables in inline code before rendering quiz text.
-
-### `apps/web` - Next.js 16 App Router
-
-- **Auth and isolation**:
-  - Better Auth handles Google OAuth through `/api/auth/[...all]`.
-  - Production is fail-closed without `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, Google credentials, and `AI_KEY_ENCRYPTION_SECRET`.
-  - Signup is public for any Google account by default. `ANKIFY_DISABLE_SIGNUP=true` pauses only new account creation.
-  - Middleware is only a lightweight redirect/CORS gate. Server pages must call `requirePageUser()` and API routes must call `getRequestUser()` or `getRequestSessionUser()`.
-  - Every business query must be scoped by the current `userId`, including raw SQL dashboard queries.
-  - Extension requests use `credentials: include` and reuse the Better Auth web-session cookie. `ANKIFY_EXTENSION_ORIGINS` must list exact trusted extension IDs in production.
-
-- **API routes** under `src/app/api/`:
-  - `auth/[...all]/` - Better Auth route handler for Google OAuth sessions and auth callbacks.
-  - `me/` - returns the current session user; used by extension automatic login detection and Test connection.
-  - `capture/` - extension hits this to upsert problems + submissions. Idempotent by `leetcodeSlug`, stores `leetcodeId` when present, and seeds FSRS state for new problems.
-  - `problems/` - list problems with card counts. Supports `?search=` for title search.
-  - `problems/[id]/` - PATCH notes (`{ notes }`) for autosave from review.
-  - `problems/by-slug/[slug]/` - extension lookup by LeetCode slug. Returns problem, ready cards, candidates, FSRS previews, and queue state.
-  - `problems/[id]/user-card/` - POST saves a manual card directly as `ready` (just `question` + `answer`).
-  - `ai-jobs/` - POST creates an idempotent asynchronous Card/Quiz generation job and publishes `{ jobId }` to Vercel Queues; GET lists user-owned jobs for a problem.
-  - `ai-jobs/[id]/` - GET polls one user-owned job; DELETE requests cancellation.
-  - `queues/ai-generation/` - Vercel Queue consumer. Claims a lease, runs the generator, and commits the business result plus terminal job state atomically.
-  - `agent/sessions/` and `agent/sessions/[id]/` - list active Study Coach sessions and load one persistent session snapshot.
-  - `agent/turns/` - starts/resumes a ToolLoopAgent turn and streams newline-delimited Agent events. Request disconnect aborts the model call; stale runs recover as failed.
-  - `agent/steps/[id]/approve/` and `dismiss/` - resolve user-confirmed Card/Quiz proposals. Navigation and read tools do not require approval.
-  - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. AI generation does not run through this route.
-  - `problems/[id]/quiz/` - GET current non-archived quiz session; DELETE resets quiz history. AI generation does not run through this route.
-  - `problems/[id]/quiz/[sessionId]/` - PATCH one quiz answer. Repeated answers return 400; the fifth answer completes the session and computes score.
-  - `problems/[id]/quiz/[sessionId]/save-card/` - POST `{ itemId }` to save a quiz item directly as a `ready` card and record a `card_created` event.
-  - `cards/` - DELETE one or more cards by id.
-  - `cards/[id]/` - PATCH edits question/answer or confirms a candidate card (`aiStatus: "ready"`).
-  - `review/next/` - returns next due problem with FSRS previews (via `preview()`), ready cards, submissions, and notes. A due problem does not need ready cards because Quiz can start review.
-  - `review/queue/` - returns today's due queue for the extension Today tab.
-  - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`.
-  - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
-- **`src/proxy.ts`**: lightweight auth gate and credentialed Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages and extension API requests require the same Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data.
-- **`src/server/`**: all DB, auth, settings, queue, AI, prompt, query, and transactional command implementations. Pages call server query functions directly; API routes stay as thin HTTP adapters.
-  - `ai.ts`: loads AI provider/model from DB and builds the AI SDK language model. DeepSeek has custom fetch to disable thinking mode. Throws clear error if AI is not configured.
-  - `agent/`: persistent Study Coach store, ToolLoopAgent runtime, page/problem-aware tools, proposal steps, and quiz-context privacy rules.
-  - `card-prompt.ts`: builds A/B/C context (problem context / submissions / raw text) and single-draft prompts. Prompt returns only `{question, answer}` and encourages Markdown.
-  - `quiz-prompt.ts`: builds Chinese 5-question quiz prompts from problem title/difficulty/slug/tags/statement, notes, ready cards, recent submissions, failed submission details, and recent completed quiz history. Prompts require scoped items and at least one complexity question.
-  - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
-  - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
-  - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. `getAiRuntimeSettings()` returns the user's own settings, or the starter-credit settings (`source: "starter"`) when the user has none and `ANKIFY_STARTER_AI_API_KEY` is set.
-- **`src/lib/`**: browser-safe UI helpers only (auth client, i18n, autosave, hooks, URL/format utilities). It must not import DB or server modules.
-- **Pages**:
-  - `/` - static public landing page; authenticated sessions redirect to `/today`
-  - `/today` - authenticated home: due queue, progress, daily stats
-  - `/review` - dynamic sibling panels for Question, Quiz/Cards/Submissions/Notes, and optional Study Coach; panels can be hidden and resized
-  - `/problems` - list with difficulty/state/tag/search filters
-  - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline
-  - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
-  - `/settings` - AI provider configuration + daily review limit
-
-### `apps/extension` - Chrome MV3 Extension
-
-- **Content script** (`content/leetcode.ts`): scrapes LeetCode problem pages via their GraphQL endpoint - fetches problem metadata, recent submissions, and submission details (code, status, failures). Falls back from `questionSubmissionList` to legacy `submissionList`.
-- **Background** (`background/index.ts`): minimal service worker, satisfies MV3 lifecycle.
-- **Popup** (`popup/`):
-  - Top nav: `Today`, `Problem`, `Settings`.
-  - Theme control: `System`, `Light`, `Dark`.
-  - `Problem` has compact `Review` / `Manage` modes.
-  - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation creates a durable job and polls it; reopening the popup resumes from the server job state. Completed quizzes can create a new batch and bulk-create cards for missed items.
-  - `Manage` contains manual card creation, asynchronous AI candidate generation/follow-up/confirm/discard, and existing card management.
-  - `Settings` stores user preferences. The API origin is fixed at build time;
-    legacy saved API URLs are retired. Test connection calls `/api/me` with the
-    shared web session and shows the signed-in email.
-  - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
-- **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
-
-## Data Flow
-
-### Capture (extension)
-
-1. Open a LeetCode problem page and click the extension popup.
-2. The extension sends credentialed requests to the exact API origin; Chrome includes the existing Better Auth web-session cookie.
-3. If the problem is unknown, "Capture this problem" reads page data via the content script and POSTs to `/api/capture`.
-4. If the problem is known, the popup shows Review/Manage with the current FSRS due state, ready cards, candidates, submissions, notes, and quiz session.
-
-### Card creation
-
-**Manual**: Write question + answer directly -> POST `/api/problems/:id/user-card` -> saved as `ready`.
-
-**AI**: Click Auto generate or write raw text -> POST `/api/ai-jobs` with a `card_generate` command -> poll `/api/ai-jobs/:id`. The queue worker inserts one `candidate` card on success. Follow-up is another version-guarded job; Confirm uses a version-guarded card PATCH; Discard deletes the candidate.
-
-There is no AI-card batch generation, `polish`, or `generating` card status. Job lifecycle lives only in `ai_jobs`; card lifecycle remains `candidate | failed | ready`.
-
-### Quiz review
-
-1. `GET /api/problems/:id/quiz` returns the current active/completed quiz session or `null`.
-2. `POST /api/ai-jobs` creates a quiz generation command. The queue worker generates exactly 5 single-choice questions in the configured generation language. Each item has a source and scope. AI failure writes no quiz session.
-3. Answering a choice PATCHes `/api/problems/:id/quiz/:sessionId` immediately. The API stores correctness and returns the explanation.
-4. After 5 answers, the session becomes `completed`; score maps to suggested rating: `0-1 Again`, `2 Hard`, `3-4 Good`, `5 Easy`.
-5. Suggested rating is only guidance. FSRS is still updated only by manual rating.
-6. `Regenerate` archives existing non-archived sessions and creates a new active session.
-7. `New batch` is available only after completion. It archives the completed session, passes recent completed quiz history into the prompt, and creates a new active session without repeating prior questions.
-8. `Save as card` writes a ready card directly from quiz question + correct answer + explanation. Completed summaries can bulk-create cards for missed items.
-
-### Review session
-
-1. `GET /api/review/next` returns the next due problem with FSRS previews, ready cards, submissions, and notes.
-2. User reviews Quiz/Cards/Submissions/Notes, then self-rates recall (Again/Hard/Good/Easy).
-3. `POST /api/review/rate` records the rating and applies FSRS scheduling. Notes are saved to `problems.notes`.
-4. Meaningful interactions write to `review_events`.
-
-### Study Coach session
-
-1. `AgentShell` lives in the authenticated app layout, so Coach can open from any web page as a sibling right panel rather than an overlay.
-2. The UI lists only persisted non-empty sessions; a new session row is created by the first submitted message, not by repeatedly clicking New session.
-3. `POST /api/agent/turns` stores the run context and user message, then `ToolLoopAgent` iterates over read, navigation, and proposal tools while streaming events.
-4. Page/problem context belongs to the run. Continuing the same session after navigation uses the new run's context without rewriting prior context.
-5. Read tools execute immediately. Navigation emits an executable destination. Card/Quiz writes are proposals and require explicit approval before creating an AI job.
-6. Assistant output, tool steps, terminal status, usage, and resumable model messages are persisted. Disconnect/timeout/failure never leaves an indefinitely running session.
-
-## Key Design Decisions
-
-- **Multi-user deployment**: public Better Auth Google OAuth and per-user data isolation across all business tables.
-- **Extension auth reuses the web session**: no separate ankify token is created, copied, or stored; signed-out users continue with Google in a web tab.
-- **User-owned AI keys, plus starter credits**: users save provider/model/key in Settings, and keys are encrypted before storage. When `ANKIFY_STARTER_AI_API_KEY` is set, users without a complete own configuration fall back to that server key for a small lifetime allowance (`server/starter-ai.ts`: 1 credit per quiz job, card job, or Coach turn; atomic counter in the `settings` row `starter-ai-usage`). A user's own key always wins and never spends credits. No other server env provider key is a runtime fallback.
-- **Problem-level scheduling**: FSRS state lives directly on the `problems` row. Cards and quizzes support recall, but only the problem gets scheduled.
-- **Cards are simple**: `question`, `answer`, lifecycle fields only. No explanation/rationale/source fields on the card row.
-- **AI card generation is user-gated**: AI card generation creates `candidate`; only confirmed cards become `ready`.
-- **Quiz save-as-card is direct**: quiz items are already answered/reviewed by the user, so saving one creates a `ready` card immediately.
-- **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
-- **AI generation is asynchronous**: Vercel Queues provides at-least-once delivery; `ai_jobs` leases, idempotency keys, resource CAS checks, and atomic result/job commits provide application-level correctness.
-- **Per-user execution is serialized**: the database permits only one running AI job per user; other queued jobs are retried later.
-- **Agent sessions are cross-page, not per-problem**: sessions hold conversation history while each run snapshots the current page and optional problem focus.
-- **Agent writes are user-gated**: Coach may read and navigate directly, but Card/Quiz generation is recorded as a proposal and starts only after explicit approval.
-- **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
-- **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history.
-- **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.
-- **AI defaults to empty**: without starter credits, provider/model/key must be configured before AI generation; errors should be clear. When starter credits run out, requests return `starter_credits_exhausted` (403).
+- **Scope every query by `userId`**, including raw SQL. Server pages call
+  `requirePageUser()`; API routes call `getRequestUser()` or
+  `getRequestSessionUser()` (settings, account, billing). `proxy.ts` is not an
+  auth check.
+- **Contracts at the edge**: validate requests with `@ankify/contracts` schemas
+  and return DTOs, never raw Drizzle rows. Browser code never imports `@ankify/db`.
+- **Schema changes** go through `pnpm db:generate` and a committed migration;
+  never edit applied migrations. Apply migrations before deploying code that
+  needs them.
+- **AI work is asynchronous**: create an `ai_jobs` command (`POST /api/ai-jobs`)
+  instead of calling a model inside a request. Commit results together with the
+  terminal job state in one transaction.
+- **Hosted AI credits**: any new AI entry point that can run on the hosted key
+  (`source: "starter"`) must call `spendHostedCredit()` inside the same
+  transaction that creates its job/run, and refund on failure with
+  `refundHostedCredit()`. A user's own key never spends credits.
+- **Billing**: prices and pack sizes are server-side only
+  (`server/billing/config.ts`); credits are granted only by
+  `fulfillCheckoutSession*()` from the authoritative Stripe Session, never from a
+  redirect or event payload. Never use live Stripe keys outside Production.
+- **Agent writes are user-gated**: Coach may read and navigate, but card/quiz
+  generation is a proposal that runs only after approval.
+- **FSRS is problem-level**; only manual ratings change the schedule.
+  `review_events` is append-only (undo stamps `undoneAt`).
+- **Tests**: DB tests use `createTestDb()` from `apps/web/src/server/test-db.ts`;
+  keep deliberate-concurrency tests in their own `*.concurrency.test.ts` file.
 
 ## UI Conventions
 
@@ -231,6 +91,7 @@ The web app and the extension popup share one typographic language. **Default ev
 2. Shell commands and env-path tokens inside copy: `<code>pnpm db:migrate</code>`, `<code>.env.local</code>`.
 3. Identifier-shaped inputs: API key and model id. Slug displays (`two-sum`).
 4. Programming-language labels rendered next to code (`python`, `cpp`).
+5. The brand wordmark in `components/brand.tsx` - a deliberate logo choice, not body text. Nothing else may borrow it.
 
 Anything else in `font-mono` is a bug - it splits the visual register and looks terminal-ish against the rest of the app.
 
@@ -240,6 +101,16 @@ Anything else in `font-mono` is a bug - it splits the visual register and looks 
 
 If a new component needs a mono look, justify it against the four cases above; otherwise use the variable's default.
 
+**Compose from `components/ui/`, don't re-roll it.** Every button-shaped control uses `<Button>` / `buttonClasses()` (`primary | secondary | ghost | danger` x `icon | sm | md | lg`); every bordered panel on surface color uses `<Surface>` (which owns the `rounded-xl` radius); every zero-state uses `<EmptyState>`; pending states use `<Spinner>` and `loading.tsx` files use `<Skeleton>`. Hand-writing `rounded-* border border-border bg-surface` or a bespoke accent button is how the three-different-paddings drift started. If a call site needs to override padding or radius, the size scale is missing a step - add it to the component instead.
+
+Genuinely custom controls are the exception and stay raw: rating buttons, quiz answer choices, segmented tab triggers, full-width disclosure rows, and plain text links.
+
+**Colors come from the semantic tokens** (`bg`, `surface`, `subtle`, `fg`, `muted`, `border`, `accent`, `accent-soft`, `success`, `warning`, `danger`, `easy`, `medium`, `hard`). A raw Tailwind palette class like `text-red-600` is a bug; use `text-danger`. `apps/extension/src/popup/popup.css` mirrors the same token names and values in all four theme blocks - change one side and you must change the other.
+
+**Focus is never removed.** `globals.css` gives `button / a / input / textarea / select / [role=button]` a `:focus-visible` outline. If an element opts out, it must supply its own indicator - use `.focus-inset` for borderless full-panel editors where an offset ring would fall outside the panel.
+
+**No arrow glyphs in buttons.** `->`, `→`, `←`, `»` inside a label look cheap; drop them from text buttons, and use a drawn SVG icon for glyph-only controls (see `ChevronIcon` / `CheckIcon` in the extension popup). An ellipsis as a pending state is the same problem - use the spinner.
+
 **Editor to rendered-markdown parity.** Where a textarea coexists with a Markdown view of the same content, the textarea must use the same font/size/leading as the rendered output so the visual transition is invisible. Do not apply `font-mono` to such textareas - Markdown's own `<pre>`/`<code>` styles switch to mono locally.
 
 ## Terminology
@@ -248,5 +119,9 @@ If a new component needs a mono look, justify it against the four cases above; o
 - **card** = a flashcard with `question` (front) and `answer` (back).
 - **candidate** = an AI-generated card draft, not yet confirmed.
 - **quiz session** = a per-problem set of 5 multiple-choice questions plus user answers and score.
+- **AI job** = a durable card/quiz generation command in `ai_jobs`, executed by the queue worker.
+- **run** = one Study Coach turn inside an agent session.
+- **hosted key** = the server-owned AI key (`ANKIFY_STARTER_AI_API_KEY`) used when a user has no key of their own.
+- **starter credits** = the free lifetime allowance on the hosted key; **purchased credits** = paid balance from Stripe credit packs.
 - **retrievability** = probability the user still remembers (0-1), computed by FSRS.
 - **stability** = how well a memory is consolidated (days until retrievability drops to 90%).

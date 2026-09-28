@@ -128,7 +128,7 @@ A captured problem is due right away. Open **Today** and start your first sessio
 
 ## Self-hosting and development
 
-Local setup, the QA and demo environments, database profiles, Vercel deployment, and release checks are covered in **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+Local setup, the QA and demo environments, database profiles, Vercel deployment, and release checks are covered in **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**. For how the system fits together, start with **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ```bash
 pnpm install
