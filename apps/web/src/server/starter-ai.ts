@@ -1,21 +1,22 @@
-import { getDb, schema } from "@ankify/db";
+import { getDb, schema, type DB } from "@ankify/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { AiProvider } from "@ankify/core";
 
 /**
  * Starter AI credits: a small, lifetime allowance of AI actions that new users
- * can spend on the server's own provider key before adding their own. One
- * credit is one quiz generation, one card generation, or one Study Coach turn.
+ * can spend on the server's own provider key before adding their own. Actions
+ * cost different amounts (see CREDIT_COST in ai-credits.ts).
  *
  * The feature is off unless ANKIFY_STARTER_AI_API_KEY is set. The overall
  * spend cap is the provider account's prepaid balance, so the code only has to
- * enforce the per-user allowance.
+ * enforce the per-user allowance. Spending goes through ai-credits.ts, which
+ * falls back to purchased credits once the allowance is gone.
  */
 export const STARTER_AI_USAGE_KEY = "starter-ai-usage";
 
 const DEFAULT_PROVIDER = "deepseek";
 const DEFAULT_MODEL = "deepseek-v4-flash";
-const DEFAULT_CREDITS = 30;
+const DEFAULT_CREDITS = 20;
 const PROVIDERS: ReadonlyArray<Exclude<AiProvider, "">> = ["anthropic", "openai", "deepseek"];
 
 export interface StarterAiConfig {
@@ -32,10 +33,14 @@ export interface StarterAiStatus {
   remaining: number;
 }
 
+type DbExecutor = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
+
 export class StarterCreditsExhaustedError extends Error {
   readonly code = "starter_credits_exhausted";
-  constructor() {
-    super("You've used all your free AI credits. Add your own API key in Settings to keep going.");
+  constructor(
+    message = "You don't have enough free AI credits left for this. Add your own API key in Settings to keep going.",
+  ) {
+    super(message);
   }
 }
 
@@ -67,23 +72,37 @@ export async function getStarterAiStatus(userId: string): Promise<StarterAiStatu
   return { enabled: true, limit: config.credits, used, remaining: Math.max(0, config.credits - used) };
 }
 
+const usedExpr = sql`CAST(json_extract(${schema.settings.value}, '$.used') AS INTEGER)`;
+
 /**
- * Atomically spends one starter credit. A single UPSERT increments the counter
- * only while it is below the limit, so concurrent requests cannot overspend.
- * Throws StarterCreditsExhaustedError when nothing is left.
+ * Atomically spends `cost` starter credits. A single UPSERT increments the
+ * counter only if the whole cost still fits under the limit, so concurrent
+ * requests cannot overspend. Returns false when the allowance cannot cover it.
  */
-export async function consumeStarterAiCredit(userId: string, limit: number): Promise<void> {
-  if (limit <= 0) throw new StarterCreditsExhaustedError();
+export async function tryConsumeStarterAiCredit(
+  executor: DbExecutor,
+  userId: string,
+  limit: number,
+  cost = 1,
+): Promise<boolean> {
+  if (cost <= 0 || cost > limit) return false;
   const now = new Date();
-  const used = sql`CAST(json_extract(${schema.settings.value}, '$.used') AS INTEGER)`;
-  const rows = await getDb()
+  const rows = await executor
     .insert(schema.settings)
-    .values({ userId, key: STARTER_AI_USAGE_KEY, value: { used: 1 }, updatedAt: now })
+    .values({ userId, key: STARTER_AI_USAGE_KEY, value: { used: cost }, updatedAt: now })
     .onConflictDoUpdate({
       target: [schema.settings.userId, schema.settings.key],
-      set: { value: sql`json_object('used', ${used} + 1)`, updatedAt: now },
-      setWhere: sql`${used} < ${limit}`,
+      set: { value: sql`json_object('used', ${usedExpr} + ${cost})`, updatedAt: now },
+      setWhere: sql`${usedExpr} + ${cost} <= ${limit}`,
     })
     .returning({ value: schema.settings.value });
-  if (rows.length === 0) throw new StarterCreditsExhaustedError();
+  return rows.length > 0;
+}
+
+/** Gives starter credits back; never drops the counter below zero. */
+export async function returnStarterAiCredit(executor: DbExecutor, userId: string, amount = 1): Promise<void> {
+  await executor
+    .update(schema.settings)
+    .set({ value: sql`json_object('used', MAX(${usedExpr} - ${amount}, 0))`, updatedAt: new Date() })
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, STARTER_AI_USAGE_KEY)));
 }

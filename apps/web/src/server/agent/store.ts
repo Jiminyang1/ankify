@@ -19,7 +19,9 @@ import {
   type AgentSession,
   type AgentStep,
 } from "@ankify/db";
+import { refundHostedCreditSafely, spendHostedCredit } from "../ai-credits";
 import type { AiRuntimeSettings } from "@/server/settings";
+import { StarterCreditsExhaustedError } from "../starter-ai";
 import {
   buildAgentUserContent,
   buildCompressedSessionMessages,
@@ -250,6 +252,21 @@ export async function beginAgentTurn(args: {
         startedAt: now,
       })
       .returning();
+
+    if (args.settings.source === "starter") {
+      try {
+        await spendHostedCredit(tx, args.userId, {
+          action: "coach",
+          ref: { type: "agent_run", id: run!.id },
+          starterLimit: args.settings.starterLimit ?? 0,
+        });
+      } catch (error) {
+        if (error instanceof StarterCreditsExhaustedError) {
+          throw new AgentRequestError(error.code, error.message, 403);
+        }
+        throw error;
+      }
+    }
 
     const [message] = await tx
       .insert(schema.agentMessages)
@@ -617,24 +634,32 @@ export async function failAgentRun(args: {
   code: string;
   message: string;
 }) {
-  const db = getDb();
-  const [run] = await db
-    .update(schema.agentRuns)
-    .set({
-      status: "failed",
-      errorCode: args.code,
-      errorMessage: args.message,
-      finishedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(schema.agentRuns.id, args.runId),
-        eq(schema.agentRuns.userId, args.userId),
-        eq(schema.agentRuns.status, "running"),
-      ),
-    )
-    .returning();
-  if (!run) throw new Error("agent_run_not_running");
+  // The failure and its refund commit together.
+  const run = await getDb().transaction(async (tx) => {
+    const [failed] = await tx
+      .update(schema.agentRuns)
+      .set({
+        status: "failed",
+        errorCode: args.code,
+        errorMessage: args.message,
+        finishedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.agentRuns.id, args.runId),
+          eq(schema.agentRuns.userId, args.userId),
+          eq(schema.agentRuns.status, "running"),
+        ),
+      )
+      .returning();
+    if (!failed) throw new Error("agent_run_not_running");
+    // An interrupted turn was stopped by the user after the provider was
+    // already billed; every other failure gives the hosted credit back.
+    if (args.code !== "agent_interrupted") {
+      await refundHostedCreditSafely(args.userId, { type: "agent_run", id: failed.id }, tx);
+    }
+    return failed;
+  });
   return toAgentRunDto(run);
 }
 

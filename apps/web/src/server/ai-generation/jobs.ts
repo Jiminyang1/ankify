@@ -9,7 +9,8 @@ import { getDb, schema, type AiJob } from "@ankify/db";
 import { MAX_CARDS_PER_PROBLEM } from "@/server/resource-limits";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "@/server/secret-box";
 import { getAiRuntimeSettings, getGenerationSettings, type AiRuntimeSettings } from "@/server/settings";
-import { consumeStarterAiCredit, StarterCreditsExhaustedError } from "@/server/starter-ai";
+import { refundHostedCreditSafely, spendHostedCredit } from "@/server/ai-credits";
+import { StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { getCurrentQuizSession } from "./quiz";
 
 const MAX_ACTIVE_JOBS_PER_USER = 10;
@@ -152,42 +153,57 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
     );
   }
 
-  if (ai.source === "starter") {
-    try {
-      await consumeStarterAiCredit(userId, ai.starterLimit ?? 0);
-    } catch (error) {
-      if (error instanceof StarterCreditsExhaustedError) {
-        throw new AiJobRequestError(error.code, error.message, 403);
-      }
-      throw error;
-    }
-  }
-
   const now = new Date();
   const id = nanoid(16);
-  await db
-    .insert(schema.aiJobs)
-    .values({
-      id,
-      userId,
-      problemId: input.problemId,
-      kind: input.action.startsWith("card_") ? "card" : "quiz",
-      action: input.action,
-      status: "queued",
-      idempotencyKey: input.requestId,
-      activeDedupKey,
-      inputEnvelope: encryptJobInput(input),
-      provider: ai.provider,
-      model: ai.model,
-      reasoningMode: ai.reasoningMode,
-      generationLanguage: generation.language,
-      expectedCardId: input.action === "card_followup" ? input.cardId : null,
-      expectedCardVersion: input.action === "card_followup" ? input.expectedCardVersion : null,
-      expectedQuizSessionId: precondition.expectedQuizSessionId,
-      runAfter: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing();
+  const kind = input.action.startsWith("card_") ? "card" : "quiz";
+  const values = {
+    id,
+    userId,
+    problemId: input.problemId,
+    kind,
+    action: input.action,
+    status: "queued",
+    idempotencyKey: input.requestId,
+    activeDedupKey,
+    inputEnvelope: encryptJobInput(input),
+    provider: ai.provider,
+    model: ai.model,
+    reasoningMode: ai.reasoningMode,
+    generationLanguage: generation.language,
+    expectedCardId: input.action === "card_followup" ? input.cardId : null,
+    expectedCardVersion: input.action === "card_followup" ? input.expectedCardVersion : null,
+    expectedQuizSessionId: precondition.expectedQuizSessionId,
+    runAfter: now,
+    updatedAt: now,
+  } satisfies typeof schema.aiJobs.$inferInsert;
+
+  if (ai.source === "starter") {
+    // The hosted credit and the job commit together: an idempotency or dedup
+    // conflict inserts nothing and spends nothing, and running out of credits
+    // rolls the job back.
+    await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(schema.aiJobs)
+        .values(values)
+        .onConflictDoNothing()
+        .returning({ id: schema.aiJobs.id });
+      if (inserted.length === 0) return;
+      try {
+        await spendHostedCredit(tx, userId, {
+          action: kind,
+          ref: { type: "ai_job", id },
+          starterLimit: ai.starterLimit ?? 0,
+        });
+      } catch (error) {
+        if (error instanceof StarterCreditsExhaustedError) {
+          throw new AiJobRequestError(error.code, error.message, 403);
+        }
+        throw error;
+      }
+    });
+  } else {
+    await db.insert(schema.aiJobs).values(values).onConflictDoNothing();
+  }
 
   const [created] = await db
     .select()
@@ -322,42 +338,54 @@ export async function listOwnedAiJobs(args: {
 export async function cancelOwnedAiJob(userId: string, jobId: string) {
   const db = getDb();
   const now = new Date();
-  const [job] = await db
-    .update(schema.aiJobs)
-    .set({
-      status: "cancelled",
-      activeDedupKey: null,
-      cancelRequestedAt: now,
-      workerId: null,
-      leaseExpiresAt: null,
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(schema.aiJobs.id, jobId),
-        eq(schema.aiJobs.userId, userId),
-        inArray(schema.aiJobs.status, [...ACTIVE_STATUSES]),
-      ),
-    )
-    .returning();
+  // The transition and its refund commit together.
+  const job = await db.transaction(async (tx) => {
+    const [cancelled] = await tx
+      .update(schema.aiJobs)
+      .set({
+        status: "cancelled",
+        activeDedupKey: null,
+        cancelRequestedAt: now,
+        workerId: null,
+        leaseExpiresAt: null,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(schema.aiJobs.id, jobId),
+          eq(schema.aiJobs.userId, userId),
+          inArray(schema.aiJobs.status, [...ACTIVE_STATUSES]),
+        ),
+      )
+      .returning();
+    // A job cancelled before any attempt started never called the provider.
+    if (cancelled && !cancelled.startedAt) {
+      await refundHostedCreditSafely(userId, { type: "ai_job", id: cancelled.id }, tx);
+    }
+    return cancelled;
+  });
   return job ?? getOwnedAiJob(userId, jobId);
 }
 
 export async function failQueuedAiJob(jobId: string, code: string, message: string) {
   const db = getDb();
   const now = new Date();
-  await db
-    .update(schema.aiJobs)
-    .set({
-      status: "failed",
-      activeDedupKey: null,
-      errorCode: code,
-      errorMessage: message,
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(and(eq(schema.aiJobs.id, jobId), eq(schema.aiJobs.status, "queued")));
+  await db.transaction(async (tx) => {
+    const [failed] = await tx
+      .update(schema.aiJobs)
+      .set({
+        status: "failed",
+        activeDedupKey: null,
+        errorCode: code,
+        errorMessage: message,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(schema.aiJobs.id, jobId), eq(schema.aiJobs.status, "queued")))
+      .returning({ userId: schema.aiJobs.userId });
+    if (failed) await refundHostedCreditSafely(failed.userId, { type: "ai_job", id: jobId }, tx);
+  });
 }
 
 type ClaimResult =
@@ -381,140 +409,145 @@ export async function claimAiJob(jobId: string, workerId: string): Promise<Claim
       }
       if (job.attempt >= job.maxAttempts) {
         const [failed] = await tx
+            .update(schema.aiJobs)
+            .set({
+              status: "failed",
+              activeDedupKey: null,
+              workerId: null,
+              leaseExpiresAt: null,
+              errorCode: "attempts_exhausted",
+              errorMessage: "AI generation exhausted its retry limit.",
+              finishedAt: now,
+              updatedAt: now,
+            })
+            .where(eq(schema.aiJobs.id, job.id))
+            .returning();
+          await refundHostedCreditSafely(job.userId, { type: "ai_job", id: job.id }, tx);
+          return { state: "terminal", job: failed! };
+        }
+        if (job.status === "running" && job.leaseExpiresAt && job.leaseExpiresAt > now) {
+          return { state: "busy", job };
+        }
+        if (job.runAfter > now) return { state: "busy", job };
+
+        await tx
           .update(schema.aiJobs)
           .set({
-            status: "failed",
-            activeDedupKey: null,
+            status: "queued",
             workerId: null,
             leaseExpiresAt: null,
-            errorCode: "attempts_exhausted",
-            errorMessage: "AI generation exhausted its retry limit.",
-            finishedAt: now,
+            runAfter: now,
             updatedAt: now,
           })
-          .where(eq(schema.aiJobs.id, job.id))
-          .returning();
-        return { state: "terminal", job: failed! };
-      }
-      if (job.status === "running" && job.leaseExpiresAt && job.leaseExpiresAt > now) {
-        return { state: "busy", job };
-      }
-      if (job.runAfter > now) return { state: "busy", job };
-
-      await tx
-        .update(schema.aiJobs)
-        .set({
-          status: "queued",
-          workerId: null,
-          leaseExpiresAt: null,
-          runAfter: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(schema.aiJobs.userId, job.userId),
-            eq(schema.aiJobs.status, "running"),
-            ne(schema.aiJobs.id, job.id),
-            lte(schema.aiJobs.leaseExpiresAt, now),
-          ),
-        );
-
-      const [otherRunning] = await tx
-        .select({ id: schema.aiJobs.id })
-        .from(schema.aiJobs)
-        .where(
-          and(
-            eq(schema.aiJobs.userId, job.userId),
-            eq(schema.aiJobs.status, "running"),
-            ne(schema.aiJobs.id, job.id),
-            gt(schema.aiJobs.leaseExpiresAt, now),
-          ),
-        )
-        .limit(1);
-      if (otherRunning) return { state: "busy", job };
-
-      const [claimed] = await tx
-        .update(schema.aiJobs)
-        .set({
-          status: "running",
-          attempt: sql`${schema.aiJobs.attempt} + 1`,
-          workerId,
-          leaseExpiresAt: new Date(now.getTime() + JOB_LEASE_MS),
-          startedAt: job.startedAt ?? now,
-          errorCode: null,
-          errorMessage: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(schema.aiJobs.id, job.id),
-            or(
-              eq(schema.aiJobs.status, "queued"),
-              and(eq(schema.aiJobs.status, "running"), lte(schema.aiJobs.leaseExpiresAt, now)),
+          .where(
+            and(
+              eq(schema.aiJobs.userId, job.userId),
+              eq(schema.aiJobs.status, "running"),
+              ne(schema.aiJobs.id, job.id),
+              lte(schema.aiJobs.leaseExpiresAt, now),
             ),
-          ),
-        )
-        .returning();
-      return claimed ? { state: "claimed", job: claimed } : { state: "busy", job };
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (
-      !message.includes("ai_jobs_user_running_unique") &&
-      !message.includes("UNIQUE constraint failed: ai_jobs.user_id")
-    ) throw error;
-    const [job] = await db.select().from(schema.aiJobs).where(eq(schema.aiJobs.id, jobId)).limit(1);
-    return job ? { state: "busy", job } : null;
+          );
+
+        const [otherRunning] = await tx
+          .select({ id: schema.aiJobs.id })
+          .from(schema.aiJobs)
+          .where(
+            and(
+              eq(schema.aiJobs.userId, job.userId),
+              eq(schema.aiJobs.status, "running"),
+              ne(schema.aiJobs.id, job.id),
+              gt(schema.aiJobs.leaseExpiresAt, now),
+            ),
+          )
+          .limit(1);
+        if (otherRunning) return { state: "busy", job };
+
+        const [claimed] = await tx
+          .update(schema.aiJobs)
+          .set({
+            status: "running",
+            attempt: sql`${schema.aiJobs.attempt} + 1`,
+            workerId,
+            leaseExpiresAt: new Date(now.getTime() + JOB_LEASE_MS),
+            startedAt: job.startedAt ?? now,
+            errorCode: null,
+            errorMessage: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.aiJobs.id, job.id),
+              or(
+                eq(schema.aiJobs.status, "queued"),
+                and(eq(schema.aiJobs.status, "running"), lte(schema.aiJobs.leaseExpiresAt, now)),
+              ),
+            ),
+          )
+          .returning();
+        return claimed ? { state: "claimed", job: claimed } : { state: "busy", job };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !message.includes("ai_jobs_user_running_unique") &&
+        !message.includes("UNIQUE constraint failed: ai_jobs.user_id")
+      ) throw error;
+      const [job] = await db.select().from(schema.aiJobs).where(eq(schema.aiJobs.id, jobId)).limit(1);
+      return job ? { state: "busy", job } : null;
+    }
   }
-}
 
-export async function requeueAiJob(job: AiJob, code: string, message: string) {
-  const db = getDb();
-  const now = new Date();
-  const delaySeconds = Math.min(120, job.attempt <= 1 ? 30 : 120);
-  await db
-    .update(schema.aiJobs)
-    .set({
-      status: "queued",
-      runAfter: new Date(now.getTime() + delaySeconds * 1000),
-      workerId: null,
-      leaseExpiresAt: null,
-      errorCode: code,
-      errorMessage: message,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(schema.aiJobs.id, job.id),
-        eq(schema.aiJobs.status, "running"),
-        eq(schema.aiJobs.workerId, job.workerId!),
-      ),
-    );
-  return delaySeconds;
-}
+  export async function requeueAiJob(job: AiJob, code: string, message: string) {
+    const db = getDb();
+    const now = new Date();
+    const delaySeconds = Math.min(120, job.attempt <= 1 ? 30 : 120);
+    await db
+      .update(schema.aiJobs)
+      .set({
+        status: "queued",
+        runAfter: new Date(now.getTime() + delaySeconds * 1000),
+        workerId: null,
+        leaseExpiresAt: null,
+        errorCode: code,
+        errorMessage: message,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(schema.aiJobs.id, job.id),
+          eq(schema.aiJobs.status, "running"),
+          eq(schema.aiJobs.workerId, job.workerId!),
+        ),
+      );
+    return delaySeconds;
+  }
 
-export async function failAiJob(job: AiJob, code: string, message: string) {
-  const db = getDb();
-  const now = new Date();
-  await db
-    .update(schema.aiJobs)
-    .set({
-      status: "failed",
-      activeDedupKey: null,
-      workerId: null,
-      leaseExpiresAt: null,
-      errorCode: code,
-      errorMessage: message,
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(schema.aiJobs.id, job.id),
-        eq(schema.aiJobs.status, "running"),
-        eq(schema.aiJobs.workerId, job.workerId!),
-      ),
-    );
+  export async function failAiJob(job: AiJob, code: string, message: string) {
+    const db = getDb();
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      const [failed] = await tx
+      .update(schema.aiJobs)
+      .set({
+        status: "failed",
+        activeDedupKey: null,
+        workerId: null,
+        leaseExpiresAt: null,
+        errorCode: code,
+        errorMessage: message,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(schema.aiJobs.id, job.id),
+          eq(schema.aiJobs.status, "running"),
+          eq(schema.aiJobs.workerId, job.workerId!),
+        ),
+      )
+      .returning({ id: schema.aiJobs.id });
+    if (failed) await refundHostedCreditSafely(job.userId, { type: "ai_job", id: job.id }, tx);
+  });
 }
 
 /** Resolves the AI settings a new job would run with, as request errors. */

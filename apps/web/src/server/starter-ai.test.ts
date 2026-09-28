@@ -7,12 +7,12 @@ describe("readStarterAiConfig", () => {
     expect(readStarterAiConfig({ ANKIFY_STARTER_AI_API_KEY: "  " })).toBeNull();
   });
 
-  it("defaults to DeepSeek flash with 30 credits", () => {
+  it("defaults to DeepSeek flash with 20 credits", () => {
     expect(readStarterAiConfig({ ANKIFY_STARTER_AI_API_KEY: "sk-test" })).toEqual({
       provider: "deepseek",
       model: "deepseek-v4-flash",
       apiKey: "sk-test",
-      credits: 30,
+      credits: 20,
     });
   });
 
@@ -33,7 +33,7 @@ describe("readStarterAiConfig", () => {
     ).toBeNull();
     expect(
       readStarterAiConfig({ ANKIFY_STARTER_AI_API_KEY: "sk-test", ANKIFY_STARTER_AI_CREDITS: "-3" })?.credits,
-    ).toBe(30);
+    ).toBe(20);
     expect(
       readStarterAiConfig({ ANKIFY_STARTER_AI_API_KEY: "sk-test", ANKIFY_STARTER_AI_CREDITS: "0" })?.credits,
     ).toBe(0);

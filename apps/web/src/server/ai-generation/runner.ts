@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { AiJobCreateRequestInput, CardDraft, QuizItem } from "@ankify/contracts";
 import { getDb, schema, type AiJob } from "@ankify/db";
+import { refundHostedCreditSafely } from "@/server/ai-credits";
 import { MAX_CARDS_PER_PROBLEM, MAX_QUIZ_SESSIONS_PER_PROBLEM } from "@/server/resource-limits";
 import { classifyAiJobError, logAiJobError } from "./errors";
 import { generateAiCardDraft } from "./card";
@@ -301,7 +302,7 @@ async function markSuperseded(
   message: string,
   now: Date,
 ) {
-  await tx
+  const [superseded] = await tx
     .update(schema.aiJobs)
     .set({
       status: "superseded",
@@ -319,5 +320,8 @@ async function markSuperseded(
         eq(schema.aiJobs.status, "running"),
         eq(schema.aiJobs.workerId, job.workerId!),
       ),
-    );
+    )
+    .returning({ id: schema.aiJobs.id });
+  // The result was discarded, so the user got nothing for the credit.
+  if (superseded) await refundHostedCreditSafely(job.userId, { type: "ai_job", id: job.id }, tx);
 }
