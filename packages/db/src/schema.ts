@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from "drizzle-orm/sqlite-core";
 import type {
   AgentNavigation,
   AgentPageContext,
@@ -537,6 +537,73 @@ export const settings = sqliteTable(
   }),
 );
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * ai_credit_balances / ai_credit_ledger / credit_purchases
+ * Hosted AI credits. Free starter credits keep their counter in `settings`;
+ * purchased credits live in `ai_credit_balances`. Every spend, refund, and
+ * purchase is written to the append-only ledger, whose unique
+ * (reason, ref_type, ref_id) index makes each transition idempotent.
+ * The ledger and purchases deliberately have no foreign key to `user`: they
+ * are kept (with the former user id) after account deletion, which forfeits
+ * the remaining balance.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const aiCreditBalances = sqliteTable(
+  "ai_credit_balances",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    balance: integer("balance").notNull().default(0),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    balanceNonNegative: check("ai_credit_balances_balance_non_negative", sql`${t.balance} >= 0`),
+  }),
+);
+
+export const aiCreditLedger = sqliteTable(
+  "ai_credit_ledger",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    bucket: text("bucket", { enum: ["starter", "paid"] }).notNull(),
+    /** Signed credit change for the bucket: negative for spends. */
+    delta: integer("delta").notNull(),
+    reason: text("reason", {
+      enum: ["purchase", "spend", "refund", "stripe_refund", "forfeit", "adjustment"],
+    }).notNull(),
+    refType: text("ref_type", { enum: ["checkout_session", "ai_job", "agent_run", "account", "manual"] }).notNull(),
+    refId: text("ref_id").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    userCreatedIdx: index("ai_credit_ledger_user_created_idx").on(t.userId, t.createdAt),
+    refIdx: uniqueIndex("ai_credit_ledger_reason_ref_unique").on(t.reason, t.refType, t.refId),
+  }),
+);
+
+export const creditPurchases = sqliteTable(
+  "credit_purchases",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    stripeCheckoutSessionId: text("stripe_checkout_session_id").notNull(),
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    packId: text("pack_id").notNull(),
+    credits: integer("credits").notNull(),
+    amountTotal: integer("amount_total").notNull(),
+    currency: text("currency").notNull(),
+    status: text("status", { enum: ["paid", "refunded"] }).notNull().default("paid"),
+    createdAt: ts("created_at"),
+    refundedAt: optTs("refunded_at"),
+  },
+  (t) => ({
+    sessionIdx: uniqueIndex("credit_purchases_checkout_session_unique").on(t.stripeCheckoutSessionId),
+    paymentIntentIdx: index("credit_purchases_payment_intent_idx").on(t.stripePaymentIntentId),
+    userCreatedIdx: index("credit_purchases_user_created_idx").on(t.userId, t.createdAt),
+  }),
+);
+
 export type Problem = typeof problems.$inferSelect;
 export type NewProblem = typeof problems.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;
@@ -558,6 +625,8 @@ export type NewAgentMessage = typeof agentMessages.$inferInsert;
 export type AgentStep = typeof agentSteps.$inferSelect;
 export type NewAgentStep = typeof agentSteps.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;
+export type AiCreditLedgerEntry = typeof aiCreditLedger.$inferSelect;
+export type CreditPurchase = typeof creditPurchases.$inferSelect;
 export type User = typeof user.$inferSelect;
 export type Session = typeof session.$inferSelect;
 export type Account = typeof account.$inferSelect;

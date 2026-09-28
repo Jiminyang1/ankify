@@ -128,6 +128,10 @@ async function main() {
 
   await db.transaction(async (tx) => {
     await tx.delete(schema.user).where(eq(schema.user.id, QA_USER_ID));
+    // Credit records outlive account deletion (no FK to user), and the fixture
+    // account is recreated with the same id, so clear them for a clean reset.
+    await tx.delete(schema.creditPurchases).where(eq(schema.creditPurchases.userId, QA_USER_ID));
+    await tx.delete(schema.aiCreditLedger).where(eq(schema.aiCreditLedger.userId, QA_USER_ID));
 
     await tx.insert(schema.user).values({
       id: QA_USER_ID,
