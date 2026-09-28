@@ -41,6 +41,15 @@ source of truth is the `TURSO_*` pair.
 - `AI_KEY_ENCRYPTION_SECRET` must remain stable for the lifetime of this
   database. Provider API keys are user-owned encrypted settings, not Vercel env
   fallbacks.
+- `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (optional paid AI credits) are
+  owned by Vercel Production and must be live-mode values there (Preview must
+  use test mode; `scripts/check-vercel-env.mjs` and the runtime both refuse a
+  mismatch). The webhook signing secret belongs to the Dashboard endpoint for
+  `https://ankify-pi.vercel.app/api/billing/webhook`; rotating the endpoint
+  requires updating the secret. Do not remove `ANKIFY_STARTER_AI_API_KEY`
+  while users hold purchased credits: their balance runs on that key.
+- Release order for schema changes (including the credit tables): back up and
+  migrate first (`pnpm db:release`), then deploy the code that uses them.
 
 ## Identify the database before any write
 
@@ -108,7 +117,9 @@ Production smoke testing.
    saved in the current user's Production Settings before this test.
 6. Verify the `ankify-ai-generation` Queue trigger exists, then run one queued
    Card or Quiz job through `queued -> running -> succeeded`.
-7. Inspect Vercel runtime logs and clean up any sessions or candidate content
+7. If paid AI credits are enabled, check the Stripe Dashboard webhook endpoint
+   shows recent `2xx` deliveries, and that `/settings#credits` lists the packs.
+8. Inspect Vercel runtime logs and clean up any sessions or candidate content
    created only for smoke testing.
 
 ## Extension release

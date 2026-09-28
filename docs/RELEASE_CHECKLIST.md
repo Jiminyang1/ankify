@@ -47,6 +47,10 @@ legacy and must not be used for Production migrations. Follow
 - [ ] Confirm an unauthenticated app page redirects to `/login` and an
       unauthenticated API request returns `401`.
 - [ ] Inspect Vercel logs for secrets, provider response bodies, or user code.
+- [ ] If paid AI credits are enabled: run the manual Stripe test-mode procedure
+      in [`PAID_AI_CREDITS.md`](PAID_AI_CREDITS.md) (card and Link purchase,
+      resent event, full and partial refund) against Preview with test keys and
+      a Preview webhook endpoint.
 
 ## 3. Prepare Production data
 

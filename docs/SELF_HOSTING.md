@@ -105,6 +105,17 @@ database operation.
      `deepseek-v4-flash`), and `ANKIFY_STARTER_AI_CREDITS` (default `30` per
      user). Top up the provider account with only what you're willing to spend;
      its prepaid balance is the overall cap.
+   - Optional paid AI credit packs: `STRIPE_SECRET_KEY` (a restricted
+     `rk_live_...` key is recommended) and `STRIPE_WEBHOOK_SECRET`. Both or
+     neither; they also require the starter AI key, because purchased credits
+     run on it. Production must use a live key and Preview a test key; the
+     build-time env check enforces this. In the Stripe Dashboard, add a
+     webhook endpoint `https://<your-domain>/api/billing/webhook` for
+     `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+     and `charge.refunded`, and enable Link (plus any other methods) under
+     Payment methods. Apply migrations before deploying the billing code. See
+     [PAID_AI_CREDITS.md](PAID_AI_CREDITS.md) for packs, refunds, and the
+     manual test procedure.
    - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
      emergency kill switch for new accounts; existing users can still sign in.
 3. Branch and PR preview deployments are turned off in `apps/web/vercel.json`
