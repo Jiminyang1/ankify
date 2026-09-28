@@ -79,6 +79,29 @@ if (env.ANKIFY_STARTER_AI_API_KEY?.trim()) {
   }
 }
 
+// Optional paid AI credits: Stripe keys come as a pair, and purchased credits
+// run on the starter AI key, so a half-configured billing setup fails closed.
+const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim();
+const stripeWebhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim();
+if (Boolean(stripeSecretKey) !== Boolean(stripeWebhookSecret)) {
+  errors.push("STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set together");
+}
+if (stripeSecretKey && !env.ANKIFY_STARTER_AI_API_KEY?.trim()) {
+  errors.push("Paid AI credits require ANKIFY_STARTER_AI_API_KEY (credits run on that key)");
+}
+if (stripeSecretKey && !/^(sk|rk)_(live|test)_/.test(stripeSecretKey)) {
+  errors.push("STRIPE_SECRET_KEY must be a Stripe secret or restricted key (sk_/rk_ live or test)");
+}
+if (stripeSecretKey && vercelEnvironment === "preview" && /^(sk|rk)_live_/.test(stripeSecretKey)) {
+  errors.push("Preview must use a Stripe test-mode key (sk_test_...), not a live key");
+}
+if (stripeSecretKey && vercelEnvironment === "production" && /^(sk|rk)_test_/.test(stripeSecretKey)) {
+  errors.push("Production must use a Stripe live-mode key: test-mode payments would grant real credits");
+}
+if (stripeWebhookSecret && !stripeWebhookSecret.startsWith("whsec_")) {
+  errors.push("STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret (whsec_...)");
+}
+
 const signupDisabled = /^(1|true|yes)$/i.test(
   env.ANKIFY_DISABLE_SIGNUP?.trim() ?? "",
 );
