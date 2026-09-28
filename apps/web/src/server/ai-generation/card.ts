@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { cardDraftSchema, type CardDraft } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { getActiveModel } from "@/server/ai";
+import { aiCallOptions } from "@/server/ai/call-options";
 import { buildAiCardDraftPrompt } from "@/server/card-prompt";
 import { getGenerationSettings } from "@/server/settings";
 
@@ -40,7 +41,6 @@ export async function generateAiCardDraft(args: {
     getActiveModel(args.userId),
     getGenerationSettings(args.userId),
   ]);
-  const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";
   const prompt = buildAiCardDraftPrompt({
     problem,
     submissions,
@@ -59,7 +59,7 @@ export async function generateAiCardDraft(args: {
       output: Output.object({ schema: cardDraftSchema }),
       system: prompt.system,
       prompt: prompt.user,
-      ...(!usesDeepSeekThinking ? { temperature: 0.35 } : {}),
+      ...aiCallOptions(settings, "user"),
       abortSignal: controller.signal,
     });
     console.log(`${tag} ${args.action} generated in ${Date.now() - t0}ms`);

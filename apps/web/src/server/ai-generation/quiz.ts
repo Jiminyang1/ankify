@@ -3,6 +3,7 @@ import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { quizDraftSchema, type QuizItem } from "@ankify/contracts";
 import { getDb, schema, type QuizSession } from "@ankify/db";
 import { getActiveModel } from "@/server/ai";
+import { aiCallOptions } from "@/server/ai/call-options";
 import { buildQuizPrompt } from "@/server/quiz-prompt";
 import { getGenerationSettings } from "@/server/settings";
 
@@ -84,7 +85,6 @@ export async function generateQuizItems(
     getActiveModel(userId),
     getGenerationSettings(userId),
   ]);
-  const usesDeepSeekThinking = settings.provider === "deepseek" && settings.reasoningMode === "thinking";
   const prompt = buildQuizPrompt({
     problem,
     cards,
@@ -101,7 +101,7 @@ export async function generateQuizItems(
       output: Output.object({ schema: quizDraftSchema }),
       system: prompt.system,
       prompt: prompt.user,
-      ...(!usesDeepSeekThinking ? { temperature: 0.3 } : {}),
+      ...aiCallOptions(settings, "user"),
       abortSignal: controller.signal,
     });
 

@@ -6,6 +6,8 @@ import {
   type ModelMessage,
 } from "ai";
 import type { AgentStepDto } from "@ankify/contracts";
+import { aiCallOptions } from "@/server/ai/call-options";
+import type { AiRuntimeSettings } from "@/server/settings";
 import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
@@ -20,6 +22,7 @@ export async function runStudyCoach(args: {
   sessionId: string;
   runId: string;
   model: LanguageModel;
+  settings: AiRuntimeSettings;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string) => void;
   onStep: (step: AgentStepDto) => void;
@@ -29,6 +32,8 @@ export async function runStudyCoach(args: {
     userId: args.userId,
     sessionId: args.sessionId,
     model: args.model,
+    // Summaries are bookkeeping: keep them fast and cheap.
+    callOptions: aiCallOptions(args.settings, "lightest"),
     abortSignal: args.abortSignal,
   });
   const tools = createStudyCoachTools({
@@ -47,6 +52,7 @@ export async function runStudyCoach(args: {
     tools,
     stopWhen: [stepCountIs(8), hasToolCall("open_problem")],
     maxOutputTokens: 4_000,
+    ...aiCallOptions(args.settings, "user"),
   });
   const messages: ModelMessage[] = await getAgentModelMessages(args.userId, args.sessionId);
   const result = await agent.stream({

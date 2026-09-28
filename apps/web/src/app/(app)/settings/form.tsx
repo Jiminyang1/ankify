@@ -116,7 +116,7 @@ export function AiSettingsForm({
     e.preventDefault();
     setSaving(true);
     setMsg(null);
-    const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast" };
+    const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "thinking" };
     if (apiKey) {
       body.apiKey = apiKey;
     } else if (hasStoredApiKey && storedKeyProvider !== provider) {
@@ -187,7 +187,7 @@ export function AiSettingsForm({
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider, model, reasoningMode: showGenerationMode ? reasoningMode : "fast", apiKey: "" }),
+        body: JSON.stringify({ provider, model, reasoningMode: showGenerationMode ? reasoningMode : "thinking", apiKey: "" }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setApiKey("");
@@ -305,7 +305,7 @@ export function AiSettingsForm({
             setMsg(null);
             setTestResult(null);
             setModelsError(null);
-            if (p !== "deepseek") setReasoningMode("fast");
+            if (p !== "deepseek") setReasoningMode("thinking");
           }}
         >
           <option value="">{t.settings.chooseProvider}</option>

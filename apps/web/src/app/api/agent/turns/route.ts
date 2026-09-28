@@ -95,6 +95,7 @@ export async function POST(req: Request) {
             sessionId: started.session.id,
             runId: started.run.id,
             model: activeModel.model,
+            settings: activeModel.settings,
             abortSignal: runAbortController.signal,
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),
             onStep: (step) => emit({ type: "step", step }),

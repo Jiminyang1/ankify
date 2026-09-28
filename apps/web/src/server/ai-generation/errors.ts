@@ -1,4 +1,5 @@
 import { isAiTimeoutError, safeErrorForLog } from "../ai-errors";
+import { classifyProviderFailure, providerStatus } from "../ai/errors";
 
 class AiJobExecutionError extends Error {
   constructor(
@@ -51,16 +52,11 @@ export function classifyAiJobError(error: unknown): AiJobExecutionError {
     return new AiJobExecutionError("ai_output_invalid", "AI returned an invalid quiz. Retrying.", true);
   }
 
-  const details = error as Error & { status?: unknown; statusCode?: unknown; code?: unknown };
-  const status = typeof details.status === "number"
-    ? details.status
-    : typeof details.statusCode === "number"
-      ? details.statusCode
-      : null;
-  if (status === 429 || (status !== null && status >= 500)) {
+  const failure = classifyProviderFailure(error);
+  if (failure === "rate_limited" || failure === "provider_unavailable") {
     return new AiJobExecutionError("ai_provider_unavailable", "AI provider is temporarily unavailable.", true);
   }
-  if (status !== null && status >= 400) {
+  if (providerStatus(error) !== null) {
     return new AiJobExecutionError(
       "ai_request_rejected",
       "AI provider rejected the generation request.",
