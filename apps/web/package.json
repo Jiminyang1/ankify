@@ -41,6 +41,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^4.0.2",
+    "stripe": "^22.6.2",
     "tailwind-merge": "^2.6.0",
     "zod": "^4.4.3"
   },

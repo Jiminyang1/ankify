@@ -302,3 +302,10 @@ export const quizAnswerRequestSchema = z.object({
 export const quizSaveCardRequestSchema = z.object({
   itemId: z.string().min(1),
 });
+
+export const creditCheckoutRequestSchema = z
+  .object({
+    packId: z.string().min(1).max(64),
+  })
+  .strict();
+export type CreditCheckoutRequest = z.infer<typeof creditCheckoutRequestSchema>;

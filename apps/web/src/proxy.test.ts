@@ -48,6 +48,18 @@ describe("extension session CORS", () => {
     expect(response.status).toBe(200);
   });
 
+  it("lets Stripe webhooks through without a cookie but keeps checkout private", async () => {
+    const webhook = await proxy(
+      new NextRequest("https://ankify.example.com/api/billing/webhook", { method: "POST" }),
+    );
+    expect(webhook.status).toBe(200);
+
+    const checkout = await proxy(
+      new NextRequest("https://ankify.example.com/api/billing/checkout", { method: "POST" }),
+    );
+    expect(checkout.status).toBe(401);
+  });
+
   it("opens the fixed-session login only in the QA profile", async () => {
     process.env.ANKIFY_PROFILE = "qa";
     const qaResponse = await proxy(

@@ -24,6 +24,8 @@ export const RATE_LIMITS = {
   ai: { limit: 20, windowMs: 60_000 },
   /** Capture writes: cheaper, but the extension can fire in bursts. */
   capture: { limit: 60, windowMs: 60_000 },
+  /** Stripe Checkout Session creation: each call hits the Stripe API. */
+  billing: { limit: 10, windowMs: 60_000 },
 } as const;
 
 export async function checkRateLimit(
