@@ -39,7 +39,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { IconSwap, MotionPresence } from "@/components/ui/motion";
 import { notifyAgentJobUpdated } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
-import type { AgentClientContext } from "./agent-shell";
+import { useAgentUsesHostedCredits, type AgentClientContext } from "./agent-shell";
 
 type AgentSidebarProps = {
   open: boolean;
@@ -81,6 +81,7 @@ export function AgentSidebar({
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
   const turnAbortRef = useRef<AbortController | null>(null);
+  const usesHostedCredits = useAgentUsesHostedCredits();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const notifiedJobsRef = useRef(new Set<string>());
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -122,6 +123,18 @@ export function AgentSidebar({
   useEffect(() => {
     return () => turnAbortRef.current?.abort();
   }, []);
+
+  // Leaving or reloading the page aborts the turn, and an interrupted turn on
+  // hosted credits is not refunded, so ask the browser to confirm first.
+  useEffect(() => {
+    if (!streaming || !usesHostedCredits) return;
+    const confirmLeave = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", confirmLeave);
+    return () => window.removeEventListener("beforeunload", confirmLeave);
+  }, [streaming, usesHostedCredits]);
 
   const closeSessionMenu = useCallback(() => {
     setSessionMenuOpen(false);
@@ -873,6 +886,17 @@ export function AgentSidebar({
               </IconSwap>
             </Button>
           </div>
+          {usesHostedCredits && (
+            <p
+              role={streaming ? "status" : undefined}
+              className={cn(
+                "mt-2 px-1 text-[11px] leading-snug",
+                streaming ? "text-warning" : "text-muted",
+              )}
+            >
+              {streaming ? t.agent.keepOpenWarning : t.agent.creditHint}
+            </p>
+          )}
         </form>
     </aside>
   );

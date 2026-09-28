@@ -31,9 +31,17 @@ const AgentShellContext = createContext<{
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   embeddedPanel: boolean;
   setEmbeddedPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Coach turns run on ankify's hosted key and spend AI credits. */
+  usesHostedCredits: boolean;
 } | null>(null);
 
-export function AgentShell({ children }: { children: React.ReactNode }) {
+export function AgentShell({
+  children,
+  usesHostedCredits = false,
+}: {
+  children: React.ReactNode;
+  usesHostedCredits?: boolean;
+}) {
   const { t } = useLanguage();
   const pathname = usePathname();
   const [registeredContext, setPageContext] = useState<AgentClientContext | null>(null);
@@ -64,8 +72,8 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
   }, [pathname, t.nav]);
   const pageContext = registeredContext ?? globalContext;
   const value = useMemo(
-    () => ({ pageContext, setPageContext, open, setOpen, embeddedPanel, setEmbeddedPanel }),
-    [embeddedPanel, open, pageContext],
+    () => ({ pageContext, setPageContext, open, setOpen, embeddedPanel, setEmbeddedPanel, usesHostedCredits }),
+    [embeddedPanel, open, pageContext, usesHostedCredits],
   );
   const outerPanelOpen = open && !embeddedPanel;
 
@@ -193,6 +201,10 @@ export function useAgentPageContext(context: AgentClientContext | null) {
       );
     };
   }, [activePanel, page, problemId, problemTitle, setPageContext]);
+}
+
+export function useAgentUsesHostedCredits() {
+  return useContext(AgentShellContext)?.usesHostedCredits ?? false;
 }
 
 export function useAgentShellControls() {
