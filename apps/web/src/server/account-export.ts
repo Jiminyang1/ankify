@@ -23,6 +23,8 @@ type AccountExportRecord = {
     | "agent_run"
     | "agent_message"
     | "agent_step"
+    | "credit_purchase"
+    | "ai_credit_ledger"
     | "setting";
   data: unknown;
 };
@@ -157,6 +159,32 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.agentSteps.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("credit_purchase", (afterId) =>
+    db
+      .select()
+      .from(schema.creditPurchases)
+      .where(
+        and(
+          eq(schema.creditPurchases.userId, user.id),
+          afterId ? gt(schema.creditPurchases.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.creditPurchases.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("ai_credit_ledger", (afterId) =>
+    db
+      .select()
+      .from(schema.aiCreditLedger)
+      .where(
+        and(
+          eq(schema.aiCreditLedger.userId, user.id),
+          afterId ? gt(schema.aiCreditLedger.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.aiCreditLedger.id))
       .limit(PAGE_SIZE),
   );
 

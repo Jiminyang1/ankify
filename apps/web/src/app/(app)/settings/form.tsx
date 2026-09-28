@@ -665,16 +665,25 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   );
 }
 
-export function AccountDataForm({ email }: { email: string }) {
+export function AccountDataForm({
+  email,
+  paidBalance,
+}: {
+  email: string;
+  paidBalance: number;
+}) {
   const { t } = useLanguage();
+  const [paidCredits, setPaidCredits] = useState(paidBalance);
+  const [forfeitAcknowledged, setForfeitAcknowledged] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const matches = confirmationEmail.trim().toLowerCase() === email.toLowerCase();
+  const canDelete = matches && (paidCredits === 0 || forfeitAcknowledged);
 
   async function deleteAccount() {
-    if (!matches) return;
+    if (!canDelete) return;
     setDeleting(true);
     setMessage(null);
     try {
@@ -684,12 +693,21 @@ export function AccountDataForm({ email }: { email: string }) {
         body: JSON.stringify({
           email: confirmationEmail.trim(),
           confirmation: "DELETE",
+          acknowledgeCreditForfeit: paidCredits > 0 && forfeitAcknowledged,
         }),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | { error?: string; paidBalance?: number }
           | null;
+        if (body?.error === "credit_forfeit_unacknowledged") {
+          // The balance changed (e.g. a purchase completed); ask again.
+          setPaidCredits(body.paidBalance ?? 1);
+          setForfeitAcknowledged(false);
+          setDeleteDialogOpen(false);
+          setDeleting(false);
+          return;
+        }
         throw new Error(body?.error ?? `HTTP ${response.status}`);
       }
       window.location.assign("/login?deleted=1");
@@ -706,7 +724,11 @@ export function AccountDataForm({ email }: { email: string }) {
       <ConfirmDialog
         open={deleteDialogOpen}
         title={t.settings.deleteAccount}
-        description={t.settings.deleteAccountConfirm}
+        description={
+          paidCredits > 0
+            ? `${t.settings.deleteAccountConfirm} ${t.settings.deleteForfeitsCredits(paidCredits)}`
+            : t.settings.deleteAccountConfirm
+        }
         cancelLabel={t.common.cancel}
         confirmLabel={deleting ? t.settings.deletingAccount : t.settings.deleteAccount}
         busy={deleting}
@@ -760,6 +782,20 @@ export function AccountDataForm({ email }: { email: string }) {
               {t.settings.deleteAccountHelp}
             </p>
           </div>
+          {paidCredits > 0 && (
+            <div className="max-w-xl space-y-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm leading-6 text-fg">
+              <p>{t.settings.deleteForfeitWarning(paidCredits)}</p>
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={forfeitAcknowledged}
+                  onChange={(event) => setForfeitAcknowledged(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-accent"
+                />
+                <span>{t.settings.deleteForfeitAcknowledge(paidCredits)}</span>
+              </label>
+            </div>
+          )}
           <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
             <Input
               type="email"
@@ -775,7 +811,7 @@ export function AccountDataForm({ email }: { email: string }) {
                 setMessage(null);
                 setDeleteDialogOpen(true);
               }}
-              disabled={!matches || deleting}
+              disabled={!canDelete || deleting}
               className={`${SETTINGS_ACTION_CLASS} shrink-0`}
             >
               {deleting ? t.settings.deletingAccount : t.settings.deleteAccount}

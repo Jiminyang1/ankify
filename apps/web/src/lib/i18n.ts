@@ -297,7 +297,12 @@ export const translations = {
       advancedAccountActions: "Advanced account options",
       deleteAccount: "Delete account",
       deletingAccount: "Deleting account...",
-      deleteAccountHelp: "Permanently deletes your login, problems, submissions, cards, quizzes, settings, and review history.",
+      deleteAccountHelp: "Permanently deletes your login, problems, submissions, cards, quizzes, settings, and review history. Records of credit purchases and usage are kept for accounting.",
+      deleteForfeitWarning: (balance: number) =>
+        `You have ${balance} purchased AI credits. Deleting your account forfeits them permanently: they are not refunded and cannot be recovered, even if you sign up again.`,
+      deleteForfeitAcknowledge: (balance: number) =>
+        `I understand that my ${balance} purchased credits will be lost with no refund.`,
+      deleteForfeitsCredits: (balance: number) => `Your ${balance} purchased AI credits will be forfeited without a refund.`,
       typeEmailToDelete: (email: string) => `Type ${email} to confirm`,
       deleteAccountConfirm: "Permanently delete this account and all of its data? This cannot be undone.",
       deleteAccountFailed: "Could not delete the account.",
@@ -822,7 +827,11 @@ export const translations = {
       advancedAccountActions: "高级账户选项",
       deleteAccount: "删除账号",
       deletingAccount: "正在删除账号...",
-      deleteAccountHelp: "永久删除登录信息、题目、提交、卡片、测验、设置和复习历史。",
+      deleteAccountHelp: "永久删除登录信息、题目、提交、卡片、测验、设置和复习历史。额度购买与使用记录会为记账目的保留。",
+      deleteForfeitWarning: (balance: number) =>
+        `你有 ${balance} 点已购 AI 额度。删除账号会永久作废这些额度：不予退款，也无法恢复，即使重新注册也不行。`,
+      deleteForfeitAcknowledge: (balance: number) => `我了解我的 ${balance} 点已购额度将作废且不予退款。`,
+      deleteForfeitsCredits: (balance: number) => `你的 ${balance} 点已购 AI 额度将作废且不予退款。`,
       typeEmailToDelete: (email: string) => `输入 ${email} 以确认`,
       deleteAccountConfirm: "永久删除此账号及其全部数据？此操作无法撤销。",
       deleteAccountFailed: "无法删除账号。",

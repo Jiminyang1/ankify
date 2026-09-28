@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema } from "@ankify/db";
+import { deleteAccount } from "@/server/account";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
 
 const deleteAccountSchema = z
   .object({
     email: z.string().email().max(320),
     confirmation: z.literal("DELETE"),
+    /** Required when the account still holds purchased AI credits. */
+    acknowledgeCreditForfeit: z.boolean().optional(),
   })
   .strict();
 
@@ -21,13 +22,13 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "confirmation_mismatch" }, { status: 400 });
   }
 
-  const db = getDb();
-  const deleted = await db
-    .delete(schema.user)
-    .where(eq(schema.user.id, user.id))
-    .returning({ id: schema.user.id });
-  if (deleted.length === 0) {
-    return NextResponse.json({ error: "account_not_found" }, { status: 404 });
+  const result = await deleteAccount(user.id, {
+    acknowledgeCreditForfeit: parsed.data.acknowledgeCreditForfeit === true,
+  });
+  if (!result.ok) {
+    return result.error === "credit_forfeit_unacknowledged"
+      ? NextResponse.json({ error: result.error, paidBalance: result.paidBalance }, { status: 409 })
+      : NextResponse.json({ error: result.error }, { status: 404 });
   }
 
   return NextResponse.json(

@@ -154,7 +154,7 @@ export default async function SettingsPage({
           </SettingsSection>
 
           <SettingsSection title={t.settings.accountData}>
-            <AccountDataForm email={user.email} />
+            <AccountDataForm email={user.email} paidBalance={credits.paidBalance} />
           </SettingsSection>
         </div>
       </Surface>
