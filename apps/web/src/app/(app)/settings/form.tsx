@@ -65,7 +65,7 @@ export function AiSettingsForm({
     reasoningMode: AiReasoningMode;
     hasApiKey: boolean;
   };
-  starter: { enabled: boolean; remaining: number; limit: number };
+  starter: { enabled: boolean; remaining: number; limit: number; paidBalance?: number };
 }) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -249,7 +249,9 @@ export function AiSettingsForm({
   const onStarter = starter.enabled && !hasStoredApiKey;
   const sourceStatus = onStarter ? (
     <p className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
-      {t.settings.starterActive(starter.remaining, starter.limit)}
+      {starter.remaining === 0 && (starter.paidBalance ?? 0) > 0
+        ? t.settings.paidActive(starter.paidBalance ?? 0)
+        : t.settings.starterActive(starter.remaining, starter.limit)}
     </p>
   ) : hasStoredApiKey && storedKeyProvider && initial.model ? (
     <p className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-sm leading-6 text-fg">

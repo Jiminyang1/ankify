@@ -227,9 +227,25 @@ export const translations = {
       installExtension: "Extension setup guide",
       reviewSchedule: "Review schedule",
       keySecurity: "API keys are encrypted before they are stored. Your own key always takes priority over free credits.",
+      aiCredits: "AI credits",
+      aiCreditsHelp: "Credits run quizzes, AI cards, and Study Coach on ankify's AI key. Free credits are used first. Your own API key always takes priority and never spends credits.",
+      creditsFree: (remaining: number, limit: number) => `Free credits: ${remaining} of ${limit} left`,
+      paidActive: (balance: number) =>
+        `You're using purchased AI credits: ${balance} left. Add your own key below to stop spending credits.`,
+      creditsPaid: (balance: number) => `Purchased credits: ${balance}`,
+      creditsCost: "An AI card uses 1 credit, a quiz 2, and a Study Coach message 5. Credits for failed generations come back automatically; an interrupted Study Coach reply does not.",
+      buyCredits: "Buy credits",
+      creditPack: (credits: number, price: string) => `${credits} credits · ${price}`,
+      creditsNeverExpire: "Purchased credits never expire and are non-refundable. Checkout is handled by Stripe; pay with Link or a card.",
+      checkoutFailed: "Could not start checkout. Try again.",
+      billingSuccess: "Payment received. Your credits have been added.",
+      billingPending: "We're waiting for Stripe to confirm this payment. Credits are added as soon as it is confirmed; refresh this page to check.",
+      billingCancelled: "Checkout was cancelled. You were not charged.",
+      purchaseHistory: "Purchase history",
+      purchaseRefunded: "Refunded",
       starterActive: (remaining: number, limit: number) =>
         remaining > 0
-          ? `You're using free AI credits: ${remaining} of ${limit} left. Each quiz, AI card, or Study Coach message uses one. Add your own key below to keep using AI after that.`
+          ? `You're using free AI credits: ${remaining} of ${limit} left. An AI card uses 1, a quiz 2, and a Study Coach message 5. Add your own key below to keep using AI after that.`
           : `You've used all ${limit} free AI credits. Add your own key below to keep generating quizzes and cards and to keep using Study Coach.`,
       provider: "Provider",
       chooseProvider: "Choose a provider",
@@ -737,10 +753,25 @@ export const translations = {
       installExtension: "扩展安装指南",
       reviewSchedule: "复习计划",
       keySecurity: "API key 会加密后存储。配置了自己的 key 后会优先使用，不再消耗免费额度。",
+      aiCredits: "AI 额度",
+      aiCreditsHelp: "额度用于在 ankify 的 AI key 上生成测验、AI 卡片和使用 Study Coach。优先消耗免费额度。配置了自己的 API key 后始终优先使用自己的 key，不消耗额度。",
+      creditsFree: (remaining: number, limit: number) => `免费额度：剩余 ${remaining} / ${limit} 点`,
+      paidActive: (balance: number) => `你正在使用已购 AI 额度：剩余 ${balance} 点。在下方填入自己的 key 后将不再消耗额度。`,
+      creditsPaid: (balance: number) => `已购额度：${balance} 点`,
+      creditsCost: "AI 卡片消耗 1 点额度，测验 2 点，Study Coach 消息 5 点。生成失败会自动退还额度；被中断的 Study Coach 回复不退还。",
+      buyCredits: "购买额度",
+      creditPack: (credits: number, price: string) => `${credits} 点 · ${price}`,
+      creditsNeverExpire: "已购额度永不过期，且不予退款。支付由 Stripe 处理，可使用 Link 或银行卡。",
+      checkoutFailed: "无法打开支付页面，请重试。",
+      billingSuccess: "付款成功，额度已到账。",
+      billingPending: "正在等待 Stripe 确认这笔付款，确认后额度会自动到账，可刷新页面查看。",
+      billingCancelled: "已取消支付，未产生扣款。",
+      purchaseHistory: "购买记录",
+      purchaseRefunded: "已退款",
       starterActive: (remaining: number, limit: number) =>
         remaining > 0
-          ? `你正在使用免费 AI 额度：剩余 ${remaining} / ${limit} 次。每生成一次测验、一张 AI 卡片或发一条 Study Coach 消息消耗 1 次。用完后可在下方填入自己的 key 继续使用。`
-          : `${limit} 次免费 AI 额度已用完。在下方填入自己的 key，就能继续生成测验、卡片和使用 Study Coach。`,
+          ? `你正在使用免费 AI 额度：剩余 ${remaining} / ${limit} 点。AI 卡片消耗 1 点，测验 2 点，Study Coach 消息 5 点。用完后可在下方填入自己的 key 继续使用。`
+          : `${limit} 点免费 AI 额度已用完。在下方填入自己的 key，就能继续生成测验、卡片和使用 Study Coach。`,
       provider: "提供商",
       chooseProvider: "选择提供商",
       model: "模型",
@@ -767,7 +798,7 @@ export const translations = {
       removeApiKeyConfirm: "移除已保存的 API key？在添加新的 key 前，AI 功能将无法使用。",
       removeApiKeyConfirmStarter: (remaining: number) =>
         remaining > 0
-          ? `移除已保存的 API key？移除后 AI 功能会改用免费额度（剩余 ${remaining} 次）。`
+          ? `移除已保存的 API key？移除后 AI 功能会改用免费额度（剩余 ${remaining} 点）。`
           : "移除已保存的 API key？免费额度已用完，在添加新的 key 前，AI 功能将无法使用。",
       activeOwnKey: (provider: string, model: string) => `正在使用你自己的 key：${provider} · ${model}，不消耗免费额度。`,
       useOwnKey: "改用自己的 key",

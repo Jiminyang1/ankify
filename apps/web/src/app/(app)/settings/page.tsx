@@ -2,7 +2,11 @@ import Link from "next/link";
 import { requirePageUser } from "@/server/auth";
 import { getRequestTranslations } from "@/server/i18n";
 import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/server/settings";
-import { getStarterAiStatus } from "@/server/starter-ai";
+import { getHostedCreditStatus } from "@/server/ai-credits";
+import { CREDIT_PACKS } from "@/server/billing/config";
+import { confirmCheckoutReturn, listCreditPurchases } from "@/server/billing/credits";
+import { getBilling } from "@/server/billing/stripe";
+import { CreditsSettingsForm, type BillingNotice } from "./credits-form";
 import {
   AccountDataForm,
   AiSettingsForm,
@@ -21,15 +25,41 @@ import { getUserDisplayName } from "@/lib/user-identity";
 export const dynamic = "force-dynamic";
 const SETTINGS_ACTION_CLASS = "min-w-28";
 
-export default async function SettingsPage() {
+async function resolveBillingNotice(
+  userId: string,
+  params: { billing?: string | string[]; session_id?: string | string[] },
+): Promise<BillingNotice> {
+  if (params.billing === "cancelled") return "cancelled";
+  if (params.billing !== "success" || typeof params.session_id !== "string") return null;
+  // Only Checkout Session ids reach Stripe; anything else is ignored.
+  if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(params.session_id)) return null;
+  const billing = getBilling();
+  if (!billing) return null;
+  return confirmCheckoutReturn(billing.stripe, userId, params.session_id);
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string | string[]; session_id?: string | string[] }>;
+}) {
   const user = await requirePageUser();
-  const [ai, starter, generation, review, t] = await Promise.all([
+  // Fulfill a returning Checkout before reading balances so they include it.
+  const billingNotice = await resolveBillingNotice(user.id, await searchParams);
+  const [ai, credits, purchases, generation, review, t] = await Promise.all([
     getAiSettings(user.id),
-    getStarterAiStatus(user.id),
+    getHostedCreditStatus(user.id),
+    listCreditPurchases(user.id),
     getGenerationSettings(user.id),
     getReviewSettings(user.id),
     getRequestTranslations(),
   ]);
+  const starter = {
+    enabled: credits.enabled,
+    remaining: credits.starterRemaining,
+    limit: credits.starterLimit,
+    paidBalance: credits.paidBalance,
+  };
   const displayName = getUserDisplayName(user.name, user.email);
   return (
     <PageFrame width="standard" className="space-y-6">
@@ -80,9 +110,28 @@ export default async function SettingsPage() {
                 reasoningMode: ai.reasoningMode,
                 hasApiKey: Boolean(ai.encryptedApiKey),
               }}
-              starter={{ enabled: starter.enabled, remaining: starter.remaining, limit: starter.limit }}
+              starter={starter}
             />
           </SettingsSection>
+
+          {(credits.enabled || credits.paidBalance > 0 || purchases.length > 0) && (
+            <SettingsSection id="credits" title={t.settings.aiCredits} info={t.settings.aiCreditsHelp}>
+              <CreditsSettingsForm
+                status={{
+                  starterRemaining: credits.starterRemaining,
+                  starterLimit: credits.starterLimit,
+                  paidBalance: credits.paidBalance,
+                  billingEnabled: credits.billingEnabled,
+                }}
+                packs={credits.billingEnabled ? CREDIT_PACKS.map((pack) => ({ ...pack })) : []}
+                purchases={purchases.map((purchase) => ({
+                  ...purchase,
+                  createdAt: purchase.createdAt.toISOString(),
+                }))}
+                notice={billingNotice}
+              />
+            </SettingsSection>
+          )}
 
           <SettingsSection title={t.settings.extensionConnection}>
             <div className="max-w-2xl">
@@ -123,16 +172,18 @@ export default async function SettingsPage() {
 }
 
 function SettingsSection({
+  id,
   title,
   info,
   children,
 }: {
+  id?: string;
   title: string;
   info?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="p-5 sm:p-6">
+    <section id={id} className="scroll-mt-20 p-5 sm:p-6">
       <div className="grid gap-5 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10">
         <div className="flex items-center gap-1.5 self-start">
           <h2 className="text-base font-semibold">{title}</h2>
