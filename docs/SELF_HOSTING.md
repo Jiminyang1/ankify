@@ -102,7 +102,7 @@ database operation.
    - Optional starter AI credits: `ANKIFY_STARTER_AI_API_KEY` (server-owned
      provider key; leave unset to disable), plus `ANKIFY_STARTER_AI_PROVIDER`
      (default `deepseek`), `ANKIFY_STARTER_AI_MODEL` (default
-     `deepseek-v4-flash`), and `ANKIFY_STARTER_AI_CREDITS` (default `30` per
+     `deepseek-flash`), and `ANKIFY_STARTER_AI_CREDITS` (default `30` per
      user). Top up the provider account with only what you're willing to spend;
      its prepaid balance is the overall cap.
    - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an

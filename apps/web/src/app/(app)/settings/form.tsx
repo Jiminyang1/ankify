@@ -41,10 +41,10 @@ const MODEL_PRESETS: Record<AiProvider, string[]> = {
   "": [],
   anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   openai: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
-  // DeepSeek V4 (April 2026). `deepseek-v4-pro` = 1.6T MoE for hard reasoning;
-  // `deepseek-v4-flash` = 284B MoE, ~10x cheaper, fine for card generation.
-  // Legacy `deepseek-chat` / `deepseek-reasoner` retire after 2026-07-24.
-  deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+  // `deepseek-flash` = V4.1 Flash (2026-09), cheapest and fine for quizzes and
+  // cards; `deepseek-v4-pro` for harder reasoning. Retired ids are mapped in
+  // server/ai-model-aliases.ts.
+  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
 };
 
 type ModelEntry = { id: string; label?: string };

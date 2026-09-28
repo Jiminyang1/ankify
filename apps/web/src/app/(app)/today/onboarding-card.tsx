@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 const MODEL_PRESETS: Record<Exclude<AiProvider, "">, string[]> = {
   anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   openai: ["gpt-5", "gpt-4o-mini"],
-  deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
+  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
 };
 
 type Copy = {

@@ -9,8 +9,8 @@ import { getAiRuntimeSettings, type AiRuntimeSettings } from "./settings";
  * `thinking: { type: "disabled" }` into every request body. Used only for
  * latency-sensitive probes and Fast mode where reasoning would waste tokens
  * and time. Thinking mode leaves DeepSeek's default thinking behavior on.
- * Has no effect on legacy `deepseek-chat`; `deepseek-reasoner` ignores the
- * field.
+ * DeepSeek's `thinking` field accepts `{ type: "enabled" | "disabled" }` and
+ * defaults to enabled.
  */
 const deepseekNonThinkingFetch: typeof fetch = async (input, init) => {
   if (init?.body && typeof init.body === "string") {
