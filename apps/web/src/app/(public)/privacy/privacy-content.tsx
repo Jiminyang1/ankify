@@ -33,13 +33,14 @@ const copy = {
         body: [
           "Data is used to provide authentication, capture, review scheduling, quizzes, cards, history, data export, and account support.",
           "Hosting and database processing may be provided by Vercel and Turso. Google processes OAuth sign-in. When you use AI features, the selected context is sent to the AI provider whose key you configured (Anthropic, OpenAI, DeepSeek, or a compatible provider) under that provider's terms.",
+          "If you buy AI credits, Stripe processes the payment. ankify receives your purchase amount and status and a Stripe customer id, never your card or Link details. Stripe keeps payment records under its own policy, including after you delete your ankify account.",
           "We do not disclose your study data to unrelated third parties unless required by law or necessary to protect the service.",
         ],
       },
       {
         title: "Retention, security, and your choices",
         body: [
-          "Data is retained while your account exists. You can export a streaming NDJSON copy or permanently delete the account and its associated database rows from Settings.",
+          "Data is retained while your account exists. You can export a streaming NDJSON copy or permanently delete the account and its associated database rows from Settings. If you bought AI credits, records of those purchases (amount, date, pack, Stripe payment ids) and of credit usage are kept after deletion for accounting and payment disputes; they are linked only to your former internal account id, not to your email, name, or study data.",
           "You can sign out of the web session or remove the stored AI key at any time. Provider keys are encrypted at rest with AES-GCM, and access to user-owned records is scoped by user id.",
           "No internet service can guarantee absolute security. Sign out of ankify if a device or browser profile is compromised.",
         ],
@@ -77,13 +78,14 @@ const copy = {
         body: [
           "数据用于提供登录、捕获、复习调度、测验、卡片、历史、数据导出和账号支持。",
           "Vercel 和 Turso 可能分别处理托管与数据库数据；Google 处理 OAuth 登录。使用 AI 功能时，选定上下文会发送给你配置 key 的 AI 提供商（Anthropic、OpenAI、DeepSeek 或兼容提供商），并受该提供商条款约束。",
+          "购买 AI 额度时，由 Stripe 处理支付。ankify 只接收购买金额、状态和 Stripe 客户 ID，不会获得你的银行卡或 Link 信息。Stripe 会按其自身政策保留支付记录，删除 ankify 账号后亦然。",
           "除法律要求或保护服务所必需外，我们不会向无关第三方披露你的学习数据。",
         ],
       },
       {
         title: "保留、安全与选择",
         body: [
-          "账号存在期间会保留数据。你可以在设置中导出流式 NDJSON 副本，或永久删除账号及其关联数据库记录。",
+          "账号存在期间会保留数据。你可以在设置中导出流式 NDJSON 副本，或永久删除账号及其关联数据库记录。如果你购买过 AI 额度，购买记录（金额、日期、套餐、Stripe 付款 ID）和额度使用记录会在删除账号后为记账和付款争议目的保留；这些记录只关联你原来的内部账号 ID，不包含你的邮箱、姓名或学习数据。",
           "你可以随时退出网页登录会话或移除已保存的 AI key。提供商 key 使用 AES-GCM 加密存储，用户数据查询按 user id 隔离。",
           "任何互联网服务都无法保证绝对安全；设备或浏览器配置泄露时应立即退出 ankify。",
         ],
