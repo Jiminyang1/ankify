@@ -10,7 +10,7 @@ describe("readStarterAiConfig", () => {
   it("defaults to DeepSeek flash with 30 credits", () => {
     expect(readStarterAiConfig({ ANKIFY_STARTER_AI_API_KEY: "sk-test" })).toEqual({
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       apiKey: "sk-test",
       credits: 30,
     });

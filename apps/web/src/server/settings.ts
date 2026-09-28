@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { cache } from "react";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
+import { normalizeModelId } from "./ai-model-aliases";
 import { readStarterAiConfig } from "./starter-ai";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
 import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "@/lib/i18n";
@@ -66,6 +67,7 @@ export async function getAiSettings(userId: string): Promise<AiSettings> {
   const value = { ...DEFAULT_AI_SETTINGS, ...(row.value as Partial<AiSettings>) };
   return {
     ...value,
+    model: normalizeModelId(value.provider, value.model),
     reasoningMode: value.reasoningMode === "thinking" ? "thinking" : "fast",
   };
 }
