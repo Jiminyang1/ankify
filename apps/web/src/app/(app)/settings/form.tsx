@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import {
+  AI_PROVIDERS,
+  DEFAULT_REASONING_LEVEL,
+  getAiProviderInfo,
+  getReasoningLevels,
+  type AiProvider,
+  type AiReasoningLevel,
+} from "@ankify/core";
 import { getTranslations, type Language } from "@/lib/i18n";
 import { useLanguage } from "@/components/LanguageProvider";
 import { useTheme } from "@/components/ThemeProvider";
@@ -34,25 +41,13 @@ export function AppearanceSettingsForm() {
   );
 }
 
-/** Fallback model lists shown until the user clicks "Refresh". After
- *  refresh, the live `/v1/models` response from the provider replaces these.
- *  The input is freeform — datalist entries are suggestions only. */
-const MODEL_PRESETS: Record<AiProvider, string[]> = {
-  "": [],
-  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  openai: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
-  // `deepseek-flash` = V4.1 Flash (2026-09), cheapest and fine for quizzes and
-  // cards; `deepseek-v4-pro` for harder reasoning. Retired ids are mapped in
-  // server/ai-model-aliases.ts.
-  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
-};
+/** Suggested models from the shared catalog, shown until the user loads the
+ *  provider's live `/v1/models` list. The model input is freeform. */
+function presetModels(provider: AiProvider): string[] {
+  return getAiProviderInfo(provider)?.models.map((model) => model.id) ?? [];
+}
 
 type ModelEntry = { id: string; label?: string };
-const PROVIDER_LABELS: Partial<Record<AiProvider, string>> = {
-  anthropic: "Anthropic",
-  openai: "OpenAI",
-  deepseek: "DeepSeek",
-};
 const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export function AiSettingsForm({
@@ -62,7 +57,7 @@ export function AiSettingsForm({
   initial: {
     provider: AiProvider;
     model: string;
-    reasoningMode: AiReasoningMode;
+    reasoningLevel: AiReasoningLevel;
     hasApiKey: boolean;
   };
   starter: { enabled: boolean; remaining: number; limit: number };
@@ -71,7 +66,7 @@ export function AiSettingsForm({
   const { t } = useLanguage();
   const [provider, setProvider] = useState(initial.provider);
   const [model, setModel] = useState(initial.model);
-  const [reasoningMode, setReasoningMode] = useState(initial.reasoningMode);
+  const [reasoningLevel, setReasoningLevel] = useState(initial.reasoningLevel);
   const [apiKey, setApiKey] = useState("");
   const [hasStoredApiKey, setHasStoredApiKey] = useState(initial.hasApiKey);
   const [storedKeyProvider, setStoredKeyProvider] = useState<AiProvider>(
@@ -99,7 +94,12 @@ export function AiSettingsForm({
   });
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const showGenerationMode = provider === "deepseek";
+  // Levels come from the catalog for the chosen model; unknown models only get
+  // the provider default. A level the new model doesn't accept falls back too.
+  const reasoningLevels = getReasoningLevels(provider, model);
+  const effectiveReasoningLevel = reasoningLevels.includes(reasoningLevel)
+    ? reasoningLevel
+    : DEFAULT_REASONING_LEVEL;
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -116,7 +116,7 @@ export function AiSettingsForm({
     e.preventDefault();
     setSaving(true);
     setMsg(null);
-    const body: Record<string, unknown> = { provider, model, reasoningMode: showGenerationMode ? reasoningMode : "thinking" };
+    const body: Record<string, unknown> = { provider, model, reasoningLevel: effectiveReasoningLevel };
     if (apiKey) {
       body.apiKey = apiKey;
     } else if (hasStoredApiKey && storedKeyProvider !== provider) {
@@ -187,7 +187,7 @@ export function AiSettingsForm({
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider, model, reasoningMode: showGenerationMode ? reasoningMode : "thinking", apiKey: "" }),
+        body: JSON.stringify({ provider, model, reasoningLevel: effectiveReasoningLevel, apiKey: "" }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setApiKey("");
@@ -239,7 +239,7 @@ export function AiSettingsForm({
   }
 
   const live = liveModels[provider];
-  const presets = MODEL_PRESETS[provider] ?? [];
+  const presets = presetModels(provider);
   const models: ModelEntry[] = live ?? presets.map((id) => ({ id }));
   const modelsSourceLabel = live ? t.settings.fromProvider(live.length) : t.settings.suggestions(presets.length);
 
@@ -253,7 +253,7 @@ export function AiSettingsForm({
     </p>
   ) : hasStoredApiKey && storedKeyProvider && initial.model ? (
     <p className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-sm leading-6 text-fg">
-      {t.settings.activeOwnKey(PROVIDER_LABELS[storedKeyProvider] ?? storedKeyProvider, initial.model)}
+      {t.settings.activeOwnKey(getAiProviderInfo(storedKeyProvider)?.label ?? storedKeyProvider, initial.model)}
     </p>
   ) : null;
 
@@ -299,19 +299,18 @@ export function AiSettingsForm({
           onValueChange={(value) => {
             const p = value as typeof provider;
             setProvider(p);
-            const first = MODEL_PRESETS[p]?.[0];
+            const first = presetModels(p)[0];
             setModel(first ?? "");
             setApiKey("");
             setMsg(null);
             setTestResult(null);
             setModelsError(null);
-            if (p !== "deepseek") setReasoningMode("thinking");
           }}
         >
           <option value="">{t.settings.chooseProvider}</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="openai">OpenAI</option>
-          <option value="deepseek">DeepSeek</option>
+          {AI_PROVIDERS.map((entry) => (
+            <option key={entry.id} value={entry.id}>{entry.label}</option>
+          ))}
         </Select>
       </div>
 
@@ -368,21 +367,22 @@ export function AiSettingsForm({
         )}
       </div>
 
-      {showGenerationMode && (
+      {reasoningLevels.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-sm">
-            <label htmlFor="ai-reasoning-mode" className="font-medium text-fg">
-              {t.settings.generationMode}
+            <label htmlFor="ai-reasoning-level" className="font-medium text-fg">
+              {t.settings.reasoning}
             </label>
-            <InfoTip label={t.settings.deepseekOnly} align="left" />
+            <InfoTip label={t.settings.reasoningHelp} align="left" />
           </div>
           <Select
-            id="ai-reasoning-mode"
-            value={reasoningMode}
-            onValueChange={(value) => setReasoningMode(value as AiReasoningMode)}
+            id="ai-reasoning-level"
+            value={effectiveReasoningLevel}
+            onValueChange={(value) => setReasoningLevel(value)}
           >
-            <option value="fast">{t.settings.fast}</option>
-            <option value="thinking">{t.settings.thinking}</option>
+            {[DEFAULT_REASONING_LEVEL, ...reasoningLevels].map((level) => (
+              <option key={level} value={level}>{t.settings.reasoningLevel(level)}</option>
+            ))}
           </Select>
         </div>
       )}

@@ -13,8 +13,6 @@ import { ProviderHttpError, type ProviderAdapter } from "./types";
 export const deepseekProvider: ProviderAdapter = {
   id: "deepseek",
   label: "DeepSeek",
-  // `deepseek-flash` = V4.1 Flash (2026-09): cheapest, fine for quizzes and cards.
-  presets: ["deepseek-flash", "deepseek-v4-pro"],
   // V4 Flash was retired on 2026-09-10 and its id only temporarily routes to
   // V4.1 Flash; `deepseek-chat` / `deepseek-reasoner` ended on 2026-07-24.
   aliases: {
@@ -22,7 +20,7 @@ export const deepseekProvider: ProviderAdapter = {
     "deepseek-chat": "deepseek-flash",
     "deepseek-reasoner": "deepseek-flash",
   },
-  legacyFastModeToggle: true,
+  legacyFastLevel: "off",
 
   createModel({ apiKey, model }) {
     const client = createOpenAICompatible({
@@ -34,8 +32,10 @@ export const deepseekProvider: ProviderAdapter = {
   },
 
   reasoningOptions(_model, request) {
-    if (request === "lightest") return { deepseek: { thinking: { type: "disabled" } } };
-    return undefined;
+    if (request === "default") return undefined;
+    if (request === "lightest" || request === "off") return { deepseek: { thinking: { type: "disabled" } } };
+    // Native effort: low | high | max.
+    return { deepseek: { thinking: { type: "enabled" }, reasoningEffort: request } };
   },
 
   async listModels(apiKey, signal) {

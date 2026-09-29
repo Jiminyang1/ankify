@@ -2,26 +2,29 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { ProviderHttpError, type ProviderAdapter } from "./types";
 
 /**
- * OpenAI. Reasoning models reason adaptively and default to `medium` effort.
- * Not every model accepts `none` (GPT-6 Astra returns a 400), so the lightest
- * setting used here is `low`, which every reasoning model accepts.
- * Non-reasoning models get nothing.
+ * OpenAI, through the Responses API (the SDK default), which supports tool
+ * calls at every reasoning effort. Reasoning models reason adaptively and
+ * default to `medium`. Not every model accepts `none` (GPT-6 Astra returns a
+ * 400), so the lightest setting used here is `low`, which every reasoning
+ * model accepts. Non-reasoning models get nothing.
  */
 const REASONING_MODEL = /^(gpt-5|gpt-6|o\d)/;
 
 export const openaiProvider: ProviderAdapter = {
   id: "openai",
   label: "OpenAI",
-  presets: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
-  legacyFastModeToggle: false,
 
   createModel({ apiKey, model }) {
     return createOpenAI({ apiKey })(model);
   },
 
   reasoningOptions(model, request) {
-    if (request !== "lightest" || !REASONING_MODEL.test(model)) return undefined;
-    return { openai: { reasoningEffort: "low" } };
+    if (request === "default") return undefined;
+    if (request === "lightest") {
+      return REASONING_MODEL.test(model) ? { openai: { reasoningEffort: "low" } } : undefined;
+    }
+    // Native effort: none | minimal | low | medium | high | xhigh | max.
+    return { openai: { reasoningEffort: request } };
   },
 
   async listModels(apiKey, signal) {

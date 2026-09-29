@@ -1,9 +1,14 @@
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { cache } from "react";
-import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import {
+  DEFAULT_REASONING_LEVEL,
+  normalizeReasoningLevel,
+  type AiProvider,
+  type AiReasoningLevel,
+} from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
-import { normalizeModelId } from "./ai/providers/registry";
+import { getProvider, isProviderId, normalizeModelId } from "./ai/providers/registry";
 import { readStarterAiConfig } from "./starter-ai";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
 import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "@/lib/i18n";
@@ -11,14 +16,18 @@ import { DEFAULT_LANGUAGE, normalizeLanguage, type Language } from "@/lib/i18n";
 interface AiSettings {
   provider: AiProvider;
   model: string;
-  reasoningMode: AiReasoningMode;
+  /** "default" (provider decides), "off", or a native effort level valid for this model. */
+  reasoningLevel: AiReasoningLevel;
   encryptedApiKey?: EncryptedSecret;
 }
+
+/** Stored shape: rows written before reasoning levels carry `reasoningMode`. */
+type StoredAiSettings = Partial<AiSettings> & { reasoningMode?: "fast" | "thinking" };
 
 export interface AiRuntimeSettings {
   provider: Exclude<AiProvider, "">;
   model: string;
-  reasoningMode: AiReasoningMode;
+  reasoningLevel: AiReasoningLevel;
   apiKey: string;
   /** "user" = the user's own key; "starter" = the server's starter-credit key. */
   source: "user" | "starter";
@@ -36,11 +45,11 @@ interface GenerationSettings {
   language: Language;
 }
 
-// Thinking stays on by default: current models reason adaptively.
+// Thinking stays at the provider default: current models reason adaptively.
 const DEFAULT_AI_SETTINGS: AiSettings = {
   provider: "",
   model: "",
-  reasoningMode: "thinking",
+  reasoningLevel: DEFAULT_REASONING_LEVEL,
 };
 
 const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
@@ -65,12 +74,22 @@ export async function getAiSettings(userId: string): Promise<AiSettings> {
     .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_AI)));
   const row = rows[0];
   if (!row) return DEFAULT_AI_SETTINGS;
-  const value = { ...DEFAULT_AI_SETTINGS, ...(row.value as Partial<AiSettings>) };
+  const stored = row.value as StoredAiSettings;
+  const provider = stored.provider ?? "";
+  const model = normalizeModelId(provider, stored.model ?? "");
   return {
-    ...value,
-    model: normalizeModelId(value.provider, value.model),
-    reasoningMode: value.reasoningMode === "thinking" ? "thinking" : "fast",
+    provider,
+    model,
+    reasoningLevel: normalizeReasoningLevel(provider, model, stored.reasoningLevel ?? legacyLevel(stored)),
+    encryptedApiKey: stored.encryptedApiKey,
   };
+}
+
+// Rows from before reasoning levels: "fast" only meant something where Settings
+// showed the switch (DeepSeek); everything else was the provider default.
+function legacyLevel(stored: StoredAiSettings): AiReasoningLevel {
+  if (stored.reasoningMode !== "fast" || !isProviderId(stored.provider)) return DEFAULT_REASONING_LEVEL;
+  return getProvider(stored.provider).legacyFastLevel ?? DEFAULT_REASONING_LEVEL;
 }
 
 /**
@@ -85,7 +104,7 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
     return {
       provider: settings.provider,
       model: settings.model,
-      reasoningMode: settings.reasoningMode,
+      reasoningLevel: settings.reasoningLevel,
       apiKey: decryptSecret(settings.encryptedApiKey),
       source: "user",
     };
@@ -95,7 +114,7 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
     return {
       provider: starter.provider,
       model: starter.model,
-      reasoningMode: "thinking",
+      reasoningLevel: DEFAULT_REASONING_LEVEL,
       apiKey: starter.apiKey,
       source: "starter",
       starterLimit: starter.credits,
@@ -109,7 +128,7 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
 
 export async function setAiSettings(
   userId: string,
-  value: { provider: AiProvider; model: string; reasoningMode?: AiReasoningMode; apiKey?: string },
+  value: { provider: AiProvider; model: string; reasoningLevel?: AiReasoningLevel; apiKey?: string },
 ) {
   const db = getDb();
   const existing = await getAiSettings(userId);
@@ -117,11 +136,15 @@ export async function setAiSettings(
   // over to a different provider — it would be sent to the wrong API.
   const retainedKey =
     existing.provider === value.provider ? existing.encryptedApiKey : undefined;
-  const next = {
-    ...existing,
+  const model = normalizeModelId(value.provider, value.model);
+  const next: AiSettings = {
     provider: value.provider,
-    model: value.model,
-    reasoningMode: value.reasoningMode ?? existing.reasoningMode,
+    model,
+    reasoningLevel: normalizeReasoningLevel(
+      value.provider,
+      model,
+      value.reasoningLevel ?? existing.reasoningLevel,
+    ),
     encryptedApiKey:
       value.apiKey === undefined
         ? retainedKey

@@ -13,7 +13,8 @@ export const submissionStatusEnum = z.enum([
 ]);
 
 export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
-export const aiReasoningModeEnum = z.enum(["fast", "thinking"]);
+/** "default", "off", or a provider-native effort; validated per model on save. */
+export const aiReasoningLevelSchema = z.string().trim().min(1).max(32).regex(/^[a-z]+$/);
 export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
 export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
 export const quizItemSourceEnum = z.enum(["statement", "submission", "notes", "card"]);

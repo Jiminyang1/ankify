@@ -9,14 +9,14 @@ import {
   setReviewSettings,
 } from "@/server/settings";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
-import { aiProviderEnum, aiReasoningModeEnum } from "@ankify/contracts";
+import { aiProviderEnum, aiReasoningLevelSchema } from "@ankify/contracts";
 import { isValidTimeZone } from "@/server/time-zone";
 
 const settingsSchema = z
   .object({
     provider: aiProviderEnum.optional(),
     model: z.string().min(1).optional(),
-    reasoningMode: aiReasoningModeEnum.optional(),
+    reasoningLevel: aiReasoningLevelSchema.optional(),
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     ai: {
       provider: ai.provider,
       model: ai.model,
-      reasoningMode: ai.reasoningMode,
+      reasoningLevel: ai.reasoningLevel,
       hasApiKey: Boolean(ai.encryptedApiKey),
     },
     review,
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     await setAiSettings(user.id, {
       provider: parsed.data.provider,
       model: parsed.data.model,
-      reasoningMode: parsed.data.reasoningMode,
+      reasoningLevel: parsed.data.reasoningLevel,
       apiKey: parsed.data.apiKey,
     });
   }

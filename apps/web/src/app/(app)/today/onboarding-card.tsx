@@ -11,18 +11,17 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import type { AiProvider } from "@ankify/core";
+import { AI_PROVIDERS, getAiProviderInfo, type AiProvider } from "@ankify/core";
 import type { OnboardingProgressDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
-const MODEL_PRESETS: Record<Exclude<AiProvider, "">, string[]> = {
-  anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  openai: ["gpt-5", "gpt-4o-mini"],
-  deepseek: ["deepseek-flash", "deepseek-v4-pro"],
-};
+/** Suggested models from the shared catalog, recommended default first. */
+function presetModels(provider: AiProvider): string[] {
+  return getAiProviderInfo(provider)?.models.map((model) => model.id) ?? [];
+}
 
 type Copy = {
   eyebrow: string;
@@ -214,17 +213,13 @@ export function OnboardingCard({
     Boolean(progress.firstCaptureAt),
     Boolean(progress.firstReviewAt),
   ].filter(Boolean).length;
-  const providerModels = provider ? MODEL_PRESETS[provider] : [];
+  const providerModels = presetModels(provider);
   const hasUsableStoredKey =
     initialAi.hasApiKey && provider === initialAi.provider && Boolean(initialAi.provider);
   const canSubmitAi = Boolean(provider && model && (apiKey || hasUsableStoredKey));
 
   const providerOptions = useMemo(
-    () => [
-      { value: "anthropic", label: "Anthropic (Claude)" },
-      { value: "openai", label: "OpenAI" },
-      { value: "deepseek", label: "DeepSeek" },
-    ] as const,
+    () => AI_PROVIDERS.map((entry) => ({ value: entry.id, label: entry.label })),
     [],
   );
 
@@ -375,7 +370,7 @@ export function OnboardingCard({
                     onValueChange={(value) => {
                       const next = value as AiProvider;
                       setProvider(next);
-                      setModel(next ? (MODEL_PRESETS[next][0] ?? "") : "");
+                      setModel(presetModels(next)[0] ?? "");
                       setApiKey("");
                       setAiMessage(null);
                     }}

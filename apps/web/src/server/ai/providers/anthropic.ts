@@ -19,18 +19,21 @@ const CAN_DISABLE = /^claude-(opus-5(?!-5)|opus-4-[678]|sonnet-5(?!-5)|sonnet-4-
 export const anthropicProvider: ProviderAdapter = {
   id: "anthropic",
   label: "Anthropic",
-  presets: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"],
-  legacyFastModeToggle: false,
+  aliases: { "claude-haiku-4-5-20251001": "claude-haiku-4-5" },
 
   createModel({ apiKey, model }) {
     return createAnthropic({ apiKey })(model);
   },
 
   reasoningOptions(model, request): ProviderOptions | undefined {
-    if (request !== "lightest") return undefined;
-    if (EFFORT_ONLY.test(model)) return { anthropic: { effort: "low" } };
-    if (CAN_DISABLE.test(model)) return { anthropic: { thinking: { type: "disabled" } } };
-    return undefined;
+    if (request === "default") return undefined;
+    if (request === "lightest") {
+      if (EFFORT_ONLY.test(model)) return { anthropic: { effort: "low" } };
+      if (CAN_DISABLE.test(model)) return { anthropic: { thinking: { type: "disabled" } } };
+      return undefined;
+    }
+    // Native effort: low | medium | high | xhigh | max, with adaptive thinking.
+    return { anthropic: { thinking: { type: "adaptive" }, effort: request } };
   },
 
   async listModels(apiKey, signal) {

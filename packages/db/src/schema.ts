@@ -365,7 +365,9 @@ export const aiJobs = sqliteTable(
 
     provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
     model: text("model").notNull(),
-    reasoningMode: text("reasoning_mode", { enum: ["fast", "thinking"] }).notNull(),
+    // Reasoning level at creation ("default", "off", or a native effort). The
+    // column keeps its original name; older rows hold "fast" / "thinking".
+    reasoningLevel: text("reasoning_mode").notNull(),
     generationLanguage: text("generation_language", { enum: ["en", "zh"] }).notNull(),
 
     expectedCardId: text("expected_card_id"),
