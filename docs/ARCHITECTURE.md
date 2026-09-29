@@ -4,7 +4,9 @@ Canonical description of how ankify is built. `CLAUDE.md` and `AGENTS.md` link
 here instead of repeating it; update this file when the architecture changes.
 Paid AI credits have their own deep-dive in [PAID_AI_CREDITS.md](PAID_AI_CREDITS.md).
 Deployment and data-ownership rules live in [DEPLOYMENT.md](DEPLOYMENT.md) and
-[SELF_HOSTING.md](SELF_HOSTING.md).
+[SELF_HOSTING.md](SELF_HOSTING.md). Features in progress have their own plans:
+[MISTAKE_PROFILE_PLAN.md](MISTAKE_PROFILE_PLAN.md) and
+[DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md).
 
 ## Shape of the system
 
