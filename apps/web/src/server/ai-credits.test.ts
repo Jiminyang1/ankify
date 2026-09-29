@@ -72,9 +72,9 @@ describe("hosted AI credits", () => {
   it("spends starter credits first, then purchased credits, then refuses", async () => {
     await setPaidBalance(1);
 
-    expect(await spend("job-1")).toBe("starter");
-    expect(await spend("job-2")).toBe("starter");
-    expect(await spend("job-3")).toBe("paid");
+    expect(await spend("job-1")).toEqual({ starter: 1, paid: 0 });
+    expect(await spend("job-2")).toEqual({ starter: 1, paid: 0 });
+    expect(await spend("job-3")).toEqual({ starter: 0, paid: 1 });
     await expect(spend("job-4")).rejects.toBeInstanceOf(StarterCreditsExhaustedError);
 
     expect((await getStarterAiStatus(USER_ID)).remaining).toBe(0);
@@ -137,16 +137,20 @@ describe("hosted AI credits", () => {
       getDb().update(schema.aiCreditBalances).set({ balance: -1 }).where(eq(schema.aiCreditBalances.userId, USER_ID)),
     ).rejects.toThrow();
 
-    expect(await spend("paid-1", 0)).toBe("paid");
+    expect(await spend("paid-1", 0)).toEqual({ starter: 0, paid: 1 });
     await expect(spend("paid-2", 0)).rejects.toBeInstanceOf(StarterCreditsExhaustedError);
     expect(await getPaidCreditBalance(USER_ID)).toBe(0);
   });
 
-  it("rejects a second spend for the same job", async () => {
+  it("rejects a second spend for the same job, even from the other bucket", async () => {
+    await setPaidBalance(5);
     await spend("job-1");
-    // The unique ledger index makes a repeated spend fail and roll back.
-    await expect(spend("job-1")).rejects.toThrow();
+    await expect(spend("job-1")).rejects.toThrow("credit_already_spent");
+    // With free credits gone, a repeat would land in the paid bucket, which the
+    // per-bucket ledger index alone would not catch.
+    await expect(spend("job-1", 1)).rejects.toThrow("credit_already_spent");
     expect((await getStarterAiStatus(USER_ID)).remaining).toBe(STARTER_LIMIT - 1);
+    expect(await getPaidCreditBalance(USER_ID)).toBe(5);
   });
 
   it("does not consume credit when the ledger write fails", async () => {
@@ -188,12 +192,12 @@ describe("hosted AI credits", () => {
     expect((await getStarterAiStatus(USER_ID)).remaining).toBe(STARTER_LIMIT);
   });
 
-  it("charges each action its cost, from free credits when they cover it, else purchased", async () => {
+  it("charges each action its cost, from free credits first, then purchased", async () => {
     await setPaidBalance(10);
-    expect(await spend("quiz-1", STARTER_LIMIT, "quiz")).toBe("starter");
+    expect(await spend("quiz-1", STARTER_LIMIT, "quiz")).toEqual({ starter: 2, paid: 0 });
     expect((await getStarterAiStatus(USER_ID)).remaining).toBe(0);
-    expect(await spend("coach-1", STARTER_LIMIT, "coach")).toBe("paid");
-    expect(await spend("card-1", STARTER_LIMIT, "card")).toBe("paid");
+    expect(await spend("coach-1", STARTER_LIMIT, "coach")).toEqual({ starter: 0, paid: 5 });
+    expect(await spend("card-1", STARTER_LIMIT, "card")).toEqual({ starter: 0, paid: 1 });
     expect(await getPaidCreditBalance(USER_ID)).toBe(4);
 
     const deltas = await getDb().select().from(schema.aiCreditLedger);
@@ -210,13 +214,47 @@ describe("hosted AI credits", () => {
     expect((await getStarterAiStatus(USER_ID)).remaining).toBe(STARTER_LIMIT);
   });
 
-  it("never splits one action across free and purchased credits", async () => {
-    await setPaidBalance(3);
-    // 3 free + 3 purchased = 6, but neither bucket alone covers a 5-credit turn.
+  it("uses up free credits first and takes only the rest from purchased credits", async () => {
+    await setPaidBalance(10);
+    // 3 free credits left for a 5-credit turn: 3 free + 2 purchased.
+    expect(await spend("coach-1", 3, "coach")).toEqual({ starter: 3, paid: 2 });
+    expect((await getStarterAiStatus(USER_ID)).used).toBe(3);
+    expect(await getPaidCreditBalance(USER_ID)).toBe(8);
+
+    const rows = await getDb()
+      .select()
+      .from(schema.aiCreditLedger)
+      .where(eq(schema.aiCreditLedger.refId, "coach-1"));
+    expect(rows.map((row) => [row.reason, row.bucket, row.delta]).sort()).toEqual([
+      ["spend", "paid", -2],
+      ["spend", "starter", -3],
+    ]);
+  });
+
+  it("refunds a split spend to both buckets, once", async () => {
+    await setPaidBalance(10);
+    await spend("coach-1", 3, "coach");
+    const ref = { type: "agent_run" as const, id: "coach-1" };
+    expect(await refundHostedCredit(USER_ID, ref)).toBe(true);
+    expect(await refundHostedCredit(USER_ID, ref)).toBe(false);
+    expect((await getStarterAiStatus(USER_ID)).used).toBe(0);
+    expect(await getPaidCreditBalance(USER_ID)).toBe(10);
+    const refunds = await getDb()
+      .select()
+      .from(schema.aiCreditLedger)
+      .where(eq(schema.aiCreditLedger.reason, "refund"));
+    expect(refunds.map((row) => [row.bucket, row.delta]).sort()).toEqual([
+      ["paid", 2],
+      ["starter", 3],
+    ]);
+  });
+
+  it("refuses when free and purchased credits together fall short, spending nothing", async () => {
+    await setPaidBalance(1);
+    // 3 free + 1 purchased = 4 < 5.
     await expect(spend("coach-1", 3, "coach")).rejects.toBeInstanceOf(StarterCreditsExhaustedError);
     expect((await getStarterAiStatus(USER_ID)).used).toBe(0);
-    expect(await getPaidCreditBalance(USER_ID)).toBe(3);
-    // The leftover free credits still pay for cheaper actions.
-    expect(await spend("quiz-1", 3, "quiz")).toBe("starter");
+    expect(await getPaidCreditBalance(USER_ID)).toBe(1);
+    expect(await getDb().select().from(schema.aiCreditLedger)).toHaveLength(0);
   });
 });

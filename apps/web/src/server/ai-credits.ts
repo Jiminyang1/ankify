@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { readBillingConfig } from "./billing/config";
 import {
   getStarterAiStatus,
+  readStarterAiUsed,
   returnStarterAiCredit,
   StarterCreditsExhaustedError,
   tryConsumeStarterAiCredit,
@@ -11,7 +12,8 @@ import {
 
 /**
  * Hosted AI credits: work that runs on the server's AI key instead of the
- * user's own. Free starter credits are spent first, then purchased credits.
+ * user's own. Free starter credits are always used up first; purchased credits
+ * pay whatever is left, so one action may be split across both.
  * Every spend is tied to the job or Study Coach run it paid for, so a failed
  * run can give its credit back exactly once.
  */
@@ -21,11 +23,7 @@ export type CreditAction = "card" | "quiz" | "coach";
 export type CreditRef = { type: "ai_job" | "agent_run"; id: string };
 export type CreditBucket = "starter" | "paid";
 
-/**
- * Credits charged per action, from free and purchased credits alike. A spend
- * is paid entirely from one bucket: free credits if they cover the whole cost,
- * otherwise purchased credits.
- */
+/** Credits charged per action, from free and purchased credits alike. */
 export const CREDIT_COST: Record<CreditAction, number> = {
   card: 1,
   quiz: 2,
@@ -49,57 +47,84 @@ export function creditsExhaustedError() {
   );
 }
 
+/** How many credits of one action each bucket paid. */
+export type CreditSplit = Record<CreditBucket, number>;
+
 /**
  * Spends one action's worth of hosted credit inside the caller's transaction,
  * so the credit and the job/run it pays for commit or roll back together.
- * Throws StarterCreditsExhaustedError when neither bucket can cover it.
+ * Remaining free credits pay first and purchased credits cover the rest
+ * (3 free left for a 5-credit turn: 3 free + 2 purchased), with one ledger row
+ * per bucket used. Throws StarterCreditsExhaustedError when both buckets
+ * together can't cover the cost; nothing is spent then.
  */
 export async function spendHostedCredit(
   tx: DbTransaction,
   userId: string,
   args: { action: CreditAction; ref: CreditRef; starterLimit: number },
-): Promise<CreditBucket> {
+): Promise<CreditSplit> {
   const cost = CREDIT_COST[args.action];
-  let bucket: CreditBucket;
-  let delta: number;
-  if (await tryConsumeStarterAiCredit(tx, userId, args.starterLimit, cost)) {
-    bucket = "starter";
-    delta = -cost;
-  } else {
+
+  // The ledger index is per bucket, so it alone would let a repeated spend for
+  // the same work through in the other bucket. Writers are serialized, so this
+  // check cannot race.
+  const [alreadySpent] = await tx
+    .select({ id: schema.aiCreditLedger.id })
+    .from(schema.aiCreditLedger)
+    .where(
+      and(
+        eq(schema.aiCreditLedger.reason, "spend"),
+        eq(schema.aiCreditLedger.refType, args.ref.type),
+        eq(schema.aiCreditLedger.refId, args.ref.id),
+      ),
+    )
+    .limit(1);
+  if (alreadySpent) throw new Error(`credit_already_spent: ${args.ref.type} ${args.ref.id}`);
+
+  const starterLeft = Math.max(0, args.starterLimit - (await readStarterAiUsed(tx, userId)));
+  const split: CreditSplit = { starter: Math.min(cost, starterLeft), paid: 0 };
+  split.paid = cost - split.starter;
+
+  if (split.paid > 0) {
     const rows = await tx
       .update(schema.aiCreditBalances)
       .set({
-        balance: sql`${schema.aiCreditBalances.balance} - ${cost}`,
+        balance: sql`${schema.aiCreditBalances.balance} - ${split.paid}`,
         updatedAt: new Date(),
       })
       .where(
         and(
           eq(schema.aiCreditBalances.userId, userId),
-          gte(schema.aiCreditBalances.balance, cost),
+          gte(schema.aiCreditBalances.balance, split.paid),
         ),
       )
       .returning({ balance: schema.aiCreditBalances.balance });
     if (rows.length === 0) throw creditsExhaustedError();
-    bucket = "paid";
-    delta = -cost;
+  }
+  if (split.starter > 0 && !(await tryConsumeStarterAiCredit(tx, userId, args.starterLimit, split.starter))) {
+    throw creditsExhaustedError();
   }
 
-  await tx.insert(schema.aiCreditLedger).values({
-    id: nanoid(16),
-    userId,
-    bucket,
-    delta,
-    reason: "spend",
-    refType: args.ref.type,
-    refId: args.ref.id,
-  });
-  return bucket;
+  for (const bucket of ["starter", "paid"] as const) {
+    if (split[bucket] === 0) continue;
+    await tx.insert(schema.aiCreditLedger).values({
+      id: nanoid(16),
+      userId,
+      bucket,
+      delta: -split[bucket],
+      reason: "spend",
+      refType: args.ref.type,
+      refId: args.ref.id,
+    });
+  }
+  return split;
 }
 
 /**
- * Returns the credit spent for `ref`. Idempotent: the unique ledger index lets
- * only the first refund through, and work that never spent a hosted credit
- * (the user's own key) has no spend row to reverse.
+ * Returns the credits spent for `ref`, each part to the bucket it came from.
+ * Idempotent: the unique ledger index lets only the first refund of each part
+ * through, and work that never spent a hosted credit (the user's own key) has
+ * no spend row to reverse.
  */
 export async function refundHostedCredit(
   userId: string,
@@ -107,13 +132,13 @@ export async function refundHostedCredit(
   tx?: DbTransaction,
 ): Promise<boolean> {
   // Inside a caller's transaction this runs as a savepoint, so a failure
-  // midway rolls back the refund row and the counter together without
+  // midway rolls back the refund rows and the counters together without
   // aborting the caller's job/run transition.
   return (tx ?? getDb()).transaction((inner) => refundInTransaction(inner, userId, ref));
 }
 
 async function refundInTransaction(tx: DbTransaction, userId: string, ref: CreditRef): Promise<boolean> {
-  const [spend] = await tx
+  const spends = await tx
     .select()
     .from(schema.aiCreditLedger)
     .where(
@@ -123,31 +148,33 @@ async function refundInTransaction(tx: DbTransaction, userId: string, ref: Credi
         eq(schema.aiCreditLedger.refType, ref.type),
         eq(schema.aiCreditLedger.refId, ref.id),
       ),
-    )
-    .limit(1);
-  if (!spend) return false;
+    );
 
-  const inserted = await tx
-    .insert(schema.aiCreditLedger)
-    .values({
-      id: nanoid(16),
-      userId,
-      bucket: spend.bucket,
-      delta: -spend.delta,
-      reason: "refund",
-      refType: ref.type,
-      refId: ref.id,
-    })
-    .onConflictDoNothing()
-    .returning({ id: schema.aiCreditLedger.id });
-  if (inserted.length === 0) return false;
+  let refunded = false;
+  for (const spend of spends) {
+    const inserted = await tx
+      .insert(schema.aiCreditLedger)
+      .values({
+        id: nanoid(16),
+        userId,
+        bucket: spend.bucket,
+        delta: -spend.delta,
+        reason: "refund",
+        refType: ref.type,
+        refId: ref.id,
+      })
+      .onConflictDoNothing()
+      .returning({ id: schema.aiCreditLedger.id });
+    if (inserted.length === 0) continue;
 
-  if (spend.bucket === "starter") {
-    await returnStarterAiCredit(tx, userId, -spend.delta);
-  } else {
-    await addPaidCredits(tx, userId, -spend.delta);
+    if (spend.bucket === "starter") {
+      await returnStarterAiCredit(tx, userId, -spend.delta);
+    } else {
+      await addPaidCredits(tx, userId, -spend.delta);
+    }
+    refunded = true;
   }
-  return true;
+  return refunded;
 }
 
 /**

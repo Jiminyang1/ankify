@@ -282,8 +282,9 @@ account closure via support" flow, which has been removed (no support tool, no
 `ANKIFY_SUPPORT_EMAIL`).
 
 - **Costs and prices**: AI card 1 credit, quiz 2, Study Coach turn 5, for free
-  and purchased credits alike (`CREDIT_COST`). A cost is paid entirely from one
-  bucket. Free allowance 20. Packs $4.99/100, $9.99/250, $19.99/600.
+  and purchased credits alike (`CREDIT_COST`). Free credits are used up first
+  and purchased credits pay the rest, so one cost can be split (changed from
+  "one bucket per cost" on 2026-09-29). Free allowance 20. Packs $4.99/100, $9.99/250, $19.99/600.
 - **No money refunds.** Automatic credit returns for failed work are kept
   (owner choice); interrupted Coach replies are not returned. Users on hosted
   credits see a per-message cost note, a streaming warning, and a leave-page

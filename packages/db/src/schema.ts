@@ -578,7 +578,10 @@ export const aiCreditLedger = sqliteTable(
   },
   (t) => ({
     userCreatedIdx: index("ai_credit_ledger_user_created_idx").on(t.userId, t.createdAt),
-    refIdx: uniqueIndex("ai_credit_ledger_reason_ref_unique").on(t.reason, t.refType, t.refId),
+    // Per bucket: one action can be paid partly from free and partly from
+    // purchased credits, one row each. spendHostedCredit() still refuses a
+    // second spend for the same work.
+    refIdx: uniqueIndex("ai_credit_ledger_reason_ref_bucket_unique").on(t.reason, t.refType, t.refId, t.bucket),
   }),
 );
 

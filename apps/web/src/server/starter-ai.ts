@@ -72,6 +72,16 @@ export async function getStarterAiStatus(userId: string): Promise<StarterAiStatu
   return { enabled: true, limit: config.credits, used, remaining: Math.max(0, config.credits - used) };
 }
 
+/** Free credits used so far, read through the caller's transaction. */
+export async function readStarterAiUsed(executor: DbExecutor, userId: string): Promise<number> {
+  const [row] = await executor
+    .select({ value: schema.settings.value })
+    .from(schema.settings)
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, STARTER_AI_USAGE_KEY)))
+    .limit(1);
+  return readUsed(row?.value);
+}
+
 const usedExpr = sql`CAST(json_extract(${schema.settings.value}, '$.used') AS INTEGER)`;
 
 /**

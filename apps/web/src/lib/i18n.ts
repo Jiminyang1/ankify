@@ -230,7 +230,7 @@ export const translations = {
       reviewSchedule: "Review schedule",
       keySecurity: "API keys are encrypted before they are stored. Your own key always takes priority over free credits.",
       aiCredits: "AI credits",
-      aiCreditsHelp: "Credits run quizzes, AI cards, and Study Coach on ankify's AI key. Free credits are used first. Your own API key always takes priority and never spends credits.",
+      aiCreditsHelp: "Credits run quizzes, AI cards, and Study Coach on ankify's AI key. Free credits are used first; purchased credits cover whatever they don't. Your own API key always takes priority and never spends credits.",
       creditsFree: (remaining: number, limit: number) => `Free credits: ${remaining} of ${limit} left`,
       paidActive: (balance: number) =>
         `You're using purchased AI credits: ${balance} left. Add your own key below to stop spending credits.`,
@@ -763,7 +763,7 @@ export const translations = {
       reviewSchedule: "复习计划",
       keySecurity: "API key 会加密后存储。配置了自己的 key 后会优先使用，不再消耗免费额度。",
       aiCredits: "AI 额度",
-      aiCreditsHelp: "额度用于在 ankify 的 AI key 上生成测验、AI 卡片和使用 Study Coach。优先消耗免费额度。配置了自己的 API key 后始终优先使用自己的 key，不消耗额度。",
+      aiCreditsHelp: "额度用于在 ankify 的 AI key 上生成测验、AI 卡片和使用 Study Coach。优先消耗免费额度，不足的部分由已购额度补足。配置了自己的 API key 后始终优先使用自己的 key，不消耗额度。",
       creditsFree: (remaining: number, limit: number) => `免费额度：剩余 ${remaining} / ${limit} 点`,
       paidActive: (balance: number) => `你正在使用已购 AI 额度：剩余 ${balance} 点。在下方填入自己的 key 后将不再消耗额度。`,
       creditsPaid: (balance: number) => `已购额度：${balance} 点`,
