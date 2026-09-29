@@ -14,7 +14,7 @@ FSRS state**: its outcomes only feed the weakness model.
 
 | Area | Status |
 | --- | --- |
-| Engine: `planDailyFeed()` in `packages/core/src/daily-feed/` (pure, tested) | In progress on `feat/mistake-profile` |
+| Engine: `planDailyFeed()` in `packages/core/src/daily-feed/` (pure, tested) | Implemented on `feat/mistake-profile`; not yet called by the app |
 | Persistence (`feed_items`), settings, API, Today UI | Planned |
 | Capturing `similarQuestions` title/difficulty/paid flag | Planned (needed for `new_problem`) |
 
@@ -122,7 +122,8 @@ days. One item per problem per day.
 | Kind | Candidates | Score |
 | --- | --- | --- |
 | `problem_drill` (weak) | Problems with `affinity_d > 0` or `direct_d > 0` | `2·affinity_d(p) + direct_d(p) + (1 − R_p) + 0.5·max_t u_t + 0.25·min(lapses, 4)/4 + 0.1·jitter` |
-| `problem_drill` (check-up) | Any eligible problem; for topic check-ups, problems with that tag | `(1 − R_p) + 0.25·min(lapses, 4)/4 + 0.1·jitter` |
+| `problem_drill` (check-up) | Any eligible problem, preferring the dimension's topics | `2·affinity_d(p) + (1 − R_p) + 0.25·min(lapses, 4)/4 + 0.1·jitter` |
+| `problem_drill` (topic cold start) | Eligible problems with that tag | `(1 − R_p) + 0.25·min(lapses, 4)/4 + 0.1·jitter` |
 | `quiz_retry` | Missed items of the dimension, missed ≥ 2 days ago, not since answered correctly in a feed, not fed in 7 days | `decay(age of miss) + (1 − R_p)` |
 | `new_problem` | Free similar questions of problems with `direct_d > 0` or one of `d`'s top-3 topics; not owned; not fed in 30 days | `direct_d(parent) + affinity_d(parent) ± 0.5` difficulty fit (+ same or easier than parent, − harder) |
 

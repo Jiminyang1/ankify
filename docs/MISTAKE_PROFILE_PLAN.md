@@ -14,10 +14,10 @@ actionable; "I missed seven Tree questions" is not.
 
 | Area | Status |
 | --- | --- |
-| PR1: manual logging (schema, API, record dialog, entry points, export) | In progress on `feat/mistake-profile` |
+| PR1: manual logging (schema, API, record dialog, entry points, export) | Implemented on `feat/mistake-profile`; DB and contract tests |
 | PR2: profile dashboard on `/analysis` | Planned |
 | PR3: optional AI category suggestions | Planned; only after PR1-2 usage data |
-| Daily practice feed | Engine specified in [DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md) |
+| Daily practice feed | Engine implemented and tested; app wiring planned ([DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md)) |
 
 **Non-goals:** AI diagnoses presented as fact; a second scheduler; changing
 FSRS ratings or due dates from mistake data; running user code on ankify
