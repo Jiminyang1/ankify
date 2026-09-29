@@ -5,8 +5,11 @@ import type {
   AiJobCreateRequestInput,
   CaptureProblemInput,
   CaptureSubmissionInput,
+  MistakeSourceType,
+  MistakeStatus,
   QuizAnswer,
   QuizItem,
+  SkillDimensionId,
 } from "./schemas";
 
 export type AgentSessionDto = {
@@ -267,4 +270,39 @@ export type CaptureResultDto = {
   created: boolean;
   importedSubmissions: number;
   submissionLimitReached: boolean;
+};
+
+export type MistakeRecordDto = {
+  id: string;
+  problemId: string;
+  primaryCategory: SkillDimensionId;
+  secondaryTags: string[];
+  summary: string | null;
+  nextStep: string | null;
+  sourceType: MistakeSourceType;
+  submissionId: string | null;
+  quizSessionId: string | null;
+  quizItemId: string | null;
+  reviewEventId: string | null;
+  status: MistakeStatus;
+  origin: "user" | "ai_suggested";
+  resolvedAt: string | null;
+  confirmedAt: string | null;
+  dismissedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MistakeCreateResponseDto = {
+  ok: true;
+  mistake: MistakeRecordDto;
+  /** A retry of the same `requestId`; nothing new was written. */
+  idempotentReplay: boolean;
+  /** The same source already had a record of this category; it is returned instead. */
+  deduplicated: boolean;
+};
+
+export type MistakeListPayloadDto = {
+  mistakes: MistakeRecordDto[];
+  nextCursor: string | null;
 };

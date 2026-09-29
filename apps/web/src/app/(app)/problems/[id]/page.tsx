@@ -16,6 +16,7 @@ import { CardList } from "./card-list";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
+import { MistakeList } from "./mistake-list";
 import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -40,7 +41,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
-  const { problem, submissions, cards, reviewHistory } = detail;
+  const { problem, submissions, cards, reviewHistory, mistakes } = detail;
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
 
@@ -86,7 +87,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
     submissions.length === 0 ? (
       <EmptyState title={t.detail.noSubmissions} description={t.detail.submissionsHelp} />
     ) : (
-      <SubmissionList submissions={submissions} />
+      <SubmissionList submissions={submissions} problemId={problem.id} />
     );
 
   const historyPanel =
@@ -110,10 +111,13 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
   const notesPanel = <NotesEditor problemId={problem.id} initialNotes={problem.notes ?? ""} />;
 
+  const mistakesPanel = <MistakeList problemId={problem.id} initialMistakes={mistakes} />;
+
   const panels: WorkspacePanel[] = [
     { id: "statement", label: t.detail.statement, node: statementPanel },
     { id: "cards", label: t.review.cards, count: cards.length, node: cardsPanel },
     { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
+    { id: "mistakes", label: t.mistakes.tab, count: mistakes.length, node: mistakesPanel },
     { id: "history", label: t.detail.history, count: reviewHistory.length, node: historyPanel },
     { id: "notes", label: t.review.notes, node: notesPanel },
   ];

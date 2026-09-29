@@ -320,6 +320,76 @@ export const quizSessions = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * mistake_records
+ * User-confirmed causes of failure (the Mistake Profile). Evidence is linked,
+ * never copied: a record points at the submission, quiz answer, or review
+ * rating it came from. The partial unique indexes make "one occurrence per
+ * source and category" hold even across retries; dismissed rows don't count.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const mistakeRecords = sqliteTable(
+  "mistake_records",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    primaryCategory: text("primary_category", {
+      enum: [
+        "approach",
+        "invariant",
+        "edge_case",
+        "complexity",
+        "implementation",
+        "conceptual",
+        "other",
+      ],
+    }).notNull(),
+    secondaryTags: text("secondary_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
+    summary: text("summary"),
+    nextStep: text("next_step"),
+    sourceType: text("source_type", { enum: ["manual", "submission", "quiz_answer", "review"] }).notNull(),
+    submissionId: text("submission_id").references(() => submissions.id, { onDelete: "set null" }),
+    quizSessionId: text("quiz_session_id").references(() => quizSessions.id, { onDelete: "set null" }),
+    // Item id inside quiz_sessions.items_json. Sessions are archived, not
+    // deleted, so the reference stays resolvable.
+    quizItemId: text("quiz_item_id"),
+    reviewEventId: text("review_event_id").references(() => reviewEvents.id, { onDelete: "set null" }),
+    status: text("status", { enum: ["candidate", "confirmed", "dismissed"] })
+      .notNull()
+      .default("confirmed"),
+    origin: text("origin", { enum: ["user", "ai_suggested"] }).notNull().default("user"),
+    requestId: text("request_id").notNull(),
+    resolvedAt: optTs("resolved_at"),
+    confirmedAt: optTs("confirmed_at"),
+    dismissedAt: optTs("dismissed_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userRequestIdx: uniqueIndex("mistake_records_user_request_unique").on(t.userId, t.requestId),
+    userStatusCreatedIdx: index("mistake_records_user_status_created_idx").on(t.userId, t.status, t.createdAt),
+    userCategoryCreatedIdx: index("mistake_records_user_category_created_idx").on(
+      t.userId,
+      t.primaryCategory,
+      t.createdAt,
+    ),
+    userProblemIdx: index("mistake_records_user_problem_idx").on(t.userId, t.problemId),
+    submissionDedupIdx: uniqueIndex("mistake_records_submission_dedup_unique")
+      .on(t.userId, t.submissionId, t.primaryCategory)
+      .where(sql`${t.submissionId} IS NOT NULL AND ${t.status} <> 'dismissed'`),
+    quizDedupIdx: uniqueIndex("mistake_records_quiz_dedup_unique")
+      .on(t.userId, t.quizSessionId, t.quizItemId, t.primaryCategory)
+      .where(sql`${t.quizSessionId} IS NOT NULL AND ${t.status} <> 'dismissed'`),
+    reviewDedupIdx: uniqueIndex("mistake_records_review_dedup_unique")
+      .on(t.userId, t.reviewEventId, t.primaryCategory)
+      .where(sql`${t.reviewEventId} IS NOT NULL AND ${t.status} <> 'dismissed'`),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * ai_jobs
  * Durable source of truth for asynchronous Card / Quiz generation. Queue
  * messages contain only the job id; all ownership, inputs and results live in
@@ -617,6 +687,8 @@ export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
+export type MistakeRecord = typeof mistakeRecords.$inferSelect;
+export type NewMistakeRecord = typeof mistakeRecords.$inferInsert;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;

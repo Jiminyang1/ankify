@@ -56,6 +56,7 @@ Tables (all in `packages/db/src/schema.ts`):
 | `cards` | Q&A flashcards; `aiStatus` `candidate | failed | ready`; integer `version` for optimistic concurrency |
 | `quiz_sessions` | 5-item quizzes (`active | completed | archived`), answers, score |
 | `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt` |
+| `mistake_records` | User-confirmed causes of failure, linked to a submission, quiz answer, or rating; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
 | `ai_jobs` | Durable async Card/Quiz generation commands (see below) |
 | `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps` | Persistent Study Coach conversations |
 | `settings` | Per-user key/value: encrypted AI config, review/generation prefs, onboarding, rate-limit windows, starter-credit counter, Stripe customer ids |
@@ -161,7 +162,7 @@ append-only ledger. Full design, invariants, and test instructions:
 ## Rate limits and caps
 
 `server/rate-limit.ts` is a DB-backed fixed-window limiter per user and scope
-(`agent` 12/min, `ai` 20/min, `capture` 60/min, `billing` 10/min). Hard caps
+(`agent` 12/min, `ai` 20/min, `capture` 60/min, `mistakes` 60/min, `billing` 10/min). Hard caps
 limit cards and quiz sessions per problem and active AI jobs per user.
 
 ## Capture and the extension
@@ -180,7 +181,7 @@ limit cards and quiz sessions per problem and active AI jobs per user.
 `/` public landing (signed-in users go to `/today`), `/today` due queue and
 onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
 Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
-`/problems/[id]` (archive/unarchive/delete), `/analysis` FSRS dashboard,
+`/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/analysis` FSRS dashboard,
 `/settings` (AI provider, AI credits, language/region, review schedule,
 account export/delete), plus `/privacy` and `/terms`.
 

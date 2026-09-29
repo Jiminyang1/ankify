@@ -30,6 +30,7 @@ import { ActiveIndicator } from "@/components/ui/motion";
 import { Markdown } from "@/components/ui/markdown";
 import { useLanguage } from "@/components/LanguageProvider";
 import { AgentSidebar } from "@/components/agent/agent-sidebar";
+import { MistakeQuickStrip } from "@/components/mistakes/mistake-quick-strip";
 import {
   useAgentPageContext,
   useAgentShellControls,
@@ -173,6 +174,8 @@ export default function ReviewPage({
   const [cardIdx, setCardIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [result, setResult] = useState<RateResult | null>(null);
+  // requestId of the rating shown on the result screen; links a mistake to it.
+  const [ratedRequestId, setRatedRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const quizKeysRef = useRef<QuizKeyInterface | null>(null);
@@ -206,6 +209,7 @@ export default function ReviewPage({
     setCardIdx(0);
     setFlipped(false);
     setResult(null);
+    setRatedRequestId(null);
     setError(null);
     const url = targetId
       ? `/api/review/next?problemId=${encodeURIComponent(targetId)}`
@@ -354,6 +358,7 @@ export default function ReviewPage({
       }
       const nextResult = (await res.json()) as RateResult;
       setResult(nextResult);
+      setRatedRequestId(requestId);
       notifyReviewQueueUpdated(nextResult.queue?.dueCount);
       ratingRequestRef.current = null;
       setStage("result");
@@ -406,6 +411,8 @@ export default function ReviewPage({
       ) {
         return;
       }
+      // Keys pressed inside a modal (e.g. the mistake dialog) belong to it.
+      if (target?.closest?.('[aria-modal="true"]')) return;
 
       // "?" is the conventional help key and works from any stage or tab.
       if (e.key === "?") {
@@ -599,6 +606,13 @@ export default function ReviewPage({
               </Button>
             </div>
             {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+            {(userFsrsRating === 1 || userFsrsRating === 2) && ratedRequestId && (
+              <MistakeQuickStrip
+                key={ratedRequestId}
+                problemId={problem.id}
+                reviewRequestId={ratedRequestId}
+              />
+            )}
           </Surface>
         </div>
       )}
@@ -844,7 +858,7 @@ function WorkspacePanel({
                   <EmptyState title={t.review.noSubmissions} />
                 </div>
               ) : (
-                <LazySubmissionList submissions={submissions ?? []} />
+                <LazySubmissionList submissions={submissions ?? []} problemId={problemId} />
               )}
             </div>
           </WorkspaceResourceState>

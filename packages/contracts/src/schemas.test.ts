@@ -7,6 +7,9 @@ import {
   aiJobCreateRequestSchema,
   captureProblemSchema,
   cardDraftSchema,
+  mistakeCreateSchema,
+  mistakeListQuerySchema,
+  mistakePatchSchema,
   reviewRatingSchema,
 } from "./schemas";
 
@@ -155,5 +158,57 @@ describe("public payload limits", () => {
         answer: "answer",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("Mistake contracts", () => {
+  const base = {
+    sourceType: "manual",
+    requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
+    problemId: "problem-1",
+    primaryCategory: "invariant",
+  };
+
+  it("requires the reference that matches the source type", () => {
+    expect(mistakeCreateSchema.safeParse(base).success).toBe(true);
+    expect(mistakeCreateSchema.safeParse({ ...base, sourceType: "submission" }).success).toBe(false);
+    expect(
+      mistakeCreateSchema.safeParse({ ...base, sourceType: "submission", submissionId: "s1" }).success,
+    ).toBe(true);
+    expect(
+      mistakeCreateSchema.safeParse({ ...base, sourceType: "quiz_answer", quizSessionId: "q1" }).success,
+    ).toBe(false);
+    // A manual record can't smuggle in a source reference.
+    expect(mistakeCreateSchema.safeParse({ ...base, submissionId: "s1" }).success).toBe(false);
+    expect(
+      mistakeCreateSchema.safeParse({ ...base, sourceType: "review", reviewRequestId: "not-a-uuid" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown categories, including quiz-only scopes", () => {
+    expect(mistakeCreateSchema.safeParse({ ...base, primaryCategory: "mistake_review" }).success).toBe(false);
+    expect(mistakeCreateSchema.safeParse({ ...base, primaryCategory: "algorithm_selection" }).success).toBe(false);
+  });
+
+  it("bounds free text and tags", () => {
+    expect(mistakeCreateSchema.safeParse({ ...base, summary: "s".repeat(2_000) }).success).toBe(true);
+    expect(mistakeCreateSchema.safeParse({ ...base, summary: "s".repeat(2_001) }).success).toBe(false);
+    expect(mistakeCreateSchema.safeParse({ ...base, nextStep: "n".repeat(1_001) }).success).toBe(false);
+    expect(mistakeCreateSchema.safeParse({ ...base, secondaryTags: Array(9).fill("tag") }).success).toBe(false);
+    expect(mistakeCreateSchema.safeParse({ ...base, secondaryTags: ["t".repeat(33)] }).success).toBe(false);
+  });
+
+  it("rejects empty or unknown patches and AI-only status values", () => {
+    expect(mistakePatchSchema.safeParse({}).success).toBe(false);
+    expect(mistakePatchSchema.safeParse({ resolved: true }).success).toBe(true);
+    expect(mistakePatchSchema.safeParse({ summary: null }).success).toBe(true);
+    expect(mistakePatchSchema.safeParse({ status: "candidate" }).success).toBe(false);
+    expect(mistakePatchSchema.safeParse({ userId: "user-2" }).success).toBe(false);
+  });
+
+  it("parses list queries from a query string with defaults and bounds", () => {
+    expect(mistakeListQuerySchema.parse({})).toEqual({ status: "confirmed", limit: 20 });
+    expect(mistakeListQuerySchema.parse({ limit: "50", category: "edge_case" })).toMatchObject({ limit: 50 });
+    expect(mistakeListQuerySchema.safeParse({ limit: "51" }).success).toBe(false);
   });
 });

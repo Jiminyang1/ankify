@@ -25,6 +25,19 @@ export const quizItemScopeEnum = z.enum([
   "implementation",
   "mistake_review",
 ]);
+/** Mistake-profile taxonomy. Mirrors `SKILL_DIMENSIONS` in @ankify/core; the
+ *  first five IDs are the quiz item scopes. */
+export const skillDimensionEnum = z.enum([
+  "approach",
+  "invariant",
+  "edge_case",
+  "complexity",
+  "implementation",
+  "conceptual",
+  "other",
+]);
+export const mistakeSourceTypeEnum = z.enum(["manual", "submission", "quiz_answer", "review"]);
+export const mistakeStatusEnum = z.enum(["candidate", "confirmed", "dismissed"]);
 export const aiJobStatusEnum = z.enum([
   "queued",
   "running",
@@ -302,6 +315,77 @@ export const quizAnswerRequestSchema = z.object({
 export const quizSaveCardRequestSchema = z.object({
   itemId: z.string().min(1),
 });
+
+export type SkillDimensionId = z.infer<typeof skillDimensionEnum>;
+export type MistakeSourceType = z.infer<typeof mistakeSourceTypeEnum>;
+export type MistakeStatus = z.infer<typeof mistakeStatusEnum>;
+
+const mistakeSecondaryTagsSchema = z.array(z.string().trim().min(1).max(32)).max(8);
+const mistakeSummarySchema = z.string().trim().max(2_000);
+const mistakeNextStepSchema = z.string().trim().max(1_000);
+
+const mistakeCreateFields = {
+  requestId: z.string().uuid(),
+  problemId: z.string().min(1).max(64),
+  primaryCategory: skillDimensionEnum,
+  secondaryTags: mistakeSecondaryTagsSchema.default([]),
+  summary: mistakeSummarySchema.optional(),
+  nextStep: mistakeNextStepSchema.optional(),
+};
+
+/** POST /api/mistakes — a user-confirmed mistake, optionally linked to the
+ *  submission, quiz answer, or review rating it came from. */
+export const mistakeCreateSchema = z.discriminatedUnion("sourceType", [
+  z.object({ sourceType: z.literal("manual"), ...mistakeCreateFields }).strict(),
+  z
+    .object({
+      sourceType: z.literal("submission"),
+      submissionId: z.string().min(1).max(64),
+      ...mistakeCreateFields,
+    })
+    .strict(),
+  z
+    .object({
+      sourceType: z.literal("quiz_answer"),
+      quizSessionId: z.string().min(1).max(64),
+      quizItemId: z.string().min(1).max(64),
+      ...mistakeCreateFields,
+    })
+    .strict(),
+  z
+    .object({
+      sourceType: z.literal("review"),
+      // The `requestId` of the POST /api/review/rate call that recorded the rating.
+      reviewRequestId: z.string().uuid(),
+      ...mistakeCreateFields,
+    })
+    .strict(),
+]);
+export type MistakeCreateInput = z.infer<typeof mistakeCreateSchema>;
+
+/** PATCH /api/mistakes/:id — edit, resolve, or confirm/dismiss a record. */
+export const mistakePatchSchema = z
+  .object({
+    primaryCategory: skillDimensionEnum.optional(),
+    secondaryTags: mistakeSecondaryTagsSchema.optional(),
+    summary: mistakeSummarySchema.nullable().optional(),
+    nextStep: mistakeNextStepSchema.nullable().optional(),
+    resolved: z.boolean().optional(),
+    status: z.enum(["confirmed", "dismissed"]).optional(),
+  })
+  .strict()
+  .refine((o) => Object.values(o).some((value) => value !== undefined), { message: "empty_patch" });
+export type MistakePatchInput = z.infer<typeof mistakePatchSchema>;
+
+/** GET /api/mistakes query string. */
+export const mistakeListQuerySchema = z.object({
+  problemId: z.string().min(1).max(64).optional(),
+  category: skillDimensionEnum.optional(),
+  status: mistakeStatusEnum.default("confirmed"),
+  cursor: z.string().min(1).max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type MistakeListQuery = z.infer<typeof mistakeListQuerySchema>;
 
 export const creditCheckoutRequestSchema = z
   .object({

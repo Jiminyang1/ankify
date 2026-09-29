@@ -19,6 +19,7 @@ type AccountExportRecord = {
     | "card"
     | "quiz_session"
     | "review_event"
+    | "mistake_record"
     | "agent_session"
     | "agent_run"
     | "agent_message"
@@ -107,6 +108,19 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.reviewEvents.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("mistake_record", (afterId) =>
+    db
+      .select()
+      .from(schema.mistakeRecords)
+      .where(
+        and(
+          eq(schema.mistakeRecords.userId, user.id),
+          afterId ? gt(schema.mistakeRecords.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.mistakeRecords.id))
       .limit(PAGE_SIZE),
   );
   yield* iteratePages("agent_session", (afterId) =>

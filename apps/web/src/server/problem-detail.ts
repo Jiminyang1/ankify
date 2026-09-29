@@ -1,5 +1,6 @@
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { listProblemMistakes } from "./mistakes";
 import {
   publicCardColumns,
   publicSubmissionColumns,
@@ -15,7 +16,7 @@ export async function loadProblemDetail(userId: string, problemId: string) {
     .limit(1);
   if (!problem) return null;
 
-  const [submissions, cards, reviewHistory] = await Promise.all([
+  const [submissions, cards, reviewHistory, mistakes] = await Promise.all([
     db
       .select(publicSubmissionColumns)
       .from(schema.submissions)
@@ -47,6 +48,7 @@ export async function loadProblemDetail(userId: string, problemId: string) {
       )
       .orderBy(desc(schema.reviewEvents.occurredAt))
       .limit(20),
+    listProblemMistakes(userId, problemId),
   ]);
 
   return {
@@ -54,5 +56,6 @@ export async function loadProblemDetail(userId: string, problemId: string) {
     submissions: submissions.map(toSubmissionDto),
     cards,
     reviewHistory,
+    mistakes,
   };
 }

@@ -10,10 +10,12 @@ import {
 import type { CardDto, QuizAnswer, QuizItem, QuizSessionDto } from "@ankify/contracts";
 import {
   formatQuizMarkdown,
+  quizScopeToDimension,
   type FsrsRating,
 } from "@ankify/core";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LogMistakeButton } from "@/components/mistakes/log-mistake-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { IndeterminateProgress } from "@/components/ui/indeterminate-progress";
 import { Markdown } from "@/components/ui/markdown";
@@ -473,6 +475,8 @@ export function QuizPanel({
                     saving={savingItemId === item.id}
                     onSave={() => void saveAsCard(item)}
                     labels={t}
+                    problemId={problemId}
+                    sessionId={session.id}
                   />
                 );
               })}
@@ -632,14 +636,25 @@ export function QuizPanel({
               </div>
               <Markdown className="px-3 py-2.5 text-sm leading-relaxed">{formatQuizMarkdown(item.explanation)}</Markdown>
               <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
-                <Button
-                  size="sm"
-                  disabled={savedItemIds.has(item.id) || savingItemId === item.id}
-                  onClick={() => void saveAsCard(item)}
-                  className="text-muted"
-                >
-                  {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={savedItemIds.has(item.id) || savingItemId === item.id}
+                    onClick={() => void saveAsCard(item)}
+                    className="text-muted"
+                  >
+                    {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
+                  </Button>
+                  {!activeFeedback.answer.correct && (
+                    <LogMistakeButton
+                      key={item.id}
+                      className="text-muted"
+                      problemId={problemId}
+                      source={{ sourceType: "quiz_answer", quizSessionId: session.id, quizItemId: item.id }}
+                      initialCategory={quizScopeToDimension(item.scope)}
+                    />
+                  )}
+                </div>
                 <Button variant="primary" size="sm" onClick={goNext}>
                   {session.status === "completed" ? t.quiz.results : t.common.next}
                 </Button>
@@ -704,6 +719,8 @@ function QuizResultItem({
   saving,
   onSave,
   labels,
+  problemId,
+  sessionId,
 }: {
   index: number;
   item: QuizItem;
@@ -712,6 +729,8 @@ function QuizResultItem({
   saving: boolean;
   onSave: () => void;
   labels: ReviewLabels;
+  problemId: string;
+  sessionId: string;
 }) {
   const correctChoice = item.choices[item.answerIndex] ?? "";
   const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
@@ -738,9 +757,18 @@ function QuizResultItem({
         {t.quiz.correctAnswer} <Markdown className="inline text-fg [&_code]:text-[0.95em] [&_p]:inline">{formatQuizMarkdown(correctChoice)}</Markdown>
       </div>
       <Markdown className="mt-3 text-sm">{formatQuizMarkdown(item.explanation)}</Markdown>
-      <Button size="sm" className="mt-3" disabled={saved || saving} onClick={onSave}>
-        {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
-      </Button>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={saved || saving} onClick={onSave}>
+          {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
+        </Button>
+        {answer && !answer.correct && (
+          <LogMistakeButton
+            problemId={problemId}
+            source={{ sourceType: "quiz_answer", quizSessionId: sessionId, quizItemId: item.id }}
+            initialCategory={quizScopeToDimension(item.scope)}
+          />
+        )}
+      </div>
     </Surface>
   );
 }
