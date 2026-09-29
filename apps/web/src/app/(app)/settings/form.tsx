@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AiProvider, AiReasoningMode } from "@ankify/core";
 import { getTranslations, type Language } from "@/lib/i18n";
@@ -676,6 +676,7 @@ export function AccountDataForm({
   const [paidCredits, setPaidCredits] = useState(paidBalance);
   const [forfeitAcknowledged, setForfeitAcknowledged] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState("");
+  const confirmationId = useId();
   const [deleting, setDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -796,12 +797,16 @@ export function AccountDataForm({
               </label>
             </div>
           )}
+          {/* The instruction stays visible while typing; a placeholder would vanish. */}
+          <label htmlFor={confirmationId} className="block text-sm text-muted">
+            {t.settings.typeEmailToDelete(email)}
+          </label>
           <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
             <Input
+              id={confirmationId}
               type="email"
               value={confirmationEmail}
               onChange={(event) => setConfirmationEmail(event.target.value)}
-              placeholder={t.settings.typeEmailToDelete(email)}
               autoComplete="off"
               className="min-w-0 flex-1"
             />
