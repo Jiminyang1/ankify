@@ -95,7 +95,7 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
       inputEnvelope: encryptJobInput(input),
       provider: ai.provider,
       model: ai.model,
-      reasoningMode: ai.reasoningMode,
+      reasoningLevel: ai.reasoningLevel,
       generationLanguage: generation.language,
       expectedQuizSessionId: precondition.expectedQuizSessionId,
       resultQuizSessionId: precondition.existingQuizSessionId,
@@ -179,7 +179,7 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
       inputEnvelope: encryptJobInput(input),
       provider: ai.provider,
       model: ai.model,
-      reasoningMode: ai.reasoningMode,
+      reasoningLevel: ai.reasoningLevel,
       generationLanguage: generation.language,
       expectedCardId: input.action === "card_followup" ? input.cardId : null,
       expectedCardVersion: input.action === "card_followup" ? input.expectedCardVersion : null,
@@ -541,7 +541,7 @@ export async function assertJobConfiguration(job: AiJob) {
   if (
     ai.provider !== job.provider ||
     ai.model !== job.model ||
-    ai.reasoningMode !== job.reasoningMode ||
+    ai.reasoningLevel !== job.reasoningLevel ||
     generation.language !== job.generationLanguage
   ) {
     throw new Error("ai_configuration_changed");

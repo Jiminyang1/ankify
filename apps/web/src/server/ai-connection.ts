@@ -66,7 +66,7 @@ export async function testAiConnection(
     const llm = buildModel({ provider, model, apiKey });
     // The probe only checks reachability, so it uses the lightest reasoning the
     // model accepts. No sampling params: newer models reject them.
-    const probeOptions = aiCallOptions({ provider, model, reasoningMode: "fast" }, "lightest");
+    const probeOptions = aiCallOptions({ provider, model, reasoningLevel: "default" }, "lightest");
     await generateText({
       model: llm,
       output: Output.object({ schema: probeSchema }),
@@ -96,7 +96,7 @@ export async function testAiConnection(
       await setAiSettings(userId, {
         provider,
         model,
-        reasoningMode: provider === stored.provider ? stored.reasoningMode : "thinking",
+        reasoningLevel: provider === stored.provider ? stored.reasoningLevel : undefined,
         apiKey: input.apiKey,
       });
       await markAiVerified(userId);

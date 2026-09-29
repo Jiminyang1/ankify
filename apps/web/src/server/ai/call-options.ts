@@ -1,11 +1,12 @@
 import type { AiRuntimeSettings } from "../settings";
+import { normalizeReasoningLevel } from "@ankify/core";
 import { getProvider } from "./providers/registry";
 import type { ProviderOptions } from "./providers/types";
 
 /**
  * How a call should reason:
- * - "user": the user's setting, which means the provider default (thinking on)
- *   unless they chose Fast on a provider that offers that switch.
+ * - "user": the user's reasoning level for this model ("default" = provider
+ *   default, thinking on).
  * - "lightest": the cheapest setting the model accepts, for probes and summaries.
  */
 export type CallReasoning = "user" | "lightest";
@@ -16,14 +17,13 @@ export type CallReasoning = "user" | "lightest";
  * No sampling parameters are sent: thinking models ignore or reject them.
  */
 export function aiCallOptions(
-  settings: Pick<AiRuntimeSettings, "provider" | "model" | "reasoningMode">,
+  settings: Pick<AiRuntimeSettings, "provider" | "model" | "reasoningLevel">,
   reasoning: CallReasoning,
 ): { providerOptions?: ProviderOptions } {
-  const provider = getProvider(settings.provider);
   const request =
-    reasoning === "lightest" || (provider.legacyFastModeToggle && settings.reasoningMode === "fast")
+    reasoning === "lightest"
       ? "lightest"
-      : "default";
-  const providerOptions = provider.reasoningOptions(settings.model, request);
+      : normalizeReasoningLevel(settings.provider, settings.model, settings.reasoningLevel);
+  const providerOptions = getProvider(settings.provider).reasoningOptions(settings.model, request);
   return providerOptions ? { providerOptions } : {};
 }

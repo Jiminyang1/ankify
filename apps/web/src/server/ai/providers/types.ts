@@ -15,22 +15,21 @@ export type ModelEntry = { id: string; label?: string };
  * - "lightest": the cheapest, fastest setting this model accepts. Some models
  *   can turn thinking off; others (e.g. Claude Opus 5.5) only go down to a low
  *   effort. Used for connection probes and summaries.
+ * - any other string: a level the user picked from the catalog for this model
+ *   ("off" or a native effort value), already validated by the caller.
  */
-export type ReasoningRequest = "default" | "lightest";
+export type ReasoningRequest = "default" | "lightest" | (string & {});
 
 export interface ProviderAdapter {
   id: ProviderId;
   label: string;
-  /** Current model ids offered in the Settings UI, cheapest sensible default first. */
-  presets: readonly string[];
   /** Retired model ids and their replacements. */
   aliases?: Readonly<Record<string, string>>;
   /**
-   * Whether Settings shows the legacy Fast / Thinking switch for this provider.
-   * "Fast" maps to the "lightest" reasoning request. Superseded by per-model
-   * native reasoning levels.
+   * Reasoning level that a stored legacy "fast" mode maps to. Only DeepSeek
+   * ever showed the Fast / Thinking switch; elsewhere "fast" meant nothing.
    */
-  legacyFastModeToggle: boolean;
+  legacyFastLevel?: string;
   createModel(args: { apiKey: string; model: string }): LanguageModel;
   /** Provider-native options for one call. Returns undefined when nothing needs sending. */
   reasoningOptions(model: string, request: ReasoningRequest): ProviderOptions | undefined;
