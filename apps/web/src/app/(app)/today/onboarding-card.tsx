@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { AI_PROVIDERS, getAiProviderInfo, type AiProvider } from "@ankify/core";
 import type { OnboardingProgressDto } from "@ankify/contracts";
+import type { SolvedSummary } from "@/server/profile";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -63,6 +64,8 @@ type Copy = {
   captureDone: string;
   openSample: string;
   captureLocked: string;
+  syncedBody: (solved: number, planSolved: number, planTotal: number, plan: string) => string;
+  openRoadmap: string;
   reviewTitle: string;
   reviewBody: string;
   reviewDone: string;
@@ -112,6 +115,9 @@ const COPY: Record<"en" | "zh", Copy> = {
     captureDone: "First problem captured",
     openSample: "Open Two Sum",
     captureLocked: "Connect the extension first.",
+    syncedBody: (solved, planSolved, planTotal, plan) =>
+      `The extension found ${solved} problems you've solved on LeetCode, ${planSolved} of ${planTotal} in ${plan}. Pick a pattern on your roadmap and add its problems to review in one click.`,
+    openRoadmap: "Open your roadmap",
     reviewTitle: "Complete your first review",
     reviewBody: "Recall the approach, inspect your context, then rate it for FSRS scheduling.",
     reviewDone: "First review completed",
@@ -158,6 +164,9 @@ const COPY: Record<"en" | "zh", Copy> = {
     captureDone: "已捕获第一道题",
     openSample: "打开 Two Sum",
     captureLocked: "请先连接扩展。",
+    syncedBody: (solved, planSolved, planTotal, plan) =>
+      `插件找到了你在 LeetCode 上做过的 ${solved} 道题，其中 ${planSolved}/${planTotal} 道在 ${plan} 里。在路线图上选一个题型，一键把它做过的题加入复习。`,
+    openRoadmap: "打开路线图",
     reviewTitle: "完成第一次复习",
     reviewBody: "回忆解法、查看上下文，然后评分并交给 FSRS 安排下次复习。",
     reviewDone: "已完成第一次复习",
@@ -172,6 +181,7 @@ export function OnboardingCard({
   starter,
   installUrl,
   language,
+  solvedSummary,
 }: {
   initialProgress: OnboardingProgressDto;
   initialAi: {
@@ -182,6 +192,8 @@ export function OnboardingCard({
   starter: { enabled: boolean; remaining: number; limit: number };
   installUrl: string;
   language: "en" | "zh";
+  /** Set once the extension has synced the user's LeetCode solved list. */
+  solvedSummary: SolvedSummary | null;
 }) {
   const t = COPY[language];
   const [progress, setProgress] = useState(initialProgress);
@@ -432,10 +444,20 @@ export function OnboardingCard({
           icon={BookOpenCheck}
           done={Boolean(progress.firstCaptureAt)}
           title={t.captureTitle}
-          description={progress.firstCaptureAt ? t.captureDone : t.captureBody}
+          description={
+            progress.firstCaptureAt
+              ? t.captureDone
+              : solvedSummary
+                ? t.syncedBody(solvedSummary.solved, solvedSummary.planSolved, solvedSummary.planTotal, solvedSummary.planName)
+                : t.captureBody
+          }
         >
           {!progress.firstCaptureAt && (
-            progress.extensionConnectedAt ? (
+            solvedSummary ? (
+              <Link href="/profile" className={buttonClasses({ variant: "primary", size: "sm" })}>
+                {t.openRoadmap}
+              </Link>
+            ) : progress.extensionConnectedAt ? (
               <a
                 href="https://leetcode.com/problems/two-sum/"
                 target="_blank"

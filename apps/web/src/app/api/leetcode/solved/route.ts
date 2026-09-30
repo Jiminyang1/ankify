@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { leetcodeSolvedSyncSchema } from "@ankify/contracts";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import { saveLeetcodeSolved } from "@/server/leetcode-account";
+import { markExtensionConnected } from "@/server/onboarding";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -28,5 +29,9 @@ export async function POST(req: Request) {
 
   const result = await saveLeetcodeSolved(user.id, parsed.data.username, parsed.data.slugs);
   if ("error" in result) return NextResponse.json(result, { status: 400 });
+  // Only the extension posts here, so this also proves it's connected.
+  await markExtensionConnected(user.id).catch((error) => {
+    console.warn("[onboarding] failed to record extension connection", error);
+  });
   return NextResponse.json(result);
 }
