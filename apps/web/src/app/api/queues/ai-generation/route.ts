@@ -11,7 +11,7 @@ class RetryAiJobDelivery extends Error {
   }
 }
 
-export const POST = handleCallback<AiGenerationMessage>(
+const callback = handleCallback<AiGenerationMessage>(
   async (message, metadata) => {
     if (!message || typeof message.jobId !== "string" || !message.jobId) return;
     const result = await processAiJob(
@@ -30,3 +30,9 @@ export const POST = handleCallback<AiGenerationMessage>(
     },
   },
 );
+
+// The SDK accepts both Request and { request: Request }. App Router handlers
+// must expose the narrower Request signature to Next's generated route types.
+export async function POST(req: Request) {
+  return callback(req);
+}
