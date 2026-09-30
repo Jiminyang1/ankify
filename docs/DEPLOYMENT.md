@@ -147,9 +147,13 @@ permissions are `storage`, `tabs`, and `alarms` (new: wakes the worker to retry
 queued sync and refresh the badge; Chrome shows no install warning for it);
 `sidePanel` is gone. Order:
 
-1. Apply migration `0021_m1_practice_sessions` (additive) and deploy the web
-   app. Both old (0.2.x) and new extensions work against it: capture, the
-   legacy queue, and legacy ratings keep their shapes.
+1. Apply migrations `0021_m1_practice_sessions` through `0025_m3_suggestions`
+   (all additive; see the sections below) and deploy the web app. Both old
+   (0.2.x) and new extensions work against it: capture, the legacy queue, and
+   legacy ratings keep their shapes. The 0.3.0 panel and popup also call the
+   session-analysis and suggestion routes, so this web deploy must precede
+   the extension; either feature can then be switched off with
+   `ANKIFY_DISABLED_WORKFLOWS`.
 2. Publish 0.3.0 to the Chrome Web Store.
 3. Cutover: once old extensions no longer matter, set
    `ANKIFY_DISABLED_WORKFLOWS=legacy_review` in Vercel and redeploy. Legacy

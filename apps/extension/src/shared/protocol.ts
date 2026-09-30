@@ -26,7 +26,7 @@ const sessionControl = z.discriminatedUnion("command", [
   z.object({ command: z.literal("resume") }).strict(),
   /** "Continue here" from another tab. */
   z.object({ command: z.literal("takeover") }).strict(),
-  z.object({ command: z.literal("set_baseline"), baseline: sessionBaselineSchema }).strict(),
+  z.object({ command: z.literal("set_baseline"), baseline: sessionBaselineSchema, problem: practiceProblemSchema.optional() }).strict(),
   z.object({ command: z.literal("finish"), result: z.enum(["solved", "unsuccessful"]), occurredAt: z.string().datetime() }).strict(),
   z.object({ command: z.literal("abandon"), occurredAt: z.string().datetime() }).strict(),
 ]);
@@ -118,6 +118,12 @@ export const pageMessageSchema = z.discriminatedUnion("type", [
   /** Notes of the problem in the active tab, when it is in the deck. */
   z.object({ type: z.literal("notes_load"), slug: leetcodeSlugSchema }).strict(),
   z.object({ type: z.literal("notes_save"), problemId: sessionIdSchema, notes: z.string().max(50_000) }).strict(),
+  /** Today's new-problem suggestions (the day's one is requested when missing). */
+  z.object({ type: z.literal("suggestions") }).strict(),
+  z.object({ type: z.literal("suggestion_extra") }).strict(),
+  z.object({ type: z.literal("suggestion_action"), suggestionId: sessionIdSchema, action: z.enum(["skip", "already_attempted"]) }).strict(),
+  /** Start practice on a suggestion, then open (or focus) its problem page. */
+  z.object({ type: z.literal("suggestion_start"), suggestionId: sessionIdSchema, slug: leetcodeSlugSchema }).strict(),
 ]);
 export type PageMessage = z.infer<typeof pageMessageSchema>;
 

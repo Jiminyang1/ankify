@@ -9,6 +9,7 @@ import { createIdbOutboxStore, openSyncDatabase } from "./idb-store";
 import { createOutbox, type DeliveryOutcome, type OutboxOperation } from "./outbox";
 import { createRouter } from "./router";
 import { createSessionController } from "./sessions";
+import { createSuggestionsClient } from "./suggestions";
 
 /**
  * MV3 service worker. It may stop at any time, so everything here is rebuilt
@@ -72,6 +73,7 @@ const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase
 const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
 const router = createRouter({
   analysis: createAnalysisClient({ api, newId }),
+  suggestions: createSuggestionsClient({ api, newId }),
   controller,
   account,
   api,

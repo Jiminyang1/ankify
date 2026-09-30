@@ -4,6 +4,7 @@ import type { AccountStateApi } from "./account";
 import type { AnalysisClient } from "./analysis";
 import type { ApiClient } from "./api";
 import type { SessionController } from "./sessions";
+import type { SuggestionsClient } from "./suggestions";
 
 export type TabsApi = {
   /** An open tab already showing the problem, if any. */
@@ -23,7 +24,8 @@ export function createRouter(deps: {
   account: AccountStateApi;
   api: ApiClient;
   tabs: TabsApi;
-  tokens: { bind(tabId: number, token: string): Promise<void> };
+  suggestions: SuggestionsClient;
+  tokens: { bind(tabId: number, token: string): Promise<void>; tokenFor(tabId: number): Promise<string> };
   newId: () => string;
   settings: () => Promise<{ language: "en" | "zh" }>;
   /** Called with every overview the popup loads (the toolbar badge shows its due count). */
@@ -125,6 +127,28 @@ export function createRouter(deps: {
       case "open_problem":
         await openProblem(message.slug);
         return { ok: true };
+      case "suggestions":
+        return deps.suggestions.today();
+      case "suggestion_extra":
+        return deps.suggestions.extra();
+      case "suggestion_action":
+        return deps.suggestions.act(message.suggestionId, message.action);
+      case "suggestion_start": {
+        // Like a due review: an open tab of the problem controls the session
+        // with its own token; a new tab is bound to a token minted now.
+        const existing = await tabs.findProblemTab(message.slug);
+        const ownerToken = existing != null ? await deps.tokens.tokenFor(existing) : deps.newId();
+        const result = await deps.suggestions.start(message.suggestionId, ownerToken);
+        if (!result.ok) return result;
+        if (existing != null) {
+          await tabs.focus(existing);
+          return result;
+        }
+        const tabId = await tabs.open(message.slug);
+        await deps.tokens.bind(tabId, ownerToken);
+        await tabs.focus(tabId);
+        return result;
+      }
       case "session_control":
         // Only a tab controls an active session; the popup may end one no tab
         // holds. Resuming happens on the problem page.

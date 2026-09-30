@@ -710,3 +710,77 @@ history, and practice sessions started from suggestions stay.
 
 Until 5.4 replaces it, the popup shows its existing placeholder ("Daily
 suggestions will appear here") now that the workflow is advertised.
+
+## Checkpoint 5.4: suggestions in the extension
+
+Status: **PASS**. **Phase 5 gate: PASS with the recorded exceptions below.**
+No schema change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 481 tests in 76 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 19 tests (one new suggestions test) |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+Changes:
+
+- The popup's placeholder became today's suggestions.
+  - `background/suggestions.ts` lists them and asks for the day's suggestion
+    when today has none.
+  - Each suggestion shows its explanation and novelty label, with Start
+    practice, Skip, Already attempted, and Another suggestion.
+  - A started suggestion shows "In progress", then its outcome.
+  - Strings in English and Chinese.
+- `suggestion_start` works like opening a due review: an open tab of the
+  problem uses its own token; otherwise a token minted now is bound to the new
+  tab.
+- `set_baseline` optionally carries the page's LeetCode metadata. The page
+  sends it with the baseline of a session started elsewhere, and the server
+  refreshes the problem in the command transaction when the slug matches.
+  This fills in a problem created from a suggestion's stored metadata, and
+  records its similar questions as new candidates. The schedule is untouched.
+
+Tests:
+
+- The client asks for the day's suggestion only when missing, reports
+  exhaustion, and maps errors.
+- The page sends metadata with the baseline.
+- `set_baseline` refreshes metadata, ignores another slug, and leaves the
+  schedule untouched.
+- Timezone rollover of the daily suggestion.
+- Skip and already attempted change no problem row, FSRS field, review event,
+  or profile.
+- Browser: daily suggestion, skip with its replacement, another, already
+  attempted, then start practice from the popup (initial learning in the
+  opened tab), Accepted, Finish, and the outcome shown in the popup.
+
+Phase 5 acceptance:
+
+- One stable daily suggestion per local day, frozen across refreshes.
+- Distinct extras.
+- No known attempted target: problem rows, archived ones, deleted slugs,
+  LeetCode status reads, and already attempted are all excluded.
+- Truthful labels:
+  - explanations state only stored metadata;
+  - novelty is "Not checked against your LeetCode history" unless both
+    LeetCode lists were read to the end.
+
+Recorded exceptions:
+
+- **The cold-start catalog is empty** until `scripts/leetcode-catalog.js` is
+  run by the owner (5.1).
+- **No LeetCode history reads yet.** Per-candidate status checks and the
+  bounded problem-list sync are deferred until the live probe validates
+  `question.status` and `questionList` status filters. The extension cannot
+  query LeetCode outside a leetcode.com page without the `cookies`
+  permission, which the plan rules out. Until then every suggestion's novelty
+  is `unverified`, which the plan allows. `POST /api/attempt-history` and the
+  coverage model are ready for it.
+- If the page cannot read LeetCode when the baseline is set, a problem started
+  from a suggestion keeps the suggestion's metadata (title, difficulty,
+  topics) until a later capture.
+- The Phase 3 **live LeetCode validation is still pending.**
+
+Rollback: `ANKIFY_DISABLED_WORKFLOWS=suggestions` hides the popup section.
+`set_baseline` without `problem` behaves exactly as before.

@@ -178,7 +178,7 @@ describe("page session", () => {
     await h.page.refresh();
     await h.tick();
     expect(h.sent.find((message) => message.type === "session_control")).toMatchObject({
-      control: { command: "set_baseline", baseline: { state: "established", leetcodeSubmissionId: "990" } },
+      control: { command: "set_baseline", baseline: { state: "established", leetcodeSubmissionId: "990" }, problem: { leetcodeSlug: "two-sum", title: "Two Sum" } },
     });
   });
 

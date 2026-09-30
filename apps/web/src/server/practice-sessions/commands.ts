@@ -296,6 +296,12 @@ export async function runSessionCommand(
         if (!session.isOpen) return fail("invalid_transition", await dtoOf(session));
         if (ownershipFor(session, input.ownerToken, now) === "owned_elsewhere") return fail("not_owner", await dtoOf(session));
         if (session.baselineState !== "pending") return fail("baseline_already_set", await dtoOf(session));
+        // The page's fresh LeetCode metadata completes a problem created from
+        // stored metadata (a suggestion) and records its similar questions.
+        if (input.problem?.leetcodeSlug === problem.leetcodeSlug) {
+          const refreshed = await upsertLeetcodeProblem(tx, userId, input.problem, { enrollment: problem.enrollment, now });
+          if (refreshed.ok && refreshed.problem.id === problem.id) problem = refreshed.problem;
+        }
         next = await updateSession(tx, userId, session, baselinePatch(input.baseline), now);
         break;
       }

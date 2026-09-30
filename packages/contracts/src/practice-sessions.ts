@@ -92,7 +92,9 @@ export const practiceSessionCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resume"), ...ownedCommand }).strict(),
   /** "Continue here": move control to this tab. */
   z.object({ type: z.literal("takeover"), ...ownedCommand }).strict(),
-  z.object({ type: z.literal("set_baseline"), ...ownedCommand, baseline: sessionBaselineSchema }).strict(),
+  /** `problem`: metadata the page just read from LeetCode; refreshes a problem
+   *  whose session started elsewhere (the popup, a suggestion). */
+  z.object({ type: z.literal("set_baseline"), ...ownedCommand, baseline: sessionBaselineSchema, problem: practiceProblemSchema.optional() }).strict(),
   z
     .object({
       type: z.literal("finish"),

@@ -364,6 +364,24 @@ describe("session commands", () => {
     expect(await set("501")).toMatchObject({ ok: false, error: "baseline_already_set" });
   });
 
+  it("refreshes a problem from the page's metadata when the baseline is set, and ignores another problem's", async () => {
+    await insertProblem("p1", "one", at(-HOUR));
+    const { session } = await start({ target: { kind: "problem", problemId: "p1" }, mode: "due_review", baseline: undefined });
+    const pageMeta = { ...meta("one", 1), title: "One", descriptionMd: "<p>One</p>", similarSlugs: ["two"], similarQuestions: [{ slug: "two", title: "Two", difficulty: "Easy" as const, paidOnly: false }] };
+    const set = (problem: typeof pageMeta) =>
+      command(session.id, { type: "set_baseline", requestId: uuid(), ownerToken: TAB_A, baseline: { state: "none" }, problem }, at(5_000));
+    expect(await set({ ...pageMeta, leetcodeSlug: "other", title: "Other" })).toMatchObject({ ok: true });
+    expect(await problemRow("p1")).toMatchObject({ title: "one", descriptionMd: null, similarSlugs: [] });
+
+    const { session: next } = await (async () => {
+      await command(session.id, { type: "abandon", requestId: uuid(), ownerToken: TAB_A, occurredAt: at(6_000).toISOString() }, at(6_000));
+      return start({ target: { kind: "problem", problemId: "p1" }, mode: "due_review", baseline: undefined }, at(7_000));
+    })();
+    expect(await command(next.id, { type: "set_baseline", requestId: uuid(), ownerToken: TAB_A, baseline: { state: "none" }, problem: pageMeta }, at(8_000))).toMatchObject({ ok: true });
+    expect(await problemRow("p1")).toMatchObject({ title: "One", descriptionMd: "<p>One</p>", similarSlugs: ["two"], fsrsDue: at(-HOUR) });
+    expect(await getDb().select({ slug: schema.suggestionCandidates.slug }).from(schema.suggestionCandidates)).toEqual([{ slug: "two" }]);
+  });
+
   it("hides other users' sessions from every command and query", async () => {
     const { session } = await start();
     expect(await command(session.id, { type: "heartbeat", ownerToken: TAB_A, activeMs: 0, observedMs: 0 }, at(1_000), OTHER))

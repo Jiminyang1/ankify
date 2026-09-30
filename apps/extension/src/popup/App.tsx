@@ -6,8 +6,11 @@ import type {
   ReviewOverviewDto,
   ReviewOverviewProblemDto,
   ReviewOverviewSessionDto,
+  SuggestionDto,
 } from "@ankify/contracts";
 import type { OutboxStatus } from "../background/outbox";
+import type { SuggestionsView } from "../background/suggestions";
+import type { PageMessage } from "../shared/protocol";
 import { relativeDay, strings, type ExtensionStrings, type Language } from "../shared/i18n";
 import { getSettings, setSettings } from "../shared/storage";
 import { ask, type BridgeOutcome } from "./bridge";
@@ -306,9 +309,7 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
                 </ul>
               </Section>
             )}
-            {capabilities?.supportedWorkflows.includes("suggestions") && (
-              <section className="panel muted">{t.popup.suggestionSoon}</section>
-            )}
+            {capabilities?.supportedWorkflows.includes("suggestions") && <SuggestionsSection t={t} />}
             <NotesSection t={t} />
             <footer className="footer">
               <span className="muted small">
@@ -427,6 +428,160 @@ function RatingCard({
       </div>
       {item.session.rating.expiresAt && <p className="muted small">{t.rating.expires(relativeDay(item.session.rating.expiresAt, language))}</p>}
       {notice}
+    </div>
+  );
+}
+
+/** Today's new-problem suggestions: the day's one, extras, and replacements. */
+function SuggestionsSection({ t }: { t: ExtensionStrings }) {
+  const [view, setView] = useState<SuggestionsView | null>(null);
+  const [exhausted, setExhausted] = useState(false);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const result = await ask<BridgeOutcome<SuggestionsView>>({ type: "suggestions" });
+    if (result.ok && !result.queued) {
+      setView(result.response);
+      setExhausted(result.response.exhausted);
+    } else if (!result.ok) {
+      setError(result.error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function run<T>(key: string, message: PageMessage, after?: (response: T) => void) {
+    setBusyKey(key);
+    setError(null);
+    const result = await ask<BridgeOutcome<T>>(message);
+    setBusyKey(null);
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    if (!result.queued) after?.(result.response);
+    await load();
+    return true;
+  }
+
+  const visible = view?.suggestions.filter((suggestion) => suggestion.status === "pending" || suggestion.status === "started") ?? [];
+  return (
+    <Section title={t.suggestions.title}>
+      {error && (
+        <div className="notice" role="alert">
+          <p>{t.errors[error] ?? t.common.unknownError}</p>
+        </div>
+      )}
+      {!view && !error && <Spinner label={t.common.loading} />}
+      {view && visible.length === 0 && exhausted && <p className="muted empty">{t.suggestions.none}</p>}
+      {visible.map((suggestion) => (
+        <SuggestionCard
+          key={suggestion.id}
+          t={t}
+          suggestion={suggestion}
+          busyKey={busyKey}
+          onStart={() =>
+            void run(`start:${suggestion.id}`, { type: "suggestion_start", suggestionId: suggestion.id, slug: suggestion.target.slug }).then((started) => {
+              if (started) void closePopup();
+            })
+          }
+          onAction={(action) => void run(`${action}:${suggestion.id}`, { type: "suggestion_action", suggestionId: suggestion.id, action })}
+          onOpen={() => void ask({ type: "open_problem", slug: suggestion.target.slug }).then(closePopup)}
+        />
+      ))}
+      {view && visible.length > 0 && exhausted && <p className="muted small">{t.suggestions.none}</p>}
+      {view && (
+        <Button
+          size="sm"
+          variant="ghost"
+          pending={busyKey === "extra"}
+          disabled={busyKey != null}
+          onClick={() => void run<SuggestionDto | null>("extra", { type: "suggestion_extra" }, (suggestion) => setExhausted(suggestion === null))}
+        >
+          {t.suggestions.another}
+        </Button>
+      )}
+    </Section>
+  );
+}
+
+function SuggestionCard({
+  t,
+  suggestion,
+  busyKey,
+  onStart,
+  onAction,
+  onOpen,
+}: {
+  t: ExtensionStrings;
+  suggestion: SuggestionDto;
+  busyKey: string | null;
+  onStart: () => void;
+  onAction: (action: "skip" | "already_attempted") => void;
+  onOpen: () => void;
+}) {
+  const category = (id: string) => t.analysis.categories[id] ?? id;
+  const lines = suggestion.reasons.map((reason) => {
+    switch (reason.code) {
+      case "category_focus":
+        return t.suggestions.focus(category(reason.category), reason.contexts);
+      case "general_practice":
+        return t.suggestions.general[reason.why] ?? "";
+      case "similar_to":
+        return reason.category ? t.suggestions.similarToMistake(reason.title, category(reason.category)) : t.suggestions.similarTo(reason.title);
+      case "topic_match":
+        return t.suggestions.topic(reason.topic);
+    }
+  });
+  const { target } = suggestion;
+  const busy = busyKey != null;
+  return (
+    <div className="panel stack" role="group" aria-label={target.title}>
+      <div className="row-between">
+        <span className="row-title">{target.title}</span>
+        <span className={`difficulty difficulty-${target.difficulty.toLowerCase()}`}>{target.difficulty}</span>
+      </div>
+      <ul className="plain-list small">
+        {lines.map((line, index) => (
+          <li key={index} className={index === 0 ? undefined : "muted"}>
+            {line}
+          </li>
+        ))}
+      </ul>
+      {suggestion.status === "pending" ? (
+        <>
+          <p className="muted small">{t.suggestions.novelty[suggestion.novelty]}</p>
+          <div className="row">
+            <Button size="sm" variant="primary" pending={busyKey === `start:${suggestion.id}`} disabled={busy} onClick={onStart}>
+              {t.suggestions.start}
+            </Button>
+            <Button size="sm" variant="ghost" pending={busyKey === `skip:${suggestion.id}`} disabled={busy} onClick={() => onAction("skip")}>
+              {t.suggestions.skip}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              pending={busyKey === `already_attempted:${suggestion.id}`}
+              disabled={busy}
+              onClick={() => onAction("already_attempted")}
+            >
+              {t.suggestions.attempted}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className="row-between">
+          <span className="chip" data-tone={suggestion.outcome === "accepted" ? "success" : "warning"}>
+            {suggestion.outcome ? t.suggestions.outcome[suggestion.outcome] : t.suggestions.inProgress}
+          </span>
+          <Button size="sm" variant="secondary" onClick={onOpen}>
+            {t.suggestions.open}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

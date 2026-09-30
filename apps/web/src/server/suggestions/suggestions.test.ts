@@ -5,7 +5,9 @@ import { and, eq } from "drizzle-orm";
 import { iterateAccountExport } from "../account-export";
 import { createMistake } from "../mistakes";
 import { ingestSessionObservations, runSessionCommand, startPracticeSession } from "../practice-sessions/commands";
+import { loadMistakeProfile } from "../mistake-profile";
 import { upsertLeetcodeProblem } from "../problem-upsert";
+import { setReviewSettings } from "../settings";
 import { createTestDb } from "../test-db";
 import { actOnSuggestion, allocateSuggestion, listSuggestions, MAX_SUGGESTIONS_PER_DAY } from "./commands";
 import { mergeAttemptHistory } from "./history";
@@ -108,6 +110,20 @@ describe("allocating suggestions", () => {
     expect(await getDb().select().from(schema.suggestions)).toHaveLength(3);
   });
 
+  it("rolls the daily suggestion over at local midnight in the user's time zone", async () => {
+    await captured("two-sum", ["3sum", "4sum"]);
+    await setReviewSettings(USER, { timeZone: "America/Los_Angeles" });
+    // 06:00 UTC is still the previous evening in Los Angeles; 08:00 UTC is the next day.
+    const evening = new Date("2026-10-01T06:00:00.000Z");
+    const morning = new Date("2026-10-01T08:00:00.000Z");
+    const before = suggestionOf(await daily(evening));
+    expect(before.dateKey).toBe("2026-09-30");
+    expect(await daily(new Date("2026-10-01T06:59:00.000Z"))).toEqual({ suggestion: before, idempotentReplay: true });
+    const after = suggestionOf(await daily(morning));
+    expect(after).toMatchObject({ dateKey: "2026-10-01", ordinal: 0 });
+    expect(after.id).not.toBe(before.id);
+  });
+
   it("stops at the daily cap", async () => {
     await captured("two-sum", ["3sum"]);
     const { dateKey } = await listSuggestions(USER, T0);
@@ -191,6 +207,19 @@ describe("acting on suggestions", () => {
     expect(await actOnSuggestion(USER, first.id, { action: "already_attempted", requestId }, at(2 * MIN))).toEqual({ ok: false, error: "request_conflict" });
     expect(await actOnSuggestion(USER, first.id, { action: "skip", requestId: uuid() }, at(2 * MIN))).toMatchObject({ ok: false, error: "suggestion_already_handled", suggestion: { status: "skipped" } });
     expect((await listSuggestions(USER, at(3 * MIN))).suggestions.map((item) => item.status)).toEqual(["skipped", "pending"]);
+  });
+
+  it("changes no schedule and no weakness when suggestions are skipped or marked attempted", async () => {
+    const parent = await captured("two-sum", ["3sum", "4sum", "3sum-closest"]);
+    const problems = () => getDb().select().from(schema.problems).where(eq(schema.problems.userId, USER));
+    const [problemsBefore, profileBefore] = [await problems(), await loadMistakeProfile(USER, T0)];
+    const first = suggestionOf(await daily());
+    const skipped = await actOnSuggestion(USER, first.id, { action: "skip", requestId: uuid() }, T0);
+    if (!skipped.ok || !skipped.response.replacement) throw new Error("expected a replacement");
+    await actOnSuggestion(USER, skipped.response.replacement.id, { action: "already_attempted", requestId: uuid() }, T0);
+    expect(await problems()).toEqual(problemsBefore);
+    expect({ ...(await loadMistakeProfile(USER, T0)), generatedAt: null }).toEqual({ ...profileBefore, generatedAt: null });
+    expect(await getDb().select().from(schema.reviewEvents).where(eq(schema.reviewEvents.problemId, parent.id))).toHaveLength(1);
   });
 
   it("excludes a problem marked already attempted for good", async () => {

@@ -248,8 +248,10 @@ export function createPageSession(deps: PageSessionDeps) {
     const session = currentSession();
     if (session?.capture.baselineState === "pending" && !current.baselineRequested) {
       current.baselineRequested = true;
-      const baseline = await establishBaseline();
-      const result = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_control", sessionId: current.sessionId, control: { command: "set_baseline", baseline } });
+      // A session started from the popup also gets the page's LeetCode metadata.
+      const [baseline, problem] = await Promise.all([establishBaseline(), deps.client.readProblem(deps.slug)]);
+      const control = { command: "set_baseline" as const, baseline, ...(problem.availability === "available" && problem.value ? { problem: problem.value } : {}) };
+      const result = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_control", sessionId: current.sessionId, control });
       if (result.ok && !result.queued) ready({ session: result.response.session });
     }
     try {

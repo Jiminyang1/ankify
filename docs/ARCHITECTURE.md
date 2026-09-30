@@ -369,10 +369,20 @@ Three contexts, each with one job:
   `chrome.alarms` wake-up. The toolbar badge shows due reviews plus pending
   ratings.
 - **Popup** (`src/popup/`): today's view from `GET /api/review/overview` (open
-  sessions, pending ratings, due and upcoming problems), notes for the problem
-  in the active tab, and settings (language, theme, sync status). Opening a
-  due review starts its session before navigating and binds the session's
-  token to the new tab.
+  sessions, pending ratings, due and upcoming problems), today's new-problem
+  suggestions, notes for the problem in the active tab, and settings
+  (language, theme, sync status).
+  - Suggestions (`background/suggestions.ts`):
+    - it asks for the day's suggestion when today has none;
+    - its actions are Start practice, Skip, Already attempted, and Another
+      suggestion;
+    - each shows its explanation and its novelty label.
+  - Opening a due review, or starting a suggestion, starts the session before
+    navigating and binds the session's token to the new tab. An open tab of
+    the problem uses its own token.
+  - When that tab sets the session's baseline, it also sends the LeetCode
+    metadata it just read. This completes a problem created from stored
+    metadata (description, topics, similar questions).
 
 The API origin is fixed at build time (`ANKIFY_EXTENSION_API_ORIGIN`); the
 extension reuses the web session cookie, and production CORS allows only
