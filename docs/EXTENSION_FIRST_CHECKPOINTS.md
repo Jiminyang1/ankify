@@ -821,3 +821,38 @@ Browser tests:
 The local `next dev` server once took over ten minutes to compile
 `/settings` after an edit (seen as one hung run). The same test passed in
 3 to 5 s on rerun and in the gate.
+
+## Checkpoint 6A.2: suggestions on the web
+
+Status: **PASS**. No schema change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 482 tests in 76 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 22 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+- `/suggestions` (new nav item) shows today's suggestions: the same persisted
+  items as the popup, with the same explanations and novelty labels.
+  - The day's suggestion is allocated on the page's first view (idempotent
+    per local day).
+  - The page offers Open on LeetCode, Skip, Already attempted, and Another
+    suggestion.
+  - Starting practice happens from the extension panel on the problem page.
+  - Loading skeleton; English and Chinese strings.
+- Any new practice session on a problem with a pending suggestion marks it
+  started and links the session, in the start's transaction. So a suggestion
+  opened from the web and started on the problem page is associated like one
+  started from the popup. The popup's start now tolerates the row being
+  linked already.
+
+Tests:
+
+- DB: a session started from the problem page links the pending suggestion,
+  which can then no longer be skipped.
+- Browser:
+  - the page adds another suggestion;
+  - it links to the target on LeetCode;
+  - skip and already attempted act on the same items the API and popup see;
+  - the page in Chinese.

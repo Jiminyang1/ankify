@@ -305,6 +305,10 @@ or explains them.
       (`startSessionInTransaction()`). A problem new to Ankify starts initial
       learning; one already in the deck is started by id, so its own metadata
       is never overwritten.
+  - Any new practice session on a problem with a pending suggestion (from the
+    popup, the problem page, or after opening it from `/suggestions`) marks
+    that suggestion started and links the session, in the start's
+    transaction.
   - A started suggestion reports its session's outcome on read.
   - `GET /api/suggestions` lists today's suggestions.
   - `POST /api/attempt-history` merges LeetCode status reads, with their
@@ -394,7 +398,8 @@ extension reuses the web session cookie, and production CORS allows only
 `/` public landing (signed-in users go to `/today`), `/today` due queue and
 onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
 Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
-`/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/analysis` FSRS dashboard,
+`/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/suggestions` (today's
+new-problem suggestions, the same items as the popup), `/analysis` FSRS dashboard,
 `/settings` (AI provider, AI credits, language/region, review schedule and
 first-review delay, session-analysis automation, account export/delete), plus `/privacy` and `/terms`.
 

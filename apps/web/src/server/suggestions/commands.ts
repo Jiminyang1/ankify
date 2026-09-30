@@ -178,10 +178,11 @@ export async function actOnSuggestion(
         now,
       );
       if (!started.ok) return { ok: false, error: started.error, ...(started.message ? { message: started.message } : {}) };
+      // A new session already linked this suggestion; a resumed one did not.
       const [updated] = await tx
         .update(s)
         .set({ status: "started", practiceSessionId: started.response.session.id, actionRequestId: input.requestId, actedAt: now, updatedAt: now })
-        .where(and(eq(s.id, row.id), eq(s.userId, userId), eq(s.status, "pending")))
+        .where(and(eq(s.id, row.id), eq(s.userId, userId)))
         .returning();
       return {
         ok: true,

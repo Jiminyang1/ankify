@@ -245,6 +245,12 @@ export async function startSessionInTransaction(
       updatedAt: now,
     })
     .returning();
+  // Practicing a problem that is currently suggested acts on the suggestion,
+  // wherever the start came from (the popup, the problem page, the web).
+  await tx
+    .update(schema.suggestions)
+    .set({ status: "started", practiceSessionId: created!.id, actedAt: now, updatedAt: now })
+    .where(and(eq(schema.suggestions.userId, userId), eq(schema.suggestions.slug, problem.leetcodeSlug), eq(schema.suggestions.status, "pending")));
   const response = await respond(created!, { created: true, supersededSessionIds: live.map((session) => session.id) });
   await recordCommand(tx, { userId, sessionId: created!.id, requestId, command: "start", payloadDigest: digest, response }, now);
   return { ok: true, response };

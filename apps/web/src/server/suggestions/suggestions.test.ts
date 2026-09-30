@@ -260,6 +260,20 @@ describe("acting on suggestions", () => {
     expect(after).toMatchObject({ enrollment: "enrolled" });
   });
 
+  it("links a suggestion when its problem's practice starts elsewhere, such as the problem page", async () => {
+    await captured("two-sum", ["3sum"]);
+    const suggestion = suggestionOf(await daily());
+    const started = await startPracticeSession(USER, {
+      requestId: uuid(), ownerToken: TAB, mode: "practice", baseline: { state: "none" }, supersedePendingRating: false,
+      target: { kind: "leetcode", problem: meta("3sum") },
+    }, at(MIN));
+    if (!started.ok) throw new Error(started.error);
+    expect((await listSuggestions(USER, at(2 * MIN))).suggestions).toMatchObject([
+      { id: suggestion.id, status: "started", practiceSessionId: started.response.session.id, outcome: null },
+    ]);
+    expect(await actOnSuggestion(USER, suggestion.id, { action: "skip", requestId: uuid() }, at(2 * MIN))).toMatchObject({ ok: false, error: "suggestion_already_handled" });
+  });
+
   it("starts a problem already in the deck by id, keeping its own metadata", async () => {
     await captured("two-sum", ["3sum"]);
     const suggestion = suggestionOf(await daily());
