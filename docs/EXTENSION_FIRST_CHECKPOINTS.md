@@ -394,8 +394,8 @@ and unused by earlier code. The deterministic profile has no AI dependency.
 
 ## Checkpoint 4B: BYOK session analysis
 
-Status: **PASS with the recorded exceptions below**. **Phase 4 gate: PASS**
-(4A and 4B). Migration `0023_m2_session_analysis` (additive, not yet applied
+Status: **PASS with the recorded exceptions below**. Commit `2048edb`.
+**Phase 4 gate: PASS** (4A and 4B). Migration `0023_m2_session_analysis` (additive, not yet applied
 to Preview or Production; apply `0022` and `0023` before deploying this code,
 see DEPLOYMENT.md).
 
@@ -502,3 +502,79 @@ refused and queued ones fail before any provider call. To stop only automatic
 analysis, unset `ANKIFY_AUTOMATIC_ANALYSIS`. The schema changes are additive:
 analyses, candidates, and confirmed mistakes stay, and the deterministic
 profile has no AI dependency.
+
+## Checkpoint 5.1: suggestion metadata and attempt history
+
+Status: **PASS** (live LeetCode exception unchanged). Migration
+`0024_m3_attempt_history` (additive; not yet applied to Preview or
+Production).
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 453 tests in 70 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 18 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+Changes:
+
+- `suggestion_candidates`: per-user LeetCode metadata (title, difficulty, paid
+  flag, topics) with a source and a verification time.
+  - The extension's adapter now keeps a similar question's metadata only when
+    LeetCode reported every field.
+  - `upsertLeetcodeProblem()` records candidate metadata in the same
+    transaction, for both capture and session start.
+  - Newer reads refresh the metadata; the first source's topics are kept.
+  - Per-user cap: 5,000 candidates.
+- `attempt_history`: attempted problems by slug and source (`user_marked`,
+  `leetcode_status`, `deleted_problem`), independent of problem rows.
+  - Accepted never downgrades to attempted.
+  - `DELETE /api/problems/:id` records the slug in the same transaction before
+    deleting, so a deleted problem can never be suggested as new.
+- `attempt_history_coverage`: how far a LeetCode problem-list read got, per
+  scope and account. Only a scope read to its end counts as complete.
+- A shared `leetcodeSlugSchema` in contracts, used by the extension protocol,
+  and the attempt-history merge contract.
+- Cold-start catalog:
+  - `scripts/leetcode-catalog.js` generates it from LeetCode's problem list
+    (read-only, no per-user fields; rule: the first six free Easy and Medium
+    problems per topic).
+  - The loader validates it, and entries without a generation time are never
+    used. The committed catalog is empty.
+- The account export now includes session analyses, which 4B had missed, and
+  the attempt history and its coverage.
+
+Deviation from the plan: no backfill of captured problems into
+`attempt_history`. Problem rows, archived ones included, are read directly as
+attempted, and deletion writes the slug first. This leaves no stale copy and
+no second write path to keep consistent.
+
+Tests:
+
+- Contracts: similar-question and slug validation, history-merge refinements.
+- Adapter: similar-question parsing, where incomplete metadata is dropped but
+  the slug is kept.
+- DB:
+  - candidates recorded through a real session start;
+  - refresh, topic retention, and old-client payloads;
+  - the cap, while known candidates still refresh;
+  - history merge per source, including accepted monotonicity;
+  - coverage per scope and account;
+  - deletion through the route (accepted when solved, attempted from a failed
+    observation, owner-only, 404 for another user's problem);
+  - known attempted slugs, archived included;
+  - export scoping;
+  - cascade on user deletion;
+  - upgrading invents no history, candidates, or coverage.
+- Mutation checks: removing the deletion record, letting accepted downgrade,
+  and removing the cap each fail a test.
+
+Recorded exceptions:
+
+- **The cold-start catalog is empty** until the owner runs
+  `scripts/leetcode-catalog.js` in a leetcode.com tab (DEPLOYMENT.md).
+- The generator's `questionList` filter fields are unvalidated. They fail
+  loudly if LeetCode rejects them.
+
+Rollback: nothing reads the new tables for suggestions yet. Candidate
+recording and deletion history are additive writes.

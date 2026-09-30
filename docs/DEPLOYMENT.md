@@ -213,6 +213,17 @@ new jobs are then refused and queued jobs fail before any provider call. Either
 way, redeploy. Stored analyses, candidates, confirmed mistakes, and the
 deterministic profile stay.
 
+### Suggestion data (migration 0024)
+
+`0024_m3_attempt_history` is additive. It adds suggestion candidates, attempt
+history, and history coverage, and backfills nothing. Apply it with the
+others, before deploying code that records similar questions or deletes
+problems. The cold-start catalog ships empty. To fill it:
+
+1. Run `scripts/leetcode-catalog.js` in a leetcode.com tab.
+2. Save the output as `apps/web/src/server/suggestions/catalog.json`.
+3. Commit it after `catalog.test.ts` passes.
+
 ## Rollback boundaries
 
 - Application code can be rolled back independently through Vercel.

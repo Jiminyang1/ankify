@@ -163,6 +163,20 @@ export const captureSubmissionSchema = z.object({
 });
 export type CaptureSubmissionInput = z.infer<typeof captureSubmissionSchema>;
 
+/** LeetCode problem slugs: lowercase letters, digits, and hyphens. */
+export const leetcodeSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(256);
+
+/** A similar question as LeetCode lists it on a problem page. */
+export const similarQuestionSchema = z
+  .object({
+    slug: leetcodeSlugSchema,
+    title: z.string().min(1).max(512),
+    difficulty: difficultyEnum,
+    paidOnly: z.boolean(),
+  })
+  .strict();
+export type SimilarQuestionInput = z.infer<typeof similarQuestionSchema>;
+
 /* Payload sent by the Chrome extension to add or update a problem. */
 export const captureProblemSchema = z.object({
   leetcodeSlug: z.string().min(1).max(256),
@@ -173,6 +187,8 @@ export const captureProblemSchema = z.object({
   descriptionMd: z.string().max(200_000).optional(),
   topicTags: z.array(z.string().max(64)).max(64).default([]),
   similarSlugs: z.array(z.string().max(256)).max(64).default([]),
+  /** Verified metadata of the similar questions (newer extensions only). */
+  similarQuestions: z.array(similarQuestionSchema).max(64).optional(),
   notes: z.string().max(50_000).optional(),
   submissions: z.array(captureSubmissionSchema).max(20).default([]),
 });

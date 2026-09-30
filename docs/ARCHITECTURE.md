@@ -59,7 +59,10 @@ Tables (all in `packages/db/src/schema.ts`):
 | `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt`; newer events record session, policy, method, and schedule-revision provenance |
 | `mistake_records` | Causes of failure, confirmed by the user (or AI candidates awaiting confirmation), linked to a submission, quiz answer, rating, or practice session, with structured evidence references; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
 | `practice_improvements` | The user's confirmation that a completed session handled a skill dimension well; the only evidence that lowers a dimension's weakness |
-| `ai_jobs` | Durable async Card/Quiz generation commands (see below) |
+| `ai_jobs` | Durable async card, quiz, and session-analysis commands (see below) |
+| `session_analyses` | Immutable session-analysis results, cached per evidence version, analyzer version, provider, and model (see Session analysis) |
+| `suggestion_candidates` | Verified LeetCode metadata (title, difficulty, paid flag, topics, source, `verified_at`) of problems that may be suggested |
+| `attempt_history`, `attempt_history_coverage` | Attempted problems by slug and source, independent of `problems` rows, and how much of a LeetCode account's history was read (see New-problem suggestions) |
 | `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps` | Persistent Study Coach conversations |
 | `settings` | Per-user key/value: encrypted AI config, review/generation prefs, onboarding, rate-limit windows, starter-credit counter, Stripe customer ids |
 | `ai_credit_balances`, `ai_credit_ledger`, `credit_purchases` | Hosted AI credits (see PAID_AI_CREDITS.md) |
@@ -247,6 +250,28 @@ One model call explains one completed practice session (`server/session-analysis
 - **Kill switch**: `ANKIFY_DISABLED_WORKFLOWS=session_analysis` refuses new jobs
   (`503 workflow_disabled`) and fails queued ones before any provider call.
   Stored analyses, candidates, and confirmed mistakes stay.
+
+## New-problem suggestions
+
+Suggestions target problems the user has never attempted
+([plan](EXTENSION_FIRST_REFACTOR_PLAN.md#recommendations)); no model invents
+or explains them.
+
+- **Candidates** need verified metadata: a title, a difficulty, and LeetCode's
+  paid flag as read from LeetCode, with the time it was read. Sources:
+  - similar questions of problems the user practiced. The extension sends
+    them with the problem, and `upsertLeetcodeProblem()` records them in the
+    same transaction.
+  - the committed catalog (`server/suggestions/catalog.json`), generated from
+    LeetCode's problem list by `scripts/leetcode-catalog.js`. It is empty until
+    generated.
+- **Attempted problems** are never suggested. They are:
+  - every problem row, archived ones included;
+  - `attempt_history`, which holds LeetCode status reads, the user's own
+    "already attempted", and the slug of a deleted problem. Deleting a problem
+    records its slug first, so it can never look new.
+- **Coverage**: history counts as complete only for a coverage scope read to
+  its last page. Nothing infers completeness from a partial list.
 
 ## Study Coach
 

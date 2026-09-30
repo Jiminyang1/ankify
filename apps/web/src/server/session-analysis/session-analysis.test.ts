@@ -5,6 +5,7 @@ import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { buildModel } from "../ai";
 import { dispatchAiJob } from "../ai-generation/dispatch";
+import { iterateAccountExport } from "../account-export";
 import { AiJobRequestError, cancelOwnedAiJob, claimAiJob, decryptJobInput } from "../ai-generation/jobs";
 import { processAiJob } from "../ai-generation/runner";
 import { startAiJobForUser } from "../ai-generation/start";
@@ -217,6 +218,9 @@ describe("manual analysis", () => {
       },
     ]);
     expect(state.manual).toEqual({ available: true });
+    const exported: { type: string; data: unknown }[] = [];
+    for await (const row of iterateAccountExport({ id: USER, name: "Owner", email: "analysis@example.test", image: null })) exported.push(row);
+    expect(exported.filter((row) => row.type === "session_analysis")).toMatchObject([{ data: { id: state.analysis!.id, practiceSessionId: sessionId } }]);
 
     // A candidate is listed apart and weighs nothing until the user confirms it.
     let profile = await loadMistakeProfile(USER);

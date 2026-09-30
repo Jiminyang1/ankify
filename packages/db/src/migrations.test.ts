@@ -239,6 +239,21 @@ describe("database invariants", () => {
           args: ["user-1", "daily_review_limit", "20"],
         },
         {
+          sql: `INSERT INTO suggestion_candidates (id, user_id, slug, title, difficulty, paid_only, source, verified_at)
+                VALUES ('candidate-1', 'user-1', '3sum', '3Sum', 'Medium', 0, 'similar_question', unixepoch() * 1000)`,
+          args: [],
+        },
+        {
+          sql: `INSERT INTO attempt_history (id, user_id, slug, status, source, observed_at)
+                VALUES ('history-1', 'user-1', 'two-sum', 'accepted', 'deleted_problem', unixepoch() * 1000)`,
+          args: [],
+        },
+        {
+          sql: `INSERT INTO attempt_history_coverage (id, user_id, scope, source_account, synced_at)
+                VALUES ('coverage-1', 'user-1', 'problem_list_tried', 'leet_user', unixepoch() * 1000)`,
+          args: [],
+        },
+        {
           sql: `INSERT INTO agent_sessions (id, user_id, title)
                 VALUES ('session-1', 'user-1', 'Two Sum')`,
           args: [],
@@ -287,6 +302,9 @@ describe("database invariants", () => {
       "agent_messages",
       "agent_steps",
       "settings",
+      "suggestion_candidates",
+      "attempt_history",
+      "attempt_history_coverage",
     ]) {
       const result = await client.execute(`SELECT count(*) AS count FROM ${table}`);
       expect(Number(result.rows[0]?.count), table).toBe(0);

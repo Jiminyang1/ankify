@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { problemPatchSchema } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { recordDeletedProblem } from "@/server/suggestions/history";
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
@@ -35,18 +36,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** DELETE /api/problems/:id
  *  Permanently removes the problem and cascades to submissions, cards,
- *  quiz_sessions, and review_events (all FKs are onDelete: "cascade"). */
+ *  quiz_sessions, and review_events (all FKs are onDelete: "cascade"). Its
+ *  slug is kept as attempt history. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
 
   const { id: problemId } = await ctx.params;
-  const db = getDb();
-
-  const deleted = await db
-    .delete(schema.problems)
-    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)))
-    .returning({ id: schema.problems.id });
+  // The slug stays in the attempt history, so it is never suggested as new.
+  const deleted = await getDb().transaction(async (tx) => {
+    if (!(await recordDeletedProblem(tx, user.id, problemId, new Date()))) return [];
+    return tx
+      .delete(schema.problems)
+      .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)))
+      .returning({ id: schema.problems.id });
+  });
 
   if (deleted.length === 0) {
     return NextResponse.json({ error: "problem_not_found" }, { status: 404 });

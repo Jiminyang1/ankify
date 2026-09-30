@@ -33,6 +33,9 @@ type AccountExportRecord = {
     | "practice_session"
     | "practice_session_submission"
     | "practice_improvement"
+    | "session_analysis"
+    | "attempt_history"
+    | "attempt_history_coverage"
     | "agent_session"
     | "agent_run"
     | "agent_message"
@@ -173,6 +176,45 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.practiceImprovements.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("session_analysis", (afterId) =>
+    db
+      .select()
+      .from(schema.sessionAnalyses)
+      .where(
+        and(
+          eq(schema.sessionAnalyses.userId, user.id),
+          afterId ? gt(schema.sessionAnalyses.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.sessionAnalyses.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("attempt_history", (afterId) =>
+    db
+      .select()
+      .from(schema.attemptHistory)
+      .where(
+        and(
+          eq(schema.attemptHistory.userId, user.id),
+          afterId ? gt(schema.attemptHistory.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.attemptHistory.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("attempt_history_coverage", (afterId) =>
+    db
+      .select()
+      .from(schema.attemptHistoryCoverage)
+      .where(
+        and(
+          eq(schema.attemptHistoryCoverage.userId, user.id),
+          afterId ? gt(schema.attemptHistoryCoverage.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.attemptHistoryCoverage.id))
       .limit(PAGE_SIZE),
   );
   yield* iteratePages("agent_session", (afterId) =>

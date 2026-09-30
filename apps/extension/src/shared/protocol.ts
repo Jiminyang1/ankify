@@ -2,6 +2,7 @@ import {
   captureSubmissionSchema,
   fsrsRatingSchema,
   leetcodeAvailabilityEnum,
+  leetcodeSlugSchema,
   practiceModeEnum,
   practiceProblemSchema,
   sessionBaselineSchema,
@@ -18,8 +19,6 @@ import { z } from "zod";
  * the worker attaches the sending tab's token itself.
  */
 
-/** LeetCode problem slugs: lowercase letters, digits, and hyphens. */
-export const leetcodeSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(256);
 const sessionIdSchema = z.string().min(1).max(64);
 const MAX_ACTIVITY_DELTA_MS = 10 * 60_000;
 

@@ -4,6 +4,7 @@ import { getDb, schema, type Problem } from "@ankify/db";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { MAX_PROBLEMS_PER_USER } from "@/server/resource-limits";
+import { recordSimilarQuestions } from "@/server/suggestions/candidates";
 
 type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -55,6 +56,19 @@ export async function upsertLeetcodeProblem(
   options: { enrollment: "enrolled" | "awaiting_initial"; now?: Date },
 ): Promise<ProblemUpsertResult> {
   const now = options.now ?? new Date();
+  const result = await upsertProblemRow(tx, userId, input, options.enrollment, now);
+  // Verified similar questions become suggestion candidates, with the problem.
+  if (result.ok) await recordSimilarQuestions(tx, userId, input.similarQuestions ?? [], now);
+  return result;
+}
+
+async function upsertProblemRow(
+  tx: DbTransaction,
+  userId: string,
+  input: LeetcodeProblemInput,
+  enrollment: "enrolled" | "awaiting_initial",
+  now: Date,
+): Promise<ProblemUpsertResult> {
   const p = schema.problems;
   const lookup = await findLeetcodeProblem(tx, userId, input);
   if (lookup.kind === "conflict") {
@@ -114,8 +128,8 @@ export async function upsertLeetcodeProblem(
       topicTags: input.topicTags,
       similarSlugs: input.similarSlugs,
       notes: input.notes,
-      enrollment: options.enrollment,
-      fsrsDue: options.enrollment === "enrolled" ? initialState.due : null,
+      enrollment,
+      fsrsDue: enrollment === "enrolled" ? initialState.due : null,
       fsrsStability: initialState.stability,
       fsrsDifficulty: initialState.difficulty,
       fsrsLearningSteps: initialState.learningSteps,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLeetcodeClient } from "./leetcode-client";
+import { createLeetcodeClient, parseSimilarQuestions } from "./leetcode-client";
 
 type Handler = (query: string, variables: Record<string, unknown>) => Response | { data?: unknown; errors?: { message: string }[] };
 
@@ -21,11 +21,33 @@ describe("LeetCode client", () => {
     expect(await fakeLeetcode(() => ({ data: { question } })).client.readProblem("valid-parentheses")).toEqual({
       availability: "available",
       value: { leetcodeSlug: "valid-parentheses", leetcodeId: 20, title: "Valid Parentheses", difficulty: "Easy", url: "https://leetcode.com/problems/valid-parentheses/",
-        descriptionMd: "<p>x</p>", topicTags: ["Stack"], similarSlugs: ["generate-parentheses"] },
+        descriptionMd: "<p>x</p>", topicTags: ["Stack"], similarSlugs: ["generate-parentheses"], similarQuestions: [] },
     });
     expect(await fakeLeetcode(() => new Response("", { status: 403 })).client.readProblem("x")).toEqual({ availability: "signed_out", value: null });
     expect(await fakeLeetcode(() => ({ errors: [{ message: "boom" }] })).client.readProblem("x")).toEqual({ availability: "unavailable", value: null });
     expect(await fakeLeetcode(() => ({ data: { question: null } })).client.readProblem("x")).toEqual({ availability: "unavailable", value: null });
+  });
+
+  it("keeps a similar question's metadata only when all of it is present", () => {
+    const raw = JSON.stringify([
+      { title: "Generate Parentheses", titleSlug: "generate-parentheses", difficulty: "Medium", translatedTitle: null, isPaidOnly: false },
+      { title: "Remove Invalid Parentheses", titleSlug: "remove-invalid-parentheses", difficulty: "Hard", isPaidOnly: true },
+      { title: "Check Validity", titleSlug: "check-validity", difficulty: "Medium" },
+      { title: "", titleSlug: "no-title", difficulty: "Easy", isPaidOnly: false },
+      { title: "Odd", titleSlug: "odd", difficulty: "Unknown", isPaidOnly: false },
+      { title: "Bad Slug", titleSlug: "Bad_Slug", difficulty: "Easy", isPaidOnly: false },
+      null,
+    ]);
+    expect(parseSimilarQuestions(raw)).toEqual({
+      similarSlugs: ["generate-parentheses", "remove-invalid-parentheses", "check-validity", "no-title", "odd"],
+      similarQuestions: [
+        { slug: "generate-parentheses", title: "Generate Parentheses", difficulty: "Medium", paidOnly: false },
+        { slug: "remove-invalid-parentheses", title: "Remove Invalid Parentheses", difficulty: "Hard", paidOnly: true },
+      ],
+    });
+    for (const unusable of [null, "", "not json", "{}", "[1,2]"]) {
+      expect(parseSimilarQuestions(unusable)).toEqual({ similarSlugs: [], similarQuestions: [] });
+    }
   });
 
   it("identifies the signed-in account only when LeetCode says so", async () => {

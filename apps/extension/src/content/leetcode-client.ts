@@ -1,4 +1,4 @@
-import type { LeetcodeAvailability, PracticeProblemInput, SessionObservationInput } from "@ankify/contracts";
+import type { LeetcodeAvailability, PracticeProblemInput, SessionObservationInput, SimilarQuestionInput } from "@ankify/contracts";
 import { compareSubmissionIds } from "@ankify/core";
 
 /**
@@ -130,14 +130,7 @@ export function createLeetcodeClient(options: LeetcodeClientOptions = {}) {
     if (!result.ok) return { availability: result.signedOut ? "signed_out" : "unavailable", value: null };
     const question = result.data.question;
     if (!question) return { availability: "unavailable", value: null };
-    let similarSlugs: string[] = [];
-    try {
-      similarSlugs = (JSON.parse(question.similarQuestions ?? "[]") as { titleSlug?: string }[])
-        .flatMap((item) => (typeof item.titleSlug === "string" ? [item.titleSlug] : []))
-        .slice(0, 64);
-    } catch {
-      // LeetCode returns a JSON-encoded string, sometimes empty.
-    }
+    const { similarSlugs, similarQuestions } = parseSimilarQuestions(question.similarQuestions);
     return {
       availability: "available",
       value: {
@@ -149,6 +142,7 @@ export function createLeetcodeClient(options: LeetcodeClientOptions = {}) {
         descriptionMd: (question.content ?? "").slice(0, 200_000),
         topicTags: (question.topicTags ?? []).map((tag) => tag.name.slice(0, 64)).slice(0, 64),
         similarSlugs,
+        similarQuestions,
       },
     };
   }
@@ -288,3 +282,34 @@ export function createLeetcodeClient(options: LeetcodeClientOptions = {}) {
 }
 
 export type LeetcodeClient = ReturnType<typeof createLeetcodeClient>;
+
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const DIFFICULTIES = new Set(["Easy", "Medium", "Hard"]);
+
+/**
+ * LeetCode's `similarQuestions` is a JSON-encoded string (sometimes empty).
+ * Every listed slug is kept; an item's metadata is kept only when its title,
+ * difficulty, and paid flag are all present, so nothing unverified is sent
+ * as candidate metadata.
+ */
+export function parseSimilarQuestions(raw: string | null): { similarSlugs: string[]; similarQuestions: SimilarQuestionInput[] } {
+  let items: unknown;
+  try {
+    items = JSON.parse(raw ?? "[]");
+  } catch {
+    return { similarSlugs: [], similarQuestions: [] };
+  }
+  if (!Array.isArray(items)) return { similarSlugs: [], similarQuestions: [] };
+  const similarSlugs: string[] = [];
+  const similarQuestions: SimilarQuestionInput[] = [];
+  for (const item of items.slice(0, 64) as Record<string, unknown>[]) {
+    const slug = item?.titleSlug;
+    if (typeof slug !== "string" || slug.length > 256 || !SLUG.test(slug)) continue;
+    similarSlugs.push(slug);
+    const { title, difficulty, isPaidOnly } = item;
+    if (typeof title === "string" && title.length > 0 && typeof difficulty === "string" && DIFFICULTIES.has(difficulty) && typeof isPaidOnly === "boolean") {
+      similarQuestions.push({ slug, title: title.slice(0, 512), difficulty: difficulty as SimilarQuestionInput["difficulty"], paidOnly: isPaidOnly });
+    }
+  }
+  return { similarSlugs, similarQuestions };
+}

@@ -797,6 +797,95 @@ export const sessionAnalyses = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * suggestion_candidates
+ * LeetCode metadata of problems that may be suggested to a user, each with
+ * where it came from and when it was read from LeetCode. A problem is only
+ * suggested with verified title, difficulty, and availability.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const suggestionCandidates = sqliteTable(
+  "suggestion_candidates",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    difficulty: text("difficulty", { enum: ["Easy", "Medium", "Hard"] }).notNull(),
+    paidOnly: integer("paid_only", { mode: "boolean" }).notNull(),
+    /** Empty when the source does not carry topics (similar questions). */
+    topicTags: text("topic_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    /** `similar_question`: listed as similar on a problem the user practiced;
+     *  `problem_list`: read from LeetCode's problem list. */
+    source: text("source", { enum: ["similar_question", "problem_list"] }).notNull(),
+    verifiedAt: optTs("verified_at").notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userSlugIdx: uniqueIndex("suggestion_candidates_user_slug_unique").on(t.userId, t.slug),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * attempt_history
+ * Problems the user is known to have attempted, by LeetCode slug and
+ * independent of `problems` rows: deleting a problem keeps its slug here, so
+ * it is never suggested as new. Captured problems count as attempted without
+ * a row. One row per slug and source.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const attemptHistory = sqliteTable(
+  "attempt_history",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    status: text("status", { enum: ["attempted", "accepted"] }).notNull(),
+    /** `user_marked`: the user said so; `leetcode_status`: LeetCode's per-user
+     *  problem status; `deleted_problem`: a deleted problem's history. */
+    source: text("source", { enum: ["user_marked", "leetcode_status", "deleted_problem"] }).notNull(),
+    /** The LeetCode account the evidence was read from, when known. */
+    sourceAccount: text("source_account"),
+    observedAt: optTs("observed_at").notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userSlugSourceIdx: uniqueIndex("attempt_history_user_slug_source_unique").on(t.userId, t.slug, t.source),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * attempt_history_coverage
+ * How much of a LeetCode account's history has been read. A scope is complete
+ * only after every page was read; nothing else implies full coverage.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const attemptHistoryCoverage = sqliteTable(
+  "attempt_history_coverage",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** LeetCode's problem list filtered to accepted, or to tried but not accepted. */
+    scope: text("scope", { enum: ["problem_list_accepted", "problem_list_tried"] }).notNull(),
+    sourceAccount: text("source_account").notNull(),
+    /** Entries read so far, and the total LeetCode reported. */
+    read: integer("read").notNull().default(0),
+    total: integer("total"),
+    complete: integer("complete", { mode: "boolean" }).notNull().default(false),
+    syncedAt: optTs("synced_at").notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userScopeAccountIdx: uniqueIndex("attempt_history_coverage_user_scope_account_unique").on(t.userId, t.scope, t.sourceAccount),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * agent_sessions / agent_runs / agent_messages / agent_steps
  * Persistent Study Coach conversations. Page and problem context belong to
  * individual runs, so one session can continue across the entire web app.
@@ -1018,6 +1107,9 @@ export type PracticeImprovement = typeof practiceImprovements.$inferSelect;
 export type NewMistakeRecord = typeof mistakeRecords.$inferInsert;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type SessionAnalysis = typeof sessionAnalyses.$inferSelect;
+export type SuggestionCandidate = typeof suggestionCandidates.$inferSelect;
+export type AttemptHistoryEntry = typeof attemptHistory.$inferSelect;
+export type AttemptHistoryCoverage = typeof attemptHistoryCoverage.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;
 export type NewAgentSession = typeof agentSessions.$inferInsert;
