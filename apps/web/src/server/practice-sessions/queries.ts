@@ -4,7 +4,7 @@ import type {
   PracticeSessionListDto,
   PracticeSessionListQuery,
 } from "@ankify/contracts";
-import { effectiveRatingDisposition, isSessionStale } from "@ankify/core";
+import { effectiveRatingDisposition, isSessionStale, summarizeSession } from "@ankify/core";
 import { getDb, schema, type PracticeSession } from "@ankify/db";
 import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { loadSessionEvidence, toObservationDto, toPracticeSessionDto, toProblemStatusDto } from "./dto";
@@ -89,6 +89,14 @@ export async function getPracticeSessionDetail(
     }),
     problem: toProblemStatusDto(problem!, now),
     observations: observations.map(toObservationDto),
+    summary: (() => {
+      const summary = summarizeSession(
+        observations
+          .filter((row) => row.association === "automatic" || row.association === "confirmed")
+          .map((row) => ({ verdict: row.verdict, at: row.submittedAt ?? row.firstObservedAt })),
+      );
+      return { ...summary, firstAcceptedAt: summary.firstAcceptedAt?.toISOString() ?? null };
+    })(),
   };
 }
 

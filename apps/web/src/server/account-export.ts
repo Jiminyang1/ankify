@@ -32,6 +32,7 @@ type AccountExportRecord = {
     | "mistake_record"
     | "practice_session"
     | "practice_session_submission"
+    | "practice_improvement"
     | "agent_session"
     | "agent_run"
     | "agent_message"
@@ -159,6 +160,19 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.practiceSessionSubmissions.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("practice_improvement", (afterId) =>
+    db
+      .select()
+      .from(schema.practiceImprovements)
+      .where(
+        and(
+          eq(schema.practiceImprovements.userId, user.id),
+          afterId ? gt(schema.practiceImprovements.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.practiceImprovements.id))
       .limit(PAGE_SIZE),
   );
   yield* iteratePages("agent_session", (afterId) =>

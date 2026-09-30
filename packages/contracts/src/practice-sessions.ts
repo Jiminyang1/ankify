@@ -240,10 +240,21 @@ export type PracticeSessionObservationDto = {
   association: z.infer<typeof observationAssociationEnum>;
 };
 
+export type PracticeSessionSummaryDto = {
+  attempts: number;
+  failedBeforeAccepted: number;
+  firstTryAccepted: boolean;
+  firstAcceptedAt: string | null;
+  /** Oldest first, consecutive repeats collapsed. */
+  sequence: { verdict: string; count: number }[];
+};
+
 export type PracticeSessionDetailDto = {
   session: PracticeSessionDto;
   problem: PracticeProblemStatusDto;
   observations: PracticeSessionObservationDto[];
+  /** Verdict and correction sequence of the associated submissions. */
+  summary: PracticeSessionSummaryDto;
 };
 
 export type PracticeSessionCurrentDto = {

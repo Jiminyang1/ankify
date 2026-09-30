@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { SKILL_DIMENSIONS, quizScopeToDimension } from "@ankify/core";
-import { skillDimensionEnum, type MistakeCreateInput, type QuizItem } from "@ankify/contracts";
+import { skillDimensionEnum, type MistakeCreateRequest, type QuizItem } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { iterateAccountExport } from "./account-export";
 import {
@@ -67,7 +67,7 @@ async function seed() {
   ]);
 }
 
-function manual(overrides: Partial<Extract<MistakeCreateInput, { sourceType: "manual" }>> = {}): MistakeCreateInput {
+function manual(overrides: Partial<Extract<MistakeCreateRequest, { sourceType: "manual" }>> = {}): MistakeCreateRequest {
   return {
     sourceType: "manual",
     requestId: requestId(),
@@ -78,11 +78,11 @@ function manual(overrides: Partial<Extract<MistakeCreateInput, { sourceType: "ma
   };
 }
 
-function fromSubmission(submissionId: string, primaryCategory: MistakeCreateInput["primaryCategory"] = "edge_case"): MistakeCreateInput {
+function fromSubmission(submissionId: string, primaryCategory: MistakeCreateRequest["primaryCategory"] = "edge_case"): MistakeCreateRequest {
   return { sourceType: "submission", submissionId, requestId: requestId(), problemId: "p1", primaryCategory, secondaryTags: [] };
 }
 
-async function expectCreated(input: MistakeCreateInput, userId = ALICE) {
+async function expectCreated(input: MistakeCreateRequest, userId = ALICE) {
   const result = await createMistake(userId, input);
   if (!result.ok) throw new Error(`expected success, got ${result.error}`);
   return result;
@@ -138,7 +138,7 @@ describe("createMistake", () => {
   });
 
   it("links an answered quiz item and rejects unknown or unanswered items", async () => {
-    const quiz = (quizItemId: string): MistakeCreateInput => ({
+    const quiz = (quizItemId: string): MistakeCreateRequest => ({
       sourceType: "quiz_answer",
       quizSessionId: "q1",
       quizItemId,
@@ -155,7 +155,7 @@ describe("createMistake", () => {
   });
 
   it("resolves a review source from the rating's requestId, only for the owner", async () => {
-    const review = (reviewRequestId: string): MistakeCreateInput => ({
+    const review = (reviewRequestId: string): MistakeCreateRequest => ({
       sourceType: "review",
       reviewRequestId,
       requestId: requestId(),

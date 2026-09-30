@@ -50,6 +50,10 @@ it("preserves protected history across 0019 -> 0020, future migrations, and repl
     expect(row).toMatchObject({ practice_session_id: null, policy_version: null, review_method: null, schedule_revision: null });
   }
   expect((await getDb().$client.execute("SELECT count(*) AS count FROM practice_session_submissions")).rows[0]).toMatchObject({ count: 0 });
+  // M2: existing mistakes stay sessionless, cite no invented evidence, and
+  // gain no improvements.
+  for (const row of after[`mistake_records/${owners[0]}`]!) expect(row).toMatchObject({ practice_session_id: null, evidence: "[]" });
+  expect((await getDb().$client.execute("SELECT count(*) AS count FROM practice_improvements")).rows[0]).toMatchObject({ count: 0 });
   await testDb.migrate();
   expect(await snapshot(tables)).toEqual(after);
 

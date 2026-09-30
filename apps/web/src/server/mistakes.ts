@@ -1,25 +1,30 @@
 import type {
-  MistakeCreateInput,
+  MistakeCreateRequest,
   MistakeCreateResponseDto,
+  MistakeEvidence,
   MistakeListPayloadDto,
   MistakeListQuery,
   MistakePatchInput,
   MistakeRecordDto,
+  PracticeImprovementCreateInput,
+  PracticeImprovementDto,
 } from "@ankify/contracts";
-import { getDb, schema, type MistakeRecord } from "@ankify/db";
-import { and, desc, eq, lt, ne, or, type SQL } from "drizzle-orm";
+import { getDb, schema, type MistakeRecord, type PracticeImprovement } from "@ankify/db";
+import { and, desc, eq, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { canonicalJson } from "./practice-sessions/digest";
 
 type MistakeSource = {
   submissionId: string | null;
   quizSessionId: string | null;
   quizItemId: string | null;
   reviewEventId: string | null;
+  practiceSessionId: string | null;
 };
 
 type CreateMistakeResult =
   | MistakeCreateResponseDto
-  | { ok: false; error: "problem_not_found" | "source_not_found" | "mistake_request_conflict" };
+  | { ok: false; error: "problem_not_found" | "source_not_found" | "evidence_not_found" | "mistake_request_conflict" };
 
 type UpdateMistakeResult =
   | { ok: true; mistake: MistakeRecordDto }
@@ -32,6 +37,7 @@ const NO_SOURCE: MistakeSource = {
   quizSessionId: null,
   quizItemId: null,
   reviewEventId: null,
+  practiceSessionId: null,
 };
 
 export class InvalidMistakesCursorError extends Error {}
@@ -49,6 +55,8 @@ export function toMistakeDto(row: MistakeRecord): MistakeRecordDto {
     quizSessionId: row.quizSessionId,
     quizItemId: row.quizItemId,
     reviewEventId: row.reviewEventId,
+    practiceSessionId: row.practiceSessionId,
+    evidence: row.evidence,
     status: row.status,
     origin: row.origin,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -71,7 +79,7 @@ function optionalText(value: string | null | undefined) {
 async function resolveSource(
   tx: DbTransaction,
   userId: string,
-  input: MistakeCreateInput,
+  input: MistakeCreateRequest,
 ): Promise<MistakeSource | null> {
   switch (input.sourceType) {
     case "manual":
@@ -88,7 +96,24 @@ async function resolveSource(
           ),
         )
         .limit(1);
-      return submission ? { ...NO_SOURCE, submissionId: submission.id } : null;
+      if (!submission) return null;
+      // A submission observed in a practice session belongs to that context.
+      const o = schema.practiceSessionSubmissions;
+      const [observed] = await tx
+        .select({ sessionId: o.sessionId })
+        .from(o)
+        .where(and(eq(o.userId, userId), eq(o.submissionId, submission.id), inArray(o.association, ["automatic", "confirmed"])))
+        .limit(1);
+      return { ...NO_SOURCE, submissionId: submission.id, practiceSessionId: observed?.sessionId ?? null };
+    }
+    case "practice_session": {
+      const s = schema.practiceSessions;
+      const [session] = await tx
+        .select({ id: s.id })
+        .from(s)
+        .where(and(eq(s.id, input.practiceSessionId), eq(s.userId, userId), eq(s.problemId, input.problemId)))
+        .limit(1);
+      return session ? { ...NO_SOURCE, practiceSessionId: session.id } : null;
     }
     case "quiz_answer": {
       const [session] = await tx
@@ -115,7 +140,7 @@ async function resolveSource(
     }
     case "review": {
       const [event] = await tx
-        .select({ id: schema.reviewEvents.id })
+        .select({ id: schema.reviewEvents.id, practiceSessionId: schema.reviewEvents.practiceSessionId })
         .from(schema.reviewEvents)
         .where(
           and(
@@ -126,29 +151,71 @@ async function resolveSource(
           ),
         )
         .limit(1);
-      return event ? { ...NO_SOURCE, reviewEventId: event.id } : null;
+      return event ? { ...NO_SOURCE, reviewEventId: event.id, practiceSessionId: event.practiceSessionId } : null;
     }
   }
 }
 
-/** Condition matching live (non-dismissed) records of one source, mirroring
- *  the partial unique dedupe indexes. `undefined` for manual records. */
-function sameSourceCondition(source: MistakeSource): SQL | undefined {
-  const r = schema.mistakeRecords;
-  if (source.submissionId) return eq(r.submissionId, source.submissionId);
-  if (source.quizSessionId && source.quizItemId) {
-    return and(eq(r.quizSessionId, source.quizSessionId), eq(r.quizItemId, source.quizItemId));
+/** Every referenced observation or submission must belong to the user and
+ *  problem (and, for a session record, to that session). */
+async function evidenceIsValid(
+  tx: DbTransaction,
+  userId: string,
+  problemId: string,
+  practiceSessionId: string | null,
+  evidence: readonly MistakeEvidence[],
+) {
+  const observationIds = [...new Set(evidence.flatMap((item) => (item.kind === "observation" ? [item.observationId] : [])))];
+  const submissionIds = [...new Set(evidence.flatMap((item) => ("submissionId" in item ? [item.submissionId] : [])))];
+  if (observationIds.length) {
+    const o = schema.practiceSessionSubmissions;
+    const rows = await tx
+      .select({ id: o.id, sessionId: o.sessionId })
+      .from(o)
+      .where(and(eq(o.userId, userId), eq(o.problemId, problemId), inArray(o.id, observationIds)));
+    if (rows.length !== observationIds.length) return false;
+    if (practiceSessionId && rows.some((row) => row.sessionId !== practiceSessionId)) return false;
   }
-  if (source.reviewEventId) return eq(r.reviewEventId, source.reviewEventId);
-  return undefined;
+  if (submissionIds.length) {
+    const rows = await tx
+      .select({ id: schema.submissions.id })
+      .from(schema.submissions)
+      .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId), inArray(schema.submissions.id, submissionIds)));
+    if (rows.length !== submissionIds.length) return false;
+  }
+  return true;
+}
+
+/** Conditions matching records that share a dedupe index with this source,
+ *  mirroring the partial unique indexes. A record made on a session dedupes
+ *  per origin among the session's own records; one on a session's submission
+ *  or rating dedupes by that source only. None for manual records. */
+function dedupConditions(
+  source: MistakeSource & { sourceType: MistakeRecord["sourceType"] },
+  origin: MistakeRecord["origin"],
+): SQL[] {
+  const r = schema.mistakeRecords;
+  const conditions: SQL[] = [];
+  if (source.submissionId) conditions.push(eq(r.submissionId, source.submissionId));
+  if (source.quizSessionId && source.quizItemId) {
+    conditions.push(and(eq(r.quizSessionId, source.quizSessionId), eq(r.quizItemId, source.quizItemId))!);
+  }
+  if (source.reviewEventId) conditions.push(eq(r.reviewEventId, source.reviewEventId));
+  if (source.sourceType === "practice_session" && source.practiceSessionId) {
+    conditions.push(
+      and(eq(r.sourceType, "practice_session"), eq(r.practiceSessionId, source.practiceSessionId), eq(r.origin, origin))!,
+    );
+  }
+  return conditions;
 }
 
 export async function createMistake(
   userId: string,
-  input: MistakeCreateInput,
+  request: MistakeCreateRequest,
 ): Promise<CreateMistakeResult> {
   const db = getDb();
   const r = schema.mistakeRecords;
+  const input = { ...request, secondaryTags: request.secondaryTags ?? [], evidence: request.evidence ?? [] };
 
   return db.transaction(async (tx): Promise<CreateMistakeResult> => {
     const [problem] = await tx
@@ -160,6 +227,9 @@ export async function createMistake(
 
     const source = await resolveSource(tx, userId, input);
     if (!source) return { ok: false, error: "source_not_found" };
+    if (!(await evidenceIsValid(tx, userId, input.problemId, source.practiceSessionId, input.evidence))) {
+      return { ok: false, error: "evidence_not_found" };
+    }
 
     const [replay] = await tx
       .select()
@@ -174,22 +244,24 @@ export async function createMistake(
         replay.submissionId === source.submissionId &&
         replay.quizSessionId === source.quizSessionId &&
         replay.quizItemId === source.quizItemId &&
-        replay.reviewEventId === source.reviewEventId;
+        replay.reviewEventId === source.reviewEventId &&
+        replay.practiceSessionId === source.practiceSessionId &&
+        canonicalJson(replay.evidence) === canonicalJson(input.evidence);
       if (!sameRequest) return { ok: false, error: "mistake_request_conflict" };
       return { ok: true, mistake: toMistakeDto(replay), idempotentReplay: true, deduplicated: false };
     }
 
     // Writers are serialized (BEGIN IMMEDIATE), so this check cannot race; the
     // partial unique indexes remain the backstop.
-    const sourceCondition = sameSourceCondition(source);
-    if (sourceCondition) {
+    const conditions = dedupConditions({ ...source, sourceType: input.sourceType }, "user");
+    if (conditions.length) {
       const [existing] = await tx
         .select()
         .from(r)
         .where(
           and(
             eq(r.userId, userId),
-            sourceCondition,
+            or(...conditions),
             eq(r.primaryCategory, input.primaryCategory),
             ne(r.status, "dismissed"),
           ),
@@ -213,6 +285,7 @@ export async function createMistake(
         nextStep: optionalText(input.nextStep),
         sourceType: input.sourceType,
         ...source,
+        evidence: input.evidence,
         status: "confirmed",
         origin: "user",
         requestId: input.requestId,
@@ -303,15 +376,15 @@ export async function updateMistake(
 
     const nextStatus = patch.status ?? row.status;
     const nextCategory = patch.primaryCategory ?? row.primaryCategory;
-    const sourceCondition = sameSourceCondition(row);
-    if (sourceCondition && nextStatus !== "dismissed") {
+    const conditions = dedupConditions(row, row.origin);
+    if (conditions.length && nextStatus !== "dismissed") {
       const [clash] = await tx
         .select({ id: r.id })
         .from(r)
         .where(
           and(
             eq(r.userId, userId),
-            sourceCondition,
+            or(...conditions),
             eq(r.primaryCategory, nextCategory),
             ne(r.status, "dismissed"),
             ne(r.id, row.id),
@@ -365,4 +438,80 @@ export async function listProblemMistakes(userId: string, problemId: string) {
     .orderBy(desc(r.createdAt), desc(r.id))
     .limit(50);
   return rows.map(toMistakeDto);
+}
+
+function toImprovementDto(row: PracticeImprovement): PracticeImprovementDto {
+  return {
+    id: row.id,
+    problemId: row.problemId,
+    practiceSessionId: row.practiceSessionId,
+    category: row.category,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+type CreateImprovementResult =
+  | { ok: true; improvement: PracticeImprovementDto; idempotentReplay: boolean; deduplicated: boolean }
+  | { ok: false; error: "session_not_found" | "session_not_completed" | "improvement_request_conflict" };
+
+/** Records that a completed session handled a dimension well. Idempotent per
+ *  request id; a second confirmation for the same session and dimension
+ *  returns the first. */
+export async function createImprovement(userId: string, input: PracticeImprovementCreateInput): Promise<CreateImprovementResult> {
+  const i = schema.practiceImprovements;
+  return getDb().transaction(async (tx): Promise<CreateImprovementResult> => {
+    const s = schema.practiceSessions;
+    const [session] = await tx
+      .select({ id: s.id, problemId: s.problemId, status: s.status })
+      .from(s)
+      .where(and(eq(s.id, input.practiceSessionId), eq(s.userId, userId)))
+      .limit(1);
+    if (!session) return { ok: false, error: "session_not_found" };
+
+    const [replay] = await tx.select().from(i).where(and(eq(i.userId, userId), eq(i.requestId, input.requestId))).limit(1);
+    if (replay) {
+      if (replay.practiceSessionId !== input.practiceSessionId || replay.category !== input.category) {
+        return { ok: false, error: "improvement_request_conflict" };
+      }
+      return { ok: true, improvement: toImprovementDto(replay), idempotentReplay: true, deduplicated: false };
+    }
+    if (session.status !== "completed") return { ok: false, error: "session_not_completed" };
+    const [existing] = await tx
+      .select()
+      .from(i)
+      .where(and(eq(i.userId, userId), eq(i.practiceSessionId, session.id), eq(i.category, input.category)))
+      .limit(1);
+    if (existing) return { ok: true, improvement: toImprovementDto(existing), idempotentReplay: false, deduplicated: true };
+    const [created] = await tx
+      .insert(i)
+      .values({
+        id: nanoid(12),
+        userId,
+        problemId: session.problemId,
+        practiceSessionId: session.id,
+        category: input.category,
+        requestId: input.requestId,
+      })
+      .returning();
+    return { ok: true, improvement: toImprovementDto(created!), idempotentReplay: false, deduplicated: false };
+  });
+}
+
+export async function deleteImprovement(userId: string, id: string): Promise<boolean> {
+  const i = schema.practiceImprovements;
+  const deleted = await getDb()
+    .delete(i)
+    .where(and(eq(i.id, id), eq(i.userId, userId)))
+    .returning({ id: i.id });
+  return deleted.length > 0;
+}
+
+export async function listSessionImprovements(userId: string, practiceSessionId: string) {
+  const i = schema.practiceImprovements;
+  const rows = await getDb()
+    .select()
+    .from(i)
+    .where(and(eq(i.userId, userId), eq(i.practiceSessionId, practiceSessionId)))
+    .orderBy(desc(i.createdAt));
+  return rows.map(toImprovementDto);
 }

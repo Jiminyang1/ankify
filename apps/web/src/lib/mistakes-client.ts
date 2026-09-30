@@ -1,5 +1,5 @@
 import type {
-  MistakeCreateInput,
+  MistakeCreateRequest,
   MistakeCreateResponseDto,
   MistakePatchInput,
   MistakeRecordDto,
@@ -39,7 +39,7 @@ async function sendJson<T>(url: string, method: string, body?: unknown): Promise
   }
 }
 
-export function createMistakeRequest(input: MistakeCreateInput) {
+export function createMistakeRequest(input: MistakeCreateRequest) {
   return sendJson<Omit<MistakeCreateResponseDto, "ok">>("/api/mistakes", "POST", input);
 }
 

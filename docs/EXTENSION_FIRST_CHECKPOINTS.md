@@ -334,3 +334,60 @@ against fixtures until the probe report is recorded here.
 Rollback: switch off `practice_sessions`/`session_rating`; publish a higher
 extension version to undo an extension release (installed versions cannot be
 downgraded). The legacy routes stay available until the cutover switch.
+
+## Checkpoint 4A: deterministic session evidence and mistake profile
+
+Status: **PASS** (live LeetCode exception from Phase 3 unchanged). Migration
+`0022_m2_session_evidence` (additive, not yet applied to Preview or
+Production).
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 402 tests in 63 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 15 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+Changes: mistake records gain a practice-session reference (set directly or
+derived from a session's submission or rating) and structured evidence
+references (observation, submission, code range, judge output) validated
+against the user, problem, and session; `practice_improvements` for explicit
+improvement confirmations; session summaries (verdict and correction
+sequence) on the session detail; `computeMistakeProfile()` in core and
+`GET /api/mistakes/profile`, `POST/GET /api/mistakes/improvements`,
+`DELETE /api/mistakes/improvements/:id`; export of improvements. Details in
+MISTAKE_PROFILE_PLAN.md.
+
+Tests cover repeated imports, same-session retries (three records on three
+failed submissions stay visible and count as one context), a user's
+submission record plus a confirmed AI finding from one session counted once,
+legacy source contexts, resolution, Undo removing the rating's contribution
+while the user's record stays, readiness thresholds, improvements (replay,
+conflict, dedupe, open session, isolation), and user isolation. Mutation
+checks: restoring session-wide dedupe and counting undone ratings each fail a
+test.
+
+Found and fixed while testing:
+
+- The first session dedupe index covered every record with a session, so a
+  second note on a different failed submission of the same session was
+  silently merged into the first. The plan requires every visible record to
+  survive, so the index now covers only records made on the session itself
+  (`source_type = 'practice_session'`); scoring deduplicates contexts.
+- `ALTER TABLE ... ADD evidence ... DEFAULT (json('[]'))` passes on an empty
+  table but SQLite rejects a non-constant default when rows exist, so the
+  migration would have failed on Production. The protected-history test
+  (which migrates over existing mistake rows) caught it; the default is now
+  the constant `'[]'`.
+- The profile loader passed every in-window id as query parameters; it now
+  uses user-scoped joins, so long histories cannot hit the host-parameter
+  limit.
+
+Deviation from the plan: no `practice_evidence` table. Normalized profile
+inputs are computed on every read from user-scoped joins over the 90-day
+window. Nothing derived is stored, so Undo, dismissal, resolution, and
+deletion can never leave a stale score, and there is no backfill or
+invalidation path to get wrong. Revisit if profile reads become slow.
+
+Rollback: stop calling the new routes; the columns and table are additive
+and unused by earlier code. The deterministic profile has no AI dependency.

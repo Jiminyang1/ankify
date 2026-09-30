@@ -15,7 +15,8 @@ actionable; "I missed seven Tree questions" is not.
 | Area | Status |
 | --- | --- |
 | PR1: manual logging (schema, API, record dialog, entry points, export) | Implemented on `feat/mistake-profile`; DB and contract tests |
-| PR2: profile dashboard on `/analysis` | Planned |
+| Session evidence and profile aggregation ([extension-first](EXTENSION_FIRST_REFACTOR_PLAN.md) Phase 4A) | Implemented: session source and evidence (migration `0022`), improvements, `GET /api/mistakes/profile`; core, DB, and route tests |
+| PR2: profile dashboard | Planned as an extension-first Phase 6A web surface, over `GET /api/mistakes/profile` |
 | PR3: optional AI category suggestions | Planned; only after PR1-2 usage data |
 | Daily practice feed | Engine implemented and tested; app wiring planned ([DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md)) |
 
@@ -86,8 +87,10 @@ dismissed before they count.
 | `primary_category` | A `SKILL_DIMENSIONS` value |
 | `secondary_tags` | JSON `string[]`, at most 8 x 32 chars |
 | `summary`, `next_step` | Optional user text, at most 2,000 / 1,000 chars |
-| `source_type` | `manual`, `submission`, `quiz_answer`, `review` (later: `feed_item`, `practice_session`) |
+| `source_type` | `manual`, `submission`, `quiz_answer`, `review`, `practice_session` (later: `feed_item`) |
 | `submission_id`, `quiz_session_id`, `review_event_id` | FKs, `on delete set null` |
+| `practice_session_id` | FK, `on delete set null` (migration `0022`). Set directly for a `practice_session` record, or derived server-side from a session-linked submission (automatic/confirmed association) or rating |
+| `evidence` | JSON, at most 8 references to observed facts: `observation`, `submission`, `code_range` (submission + lines), `judge_output` (submission + field). Each must belong to the user and problem, and an observation to the record's session. Facts stay apart from the inferred `summary` |
 | `quiz_item_id` | Item id inside `quiz_sessions.items_json` (sessions are archived, not deleted, so it stays valid) |
 | `status` | `candidate`, `confirmed` (default), `dismissed` |
 | `origin` | `user` (default), `ai_suggested` |
@@ -103,11 +106,26 @@ created_at)`, `(user_id, problem_id)`, unique `(user_id, request_id)`, and three
 - `(user_id, submission_id, primary_category)`
 - `(user_id, quiz_session_id, quiz_item_id, primary_category)`
 - `(user_id, review_event_id, primary_category)`
+- `(user_id, practice_session_id, primary_category, origin)`, only for
+  `source_type = 'practice_session'`: one live record made on the session per
+  category from the user, and one from AI, which may coexist
 
-**Counting rule.** An occurrence is a confirmed record for one attempt or
-review context, not one per failed retry. The dedupe indexes enforce this: a
-second record for the same source and category returns the existing row
-(`deduplicated: true`). A dismissed record doesn't block a new one.
+**Dedupe rule.** A second record for the same source and category returns the
+existing row (`deduplicated: true`); a dismissed record doesn't block a new
+one. Records on different submissions of one session all stay visible.
+
+**Counting rule.** The profile counts *contexts*, not records: a practice
+session, or for records made before sessions existed, their own source (a
+submission, quiz item, rating, or the record itself). Each (context, category)
+counts once however many records, retries, or origins point at it, so a user's
+record on a failed submission and a confirmed AI finding from the same session
+count once.
+
+`practice_improvements` (migration `0022`) holds the user's explicit
+confirmation that a completed session handled a category well:
+`(user_id, practice_session_id, category)` unique, idempotent per `request_id`,
+cascading with the session. It is the only evidence that lowers a category's
+weakness.
 
 **Idempotency.** Same pattern as `POST /api/review/rate`: replaying a
 `requestId` with the same payload returns the original record; a different
@@ -130,11 +148,40 @@ to belong to the same user **and** problem.
 | `GET /api/mistakes?problemId=&category=&status=&cursor=&limit=` | Keyset-paginated list (`created_at desc, id desc`), default `status=confirmed` |
 | `PATCH /api/mistakes/:id` | Edit category, tags, text; `resolved: true/false`; confirm/dismiss a candidate |
 | `DELETE /api/mistakes/:id` | Delete |
+| `GET /api/mistakes/profile` | The aggregated profile (below); `private, no-store` |
+| `POST /api/mistakes/improvements` | Confirm an improvement for a completed session: `201`, replay/duplicate `200`, `404 session_not_found`, `409 session_not_completed` / `improvement_request_conflict` |
+| `GET /api/mistakes/improvements?practiceSessionId=` | A session's improvements |
+| `DELETE /api/mistakes/improvements/:id` | Withdraw one |
 
-Later: `GET /api/mistakes/profile` (aggregates, confirmed only) and an
-explicitly user-triggered `POST /api/mistakes/suggest` that follows the hosted
-credit rules (`spendHostedCredit()` in the job's transaction, refund on
-failure). Nothing is ever classified in the background.
+AI session analysis (extension-first Phase 4B) is BYOK-only and creates
+`ai_suggested` candidates; nothing is ever classified in the background unless
+the user opts in.
+
+## Profile aggregation
+
+`computeMistakeProfile()` in `packages/core/src/profile.ts` is pure;
+`server/mistake-profile.ts` loads its inputs with user-scoped joins over the
+90-day window and computes on every read. Nothing derived is stored, so Undo,
+dismissal, resolution, and deletion can never leave a stale score. (The
+extension-first plan proposed a `practice_evidence` table for normalized
+inputs; computing on read replaced it, see the checkpoint log.)
+
+- **Weakness** reuses the daily feed's decay and smoothing (21-day half-life,
+  90-day window, same thresholds). A context of only resolved records weighs
+  25 %; confirmed improvements subtract.
+- **Candidates**: unconfirmed AI findings are listed separately and never
+  weigh.
+- **Readiness**: personalized targeting needs three completed sessions across
+  two problems; a category needs confirmed evidence from two contexts across
+  two problems.
+- **Topic signals**: per topic, sessions with their Accepted, failed, and
+  first-try counts and the median failures before Accepted; a session's
+  rating (Again/Hard fail, Good/Easy pass) outranks its observed outcome.
+  Success is session/topic evidence, never mastery of a category. Undone
+  ratings drop out; the observed outcome remains. Interrupted and abandoned
+  sessions, unknown outcomes, and missing evidence are never failures.
+- **Incomplete evidence** (partial capture, ambiguous observations) is counted
+  and labeled; raw counts are never presented as success rates.
 
 ## Profile dashboard (PR2)
 
@@ -174,7 +221,7 @@ the user to log their next mistake; it never invents insights.
 | --- | --- |
 | PR1 | Migration, contracts, `server/mistakes.ts`, routes, record dialog and chip strip, the four entry points, en/zh strings, export, DB tests |
 | PR2 | Dashboard with both tiers, drill-down, review links, empty/low-data states |
-| PR3 | Optional AI suggestions with candidate accept/edit/dismiss; practice-session and feed sources |
+| PR3 | Optional AI suggestions with candidate accept/edit/dismiss (extension-first Phase 4B); feed source |
 | PR4 | Subcategories and concept tags, Study Coach read tool `read_mistake_profile` (confirmed records only, no new credit path) |
 
 ## Tests

@@ -4,6 +4,7 @@ import type {
   AgentNavigation,
   AgentPageContext,
   AgentProposal,
+  MistakeEvidence,
   QuizAnswer,
   QuizItem,
 } from "@ankify/contracts";
@@ -555,8 +556,17 @@ export const mistakeRecords = sqliteTable(
     secondaryTags: text("secondary_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
     summary: text("summary"),
     nextStep: text("next_step"),
-    sourceType: text("source_type", { enum: ["manual", "submission", "quiz_answer", "review"] }).notNull(),
+    sourceType: text("source_type", { enum: ["manual", "submission", "quiz_answer", "review", "practice_session"] }).notNull(),
     submissionId: text("submission_id").references(() => submissions.id, { onDelete: "set null" }),
+    /** The practice session the mistake happened in: set directly, or derived
+     *  from a session-linked submission or rating. Scoring counts each
+     *  (session, category) once. */
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, { onDelete: "set null" }),
+    /** Observed facts the record points at (observations, submissions, code
+     *  ranges, judge output), kept apart from the inferred `summary`. The
+     *  default is a constant: SQLite cannot add a column with an expression
+     *  default to a table that already has rows. */
+    evidence: text("evidence", { mode: "json" }).$type<MistakeEvidence[]>().notNull().default(sql`'[]'`),
     quizSessionId: text("quiz_session_id").references(() => quizSessions.id, { onDelete: "set null" }),
     // Item id inside quiz_sessions.items_json. Sessions are archived, not
     // deleted, so the reference stays resolvable.
@@ -591,6 +601,49 @@ export const mistakeRecords = sqliteTable(
     reviewDedupIdx: uniqueIndex("mistake_records_review_dedup_unique")
       .on(t.userId, t.reviewEventId, t.primaryCategory)
       .where(sql`${t.reviewEventId} IS NOT NULL AND ${t.status} <> 'dismissed'`),
+    // One live record per session, category, and origin among records made on
+    // the session itself; a user's own record and an AI candidate may coexist.
+    // Records on the session's submissions or rating dedupe by that source, so
+    // every visible record survives and scoring counts the session once.
+    sessionDedupIdx: uniqueIndex("mistake_records_session_dedup_unique")
+      .on(t.userId, t.practiceSessionId, t.primaryCategory, t.origin)
+      .where(sql`${t.sourceType} = 'practice_session' AND ${t.practiceSessionId} IS NOT NULL AND ${t.status} <> 'dismissed'`),
+    userSessionIdx: index("mistake_records_user_session_idx").on(t.userId, t.practiceSessionId),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * practice_improvements
+ * The user's explicit confirmation that a practice session handled a skill
+ * dimension well. It is the only evidence that lowers a category's weakness:
+ * an Accepted verdict or a Good rating proves the session, not every skill.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const practiceImprovements = sqliteTable(
+  "practice_improvements",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    practiceSessionId: text("practice_session_id").notNull(),
+    category: text("category", {
+      enum: ["approach", "invariant", "edge_case", "complexity", "implementation", "conceptual", "other"],
+    }).notNull(),
+    requestId: text("request_id").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    sessionOwnerFk: foreignKey({
+      name: "practice_improvements_session_owner_fk",
+      columns: [t.practiceSessionId, t.userId, t.problemId],
+      foreignColumns: [practiceSessions.id, practiceSessions.userId, practiceSessions.problemId],
+    }).onDelete("cascade"),
+    userRequestIdx: uniqueIndex("practice_improvements_user_request_unique").on(t.userId, t.requestId),
+    sessionCategoryIdx: uniqueIndex("practice_improvements_session_category_unique").on(t.userId, t.practiceSessionId, t.category),
+    userCreatedIdx: index("practice_improvements_user_created_idx").on(t.userId, t.createdAt),
   }),
 );
 
@@ -898,6 +951,7 @@ export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
 export type MistakeRecord = typeof mistakeRecords.$inferSelect;
+export type PracticeImprovement = typeof practiceImprovements.$inferSelect;
 export type NewMistakeRecord = typeof mistakeRecords.$inferInsert;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;

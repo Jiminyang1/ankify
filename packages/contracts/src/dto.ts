@@ -5,6 +5,7 @@ import type {
   AiJobCreateRequestInput,
   CaptureProblemInput,
   CaptureSubmissionInput,
+  MistakeEvidence,
   MistakeSourceType,
   MistakeStatus,
   QuizAnswer,
@@ -294,6 +295,8 @@ export type MistakeRecordDto = {
   quizSessionId: string | null;
   quizItemId: string | null;
   reviewEventId: string | null;
+  practiceSessionId: string | null;
+  evidence: MistakeEvidence[];
   status: MistakeStatus;
   origin: "user" | "ai_suggested";
   resolvedAt: string | null;
@@ -315,4 +318,59 @@ export type MistakeCreateResponseDto = {
 export type MistakeListPayloadDto = {
   mistakes: MistakeRecordDto[];
   nextCursor: string | null;
+};
+
+export type PracticeImprovementDto = {
+  id: string;
+  problemId: string;
+  practiceSessionId: string;
+  category: SkillDimensionId;
+  createdAt: string;
+};
+
+export type MistakeProfileCategoryDto = {
+  category: SkillDimensionId;
+  /** 0-1: smoothed failure rate times confidence; `weak` from 0.25. */
+  weakness: number;
+  weak: boolean;
+  /** Confirmed evidence from at least two contexts across two problems. */
+  ready: boolean;
+  contexts: number;
+  problems: number;
+  unresolved: number;
+  resolved: number;
+  improvements: number;
+  lastSeenAt: string | null;
+  trend: { current: number; previous: number; periodDays: number };
+  examples: { mistakeId: string; problemId: string; problemTitle: string; summary: string | null; createdAt: string; practiceSessionId: string | null }[];
+};
+
+export type MistakeProfileDto = {
+  generatedAt: string;
+  windowDays: number;
+  halfLifeDays: number;
+  readiness: {
+    completedSessions: number;
+    distinctProblems: number;
+    /** Weakness targeting is personalized only past these minimums. */
+    personalized: boolean;
+    required: { sessions: number; problems: number };
+  };
+  categories: MistakeProfileCategoryDto[];
+  /** Unconfirmed AI findings; never counted as weakness until confirmed. */
+  candidates: { mistakeId: string; problemId: string; problemTitle: string; category: SkillDimensionId; summary: string | null; createdAt: string; practiceSessionId: string | null }[];
+  topics: {
+    topic: string;
+    sessions: number;
+    accepted: number;
+    failed: number;
+    firstTryAccepted: number;
+    medianFailedBeforeAccepted: number | null;
+    weakness: number;
+  }[];
+  signals: {
+    sessions: { completed: number; accepted: number; failed: number; unknown: number; interrupted: number; abandoned: number };
+    ratings: { again: number; hard: number; good: number; easy: number };
+  };
+  incomplete: { sessionsWithPartialCapture: number; ambiguousObservations: number };
 };

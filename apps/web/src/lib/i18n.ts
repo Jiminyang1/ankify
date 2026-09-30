@@ -521,7 +521,7 @@ export const translations = {
       emptyHelp: "When a review, quiz answer, or submission goes wrong, record why. Patterns show up across problems.",
       deleteTitle: "Delete this mistake?",
       deleteDescription: "This can't be undone.",
-      sources: { manual: "Manual", submission: "Submission", quiz_answer: "Quiz", review: "Review" },
+      sources: { manual: "Manual", submission: "Submission", quiz_answer: "Quiz", review: "Review", practice_session: "Practice session" },
       categories: {
         approach: "Approach",
         invariant: "State / invariant",
@@ -1087,7 +1087,7 @@ export const translations = {
       emptyHelp: "复习、测验或提交出错时，记下原因。跨题目的规律会逐渐显现。",
       deleteTitle: "删除这条错因？",
       deleteDescription: "删除后无法恢复。",
-      sources: { manual: "手动", submission: "提交", quiz_answer: "测验", review: "复习" },
+      sources: { manual: "手动", submission: "提交", quiz_answer: "测验", review: "复习", practice_session: "练习记录" },
       categories: {
         approach: "思路选择",
         invariant: "状态 / 不变量",

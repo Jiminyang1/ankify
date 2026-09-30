@@ -36,7 +36,31 @@ export const skillDimensionEnum = z.enum([
   "conceptual",
   "other",
 ]);
-export const mistakeSourceTypeEnum = z.enum(["manual", "submission", "quiz_answer", "review"]);
+export const mistakeSourceTypeEnum = z.enum(["manual", "submission", "quiz_answer", "review", "practice_session"]);
+
+/** Observed facts a mistake record points at; references are checked against
+ *  the record's user, problem, and session. */
+export const mistakeEvidenceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("observation"), observationId: z.string().min(1).max(64) }).strict(),
+  z.object({ kind: z.literal("submission"), submissionId: z.string().min(1).max(64) }).strict(),
+  z
+    .object({
+      kind: z.literal("code_range"),
+      submissionId: z.string().min(1).max(64),
+      startLine: z.number().int().min(1).max(100_000),
+      endLine: z.number().int().min(1).max(100_000),
+    })
+    .strict()
+    .refine((range) => range.endLine >= range.startLine, { message: "invalid_range" }),
+  z
+    .object({
+      kind: z.literal("judge_output"),
+      submissionId: z.string().min(1).max(64),
+      field: z.enum(["failedTestcase", "expectedOutput", "actualOutput", "errorMessage"]),
+    })
+    .strict(),
+]);
+export type MistakeEvidence = z.infer<typeof mistakeEvidenceSchema>;
 export const mistakeStatusEnum = z.enum(["candidate", "confirmed", "dismissed"]);
 export const aiJobStatusEnum = z.enum([
   "queued",
@@ -331,6 +355,8 @@ const mistakeCreateFields = {
   secondaryTags: mistakeSecondaryTagsSchema.default([]),
   summary: mistakeSummarySchema.optional(),
   nextStep: mistakeNextStepSchema.optional(),
+  /** Observed facts the record points at (max 8). */
+  evidence: z.array(mistakeEvidenceSchema).max(8).default([]),
 };
 
 /** POST /api/mistakes — a user-confirmed mistake, optionally linked to the
@@ -355,13 +381,33 @@ export const mistakeCreateSchema = z.discriminatedUnion("sourceType", [
   z
     .object({
       sourceType: z.literal("review"),
-      // The `requestId` of the POST /api/review/rate call that recorded the rating.
+      // The `requestId` of the rating (legacy route or session rating).
       reviewRequestId: z.string().uuid(),
+      ...mistakeCreateFields,
+    })
+    .strict(),
+  z
+    .object({
+      sourceType: z.literal("practice_session"),
+      practiceSessionId: z.string().min(1).max(64),
       ...mistakeCreateFields,
     })
     .strict(),
 ]);
 export type MistakeCreateInput = z.infer<typeof mistakeCreateSchema>;
+/** What a client sends: defaulted fields (tags, evidence) may be omitted. */
+export type MistakeCreateRequest = z.input<typeof mistakeCreateSchema>;
+
+/** POST /api/mistakes/improvements — the user confirms a session handled a
+ *  dimension well; the only evidence that lowers a dimension's weakness. */
+export const practiceImprovementCreateSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    practiceSessionId: z.string().min(1).max(64),
+    category: skillDimensionEnum,
+  })
+  .strict();
+export type PracticeImprovementCreateInput = z.infer<typeof practiceImprovementCreateSchema>;
 
 /** PATCH /api/mistakes/:id — edit, resolve, or confirm/dismiss a record. */
 export const mistakePatchSchema = z

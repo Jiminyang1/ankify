@@ -57,7 +57,8 @@ Tables (all in `packages/db/src/schema.ts`):
 | `cards` | Q&A flashcards; `aiStatus` `candidate | failed | ready`; integer `version` for optimistic concurrency |
 | `quiz_sessions` | 5-item quizzes (`active | completed | archived`), answers, score |
 | `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt`; newer events record session, policy, method, and schedule-revision provenance |
-| `mistake_records` | User-confirmed causes of failure, linked to a submission, quiz answer, or rating; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
+| `mistake_records` | Causes of failure, confirmed by the user (or AI candidates awaiting confirmation), linked to a submission, quiz answer, rating, or practice session, with structured evidence references; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
+| `practice_improvements` | The user's confirmation that a completed session handled a skill dimension well; the only evidence that lowers a dimension's weakness |
 | `ai_jobs` | Durable async Card/Quiz generation commands (see below) |
 | `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps` | Persistent Study Coach conversations |
 | `settings` | Per-user key/value: encrypted AI config, review/generation prefs, onboarding, rate-limit windows, starter-credit counter, Stripe customer ids |
@@ -154,6 +155,24 @@ Pure rules live in `packages/core/src/practice-session.ts`, services in
   `POST .../:id/submissions`. Tabs send `X-Ankify-Owner-Token` on reads.
 - **Kill switch**: `ANKIFY_DISABLED_WORKFLOWS` (comma-separated workflow ids)
   disables a workflow's routes and removes it from `GET /api/capabilities`.
+
+### Mistake evidence and profile
+
+Details: [MISTAKE_PROFILE_PLAN.md](MISTAKE_PROFILE_PLAN.md).
+
+- A mistake record belongs to a practice session when made on it, or when its
+  submission or rating came from one (derived server-side). Evidence
+  references (observations, submissions, code ranges, judge output) must
+  belong to the same user and problem; they are facts, apart from the
+  inferred summary.
+- `GET /api/mistakes/profile` computes the profile on every read from
+  user-scoped joins over the last 90 days (`server/mistake-profile.ts` loads,
+  `computeMistakeProfile()` in `packages/core` aggregates). Each (session or
+  legacy source, category) counts once, only confirmed records weigh, AI
+  candidates are listed apart, and nothing derived is stored, so Undo,
+  dismissal, and resolution take effect immediately.
+- Accepted verdicts and Good/Easy ratings are topic success, never mastery of
+  a dimension; only `practice_improvements` lower a dimension's weakness.
 
 ## AI configuration and hosted keys
 
