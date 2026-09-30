@@ -1,6 +1,6 @@
 import type { AttemptHistoryCoverageDto, AttemptHistoryMergeInput, AttemptStatus } from "@ankify/contracts";
 import { getDb, schema, type AttemptHistoryCoverage } from "@ankify/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { DbTransaction } from "../practice-sessions/store";
 
@@ -24,7 +24,7 @@ type HistoryRow = { slug: string; status: AttemptStatus };
 
 /** Inserts or refreshes one source's entries; an accepted status never
  *  goes back to attempted. */
-async function upsertHistory(
+export async function recordAttempts(
   tx: DbTransaction,
   userId: string,
   source: "leetcode_status" | "user_marked" | "deleted_problem",
@@ -71,7 +71,7 @@ async function upsertHistory(
  */
 export async function mergeAttemptHistory(userId: string, input: AttemptHistoryMergeInput, now = new Date()) {
   return getDb().transaction(async (tx) => {
-    const merged = await upsertHistory(tx, userId, input.source, input.sourceAccount, input.entries, now);
+    const merged = await recordAttempts(tx, userId, input.source, input.sourceAccount, input.entries, now);
     if (!input.coverage || input.sourceAccount === null) return { merged, coverage: null };
     const c = schema.attemptHistoryCoverage;
     const [coverage] = await tx
@@ -123,7 +123,7 @@ export async function recordDeletedProblem(tx: DbTransaction, userId: string, pr
     tx.select({ id: o.id }).from(o).where(and(eq(o.userId, userId), eq(o.problemId, problemId), eq(o.verdict, "Accepted"))).limit(1),
   ]);
   const status = submission.length > 0 || observation.length > 0 ? "accepted" : "attempted";
-  await upsertHistory(tx, userId, "deleted_problem", null, [{ slug: problem.slug, status }], now);
+  await recordAttempts(tx, userId, "deleted_problem", null, [{ slug: problem.slug, status }], now);
   return true;
 }
 
@@ -137,4 +137,25 @@ export async function loadKnownAttemptedSlugs(db: Db, userId: string) {
     db.select({ slug: schema.attemptHistory.slug }).from(schema.attemptHistory).where(eq(schema.attemptHistory.userId, userId)),
   ]);
   return new Set([...problems, ...history].map((row) => row.slug));
+}
+
+/** Coverage older than this no longer vouches for a problem being new. */
+const COVERAGE_FRESH_MS = 30 * 86_400_000;
+
+/**
+ * "No prior attempt found" needs a LeetCode account whose accepted and tried
+ * problem lists were both read to the end within the last 30 days; anything
+ * less is unverified.
+ */
+export async function historyNovelty(db: Db, userId: string, now: Date): Promise<"no_prior_attempt_found" | "unverified"> {
+  const c = schema.attemptHistoryCoverage;
+  const rows = await db
+    .select({ scope: c.scope, sourceAccount: c.sourceAccount })
+    .from(c)
+    .where(and(eq(c.userId, userId), eq(c.complete, true), gte(c.syncedAt, new Date(now.getTime() - COVERAGE_FRESH_MS))));
+  const scopes = new Map<string, Set<string>>();
+  for (const row of rows) scopes.set(row.sourceAccount, (scopes.get(row.sourceAccount) ?? new Set()).add(row.scope));
+  return [...scopes.values()].some((set) => set.has("problem_list_accepted") && set.has("problem_list_tried"))
+    ? "no_prior_attempt_found"
+    : "unverified";
 }

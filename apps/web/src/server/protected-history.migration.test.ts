@@ -61,9 +61,9 @@ it("preserves protected history across 0019 -> 0020, future migrations, and repl
   for (const row of after[`ai_jobs/${owners[0]}`]!) {
     expect(row).toMatchObject({ kind: "card", practice_session_id: null, evidence_digest: null, trigger: null, result_analysis_id: null, dispatched_at: null });
   }
-  // M3: upgrading invents no attempt history, candidates, or coverage;
+  // M3: upgrading invents no attempt history, candidates, coverage, or suggestions;
   // existing problems stay excluded from suggestions through their own rows.
-  for (const table of ["attempt_history", "attempt_history_coverage", "suggestion_candidates"]) {
+  for (const table of ["attempt_history", "attempt_history_coverage", "suggestion_candidates", "suggestions"]) {
     expect((await getDb().$client.execute(`SELECT count(*) AS count FROM ${table}`)).rows[0]).toMatchObject({ count: 0 });
   }
   await testDb.migrate();

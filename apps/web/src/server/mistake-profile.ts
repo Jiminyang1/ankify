@@ -15,7 +15,7 @@ const MAX_EXAMPLES = 3;
 const MAX_CANDIDATES = 20;
 
 /** The legacy context of a record made outside a practice session. */
-function legacySourceKey(row: {
+export function legacySourceKey(row: {
   id: string;
   submissionId: string | null;
   quizSessionId: string | null;

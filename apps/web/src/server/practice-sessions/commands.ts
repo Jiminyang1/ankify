@@ -40,11 +40,12 @@ import {
   recordCommand,
   sessionDto,
   updateSession,
+  type DbTransaction,
   type SessionFailure,
   type SessionPatch,
 } from "./store";
 
-type StartResult = { ok: true; response: PracticeSessionStartResponseDto } | SessionFailure;
+export type StartResult = { ok: true; response: PracticeSessionStartResponseDto } | SessionFailure;
 type CommandResult = { ok: true; response: PracticeSessionCommandResponseDto } | SessionFailure;
 type IngestResult = { ok: true; response: PracticeSessionSubmissionsResponseDto } | SessionFailure;
 
@@ -88,151 +89,165 @@ export async function startPracticeSession(
   input: PracticeSessionStartInput,
   now = new Date(),
 ): Promise<StartResult> {
-  const { requestId, ...payload } = input;
-  const digest = payloadDigest({ command: "start", ...payload });
+  const result = await getDb().transaction((tx) => startSessionInTransaction(tx, userId, input, now));
+  await afterSessionStart(userId, result);
+  return result;
+}
 
-  const result = await getDb().transaction(async (tx): Promise<StartResult> => {
-    const replay = await findReplay(tx, userId, requestId);
-    if (replay) {
-      if (replay.command !== "start" || replay.payloadDigest !== digest) return fail("request_conflict");
-      return { ok: true, response: { ...(replay.response as PracticeSessionStartResponseDto), idempotentReplay: true } };
-    }
-
-    // Decide the session kind before writing anything, so a rejected review
-    // request never creates or modifies a problem.
-    let existing: Problem | null;
-    if (input.target.kind === "problem") {
-      existing = await loadProblem(tx, userId, input.target.problemId);
-      if (!existing) return fail("problem_not_found");
-    } else {
-      const lookup = await findLeetcodeProblem(tx, userId, input.target.problem);
-      if (lookup.kind === "conflict") return fail("duplicate_problem_conflict");
-      existing = lookup.kind === "found" ? lookup.problem : null;
-    }
-    const kind = sessionKindFor(
-      input.mode,
-      existing ? { enrollment: existing.enrollment, due: isProblemDue({ ...existing, archivedAt: null }, now) } : null,
-    );
-    if ("error" in kind) return fail(kind.error);
-
-    let problem: Problem;
-    let problemCreated = false;
-    let unarchived = false;
-    if (input.target.kind === "leetcode") {
-      const upserted = await upsertLeetcodeProblem(tx, userId, input.target.problem, { enrollment: "awaiting_initial", now });
-      if (!upserted.ok) return fail(upserted.error, undefined, upserted.message);
-      ({ problem, created: problemCreated, unarchived } = upserted);
-    } else {
-      problem = existing!;
-      if (problem.archivedAt) {
-        [problem] = await tx
-          .update(schema.problems)
-          .set({ archivedAt: null, updatedAt: now })
-          .where(and(eq(schema.problems.id, problem.id), eq(schema.problems.userId, userId)))
-          .returning() as [Problem];
-        unarchived = true;
-      }
-    }
-    const problemDto = toProblemStatusDto(problem, now);
-    const respond = async (
-      session: PracticeSession,
-      extra: Pick<PracticeSessionStartResponseDto, "created" | "supersededSessionIds">,
-    ): Promise<PracticeSessionStartResponseDto> => ({
-      ok: true,
-      session: await sessionDto(tx, userId, session, problem, now, input.ownerToken),
-      problem: problemDto,
-      problemCreated,
-      unarchived,
-      idempotentReplay: false,
-      ...extra,
-    });
-
-    const [open] = await tx
-      .select()
-      .from(ps)
-      .where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), eq(ps.isOpen, true)))
-      .limit(1);
-    if (open && isSessionStale(open, now)) {
-      // Kept as interrupted history; it no longer blocks a new session.
-      await updateSession(tx, userId, open, { isOpen: false, status: "interrupted", ownerLeaseExpiresAt: null }, now);
-    } else if (open) {
-      const openDto = () => sessionDto(tx, userId, open, problem, now, input.ownerToken);
-      if (open.type !== kind.type || open.reviewIntent !== kind.reviewIntent) {
-        return fail("open_session_conflict", await openDto());
-      }
-      if (open.sourceAccount && input.sourceAccount && open.sourceAccount !== input.sourceAccount) {
-        return fail("account_mismatch", await openDto());
-      }
-      if (ownershipFor(open, input.ownerToken, now) === "owned_elsewhere") {
-        // Nothing changes; the client offers "Continue here" (takeover).
-        return { ok: true, response: await respond(open, { created: false, supersededSessionIds: [] }) };
-      }
-      const resumed = await updateSession(
-        tx,
-        userId,
-        open,
-        {
-          ...claimPatch(open, input.ownerToken, now),
-          ...(open.baselineState === "pending" && input.baseline ? baselinePatch(input.baseline) : {}),
-          ...(open.sourceAccount == null && input.sourceAccount ? { sourceAccount: input.sourceAccount } : {}),
-        },
-        now,
-      );
-      const response = await respond(resumed, { created: false, supersededSessionIds: [] });
-      await recordCommand(tx, { userId, sessionId: resumed.id, requestId, command: "start", payloadDigest: digest, response }, now);
-      return { ok: true, response };
-    }
-
-    const ratable = await tx
-      .select()
-      .from(ps)
-      .where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), inArray(ps.ratingDisposition, ["pending", "deferred"])));
-    const live = ratable.filter((session) => {
-      const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
-      return disposition === "pending" || disposition === "deferred";
-    });
-    if (live.length > 0 && !input.supersedePendingRating) {
-      return fail("rating_pending", await sessionDto(tx, userId, live[0]!, problem, now, input.ownerToken));
-    }
-    for (const session of ratable) {
-      const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
-      const next = disposition === "pending" || disposition === "deferred" ? "superseded" : disposition;
-      await updateSession(tx, userId, session, { ratingDisposition: next }, now);
-    }
-
-    const [created] = await tx
-      .insert(ps)
-      .values({
-        id: nanoid(12),
-        userId,
-        problemId: problem.id,
-        requestId,
-        type: kind.type,
-        reviewIntent: kind.reviewIntent,
-        status: "active",
-        isOpen: true,
-        scheduleRevisionAtStart: problem.scheduleRevision,
-        sourceAccount: input.sourceAccount ?? null,
-        ownerToken: input.ownerToken,
-        ownerLeaseExpiresAt: new Date(now.getTime() + SESSION_LEASE_MS),
-        ...(input.baseline ? baselinePatch(input.baseline) : {}),
-        startedAt: now,
-        lastActivityAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-    const response = await respond(created!, { created: true, supersededSessionIds: live.map((session) => session.id) });
-    await recordCommand(tx, { userId, sessionId: created!.id, requestId, command: "start", payloadDigest: digest, response }, now);
-    return { ok: true, response };
-  });
-
+/** Post-commit work of a start (onboarding), best effort. */
+export async function afterSessionStart(userId: string, result: StartResult) {
   if (result.ok && result.response.problemCreated && !result.response.idempotentReplay) {
     await markFirstCapture(userId).catch((error) => {
       console.warn("[onboarding] failed to record first capture", error);
     });
   }
-  return result;
+}
+
+/**
+ * A start inside the caller's transaction, so another write (a suggestion
+ * being started) commits with it. Call `afterSessionStart()` after commit.
+ */
+export async function startSessionInTransaction(
+  tx: DbTransaction,
+  userId: string,
+  input: PracticeSessionStartInput,
+  now: Date,
+): Promise<StartResult> {
+  const { requestId, ...payload } = input;
+  const digest = payloadDigest({ command: "start", ...payload });
+  const replay = await findReplay(tx, userId, requestId);
+  if (replay) {
+    if (replay.command !== "start" || replay.payloadDigest !== digest) return fail("request_conflict");
+    return { ok: true, response: { ...(replay.response as PracticeSessionStartResponseDto), idempotentReplay: true } };
+  }
+
+  // Decide the session kind before writing anything, so a rejected review
+  // request never creates or modifies a problem.
+  let existing: Problem | null;
+  if (input.target.kind === "problem") {
+    existing = await loadProblem(tx, userId, input.target.problemId);
+    if (!existing) return fail("problem_not_found");
+  } else {
+    const lookup = await findLeetcodeProblem(tx, userId, input.target.problem);
+    if (lookup.kind === "conflict") return fail("duplicate_problem_conflict");
+    existing = lookup.kind === "found" ? lookup.problem : null;
+  }
+  const kind = sessionKindFor(
+    input.mode,
+    existing ? { enrollment: existing.enrollment, due: isProblemDue({ ...existing, archivedAt: null }, now) } : null,
+  );
+  if ("error" in kind) return fail(kind.error);
+
+  let problem: Problem;
+  let problemCreated = false;
+  let unarchived = false;
+  if (input.target.kind === "leetcode") {
+    const upserted = await upsertLeetcodeProblem(tx, userId, input.target.problem, { enrollment: "awaiting_initial", now });
+    if (!upserted.ok) return fail(upserted.error, undefined, upserted.message);
+    ({ problem, created: problemCreated, unarchived } = upserted);
+  } else {
+    problem = existing!;
+    if (problem.archivedAt) {
+      [problem] = await tx
+        .update(schema.problems)
+        .set({ archivedAt: null, updatedAt: now })
+        .where(and(eq(schema.problems.id, problem.id), eq(schema.problems.userId, userId)))
+        .returning() as [Problem];
+      unarchived = true;
+    }
+  }
+  const problemDto = toProblemStatusDto(problem, now);
+  const respond = async (
+    session: PracticeSession,
+    extra: Pick<PracticeSessionStartResponseDto, "created" | "supersededSessionIds">,
+  ): Promise<PracticeSessionStartResponseDto> => ({
+    ok: true,
+    session: await sessionDto(tx, userId, session, problem, now, input.ownerToken),
+    problem: problemDto,
+    problemCreated,
+    unarchived,
+    idempotentReplay: false,
+    ...extra,
+  });
+
+  const [open] = await tx
+    .select()
+    .from(ps)
+    .where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), eq(ps.isOpen, true)))
+    .limit(1);
+  if (open && isSessionStale(open, now)) {
+    // Kept as interrupted history; it no longer blocks a new session.
+    await updateSession(tx, userId, open, { isOpen: false, status: "interrupted", ownerLeaseExpiresAt: null }, now);
+  } else if (open) {
+    const openDto = () => sessionDto(tx, userId, open, problem, now, input.ownerToken);
+    if (open.type !== kind.type || open.reviewIntent !== kind.reviewIntent) {
+      return fail("open_session_conflict", await openDto());
+    }
+    if (open.sourceAccount && input.sourceAccount && open.sourceAccount !== input.sourceAccount) {
+      return fail("account_mismatch", await openDto());
+    }
+    if (ownershipFor(open, input.ownerToken, now) === "owned_elsewhere") {
+      // Nothing changes; the client offers "Continue here" (takeover).
+      return { ok: true, response: await respond(open, { created: false, supersededSessionIds: [] }) };
+    }
+    const resumed = await updateSession(
+      tx,
+      userId,
+      open,
+      {
+        ...claimPatch(open, input.ownerToken, now),
+        ...(open.baselineState === "pending" && input.baseline ? baselinePatch(input.baseline) : {}),
+        ...(open.sourceAccount == null && input.sourceAccount ? { sourceAccount: input.sourceAccount } : {}),
+      },
+      now,
+    );
+    const response = await respond(resumed, { created: false, supersededSessionIds: [] });
+    await recordCommand(tx, { userId, sessionId: resumed.id, requestId, command: "start", payloadDigest: digest, response }, now);
+    return { ok: true, response };
+  }
+
+  const ratable = await tx
+    .select()
+    .from(ps)
+    .where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), inArray(ps.ratingDisposition, ["pending", "deferred"])));
+  const live = ratable.filter((session) => {
+    const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
+    return disposition === "pending" || disposition === "deferred";
+  });
+  if (live.length > 0 && !input.supersedePendingRating) {
+    return fail("rating_pending", await sessionDto(tx, userId, live[0]!, problem, now, input.ownerToken));
+  }
+  for (const session of ratable) {
+    const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
+    const next = disposition === "pending" || disposition === "deferred" ? "superseded" : disposition;
+    await updateSession(tx, userId, session, { ratingDisposition: next }, now);
+  }
+
+  const [created] = await tx
+    .insert(ps)
+    .values({
+      id: nanoid(12),
+      userId,
+      problemId: problem.id,
+      requestId,
+      type: kind.type,
+      reviewIntent: kind.reviewIntent,
+      status: "active",
+      isOpen: true,
+      scheduleRevisionAtStart: problem.scheduleRevision,
+      sourceAccount: input.sourceAccount ?? null,
+      ownerToken: input.ownerToken,
+      ownerLeaseExpiresAt: new Date(now.getTime() + SESSION_LEASE_MS),
+      ...(input.baseline ? baselinePatch(input.baseline) : {}),
+      startedAt: now,
+      lastActivityAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  const response = await respond(created!, { created: true, supersededSessionIds: live.map((session) => session.id) });
+  await recordCommand(tx, { userId, sessionId: created!.id, requestId, command: "start", payloadDigest: digest, response }, now);
+  return { ok: true, response };
 }
 
 /** Heartbeats, lifecycle transitions, and rating decisions for one session. */

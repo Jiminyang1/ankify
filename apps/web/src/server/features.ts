@@ -16,6 +16,7 @@ const IMPLEMENTED_WORKFLOWS: readonly WorkflowId[] = [
   "practice_sessions",
   "session_rating",
   "session_analysis",
+  "suggestions",
 ];
 
 /**

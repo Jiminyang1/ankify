@@ -19,7 +19,7 @@ describe("capabilities handshake", () => {
     const response = await GET(new Request("http://localhost/api/capabilities"));
     const payload = capabilitiesSchema.parse(await response.json());
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(payload.supportedWorkflows).toEqual(["capture", "legacy_review", "coach", "card_generation", "quiz_generation", "credit_checkout", "practice_sessions", "session_rating", "session_analysis"]);
+    expect(payload.supportedWorkflows).toEqual(["capture", "legacy_review", "coach", "card_generation", "quiz_generation", "credit_checkout", "practice_sessions", "session_rating", "session_analysis", "suggestions"]);
     expect(payload.sessionAnalysis).toEqual({ available: true, automaticAvailable: false, requiresOwnKey: true });
     expect(payload.deprecations).toEqual([]);
   });

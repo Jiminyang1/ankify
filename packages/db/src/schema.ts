@@ -8,6 +8,7 @@ import type {
   QuizAnswer,
   SessionAnalysisCoverage,
   SessionAnalysisResult,
+  SuggestionReasonDto,
   QuizItem,
 } from "@ankify/contracts";
 
@@ -886,6 +887,58 @@ export const attemptHistoryCoverage = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * suggestions
+ * New-problem suggestions as shown: target, explanation, and planner version
+ * are frozen when allocated. One row per (user, local date, ordinal); a
+ * pending target is never offered twice at once. Each suggestion is acted on
+ * once: started, skipped, or marked already attempted.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const suggestions = sqliteTable(
+  "suggestions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** The user's local date, and the suggestion's place in it (0 is the daily one). */
+    dateKey: text("date_key").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    kind: text("kind", { enum: ["daily", "extra", "replacement"] }).notNull(),
+    /** The skipped or attempted suggestion this one replaced. */
+    replacesId: text("replaces_id"),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    difficulty: text("difficulty", { enum: ["Easy", "Medium", "Hard"] }).notNull(),
+    topicTags: text("topic_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    category: text("category", {
+      enum: ["approach", "invariant", "edge_case", "complexity", "implementation", "conceptual", "other"],
+    }),
+    lane: text("lane", { enum: ["personalized", "general"] }).notNull(),
+    reasons: text("reasons", { mode: "json" }).$type<SuggestionReasonDto[]>().notNull(),
+    plannerVersion: text("planner_version").notNull(),
+    /** When the target's metadata was read from LeetCode. */
+    verifiedAt: optTs("verified_at").notNull(),
+    novelty: text("novelty", { enum: ["no_prior_attempt_found", "unverified"] }).notNull(),
+    status: text("status", { enum: ["pending", "started", "skipped", "already_attempted"] }).notNull().default("pending"),
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, { onDelete: "set null" }),
+    /** Idempotency of the allocating request and of the one action taken. */
+    requestId: text("request_id").notNull(),
+    actionRequestId: text("action_request_id"),
+    actedAt: optTs("acted_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userDateOrdinalIdx: uniqueIndex("suggestions_user_date_ordinal_unique").on(t.userId, t.dateKey, t.ordinal),
+    userRequestIdx: uniqueIndex("suggestions_user_request_unique").on(t.userId, t.requestId),
+    pendingSlugIdx: uniqueIndex("suggestions_user_pending_slug_unique")
+      .on(t.userId, t.slug)
+      .where(sql`${t.status} = 'pending'`),
+    userCreatedIdx: index("suggestions_user_created_idx").on(t.userId, t.createdAt),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * agent_sessions / agent_runs / agent_messages / agent_steps
  * Persistent Study Coach conversations. Page and problem context belong to
  * individual runs, so one session can continue across the entire web app.
@@ -1110,6 +1163,7 @@ export type SessionAnalysis = typeof sessionAnalyses.$inferSelect;
 export type SuggestionCandidate = typeof suggestionCandidates.$inferSelect;
 export type AttemptHistoryEntry = typeof attemptHistory.$inferSelect;
 export type AttemptHistoryCoverage = typeof attemptHistoryCoverage.$inferSelect;
+export type Suggestion = typeof suggestions.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;
 export type NewAgentSession = typeof agentSessions.$inferInsert;

@@ -254,6 +254,13 @@ describe("database invariants", () => {
           args: [],
         },
         {
+          sql: `INSERT INTO suggestions (id, user_id, date_key, ordinal, kind, slug, title, difficulty, lane, reasons,
+                  planner_version, verified_at, novelty, request_id)
+                VALUES ('suggestion-1', 'user-1', '2026-09-30', 0, 'daily', '3sum', '3Sum', 'Medium', 'general', json('[]'),
+                  'suggestions-v1', unixepoch() * 1000, 'unverified', 'request-1')`,
+          args: [],
+        },
+        {
           sql: `INSERT INTO agent_sessions (id, user_id, title)
                 VALUES ('session-1', 'user-1', 'Two Sum')`,
           args: [],
@@ -305,6 +312,7 @@ describe("database invariants", () => {
       "suggestion_candidates",
       "attempt_history",
       "attempt_history_coverage",
+      "suggestions",
     ]) {
       const result = await client.execute(`SELECT count(*) AS count FROM ${table}`);
       expect(Number(result.rows[0]?.count), table).toBe(0);

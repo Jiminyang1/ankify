@@ -213,16 +213,24 @@ new jobs are then refused and queued jobs fail before any provider call. Either
 way, redeploy. Stored analyses, candidates, confirmed mistakes, and the
 deterministic profile stay.
 
-### Suggestion data (migration 0024)
+### Suggestions (migrations 0024 and 0025)
 
-`0024_m3_attempt_history` is additive. It adds suggestion candidates, attempt
-history, and history coverage, and backfills nothing. Apply it with the
-others, before deploying code that records similar questions or deletes
-problems. The cold-start catalog ships empty. To fill it:
+`0024_m3_attempt_history` and `0025_m3_suggestions` are additive:
+
+- `0024` adds suggestion candidates, attempt history, and history coverage.
+- `0025` adds the suggestions themselves.
+
+Neither backfills anything. Apply both with the others, before deploying
+this code. The cold-start catalog ships empty. To fill it:
 
 1. Run `scripts/leetcode-catalog.js` in a leetcode.com tab.
 2. Save the output as `apps/web/src/server/suggestions/catalog.json`.
 3. Commit it after `catalog.test.ts` passes.
+
+Rollback: add `suggestions` to `ANKIFY_DISABLED_WORKFLOWS` and redeploy.
+Allocation, actions, and history merges then answer `503`. Stored suggestions,
+attempt history, exclusions, and any practice sessions started from
+suggestions stay.
 
 ## Rollback boundaries
 

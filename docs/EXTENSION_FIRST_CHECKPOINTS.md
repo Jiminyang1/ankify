@@ -633,3 +633,80 @@ Mutation checks, each failing a test:
 - ignoring readiness;
 - removing the rotation's served counts;
 - labeling a topic-only match as similar.
+
+## Checkpoint 5.3: suggestion persistence and API
+
+Status: **PASS**. Migration `0025_m3_suggestions` (additive; not yet applied
+to Preview or Production). `suggestions` is now an implemented workflow.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 476 tests in 75 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 18 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+Changes:
+
+- The `suggestions` table freezes each target, its explanation, the planner
+  version, the metadata's verification time, and a novelty label. Unique
+  indexes cover (user, local date, ordinal), (user, request id), and (user,
+  slug) while pending.
+- `POST /api/suggestions`:
+  - `daily` allocates the day's suggestion once and later returns it;
+  - `extra` appends the next ordinal, at most 20 a day;
+  - nothing is stored when no problem is eligible;
+  - replays are by request id, and reusing a request id for the other kind is
+    a `409`.
+- `POST /api/suggestions/:id/actions` acts once per suggestion:
+  - skip and already attempted store today's replacement in the same
+    transaction; already attempted also records `user_marked` attempt
+    history, so the problem is never suggested again;
+  - start runs the practice-session start in the same transaction, through
+    `startSessionInTransaction()`, extracted from `startPracticeSession()`
+    without behavior change;
+  - a problem new to Ankify starts initial learning, and one already in the
+    deck is started by id, so the suggestion's metadata never overwrites the
+    problem's similar questions or topics.
+- `GET /api/suggestions` lists today's suggestions, with each started
+  suggestion's session outcome derived on read.
+- `POST /api/attempt-history` merges LeetCode reads with their coverage.
+- Novelty is `no_prior_attempt_found` only when one LeetCode account's
+  accepted and tried lists were both read to the end within 30 days;
+  otherwise it is `unverified`.
+- New rate-limit scope `suggestions` (60 per minute). Suggestions are included
+  in the account export.
+
+Tests:
+
+- DB:
+  - daily idempotency and freezing, a new day;
+  - extras, replays, request conflicts, nothing stored when none is eligible;
+  - the daily cap;
+  - every exclusion through real writes: captured, `leetcode_status`,
+    deleted, and paid problems;
+  - novelty freshness and both-scopes rules;
+  - a personalized, targeted suggestion from real sessions and confirmed
+    mistakes;
+  - skip with its replacement, replay, conflict, and already-handled;
+  - already attempted excluding the problem permanently;
+  - start: initial learning, problem creation, replay, and the outcome after
+    finishing through the normal rules;
+  - start by id for an existing problem, keeping its metadata;
+  - user isolation and the export.
+- Concurrency, one race per file: racing daily requests give one daily
+  suggestion; racing extras give distinct slots and targets.
+- Routes: authentication, validation, the kill switch, and status mapping.
+- Migrations: suggestions cascade with the user; upgrading creates none.
+- Mutation checks, each failing a test:
+  - dropping the by-id start;
+  - dropping the replacement;
+  - dropping the `user_marked` history;
+  - dropping daily idempotency;
+  - requiring only one coverage scope.
+
+Rollback: `ANKIFY_DISABLED_WORKFLOWS=suggestions`. Stored suggestions, attempt
+history, and practice sessions started from suggestions stay.
+
+Until 5.4 replaces it, the popup shows its existing placeholder ("Daily
+suggestions will appear here") now that the workflow is advertised.

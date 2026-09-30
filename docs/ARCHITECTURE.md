@@ -286,6 +286,30 @@ or explains them.
   - Explanations state only what the metadata shows. "Similar to X" names a
     category only when a mistake of that category was confirmed on X; a
     topic-only match is reported as a topic.
+- **Persistence**: `suggestions` rows freeze each target, its explanation, the
+  planner version, and a novelty label.
+  - Novelty is `no_prior_attempt_found` only when a LeetCode account's
+    accepted and tried lists were both read to the end within 30 days;
+    otherwise it is `unverified`.
+  - Unique indexes cover (user, local date, ordinal), (user, request id), and
+    (user, slug) while pending, so racing requests cannot duplicate a slot or
+    a target.
+  - `POST /api/suggestions` with `daily` allocates the day's suggestion once
+    and later returns it; `extra` appends the next ordinal (at most 20 a day).
+    Nothing is stored when no problem is eligible.
+  - `POST /api/suggestions/:id/actions` acts once per suggestion, idempotent
+    per request id:
+    - skip and already attempted store today's replacement in the same
+      transaction, and already attempted also records `user_marked` history;
+    - start runs the practice-session start in the same transaction
+      (`startSessionInTransaction()`). A problem new to Ankify starts initial
+      learning; one already in the deck is started by id, so its own metadata
+      is never overwritten.
+  - A started suggestion reports its session's outcome on read.
+  - `GET /api/suggestions` lists today's suggestions.
+  - `POST /api/attempt-history` merges LeetCode status reads, with their
+    coverage.
+  - The kill switch is `ANKIFY_DISABLED_WORKFLOWS=suggestions`.
 
 ## Study Coach
 
@@ -316,7 +340,7 @@ append-only ledger. Full design, invariants, and test instructions:
 ## Rate limits and caps
 
 `server/rate-limit.ts` is a DB-backed fixed-window limiter per user and scope
-(`agent` 12/min, `ai` 20/min, `capture` 60/min, `sessions` 120/min, `mistakes` 60/min, `billing` 10/min). Hard caps
+(`agent` 12/min, `ai` 20/min, `capture` 60/min, `sessions` 120/min, `mistakes` 60/min, `suggestions` 60/min, `billing` 10/min). Hard caps
 limit cards and quiz sessions per problem and active AI jobs per user.
 
 ## The extension

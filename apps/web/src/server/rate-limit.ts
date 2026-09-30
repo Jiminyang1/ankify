@@ -28,6 +28,8 @@ export const RATE_LIMITS = {
   sessions: { limit: 120, windowMs: 60_000 },
   /** Mistake-record writes: user-paced, kept apart from extension capture bursts. */
   mistakes: { limit: 60, windowMs: 60_000 },
+  /** Suggestion allocations and actions, and attempt-history merges. */
+  suggestions: { limit: 60, windowMs: 60_000 },
   /** Stripe Checkout Session creation: each call hits the Stripe API. */
   billing: { limit: 10, windowMs: 60_000 },
 } as const;

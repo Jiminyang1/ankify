@@ -36,6 +36,7 @@ type AccountExportRecord = {
     | "session_analysis"
     | "attempt_history"
     | "attempt_history_coverage"
+    | "suggestion"
     | "agent_session"
     | "agent_run"
     | "agent_message"
@@ -215,6 +216,19 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.attemptHistoryCoverage.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("suggestion", (afterId) =>
+    db
+      .select()
+      .from(schema.suggestions)
+      .where(
+        and(
+          eq(schema.suggestions.userId, user.id),
+          afterId ? gt(schema.suggestions.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.suggestions.id))
       .limit(PAGE_SIZE),
   );
   yield* iteratePages("agent_session", (afterId) =>
