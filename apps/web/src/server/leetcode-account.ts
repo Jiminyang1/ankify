@@ -2,7 +2,7 @@ import type { LeetcodeAccountDto, LeetcodeProfileDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { leetcodeGraphql } from "@/server/leetcode-graphql";
+import { leetcodeGraphql } from "./leetcode-graphql";
 
 /**
  * Linked LeetCode account: the username plus a cached copy of that user's
