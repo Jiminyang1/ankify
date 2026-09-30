@@ -337,9 +337,9 @@ downgraded). The legacy routes stay available until the cutover switch.
 
 ## Checkpoint 4A: deterministic session evidence and mistake profile
 
-Status: **PASS** (live LeetCode exception from Phase 3 unchanged). Migration
-`0022_m2_session_evidence` (additive, not yet applied to Preview or
-Production).
+Status: **PASS** (live LeetCode exception from Phase 3 unchanged). Commit
+`8da210e`. Migration `0022_m2_session_evidence` (additive, not yet applied to
+Preview or Production).
 
 | Check | Result |
 | --- | --- |
@@ -391,3 +391,114 @@ invalidation path to get wrong. Revisit if profile reads become slow.
 
 Rollback: stop calling the new routes; the columns and table are additive
 and unused by earlier code. The deterministic profile has no AI dependency.
+
+## Checkpoint 4B: BYOK session analysis
+
+Status: **PASS with the recorded exceptions below**. **Phase 4 gate: PASS**
+(4A and 4B). Migration `0023_m2_session_analysis` (additive, not yet applied
+to Preview or Production; apply `0022` and `0023` before deploying this code,
+see DEPLOYMENT.md).
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 440 tests in 67 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 18 tests (three new analysis tests) |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+Changes:
+
+- `session_analyze` AI job through `POST /api/ai-jobs`. It runs only on the
+  user's own key, checked at creation and again before execution; there is no
+  hosted fallback and no credit spend. One provider call per attempt, three
+  attempts. Output is schema-validated once; invalid output fails at once
+  (`ai_output_invalid`), with no repair.
+- Bounded evidence (32,000 characters): the verdict sequence, representative
+  code revisions (diffs where shorter), and judge output. Omissions are listed
+  in `coverage`. Attempt labels (S1 to S99) resolve to observations and code
+  ranges.
+- `session_analyses`: immutable rows cached by (user, session, evidence
+  digest, analyzer version, provider, model), stale on read. Findings become
+  `ai_suggested` candidates, one per category not yet recorded for the
+  session. They commit with the analysis and the terminal job state.
+- Budgets: manual 10 per local day; automatic 0 to 5 per day (default 2).
+- Automatic analysis:
+  - opt-in per user;
+  - planned inside the finish or improvement transaction for qualifying
+    sessions (repeated failures then Accepted, recurrence of a confirmed
+    pattern, an improvement test);
+  - at most one per session;
+  - offered only when `ANKIFY_AUTOMATIC_ANALYSIS=enabled`.
+- Dispatch recovery: `ai_jobs.dispatched_at`, and `redispatchStrandedJobs()`,
+  which runs from the popup overview, the analysis state route, and
+  `GET /api/cron/ai-dispatch` (Bearer `CRON_SECRET`).
+- A request id replayed for a different command returns
+  `409 ai_job_request_conflict`.
+- Capabilities advertise `sessionAnalysis`, and the settings route accepts the
+  automation fields.
+- Extension: `analysis_state`, `analysis_start`, and `analysis_finding`
+  messages. The panel shows the analysis status, the summary, and each finding
+  with confirm, recategorize, and dismiss controls.
+- Browser harness: a fake OpenAI-compatible provider on :4318, plus the QA
+  worker.
+
+Tests:
+
+- Unit: eligibility, prompt selection and bounds, evidence digest, schema
+  validation, and budgets.
+- Integration:
+  - duplicate requests and deliveries, lease expiry, redelivery after commit;
+  - publication failure, both manual and automatic;
+  - cancellation, stale evidence;
+  - a removed key, with no hosted fallback; a changed provider or model;
+  - the kill switch stopping queued work.
+- Automatic triggers: firing, never firing for ordinary practice, and daily
+  limits.
+- Page-session polling.
+- `recentCompleted`.
+- The protected-history migration test now migrates over a populated `ai_jobs`
+  table.
+- Browser: automation off and on; manual analyze, confirm (recategorized) and
+  dismiss; the no-key state.
+- Mutation checks: the BYOK-only rule and the cache lookup; the kill-switch
+  guard in the executor; the panel's polling through a failed read and its
+  resumption.
+
+Found and fixed while gating:
+
+- `ANKIFY_DISABLED_WORKFLOWS=session_analysis` refused new jobs, but queued
+  jobs, including stranded ones re-sent by recovery, still called the user's
+  provider. The executor now checks the switch first and fails the job with
+  `workflow_disabled` before any provider call, as the plan's rollback
+  requires.
+- The panel stopped polling after a single failed read, and never read again
+  after its five-minute limit, so a running job could show "Analyzing"
+  indefinitely. Polling now continues through failed reads, a successful read
+  clears the stale error, and a running analysis is read again when the page
+  becomes active.
+- Two existing exact-equality tests predated the contract additions
+  (`recentCompleted` on the current-session DTO, and the `analysis_state` read
+  after Finish). Both were updated to assert the new fields.
+
+Acceptance:
+
+- Ordinary visits and submissions create no AI calls (integration test).
+- Each eligible evidence version has at most one committed analysis (cache
+  unique index, cache and redelivery tests).
+- Only confirmed findings affect the profile (browser and profile tests).
+
+Recorded exceptions:
+
+- **Automatic analysis stays unavailable** until the dispatch-recovery cron is
+  scheduled and verified (DEPLOYMENT.md). `vercel.json` has no cron until the
+  plan tier is verified.
+- **Never run against a real provider.** Only the fake provider and mocked
+  models have produced analyses, so structured output from OpenAI, Anthropic,
+  and DeepSeek is unverified.
+- The Phase 3 **live LeetCode validation is still pending.**
+
+Rollback: add `session_analysis` to `ANKIFY_DISABLED_WORKFLOWS`; new jobs are
+refused and queued ones fail before any provider call. To stop only automatic
+analysis, unset `ANKIFY_AUTOMATIC_ANALYSIS`. The schema changes are additive:
+analyses, candidates, and confirmed mistakes stay, and the deterministic
+profile has no AI dependency.

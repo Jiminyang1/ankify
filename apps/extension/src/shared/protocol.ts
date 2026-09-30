@@ -6,6 +6,7 @@ import {
   practiceProblemSchema,
   sessionBaselineSchema,
   sessionObservationSchema,
+  skillDimensionEnum,
 } from "@ankify/contracts";
 import { z } from "zod";
 
@@ -81,6 +82,18 @@ export const contentMessageSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   ...ratingMessages,
+  /** Session analysis: read its state, start one (the user's own key), and
+   *  confirm, recategorize, or dismiss a suggested finding. */
+  z.object({ type: z.literal("analysis_state"), sessionId: sessionIdSchema }).strict(),
+  z.object({ type: z.literal("analysis_start"), sessionId: sessionIdSchema }).strict(),
+  z
+    .object({
+      type: z.literal("analysis_finding"),
+      mistakeId: sessionIdSchema,
+      decision: z.enum(["confirm", "dismiss"]),
+      category: skillDimensionEnum.optional(),
+    })
+    .strict(),
 ]);
 export type ContentMessage = z.infer<typeof contentMessageSchema>;
 

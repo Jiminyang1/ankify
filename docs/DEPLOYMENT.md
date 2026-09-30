@@ -163,6 +163,56 @@ Rollback: remove a workflow from `ANKIFY_DISABLED_WORKFLOWS` and redeploy;
 Installed extensions cannot be downgraded, so a bad extension release is fixed
 forward with a higher version.
 
+### Session evidence and analysis (migrations 0022 and 0023)
+
+Migrations `0022_m2_session_evidence` and `0023_m2_session_analysis` are
+additive. Apply them with `pnpm db:release`, which applies every pending
+migration in order, **before** deploying code from Phase 4A or later; that
+code reads the new columns and tables. Session analysis is BYOK only: it runs
+on the user's own saved key, never on the hosted key, and spends no credits.
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `CRON_SECRET` | Vercel (Production; Preview when testing) | Bearer secret for `GET /api/cron/ai-dispatch`, 32+ random characters. The route answers `404` while it is unset. |
+| `ANKIFY_AUTOMATIC_ANALYSIS` | Vercel | `enabled` makes automatic analysis available to users who opt in. Leave unset until the recovery cron is verified (below). |
+| `ANKIFY_DISABLED_WORKFLOWS` | Vercel | Add `session_analysis` to switch analysis off. |
+| `ANKIFY_QA_AI_BASE_URL` | QA only | Fake-provider URL for browser tests; ignored outside the QA profile. Never set it on Vercel. |
+
+Manual analysis works without the cron. When a queue publish fails, the job is
+marked failed and the user gets a `503` to retry. An automatic job is instead
+committed with the session and published after commit; if that publish fails,
+the job waits with `dispatched_at` unset. Stranded jobs are re-sent when the
+same user next opens the popup or reads an analysis, and by the recovery cron
+for everyone. Enable automatic analysis only once the cron runs:
+
+1. Check the Vercel plan's cron limits. Hobby projects can only schedule daily
+   cron jobs, and a more frequent schedule fails the deployment. Recovery needs
+   a frequent schedule, so keep automatic analysis off on Hobby.
+2. Set `CRON_SECRET` in Vercel and add the schedule to `apps/web/vercel.json`:
+
+   ```json
+   "crons": [{ "path": "/api/cron/ai-dispatch", "schedule": "*/5 * * * *" }]
+   ```
+
+3. Deploy. Then verify that
+   `curl -sS -H "Authorization: Bearer $CRON_SECRET" https://ankify-pi.vercel.app/api/cron/ai-dispatch`
+   returns `{"stranded":0,"dispatched":0}`, that the same request without the
+   header returns `401`, and that the project's Cron Jobs page shows successful
+   runs.
+4. Set `ANKIFY_AUTOMATIC_ANALYSIS=enabled` and redeploy. `GET /api/capabilities`
+   then reports `sessionAnalysis.automaticAvailable: true`.
+
+Smoke test: with a user whose own key is saved, finish a session with a failed
+submission and then an Accepted one. Click **Analyze session** in the panel.
+The job should go `queued -> running -> succeeded`, and the findings should
+appear as suggestions to confirm or dismiss.
+
+Rollback: to stop only automatic analysis, unset `ANKIFY_AUTOMATIC_ANALYSIS`.
+To stop all analysis, add `session_analysis` to `ANKIFY_DISABLED_WORKFLOWS`;
+new jobs are then refused and queued jobs fail before any provider call. Either
+way, redeploy. Stored analyses, candidates, confirmed mistakes, and the
+deterministic profile stay.
+
 ## Rollback boundaries
 
 - Application code can be rolled back independently through Vercel.

@@ -288,6 +288,14 @@ export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
     requestId: z.string().uuid(),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
   }),
+  /** Analyze one completed practice session with the user's own AI key. */
+  z
+    .object({
+      action: z.literal("session_analyze"),
+      practiceSessionId: z.string().min(1).max(64),
+      requestId: z.string().uuid(),
+    })
+    .strict(),
 ]);
 export type AiJobCreateRequestInput = z.infer<typeof aiJobCreateRequestSchema>;
 

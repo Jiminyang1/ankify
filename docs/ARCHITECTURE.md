@@ -214,6 +214,40 @@ Card and quiz generation never run inside the request:
 5. Hosted-credit refunds: `failed`, `superseded`, and cancelled-before-start
    jobs return their credit exactly once.
 
+## Session analysis (BYOK)
+
+One model call explains one completed practice session (`server/session-analysis/`).
+
+- **Start**: `POST /api/ai-jobs` with `session_analyze` (manual), or planned inside
+  the finish (or improvement) transaction when automatic analysis is on for the
+  deployment (`ANKIFY_AUTOMATIC_ANALYSIS=enabled`), for the user (settings
+  `analysis.automatic`), and the session qualifies (`automaticAnalysisTrigger()`
+  in core). Only the user's own key is accepted, at creation and again before
+  execution; there is no hosted fallback and no credit spend.
+- **Evidence**: the whole verdict sequence plus representative code revisions
+  (diffs where shorter) and judge output, bounded to 32,000 characters; what was
+  left out is recorded in `coverage`. Output is schema-validated once (no repair
+  loop), capped at 2,000 tokens, one provider call per attempt, three attempts.
+- **Cache and staleness**: `session_analyses` rows are immutable and unique per
+  (user, session, evidence digest, analyzer version, provider, model); unchanged
+  evidence returns the cached analysis as an already-succeeded job. Staleness is
+  computed on read against the current digest.
+- **Commit**: the analysis, its `ai_suggested` candidate mistakes (one per new
+  category, linked by `finding.mistakeId`), and the terminal job state commit in
+  one transaction.
+- **Budgets**: manual 10 per local day; automatic 0-5 (default 2). Active jobs
+  and jobs that reached a provider attempt count; cache hits and jobs that ended
+  before any attempt do not.
+- **Dispatch recovery**: `ai_jobs.dispatched_at` marks queue acceptance. Queued
+  jobs without it are re-sent by `redispatchStrandedJobs()`, from the popup's
+  overview request, the analysis state request, and
+  `GET /api/cron/ai-dispatch` (Bearer `CRON_SECRET`; not yet scheduled).
+- **Read**: `GET /api/practice-sessions/:id/analysis`; the extension panel shows
+  status and confirm/recategorize/dismiss controls.
+- **Kill switch**: `ANKIFY_DISABLED_WORKFLOWS=session_analysis` refuses new jobs
+  (`503 workflow_disabled`) and fails queued ones before any provider call.
+  Stored analyses, candidates, and confirmed mistakes stay.
+
 ## Study Coach
 
 - `AgentShell` in the authenticated layout opens Coach beside any page.

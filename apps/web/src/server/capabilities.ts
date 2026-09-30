@@ -1,5 +1,5 @@
 import type { CapabilitiesDto } from "@ankify/contracts";
-import { enabledWorkflows, LEGACY_WORKFLOWS } from "./features";
+import { enabledWorkflows, isAutomaticAnalysisEnabled, LEGACY_WORKFLOWS } from "./features";
 
 export function getCapabilities(): CapabilitiesDto {
   // Only implemented, enabled workflows are advertised. A retired legacy
@@ -8,7 +8,11 @@ export function getCapabilities(): CapabilitiesDto {
   return {
     protocolVersion: 1,
     supportedWorkflows: enabled,
-    sessionAnalysis: { available: false, automaticAvailable: false, requiresOwnKey: true },
+    sessionAnalysis: {
+      available: enabled.includes("session_analysis"),
+      automaticAvailable: isAutomaticAnalysisEnabled(),
+      requiresOwnKey: true,
+    },
     deprecations: Object.entries(LEGACY_WORKFLOWS)
       .filter(([workflow]) => !enabled.includes(workflow as (typeof enabled)[number]))
       .map(([workflow, retired]) => ({ workflow: workflow as (typeof enabled)[number], code: retired!.code, message: retired!.message })),

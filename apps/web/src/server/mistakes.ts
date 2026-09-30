@@ -13,6 +13,7 @@ import { getDb, schema, type MistakeRecord, type PracticeImprovement } from "@an
 import { and, desc, eq, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { canonicalJson } from "./practice-sessions/digest";
+import { isEstablishedPattern, loadAutomaticAnalysisContext, planAutomaticAnalysis, publishPlannedJob } from "./session-analysis/jobs";
 
 type MistakeSource = {
   submissionId: string | null;
@@ -57,6 +58,7 @@ export function toMistakeDto(row: MistakeRecord): MistakeRecordDto {
     reviewEventId: row.reviewEventId,
     practiceSessionId: row.practiceSessionId,
     evidence: row.evidence,
+    analysisId: row.analysisId,
     status: row.status,
     origin: row.origin,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -457,12 +459,18 @@ type CreateImprovementResult =
 /** Records that a completed session handled a dimension well. Idempotent per
  *  request id; a second confirmation for the same session and dimension
  *  returns the first. */
-export async function createImprovement(userId: string, input: PracticeImprovementCreateInput): Promise<CreateImprovementResult> {
+export async function createImprovement(
+  userId: string,
+  input: PracticeImprovementCreateInput,
+  now = new Date(),
+): Promise<CreateImprovementResult> {
   const i = schema.practiceImprovements;
-  return getDb().transaction(async (tx): Promise<CreateImprovementResult> => {
+  const automaticAnalysis = await loadAutomaticAnalysisContext(userId, now);
+  let plannedAnalysis: string | null = null;
+  const result = await getDb().transaction(async (tx): Promise<CreateImprovementResult> => {
     const s = schema.practiceSessions;
     const [session] = await tx
-      .select({ id: s.id, problemId: s.problemId, status: s.status })
+      .select({ id: s.id, problemId: s.problemId, status: s.status, outcome: s.outcome })
       .from(s)
       .where(and(eq(s.id, input.practiceSessionId), eq(s.userId, userId)))
       .limit(1);
@@ -491,10 +499,18 @@ export async function createImprovement(userId: string, input: PracticeImproveme
         practiceSessionId: session.id,
         category: input.category,
         requestId: input.requestId,
+        createdAt: now,
       })
       .returning();
+    // An accepted session confirmed as handling an established pattern may
+    // qualify for automatic analysis, planned with the confirmation.
+    if (automaticAnalysis && session.outcome === "accepted" && (await isEstablishedPattern(tx, userId, input.category, now))) {
+      plannedAnalysis = await planAutomaticAnalysis(tx, userId, session.id, automaticAnalysis, { testsImprovement: true }, now);
+    }
     return { ok: true, improvement: toImprovementDto(created!), idempotentReplay: false, deduplicated: false };
   });
+  if (result.ok) await publishPlannedJob(plannedAnalysis);
+  return result;
 }
 
 export async function deleteImprovement(userId: string, id: string): Promise<boolean> {

@@ -11,6 +11,11 @@ class AiJobExecutionError extends Error {
   }
 }
 
+/** A failure that retrying the same job cannot fix (the job fails at once). */
+export function nonRetryableJobError(code: string, message: string) {
+  return new AiJobExecutionError(code, message, false);
+}
+
 export function classifyAiJobError(error: unknown): AiJobExecutionError {
   if (error instanceof AiJobExecutionError) return error;
   if (isAiTimeoutError(error)) {

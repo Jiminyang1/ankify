@@ -1,6 +1,6 @@
-import type { PracticeModeId, PracticeSessionDto } from "@ankify/contracts";
+import type { MistakeRecordDto, PracticeModeId, PracticeSessionDto, SessionAnalysisFinding, SkillDimensionId } from "@ankify/contracts";
 import { relativeDay, type ExtensionStrings, type Language } from "../shared/i18n";
-import type { PageNotice, PageSession, PageView } from "./page-session";
+import type { AnalysisView, PageNotice, PageSession, PageView } from "./page-session";
 import { PANEL_STYLES } from "./panel-styles";
 
 type Child = Node | string | null | false | undefined;
@@ -201,7 +201,96 @@ export function mountPanel(deps: {
     const session = view.session;
     if (session && !session.stale && (session.status === "active" || session.status === "interrupted")) blocks.push(sessionBlock(t, session));
     else if (!view.pendingRating) blocks.push(startBlock(t));
+    if (view.analysis) blocks.push(analysisBlock(t, view.analysis));
     return blocks;
+  }
+
+  const CATEGORIES: SkillDimensionId[] = ["approach", "invariant", "edge_case", "complexity", "implementation", "conceptual", "other"];
+  /** A candidate's category as the user edits it before confirming. */
+  const editedCategory = new Map<string, SkillDimensionId>();
+
+  function analysisBlock(t: ExtensionStrings, analysis: AnalysisView): HTMLElement | null {
+    const state = analysis.state;
+    const errorNotice = analysis.error
+      ? h("p", { class: "notice", "data-tone": "danger", role: "alert" }, t.errors[analysis.error] ?? t.common.unknownError)
+      : null;
+    if (!state) return errorNotice ? h("div", { class: "stack analysis" }, errorNotice) : null;
+    const reason = state.manual.available ? null : state.manual.reason;
+    if (!state.analysis && !state.job && (reason === "disabled" || reason === "session_not_completed")) return null;
+
+    const running = state.job?.status === "queued" || state.job?.status === "running";
+    const children: Child[] = [h("p", { class: "text" }, h("strong", {}, t.analysis.title)), errorNotice];
+    if (running) {
+      children.push(h("p", { class: "text muted status-line", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }), t.analysis.running));
+    } else if (state.analysis) {
+      const { result, stale } = state.analysis;
+      if (stale) children.push(h("p", { class: "notice", "data-tone": "warning" }, t.analysis.stale));
+      children.push(h("p", { class: "text" }, result.summary));
+      if (result.findings.length === 0) {
+        children.push(h("p", { class: "text muted small" }, result.insufficientEvidence ? t.analysis.insufficient : t.analysis.noFindings));
+      } else {
+        children.push(h("p", { class: "text muted small" }, t.analysis.candidateHint));
+        for (const finding of result.findings) {
+          children.push(findingBlock(t, finding, state.findings.find((record) => record.id === finding.mistakeId)));
+        }
+      }
+    } else if (state.job?.status === "failed") {
+      children.push(h("p", { class: "notice", "data-tone": "danger" }, t.errors[state.job.errorCode ?? ""] ?? t.analysis.failed));
+    }
+
+    if (!running) {
+      if (state.manual.available && (!state.analysis || state.analysis.stale)) {
+        const label = state.analysis ? t.analysis.analyzeAgain : state.job?.status === "failed" ? t.common.retry : t.analysis.analyze;
+        children.push(button("analyze", label, () => void deps.page.analyze(), { block: true, spinning: analysis.busy === "starting" }));
+        if (!state.analysis) children.push(h("p", { class: "text muted small" }, t.analysis.ownKeyHint));
+      } else if (!state.analysis && reason === "own_key_required") {
+        children.push(
+          h("p", { class: "text muted small" }, t.errors.own_key_required),
+          h("a", { href: `${deps.apiOrigin}/settings`, target: "_blank", rel: "noopener" }, t.analysis.openSettings),
+        );
+      } else if (!state.analysis && reason === "insufficient_evidence") {
+        children.push(h("p", { class: "text muted small" }, t.errors.insufficient_evidence));
+      }
+    }
+    return h("div", { class: "stack analysis", role: "group", "aria-label": t.analysis.title }, ...children);
+  }
+
+  function findingBlock(t: ExtensionStrings, finding: SessionAnalysisFinding, record: MistakeRecordDto | undefined) {
+    const deciding = view.kind === "ready" && view.analysis?.busy === "deciding";
+    let controls: Child = null;
+    if (record?.status === "candidate") {
+      const selected = editedCategory.get(record.id) ?? record.primaryCategory;
+      controls = h(
+        "div",
+        { class: "row" },
+        h(
+          "select",
+          {
+            "data-key": `category-${record.id}`,
+            "aria-label": t.analysis.category,
+            disabled: busy() || deciding,
+            onChange: (event) => editedCategory.set(record.id, (event.target as HTMLSelectElement).value as SkillDimensionId),
+          },
+          ...CATEGORIES.map((category) => h("option", { value: category, selected: category === selected }, t.analysis.categories[category] ?? category)),
+        ),
+        button(`confirm-${record.id}`, t.analysis.confirm, () => {
+          const category = editedCategory.get(record.id);
+          void deps.page.decideFinding(record.id, "confirm", category && category !== record.primaryCategory ? category : undefined);
+        }, { variant: "primary" }),
+        button(`dismiss-${record.id}`, t.analysis.dismiss, () => void deps.page.decideFinding(record.id, "dismiss"), { variant: "ghost" }),
+      );
+    } else if (record?.status === "confirmed") {
+      controls = h("p", { class: "text small" }, h("span", { class: "badge" }, t.analysis.confirmed), " ", t.analysis.categories[record.primaryCategory] ?? record.primaryCategory);
+    } else if (record?.status === "dismissed") {
+      controls = h("p", { class: "text muted small" }, t.analysis.dismissed);
+    }
+    return h(
+      "div",
+      { class: "finding", "data-category": finding.category },
+      h("p", { class: "text" }, h("span", { class: "badge" }, t.analysis.categories[finding.category] ?? finding.category), " ", finding.cause),
+      finding.nextStep ? h("p", { class: "text muted small" }, t.analysis.nextStep(finding.nextStep)) : null,
+      controls,
+    );
   }
 
   function noticeBlock(t: ExtensionStrings, notice: PageNotice) {

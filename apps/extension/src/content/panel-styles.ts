@@ -179,6 +179,19 @@ button:focus-visible, a:focus-visible {
 .rating[data-grade="3"] .label { color: var(--success); }
 .rating[data-grade="4"] .label { color: var(--easy); }
 .rating .hint { font-size: 11px; color: var(--muted); }
+select {
+  font: inherit;
+  color: inherit;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.analysis { border-top: 1px solid var(--border); padding-top: 10px; }
+.finding { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--subtle); }
+.status-line { display: inline-flex; align-items: center; gap: 6px; }
 .spinner {
   width: 12px;
   height: 12px;

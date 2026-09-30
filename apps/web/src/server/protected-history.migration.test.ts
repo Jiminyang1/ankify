@@ -31,7 +31,7 @@ it("preserves protected history across 0019 -> 0020, future migrations, and repl
   expect(await snapshot(protectedTables)).toEqual(previous);
 
   await testDb.exec(readFileSync(new URL("./fixtures/protected-mistakes-0020.sql", import.meta.url), "utf8"));
-  const tables = [...protectedTables, "mistake_records"];
+  const tables = [...protectedTables, "mistake_records", "ai_jobs"];
   const baseline = await snapshot(tables);
   await testDb.migrate();
   // Compare every pre-existing column, allowing additive columns in M1/M2.
@@ -54,6 +54,13 @@ it("preserves protected history across 0019 -> 0020, future migrations, and repl
   // gain no improvements.
   for (const row of after[`mistake_records/${owners[0]}`]!) expect(row).toMatchObject({ practice_session_id: null, evidence: "[]" });
   expect((await getDb().$client.execute("SELECT count(*) AS count FROM practice_improvements")).rows[0]).toMatchObject({ count: 0 });
+  // M2 analysis: existing mistakes cite no analysis, and existing AI jobs stay
+  // card/quiz jobs with no session, trigger, result, or dispatch mark.
+  for (const row of after[`mistake_records/${owners[0]}`]!) expect(row).toMatchObject({ analysis_id: null });
+  expect(after[`ai_jobs/${owners[0]}`]).toHaveLength(1);
+  for (const row of after[`ai_jobs/${owners[0]}`]!) {
+    expect(row).toMatchObject({ kind: "card", practice_session_id: null, evidence_digest: null, trigger: null, result_analysis_id: null, dispatched_at: null });
+  }
   await testDb.migrate();
   expect(await snapshot(tables)).toEqual(after);
 

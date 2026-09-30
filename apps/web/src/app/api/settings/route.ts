@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   getAiSettings,
+  getAnalysisSettings,
   getGenerationSettings,
   getReviewSettings,
   setAiSettings,
+  setAnalysisSettings,
   setGenerationSettings,
   setReviewSettings,
 } from "@/server/settings";
@@ -22,6 +24,8 @@ const settingsSchema = z
     initialReviewDelayHours: z.number().int().min(1).max(168).optional(),
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
     generationLanguage: z.enum(["en", "zh"]).optional(),
+    analysisAutomatic: z.boolean().optional(),
+    analysisDailyAutomaticLimit: z.number().int().min(0).max(5).optional(),
   })
   .refine(
     (value) =>
@@ -29,6 +33,8 @@ const settingsSchema = z
       value.initialReviewDelayHours != null ||
       value.timeZone != null ||
       value.generationLanguage != null ||
+      value.analysisAutomatic != null ||
+      value.analysisDailyAutomaticLimit != null ||
       Boolean(value.provider && value.model),
     {
       message: "Provide AI provider/model, review settings, or generation settings.",
@@ -39,10 +45,11 @@ export async function GET(req: Request) {
   const user = await getRequestSessionUser(req);
   if (!user) return unauthorizedResponse();
 
-  const [ai, review, generation] = await Promise.all([
+  const [ai, review, generation, analysis] = await Promise.all([
     getAiSettings(user.id),
     getReviewSettings(user.id),
     getGenerationSettings(user.id),
+    getAnalysisSettings(user.id),
   ]);
   // Don't leak the key back to the client; just whether one is set
   return NextResponse.json({
@@ -54,6 +61,7 @@ export async function GET(req: Request) {
     },
     review,
     generation,
+    analysis,
   });
 }
 
@@ -83,6 +91,12 @@ export async function POST(req: Request) {
   }
   if (parsed.data.generationLanguage != null) {
     await setGenerationSettings(user.id, { language: parsed.data.generationLanguage });
+  }
+  if (parsed.data.analysisAutomatic != null || parsed.data.analysisDailyAutomaticLimit != null) {
+    await setAnalysisSettings(user.id, {
+      automatic: parsed.data.analysisAutomatic,
+      dailyAutomaticLimit: parsed.data.analysisDailyAutomaticLimit,
+    });
   }
   return NextResponse.json({ ok: true });
 }

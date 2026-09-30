@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { AiJobCreateRequestInput, CardDraft, QuizItem } from "@ankify/contracts";
 import { getDb, schema, type AiJob } from "@ankify/db";
-import { refundHostedCreditSafely } from "@/server/ai-credits";
 import { MAX_CARDS_PER_PROBLEM, MAX_QUIZ_SESSIONS_PER_PROBLEM } from "@/server/resource-limits";
 import { classifyAiJobError, logAiJobError } from "./errors";
 import { generateAiCardDraft } from "./card";
@@ -10,8 +9,12 @@ import {
   claimAiJob,
   decryptJobInput,
   failAiJob,
+  loadRunningJob,
+  markSucceeded,
+  markSuperseded,
   requeueAiJob,
 } from "./jobs";
+import { runSessionAnalysisJob } from "../session-analysis/run";
 import { generateQuizItems, getRecentCompletedQuizSessions } from "./quiz";
 
 type AiJobProcessResult =
@@ -30,12 +33,27 @@ export async function processAiJob(jobId: string, workerId: string): Promise<AiJ
 
   const job = claim.job;
   try {
-    await assertJobConfiguration(job);
     const input = decryptJobInput(job);
-    if (input.action === "card_generate" || input.action === "card_followup") {
-      await runCardJob(job, input);
-    } else {
-      await runQuizJob(job, input);
+    switch (input.action) {
+      case "card_generate":
+      case "card_followup":
+        await assertJobConfiguration(job);
+        await runCardJob(job, input);
+        break;
+      case "quiz_generate":
+      case "quiz_regenerate":
+      case "quiz_next_batch":
+        await assertJobConfiguration(job);
+        await runQuizJob(job, input);
+        break;
+      case "session_analyze":
+        // Checks the user's own key itself: analysis never uses the hosted key.
+        await runSessionAnalysisJob(job, input);
+        break;
+      default: {
+        const unsupported: never = input;
+        throw new Error(`unsupported_ai_job_action: ${(unsupported as { action: string }).action}`);
+      }
     }
     return { state: "done" };
   } catch (error) {
@@ -247,81 +265,4 @@ async function commitQuiz(
     });
     await markSucceeded(tx, job, { resultQuizSessionId: sessionId }, now);
   });
-}
-
-type AiJobTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
-
-async function loadRunningJob(tx: AiJobTransaction, job: AiJob) {
-  const [current] = await tx
-    .select()
-    .from(schema.aiJobs)
-    .where(
-      and(
-        eq(schema.aiJobs.id, job.id),
-        eq(schema.aiJobs.status, "running"),
-        eq(schema.aiJobs.workerId, job.workerId!),
-      ),
-    )
-    .limit(1);
-  return current ?? null;
-}
-
-async function markSucceeded(
-  tx: AiJobTransaction,
-  job: AiJob,
-  result: { resultCardId?: string; resultQuizSessionId?: string },
-  now: Date,
-) {
-  await tx
-    .update(schema.aiJobs)
-    .set({
-      status: "succeeded",
-      activeDedupKey: null,
-      workerId: null,
-      leaseExpiresAt: null,
-      resultCardId: result.resultCardId ?? null,
-      resultQuizSessionId: result.resultQuizSessionId ?? null,
-      errorCode: null,
-      errorMessage: null,
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(schema.aiJobs.id, job.id),
-        eq(schema.aiJobs.status, "running"),
-        eq(schema.aiJobs.workerId, job.workerId!),
-      ),
-    );
-}
-
-async function markSuperseded(
-  tx: AiJobTransaction,
-  job: AiJob,
-  code: string,
-  message: string,
-  now: Date,
-) {
-  const [superseded] = await tx
-    .update(schema.aiJobs)
-    .set({
-      status: "superseded",
-      activeDedupKey: null,
-      workerId: null,
-      leaseExpiresAt: null,
-      errorCode: code,
-      errorMessage: message,
-      finishedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(schema.aiJobs.id, job.id),
-        eq(schema.aiJobs.status, "running"),
-        eq(schema.aiJobs.workerId, job.workerId!),
-      ),
-    )
-    .returning({ id: schema.aiJobs.id });
-  // The result was discarded, so the user got nothing for the credit.
-  if (superseded) await refundHostedCreditSafely(job.userId, { type: "ai_job", id: job.id }, tx);
 }

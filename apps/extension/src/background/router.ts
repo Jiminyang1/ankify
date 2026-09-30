@@ -1,6 +1,7 @@
 import type { CapabilitiesDto, CaptureResultDto, ReviewOverviewDto } from "@ankify/contracts";
 import type { ContentMessage, PageMessage, SenderContext } from "../shared/protocol";
 import type { AccountStateApi } from "./account";
+import type { AnalysisClient } from "./analysis";
 import type { ApiClient } from "./api";
 import type { SessionController } from "./sessions";
 
@@ -18,6 +19,7 @@ type ParsedMessage =
 /** Maps validated messages onto the session controller. */
 export function createRouter(deps: {
   controller: SessionController;
+  analysis: AnalysisClient;
   account: AccountStateApi;
   api: ApiClient;
   tabs: TabsApi;
@@ -63,6 +65,12 @@ export function createRouter(deps: {
         return controller.rate(message.sessionId, message.rating);
       case "session_rating_decision":
         return controller.ratingDecision(message.sessionId, message.decision);
+      case "analysis_state":
+        return deps.analysis.state(message.sessionId);
+      case "analysis_start":
+        return deps.analysis.start(message.sessionId);
+      case "analysis_finding":
+        return deps.analysis.decide(message.mistakeId, message.decision, message.category);
     }
   }
 

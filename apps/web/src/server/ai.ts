@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
+import { isQaProfile } from "./qa";
 import { getAiRuntimeSettings, type AiRuntimeSettings } from "./settings";
 
 /**
@@ -83,7 +84,8 @@ export function buildModel(settings: BuildModelSettings, opts: BuildModelOptions
       : false;
     const client = createOpenAICompatible({
       name: preset.name,
-      baseURL: preset.baseURL,
+      // QA and browser tests point this preset at a local fake provider.
+      baseURL: (isQaProfile() && process.env.ANKIFY_QA_AI_BASE_URL) || preset.baseURL,
       apiKey: settings.apiKey,
       ...(disableThinking ? { fetch: deepseekNonThinkingFetch } : {}),
     });

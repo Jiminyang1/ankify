@@ -2,6 +2,7 @@ import type { ReviewOverviewDto } from "@ankify/contracts";
 import { classifySender, parseMessage } from "../shared/protocol";
 import { getSettings } from "../shared/storage";
 import { createAccountState } from "./account";
+import { createAnalysisClient } from "./analysis";
 import { createApiClient } from "./api";
 import { chromeKeyValueStore, createActivityTotals, createTokenRegistry } from "./chrome-adapters";
 import { createIdbOutboxStore, openSyncDatabase } from "./idb-store";
@@ -70,6 +71,7 @@ async function setBadge(overview: ReviewOverviewDto | null) {
 const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase()), deliver });
 const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
 const router = createRouter({
+  analysis: createAnalysisClient({ api, newId }),
   controller,
   account,
   api,

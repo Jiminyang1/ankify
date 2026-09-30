@@ -6,6 +6,8 @@ import type {
   AgentProposal,
   MistakeEvidence,
   QuizAnswer,
+  SessionAnalysisCoverage,
+  SessionAnalysisResult,
   QuizItem,
 } from "@ankify/contracts";
 
@@ -567,6 +569,8 @@ export const mistakeRecords = sqliteTable(
      *  default is a constant: SQLite cannot add a column with an expression
      *  default to a table that already has rows. */
     evidence: text("evidence", { mode: "json" }).$type<MistakeEvidence[]>().notNull().default(sql`'[]'`),
+    /** The session analysis an AI candidate came from (its version and model). */
+    analysisId: text("analysis_id").references(() => sessionAnalyses.id, { onDelete: "set null" }),
     quizSessionId: text("quiz_session_id").references(() => quizSessions.id, { onDelete: "set null" }),
     // Item id inside quiz_sessions.items_json. Sessions are archived, not
     // deleted, so the reference stays resolvable.
@@ -669,7 +673,7 @@ export const aiJobs = sqliteTable(
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["card", "quiz"] }).notNull(),
+    kind: text("kind", { enum: ["card", "quiz", "analysis"] }).notNull(),
     action: text("action", {
       enum: [
         "card_generate",
@@ -677,6 +681,7 @@ export const aiJobs = sqliteTable(
         "quiz_generate",
         "quiz_regenerate",
         "quiz_next_batch",
+        "session_analyze",
       ],
     }).notNull(),
     status: text("status", {
@@ -711,6 +716,15 @@ export const aiJobs = sqliteTable(
     resultQuizSessionId: text("result_quiz_session_id").references(() => quizSessions.id, {
       onDelete: "set null",
     }),
+    /** Session analysis only: the session, the evidence version the job was
+     *  created for, how it started, and its result. */
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, { onDelete: "cascade" }),
+    evidenceDigest: text("evidence_digest"),
+    trigger: text("trigger", { enum: ["manual", "automatic"] }),
+    resultAnalysisId: text("result_analysis_id").references(() => sessionAnalyses.id, { onDelete: "set null" }),
+    /** When the queue accepted the job's message. A queued job without it has
+     *  a persisted dispatch intent that recovery re-sends. */
+    dispatchedAt: optTs("dispatched_at"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
 
@@ -730,6 +744,55 @@ export const aiJobs = sqliteTable(
     userRunningIdx: uniqueIndex("ai_jobs_user_running_unique")
       .on(t.userId)
       .where(sql`${t.status} = 'running'`),
+    userActionCreatedIdx: index("ai_jobs_user_action_created_idx").on(t.userId, t.action, t.createdAt),
+    userSessionIdx: index("ai_jobs_user_session_idx").on(t.userId, t.practiceSessionId),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * session_analyses
+ * Immutable results of session-analysis jobs, cached by evidence version,
+ * analyzer version, provider, and model. Staleness is computed on read.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const sessionAnalyses = sqliteTable(
+  "session_analyses",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    practiceSessionId: text("practice_session_id").notNull(),
+    /** The job that produced it (one analysis per job). */
+    jobId: text("job_id").notNull(),
+    evidenceDigest: text("evidence_digest").notNull(),
+    analyzerVersion: text("analyzer_version").notNull(),
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    model: text("model").notNull(),
+    result: text("result", { mode: "json" }).$type<SessionAnalysisResult>().notNull(),
+    coverage: text("coverage", { mode: "json" }).$type<SessionAnalysisCoverage>().notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    sessionOwnerFk: foreignKey({
+      name: "session_analyses_session_owner_fk",
+      columns: [t.practiceSessionId, t.userId, t.problemId],
+      foreignColumns: [practiceSessions.id, practiceSessions.userId, practiceSessions.problemId],
+    }).onDelete("cascade"),
+    cacheIdx: uniqueIndex("session_analyses_cache_unique").on(
+      t.userId,
+      t.practiceSessionId,
+      t.evidenceDigest,
+      t.analyzerVersion,
+      t.provider,
+      t.model,
+    ),
+    jobIdx: uniqueIndex("session_analyses_job_unique").on(t.jobId),
+    userSessionCreatedIdx: index("session_analyses_user_session_created_idx").on(t.userId, t.practiceSessionId, t.createdAt),
   }),
 );
 
@@ -954,6 +1017,7 @@ export type MistakeRecord = typeof mistakeRecords.$inferSelect;
 export type PracticeImprovement = typeof practiceImprovements.$inferSelect;
 export type NewMistakeRecord = typeof mistakeRecords.$inferInsert;
 export type AiJob = typeof aiJobs.$inferSelect;
+export type SessionAnalysis = typeof sessionAnalyses.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;
 export type NewAgentSession = typeof agentSessions.$inferInsert;

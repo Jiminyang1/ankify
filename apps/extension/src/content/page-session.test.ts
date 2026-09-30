@@ -1,8 +1,8 @@
-import type { PracticeSessionDto } from "@ankify/contracts";
+import type { PracticeSessionDto, PublicAiJobDto, SessionAnalysisStateDto } from "@ankify/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { ContentMessage } from "../shared/protocol";
 import type { LeetcodeClient, ListedSubmission, Read } from "./leetcode-client";
-import { createPageSession, TICK_MS } from "./page-session";
+import { ANALYSIS_POLL_MS, createPageSession, TICK_MS } from "./page-session";
 
 const START = "2026-09-29T12:00:00.000Z";
 
@@ -217,7 +217,9 @@ describe("page session", () => {
     h.advance(5_000);
     await h.page.finish("solved");
     expect(h.client.listSubmissions).toHaveBeenCalledTimes(1);
-    expect(h.sent.map((message) => message.type)).toEqual(["page_state", "session_activity", "session_control", "page_state"]);
+    // The finished session's analysis state loads as soon as it is offered.
+    expect(h.sent.map((message) => message.type)).toEqual(["page_state", "session_activity", "session_control", "analysis_state", "page_state"]);
+    expect(h.sent[3]).toEqual({ type: "analysis_state", sessionId: "s1" });
     expect(h.sent[2]).toMatchObject({ control: { command: "finish", result: "solved", occurredAt: new Date(Date.parse(START) + 5_000).toISOString() } });
     expect(h.page.view()).toMatchObject({ session: null, pendingRating: { id: "s1" }, busy: null });
     expect(h.pending()).toHaveLength(0);
@@ -237,5 +239,84 @@ describe("page session", () => {
     await h.page.rate(3);
     expect(h.sent.at(-1)).toEqual({ type: "session_rating", sessionId: "s1", rating: 3 });
     expect(h.page.view()).toMatchObject({ pendingRating: null, notice: { kind: "rated", nextDue: "2026-10-02T12:00:00.000Z" } });
+  });
+});
+
+describe("session analysis on the page", () => {
+  const finished = session({ status: "completed", outcome: "accepted", ownership: "none" });
+  const analysisState = (status: PublicAiJobDto["status"] | null): SessionAnalysisStateDto => ({
+    analysis: null,
+    job: status ? ({ id: "job-1", status, practiceSessionId: "s1", trigger: "manual" } as PublicAiJobDto) : null,
+    findings: [],
+    manual: { available: true },
+  });
+  /** Answers `analysis_state` from a script, one entry per request. */
+  function analysisHarness(script: unknown[], pageState: Record<string, unknown> = { problem, session: null, pendingRating: null, recentCompleted: finished }) {
+    const reads = [...script];
+    return harness({
+      respond: (message) => {
+        if (message.type === "page_state") return { ok: true, response: pageState };
+        if (message.type === "analysis_state") return reads.shift() ?? { ok: true, response: analysisState(null) };
+        if (message.type === "analysis_start") return { ok: false, error: "analysis_budget_exhausted" };
+        return { ok: true, response: {} };
+      },
+    });
+  }
+  const settle = async () => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  const reads = (h: ReturnType<typeof harness>) => h.sent.filter((message) => message.type === "analysis_state").length;
+
+  it("loads the latest finished session's analysis, polls while its job runs, and stops when it ends", async () => {
+    const h = analysisHarness([{ ok: true, response: analysisState("queued") }, { ok: true, response: analysisState("running") }, { ok: true, response: analysisState("succeeded") }]);
+    await h.page.refresh();
+    await settle();
+    expect(h.sent[1]).toEqual({ type: "analysis_state", sessionId: "s1" });
+    expect(h.page.view()).toMatchObject({ analysis: { sessionId: "s1", busy: null, state: { job: { status: "queued" } } } });
+    expect(h.pending().map((task) => task.ms)).toEqual([ANALYSIS_POLL_MS]);
+    await h.tick();
+    await h.tick();
+    expect(h.page.view()).toMatchObject({ analysis: { state: { job: { status: "succeeded" } } } });
+    expect(reads(h)).toBe(3);
+    expect(h.pending()).toHaveLength(0);
+  });
+
+  it("keeps waiting through a failed read, gives up after five minutes, and checks again when the page is active", async () => {
+    const running = { ok: true, response: analysisState("running") };
+    const h = analysisHarness([running, { ok: false, error: "offline" }, running, running, running]);
+    await h.page.refresh();
+    await settle();
+    await h.tick();
+    expect(h.page.view()).toMatchObject({ analysis: { error: "offline", state: { job: { status: "running" } } } });
+    expect(h.pending()).toHaveLength(1);
+    await h.tick();
+    expect(h.page.view()).toMatchObject({ analysis: { error: null } });
+
+    h.advance(5 * 60_000);
+    await h.tick();
+    expect(h.pending()).toHaveLength(0);
+    h.page.onVisibilityChange();
+    await settle();
+    expect(reads(h)).toBe(5);
+    expect(h.pending().map((task) => task.ms)).toEqual([ANALYSIS_POLL_MS]);
+  });
+
+  it("offers no analysis while a session is in progress", async () => {
+    const h = analysisHarness([], { problem, session: session(), pendingRating: null, recentCompleted: finished });
+    await h.page.refresh();
+    await settle();
+    expect(reads(h)).toBe(0);
+    expect(h.page.view()).toMatchObject({ analysis: null });
+  });
+
+  it("shows why a manual analysis did not start", async () => {
+    const h = analysisHarness([{ ok: true, response: analysisState(null) }]);
+    await h.page.refresh();
+    await settle();
+    await h.page.analyze();
+    expect(h.sent.at(-1)).toEqual({ type: "analysis_start", sessionId: "s1" });
+    expect(h.page.view()).toMatchObject({ analysis: { busy: null, error: "analysis_budget_exhausted" } });
+    expect(h.pending()).toHaveLength(0);
   });
 });

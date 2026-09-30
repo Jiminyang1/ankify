@@ -264,6 +264,8 @@ export type PracticeSessionCurrentDto = {
   session: PracticeSessionDto | null;
   /** A completed review still waiting for its rating. */
   pendingRating: PracticeSessionDto | null;
+  /** The latest session completed in the last 7 days (what analysis refers to). */
+  recentCompleted: PracticeSessionDto | null;
 };
 
 export type PracticeSessionListDto = {

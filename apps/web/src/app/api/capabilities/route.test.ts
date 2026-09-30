@@ -14,14 +14,26 @@ describe("capabilities handshake", () => {
     getRequestUser.mockResolvedValue(null);
     expect((await GET(new Request("http://localhost/api/capabilities"))).status).toBe(401);
   });
-  it("reports only implemented workflows and disables session analysis", async () => {
+  it("reports only implemented workflows; automatic analysis waits for the operator", async () => {
     getRequestUser.mockResolvedValue({ id: "user-1" });
     const response = await GET(new Request("http://localhost/api/capabilities"));
     const payload = capabilitiesSchema.parse(await response.json());
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(payload.supportedWorkflows).toEqual(["capture", "legacy_review", "coach", "card_generation", "quiz_generation", "credit_checkout", "practice_sessions", "session_rating"]);
-    expect(payload.sessionAnalysis).toEqual({ available: false, automaticAvailable: false, requiresOwnKey: true });
+    expect(payload.supportedWorkflows).toEqual(["capture", "legacy_review", "coach", "card_generation", "quiz_generation", "credit_checkout", "practice_sessions", "session_rating", "session_analysis"]);
+    expect(payload.sessionAnalysis).toEqual({ available: true, automaticAvailable: false, requiresOwnKey: true });
     expect(payload.deprecations).toEqual([]);
+  });
+  it("advertises automatic analysis only once dispatch recovery is enabled, and none when analysis is off", async () => {
+    getRequestUser.mockResolvedValue({ id: "user-1" });
+    const analysis = async () => capabilitiesSchema.parse(await (await GET(new Request("http://localhost/api/capabilities"))).json()).sessionAnalysis;
+    try {
+      vi.stubEnv("ANKIFY_AUTOMATIC_ANALYSIS", "enabled");
+      expect(await analysis()).toEqual({ available: true, automaticAvailable: true, requiresOwnKey: true });
+      vi.stubEnv("ANKIFY_DISABLED_WORKFLOWS", "session_analysis");
+      expect(await analysis()).toEqual({ available: false, automaticAvailable: false, requiresOwnKey: true });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
   it("stops advertising a workflow switched off by the operator", async () => {
     getRequestUser.mockResolvedValue({ id: "user-1" });

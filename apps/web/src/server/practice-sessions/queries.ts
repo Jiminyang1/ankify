@@ -6,12 +6,13 @@ import type {
 } from "@ankify/contracts";
 import { effectiveRatingDisposition, isSessionStale, summarizeSession } from "@ankify/core";
 import { getDb, schema, type PracticeSession } from "@ankify/db";
-import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, or } from "drizzle-orm";
 import { loadSessionEvidence, toObservationDto, toPracticeSessionDto, toProblemStatusDto } from "./dto";
 
 export class InvalidSessionsCursorError extends Error {}
 
 const ps = schema.practiceSessions;
+const RECENT_COMPLETED_MS = 7 * 86_400_000;
 
 /**
  * What the extension shows on a problem page: the problem's Ankify status,
@@ -30,9 +31,9 @@ export async function getCurrentPracticeSession(
     .from(p)
     .where(and(eq(p.userId, userId), target.problemId ? eq(p.id, target.problemId) : eq(p.leetcodeSlug, target.slug!)))
     .limit(1);
-  if (!problem) return { problem: null, session: null, pendingRating: null };
+  if (!problem) return { problem: null, session: null, pendingRating: null, recentCompleted: null };
 
-  const [open, ratable] = await Promise.all([
+  const [open, ratable, [recent]] = await Promise.all([
     db.select().from(ps).where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), eq(ps.isOpen, true))).limit(1),
     db
       .select()
@@ -40,6 +41,19 @@ export async function getCurrentPracticeSession(
       .where(and(eq(ps.userId, userId), eq(ps.problemId, problem.id), inArray(ps.ratingDisposition, ["pending", "deferred"])))
       .orderBy(desc(ps.completedAt))
       .limit(5),
+    db
+      .select()
+      .from(ps)
+      .where(
+        and(
+          eq(ps.userId, userId),
+          eq(ps.problemId, problem.id),
+          eq(ps.status, "completed"),
+          gte(ps.completedAt, new Date(now.getTime() - RECENT_COMPLETED_MS)),
+        ),
+      )
+      .orderBy(desc(ps.completedAt), desc(ps.id))
+      .limit(1),
   ]);
   const session = open[0] && !isSessionStale(open[0], now) ? open[0] : null;
   const pending =
@@ -47,13 +61,14 @@ export async function getCurrentPracticeSession(
       const disposition = effectiveRatingDisposition(row, problem.scheduleRevision, now);
       return disposition === "pending" || disposition === "deferred";
     }) ?? null;
-  const evidence = await loadSessionEvidence(db, userId, [session?.id, pending?.id].filter((id): id is string => Boolean(id)));
+  const evidence = await loadSessionEvidence(db, userId, [session?.id, pending?.id, recent?.id].filter((id): id is string => Boolean(id)));
   const toDto = (row: PracticeSession) =>
     toPracticeSessionDto(row, { problemScheduleRevision: problem.scheduleRevision, evidence: evidence.get(row.id), ownerToken, now });
   return {
     problem: toProblemStatusDto(problem, now),
     session: session ? toDto(session) : null,
     pendingRating: pending ? toDto(pending) : null,
+    recentCompleted: recent ? toDto(recent) : null,
   };
 }
 

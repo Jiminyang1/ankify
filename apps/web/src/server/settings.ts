@@ -1,6 +1,7 @@
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { cache } from "react";
+import type { AnalysisSettings } from "@ankify/contracts";
 import { clampInitialReviewDelayHours, INITIAL_REVIEW_DELAY_HOURS, type AiProvider, type AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
 import { readStarterAiConfig } from "./starter-ai";
@@ -54,9 +55,15 @@ const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
   language: DEFAULT_LANGUAGE,
 };
 
+const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
+  automatic: false,
+  dailyAutomaticLimit: 2,
+};
+
 const KEY_AI = "ai";
 const KEY_REVIEW = "review";
 const KEY_GENERATION = "generation";
+const KEY_ANALYSIS = "analysis";
 
 export async function getAiSettings(userId: string): Promise<AiSettings> {
   const db = getDb();
@@ -81,15 +88,8 @@ export async function getAiSettings(userId: string): Promise<AiSettings> {
  */
 export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSettings> {
   const settings = await getAiSettings(userId);
-  if (settings.provider && settings.model && settings.encryptedApiKey) {
-    return {
-      provider: settings.provider,
-      model: settings.model,
-      reasoningMode: settings.reasoningMode,
-      apiKey: decryptSecret(settings.encryptedApiKey),
-      source: "user",
-    };
-  }
+  const own = ownRuntimeSettings(settings);
+  if (own) return own;
   const starter = readStarterAiConfig();
   if (starter) {
     return {
@@ -105,6 +105,25 @@ export async function getAiRuntimeSettings(userId: string): Promise<AiRuntimeSet
     throw new Error("AI_NOT_CONFIGURED: Configure AI provider and model in Settings.");
   }
   throw new Error("AI_KEY_MISSING: Add your provider API key in Settings.");
+}
+
+function ownRuntimeSettings(settings: AiSettings): AiRuntimeSettings | null {
+  if (!settings.provider || !settings.model || !settings.encryptedApiKey) return null;
+  return {
+    provider: settings.provider,
+    model: settings.model,
+    reasoningMode: settings.reasoningMode,
+    apiKey: decryptSecret(settings.encryptedApiKey),
+    source: "user",
+  };
+}
+
+/**
+ * The user's own complete AI configuration, or null. Session analysis runs
+ * only on this: removing the key never falls back to the hosted key.
+ */
+export async function getOwnAiRuntimeSettings(userId: string): Promise<AiRuntimeSettings | null> {
+  return ownRuntimeSettings(await getAiSettings(userId));
 }
 
 export async function setAiSettings(
@@ -217,4 +236,37 @@ export async function setGenerationSettings(
 function clampDailyLimit(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_REVIEW_SETTINGS.dailyReviewLimit;
   return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+export async function getAnalysisSettings(userId: string): Promise<AnalysisSettings> {
+  const [row] = await getDb()
+    .select()
+    .from(schema.settings)
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_ANALYSIS)));
+  const value = (row?.value ?? {}) as Partial<AnalysisSettings>;
+  return {
+    automatic: value.automatic === true,
+    dailyAutomaticLimit: clampAutomaticLimit(value.dailyAutomaticLimit),
+  };
+}
+
+export async function setAnalysisSettings(userId: string, value: Partial<AnalysisSettings>) {
+  const existing = await getAnalysisSettings(userId);
+  const next: AnalysisSettings = {
+    automatic: value.automatic ?? existing.automatic,
+    dailyAutomaticLimit: clampAutomaticLimit(value.dailyAutomaticLimit ?? existing.dailyAutomaticLimit),
+  };
+  await getDb()
+    .insert(schema.settings)
+    .values({ userId, key: KEY_ANALYSIS, value: next })
+    .onConflictDoUpdate({
+      target: [schema.settings.userId, schema.settings.key],
+      set: { value: next, updatedAt: new Date() },
+    });
+  return next;
+}
+
+function clampAutomaticLimit(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_ANALYSIS_SETTINGS.dailyAutomaticLimit;
+  return Math.max(0, Math.min(5, Math.trunc(value)));
 }

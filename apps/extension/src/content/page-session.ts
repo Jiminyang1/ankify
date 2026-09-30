@@ -9,7 +9,10 @@ import type {
   PracticeSessionRatingResponseDto,
   PracticeSessionStartResponseDto,
   PracticeSessionSubmissionsResponseDto,
+  PublicAiJobDto,
+  SessionAnalysisStateDto,
   SessionBaselineInput,
+  SkillDimensionId,
 } from "@ankify/contracts";
 import type { ContentMessage } from "../shared/protocol";
 import { createActivityMeter } from "./activity-meter";
@@ -17,6 +20,9 @@ import type { LeetcodeClient } from "./leetcode-client";
 import { createSubmissionPoller } from "./submission-poller";
 
 export const TICK_MS = 15_000;
+/** How often a running analysis is checked, and for how long at most. */
+export const ANALYSIS_POLL_MS = 4_000;
+const ANALYSIS_POLL_LIMIT_MS = 5 * 60_000;
 const MAX_POLL_BACKOFF_MS = 5 * 60_000;
 const FOCUS_POLL_DEBOUNCE_MS = 3_000;
 
@@ -33,6 +39,15 @@ export type PageNotice =
   | { kind: "queued"; action: "finish" | "abandon" | "rating" | "rating_decision" }
   | { kind: "rated"; nextDue: string | null };
 
+/** The analysis of the page's latest finished session. */
+export type AnalysisView = {
+  sessionId: string;
+  state: SessionAnalysisStateDto | null;
+  busy: "loading" | "starting" | "deciding" | null;
+  /** An error code from the last analysis action. */
+  error: string | null;
+};
+
 export type PageView =
   | { kind: "loading" }
   | { kind: "signed_out" }
@@ -46,6 +61,9 @@ export type PageView =
       availability: LeetcodeAvailability;
       busy: "starting" | "finishing" | "abandoning" | "rating" | "claiming" | null;
       notice: PageNotice | null;
+      /** The latest session completed in the last week, which analysis refers to. */
+      recentCompleted: PracticeSessionDto | null;
+      analysis: AnalysisView | null;
     };
 
 type Scheduler = (task: () => void, ms: number) => () => void;
@@ -90,9 +108,64 @@ export function createPageSession(deps: PageSessionDeps) {
     const base: Extract<PageView, { kind: "ready" }> =
       view.kind === "ready"
         ? view
-        : { kind: "ready", problem: null, session: null, pendingRating: null, availability: "available", busy: null, notice: null };
+        : { kind: "ready", problem: null, session: null, pendingRating: null, availability: "available", busy: null, notice: null, recentCompleted: null, analysis: null };
     set({ ...base, ...patch });
     syncTracking();
+    syncAnalysis();
+  }
+
+  let analysisPoll: { cancel: () => void; until: number } | null = null;
+
+  /** A finished session to analyze; none while a session is in progress. */
+  function analysisTarget() {
+    if (view.kind !== "ready") return null;
+    const open = view.session && (view.session.status === "active" || view.session.status === "interrupted") && !view.session.stale;
+    if (open) return null;
+    return view.pendingRating ?? view.recentCompleted;
+  }
+
+  function setAnalysis(analysis: AnalysisView | null) {
+    if (view.kind !== "ready") return;
+    set({ ...view, analysis });
+  }
+
+  function syncAnalysis() {
+    const target = analysisTarget();
+    const current = view.kind === "ready" ? view.analysis : null;
+    if ((target?.id ?? null) === (current?.sessionId ?? null)) return;
+    stopAnalysisPoll();
+    if (!target) return setAnalysis(null);
+    setAnalysis({ sessionId: target.id, state: null, busy: "loading", error: null });
+    void loadAnalysis(target.id);
+  }
+
+  function stopAnalysisPoll() {
+    analysisPoll?.cancel();
+    analysisPoll = null;
+  }
+
+  const jobActive = (job: PublicAiJobDto | null) => job?.status === "queued" || job?.status === "running";
+
+  async function loadAnalysis(sessionId: string) {
+    const result = await deps.send<SessionAnalysisStateDto>({ type: "analysis_state", sessionId });
+    const current = view.kind === "ready" ? view.analysis : null;
+    if (disposed || current?.sessionId !== sessionId) return;
+    if (!result.ok) {
+      setAnalysis({ ...current, busy: null, error: (result as { error: string }).error });
+      // One failed read does not end the wait for a job that was running.
+      return jobActive(current.state?.job ?? null) ? pollAnalysis(sessionId) : stopAnalysisPoll();
+    }
+    if (result.queued) return;
+    setAnalysis({ ...current, state: result.response, busy: null, error: null });
+    if (jobActive(result.response.job)) pollAnalysis(sessionId);
+    else stopAnalysisPoll();
+  }
+
+  /** Checks again soon, for at most `ANALYSIS_POLL_LIMIT_MS` per wait. */
+  function pollAnalysis(sessionId: string) {
+    const until = analysisPoll?.until ?? deps.now() + ANALYSIS_POLL_LIMIT_MS;
+    if (deps.now() >= until) return stopAnalysisPoll();
+    analysisPoll = { until, cancel: deps.schedule(() => void loadAnalysis(sessionId), ANALYSIS_POLL_MS) };
   }
 
   function failureView(result: BackgroundFailure) {
@@ -224,8 +297,8 @@ export function createPageSession(deps: PageSessionDeps) {
       return failureView(result);
     }
     if (result.queued) return;
-    const { problem, session, pendingRating } = result.response;
-    ready({ problem, session, pendingRating });
+    const { problem, session, pendingRating, recentCompleted } = result.response;
+    ready({ problem, session, pendingRating, recentCompleted });
   }
 
   function claimed(result: BackgroundOutcome<PracticeSessionCommandResponseDto>) {
@@ -347,9 +420,39 @@ export function createPageSession(deps: PageSessionDeps) {
       ready({ busy: null, pendingRating: null, notice: response.queued ? { kind: "queued", action: "rating_decision" } : null });
     },
 
+    /** Starts an analysis of the latest finished session (the user's own key). */
+    async analyze() {
+      const current = view.kind === "ready" ? view.analysis : null;
+      if (!current || current.busy) return;
+      setAnalysis({ ...current, busy: "starting", error: null });
+      const result = await deps.send<PublicAiJobDto>({ type: "analysis_start", sessionId: current.sessionId });
+      const latest = view.kind === "ready" ? view.analysis : null;
+      if (latest?.sessionId !== current.sessionId) return;
+      if (!result.ok) return setAnalysis({ ...latest, busy: null, error: (result as { error: string }).error });
+      stopAnalysisPoll();
+      await loadAnalysis(current.sessionId);
+    },
+
+    /** Confirms (optionally recategorized) or dismisses a suggested finding. */
+    async decideFinding(mistakeId: string, decision: "confirm" | "dismiss", category?: SkillDimensionId) {
+      const current = view.kind === "ready" ? view.analysis : null;
+      if (!current || current.busy) return;
+      setAnalysis({ ...current, busy: "deciding", error: null });
+      const result = await deps.send({ type: "analysis_finding", mistakeId, decision, ...(category ? { category } : {}) });
+      const latest = view.kind === "ready" ? view.analysis : null;
+      if (latest?.sessionId !== current.sessionId) return;
+      if (!result.ok) return setAnalysis({ ...latest, busy: null, error: (result as { error: string }).error });
+      await loadAnalysis(current.sessionId);
+    },
+
     /** Visibility or focus changed: close the timing interval, and when the
      *  page is active again check LeetCode right away (debounced). */
     onVisibilityChange() {
+      // An analysis still running after polling gave up is checked again.
+      const analysis = view.kind === "ready" ? view.analysis : null;
+      if (deps.isActive() && analysis && !analysisPoll && !analysis.busy && jobActive(analysis.state?.job ?? null)) {
+        void loadAnalysis(analysis.sessionId);
+      }
       const current = tracking;
       if (!current) return;
       current.meter.sample();
@@ -362,6 +465,7 @@ export function createPageSession(deps: PageSessionDeps) {
     dispose() {
       disposed = true;
       stopTracking();
+      stopAnalysisPoll();
       listeners.clear();
     },
   };

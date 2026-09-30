@@ -119,13 +119,16 @@ export type QuizSessionDto = {
 export type PublicAiJobDto = {
   id: string;
   problemId: string;
-  kind: "card" | "quiz";
+  kind: "card" | "quiz" | "analysis";
   action: AiJobCreateRequestInput["action"];
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "superseded";
   attempt: number;
   maxAttempts: number;
   resultCardId: string | null;
   resultQuizSessionId: string | null;
+  resultAnalysisId: string | null;
+  practiceSessionId: string | null;
+  trigger: "manual" | "automatic" | null;
   targetCardId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
@@ -297,6 +300,8 @@ export type MistakeRecordDto = {
   reviewEventId: string | null;
   practiceSessionId: string | null;
   evidence: MistakeEvidence[];
+  /** The session analysis an AI candidate came from. */
+  analysisId: string | null;
   status: MistakeStatus;
   origin: "user" | "ai_suggested";
   resolvedAt: string | null;

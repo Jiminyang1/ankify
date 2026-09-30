@@ -5,3 +5,4 @@ export * from "./skills";
 export * from "./daily-feed";
 export * from "./practice-session";
 export * from "./profile";
+export * from "./session-analysis";

@@ -339,6 +339,21 @@ describe("session commands", () => {
     expect(await decide(s3, "defer_rating", at(2 * MIN))).toMatchObject({ ok: false, error: "rating_not_pending", session: { rating: { disposition: "superseded" } } });
   });
 
+  it("reports the latest session completed in the last week, never an abandoned one", async () => {
+    const current = async (now: Date) => (await getCurrentPracticeSession(USER, { slug: "two-sum" }, null, now)).recentCompleted?.id ?? null;
+    const first = await start();
+    expect(await current(at(MIN))).toBeNull();
+    await finish(first.session.id, at(MIN));
+    expect(await current(at(2 * MIN))).toBe(first.session.id);
+    const abandoned = await start({}, at(3 * MIN));
+    await command(abandoned.session.id, { type: "abandon", requestId: uuid(), ownerToken: TAB_A, occurredAt: at(4 * MIN).toISOString() }, at(4 * MIN));
+    expect(await current(at(5 * MIN))).toBe(first.session.id);
+    const second = await start({}, at(6 * MIN));
+    await finish(second.session.id, at(7 * MIN));
+    expect(await current(at(8 * MIN))).toBe(second.session.id);
+    expect(await current(at(7 * MIN + 7 * 24 * HOUR + 1))).toBeNull();
+  });
+
   it("sets the baseline once when the session started before the page opened", async () => {
     await insertProblem("p1", "one", at(-HOUR));
     const { session } = await start({ target: { kind: "problem", problemId: "p1" }, mode: "due_review", baseline: undefined });
@@ -358,7 +373,7 @@ describe("session commands", () => {
     expect(await ingestSessionObservations(OTHER, session.id, { observations: [{ leetcodeSubmissionId: "1", verdict: "Accepted" }] }, at(3_000)))
       .toEqual({ ok: false, error: "session_not_found" });
     expect(await getPracticeSessionDetail(OTHER, session.id, null, at(3_000))).toBeNull();
-    expect(await getCurrentPracticeSession(OTHER, { slug: "two-sum" }, null, at(3_000))).toEqual({ problem: null, session: null, pendingRating: null });
+    expect(await getCurrentPracticeSession(OTHER, { slug: "two-sum" }, null, at(3_000))).toEqual({ problem: null, session: null, pendingRating: null, recentCompleted: null });
     expect((await listPracticeSessions(OTHER, { limit: 20 })).sessions).toEqual([]);
   });
 });

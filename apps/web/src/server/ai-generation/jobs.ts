@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   aiJobCreateRequestSchema,
@@ -13,7 +13,10 @@ import { refundHostedCreditSafely, spendHostedCredit } from "@/server/ai-credits
 import { StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { getCurrentQuizSession } from "./quiz";
 
-const MAX_ACTIVE_JOBS_PER_USER = 10;
+/** Card and quiz commands; session analysis has its own creation path. */
+type GenerationJobInput = Exclude<AiJobCreateRequestInput, { action: "session_analyze" }>;
+
+export const MAX_ACTIVE_JOBS_PER_USER = 10;
 const JOB_LEASE_MS = 270_000;
 const TERMINAL_STATUSES = ["succeeded", "failed", "cancelled", "superseded"] as const;
 const ACTIVE_STATUSES = ["queued", "running"] as const;
@@ -41,6 +44,9 @@ export function toPublicAiJob(job: AiJob): PublicAiJobDto {
     maxAttempts: job.maxAttempts,
     resultCardId: job.resultCardId,
     resultQuizSessionId: job.resultQuizSessionId,
+    resultAnalysisId: job.resultAnalysisId,
+    practiceSessionId: job.practiceSessionId,
+    trigger: job.trigger,
     targetCardId: job.expectedCardId,
     errorCode: job.errorCode,
     errorMessage: job.errorMessage,
@@ -52,7 +58,7 @@ export function toPublicAiJob(job: AiJob): PublicAiJobDto {
   };
 }
 
-export async function createAiJob(userId: string, input: AiJobCreateRequestInput): Promise<AiJob> {
+export async function createAiJob(userId: string, input: GenerationJobInput): Promise<AiJob> {
   const db = getDb();
   const [existing] = await db
     .select()
@@ -229,7 +235,7 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
   return created;
 }
 
-async function validateJobPrecondition(userId: string, input: AiJobCreateRequestInput) {
+async function validateJobPrecondition(userId: string, input: GenerationJobInput) {
   const db = getDb();
   if (input.action === "card_generate") {
     const [{ count } = { count: 0 }] = await db
@@ -273,13 +279,13 @@ async function validateJobPrecondition(userId: string, input: AiJobCreateRequest
   return { expectedQuizSessionId: current?.id ?? null, existingQuizSessionId: null };
 }
 
-function dedupKeyFor(input: AiJobCreateRequestInput) {
+function dedupKeyFor(input: GenerationJobInput) {
   if (input.action === "card_followup") return `card-followup:${input.cardId}`;
   if (input.action === "card_generate") return `card-generate:${input.problemId}`;
   return `quiz:${input.problemId}`;
 }
 
-function encryptJobInput(input: AiJobCreateRequestInput) {
+export function encryptJobInput(input: AiJobCreateRequestInput) {
   return encryptSecret(JSON.stringify(input));
 }
 
@@ -579,4 +585,90 @@ export async function assertJobConfiguration(job: AiJob) {
   ) {
     throw new Error("ai_configuration_changed");
   }
+}
+
+/** Records that the queue accepted a job's message (see `redispatchStrandedJobs`). */
+export async function markJobDispatched(jobId: string, now = new Date()) {
+  await getDb()
+    .update(schema.aiJobs)
+    .set({ dispatchedAt: now })
+    .where(and(eq(schema.aiJobs.id, jobId), isNull(schema.aiJobs.dispatchedAt)));
+}
+
+export type AiJobTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+export async function loadRunningJob(tx: AiJobTransaction, job: AiJob) {
+  const [current] = await tx
+    .select()
+    .from(schema.aiJobs)
+    .where(
+      and(
+        eq(schema.aiJobs.id, job.id),
+        eq(schema.aiJobs.status, "running"),
+        eq(schema.aiJobs.workerId, job.workerId!),
+      ),
+    )
+    .limit(1);
+  return current ?? null;
+}
+
+export async function markSucceeded(
+  tx: AiJobTransaction,
+  job: AiJob,
+  result: { resultCardId?: string; resultQuizSessionId?: string; resultAnalysisId?: string },
+  now: Date,
+) {
+  await tx
+    .update(schema.aiJobs)
+    .set({
+      status: "succeeded",
+      activeDedupKey: null,
+      workerId: null,
+      leaseExpiresAt: null,
+      resultCardId: result.resultCardId ?? null,
+      resultQuizSessionId: result.resultQuizSessionId ?? null,
+      resultAnalysisId: result.resultAnalysisId ?? null,
+      errorCode: null,
+      errorMessage: null,
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(schema.aiJobs.id, job.id),
+        eq(schema.aiJobs.status, "running"),
+        eq(schema.aiJobs.workerId, job.workerId!),
+      ),
+    );
+}
+
+export async function markSuperseded(
+  tx: AiJobTransaction,
+  job: AiJob,
+  code: string,
+  message: string,
+  now: Date,
+) {
+  const [superseded] = await tx
+    .update(schema.aiJobs)
+    .set({
+      status: "superseded",
+      activeDedupKey: null,
+      workerId: null,
+      leaseExpiresAt: null,
+      errorCode: code,
+      errorMessage: message,
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(schema.aiJobs.id, job.id),
+        eq(schema.aiJobs.status, "running"),
+        eq(schema.aiJobs.workerId, job.workerId!),
+      ),
+    )
+    .returning({ id: schema.aiJobs.id });
+  // The result was discarded, so the user got nothing for the credit.
+  if (superseded) await refundHostedCreditSafely(job.userId, { type: "ai_job", id: job.id }, tx);
 }

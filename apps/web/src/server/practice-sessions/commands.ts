@@ -26,6 +26,7 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { markFirstCapture } from "@/server/onboarding";
 import { getReviewSettings } from "@/server/settings";
+import { loadAutomaticAnalysisContext, planAutomaticAnalysis, publishPlannedJob } from "@/server/session-analysis/jobs";
 import { findLeetcodeProblem, upsertLeetcodeProblem } from "@/server/problem-upsert";
 import { storeSubmissions } from "@/server/submission-store";
 import { payloadDigest } from "./digest";
@@ -242,12 +243,14 @@ export async function runSessionCommand(
   now = new Date(),
 ): Promise<CommandResult> {
   if (input.type === "heartbeat") return heartbeat(userId, sessionId, input, now);
-  // Read outside the write transaction; only finishing initial learning uses it.
+  // Read outside the write transaction; only finishing uses them.
   const initialReviewDelayHours = input.type === "finish" ? (await getReviewSettings(userId)).initialReviewDelayHours : 0;
+  const automaticAnalysis = input.type === "finish" ? await loadAutomaticAnalysisContext(userId, now) : null;
+  let plannedAnalysis: string | null = null;
   const { requestId, ...payload } = input;
   const digest = payloadDigest({ sessionId, ...payload });
 
-  return getDb().transaction(async (tx): Promise<CommandResult> => {
+  const result = await getDb().transaction(async (tx): Promise<CommandResult> => {
     const replay = await findReplay(tx, userId, requestId);
     if (replay) {
       if (replay.sessionId !== sessionId || replay.command !== input.type || replay.payloadDigest !== digest) {
@@ -315,6 +318,8 @@ export async function runSessionCommand(
           // interrupted sessions never schedule anything.
           problem = (await initializeProblemSchedule(tx, userId, next, completed.at, initialReviewDelayHours, now)) ?? problem;
         }
+        // The automatic analysis intent commits with the completion.
+        if (automaticAnalysis) plannedAnalysis = await planAutomaticAnalysis(tx, userId, next.id, automaticAnalysis, {}, now);
         break;
       }
       case "abandon": {
@@ -375,6 +380,8 @@ export async function runSessionCommand(
     await recordCommand(tx, { userId, sessionId, requestId, command: input.type, payloadDigest: digest, response }, now);
     return { ok: true, response };
   });
+  if (result.ok) await publishPlannedJob(plannedAnalysis);
+  return result;
 }
 
 async function heartbeat(

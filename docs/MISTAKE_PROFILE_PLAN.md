@@ -17,7 +17,7 @@ actionable; "I missed seven Tree questions" is not.
 | PR1: manual logging (schema, API, record dialog, entry points, export) | Implemented on `feat/mistake-profile`; DB and contract tests |
 | Session evidence and profile aggregation ([extension-first](EXTENSION_FIRST_REFACTOR_PLAN.md) Phase 4A) | Implemented: session source and evidence (migration `0022`), improvements, `GET /api/mistakes/profile`; core, DB, and route tests |
 | PR2: profile dashboard | Planned as an extension-first Phase 6A web surface, over `GET /api/mistakes/profile` |
-| PR3: optional AI category suggestions | Planned; only after PR1-2 usage data |
+| PR3: AI session analysis ([extension-first](EXTENSION_FIRST_REFACTOR_PLAN.md) Phase 4B) | Implemented: BYOK-only analysis of one completed session (migration `0023`) whose findings become `ai_suggested` candidates, confirmed, recategorized, or dismissed in the extension panel; automatic analysis is opt-in per user and off per deployment until dispatch recovery is scheduled |
 | Daily practice feed | Engine implemented and tested; app wiring planned ([DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md)) |
 
 **Non-goals:** AI diagnoses presented as fact; a second scheduler; changing
@@ -154,8 +154,10 @@ to belong to the same user **and** problem.
 | `DELETE /api/mistakes/improvements/:id` | Withdraw one |
 
 AI session analysis (extension-first Phase 4B) is BYOK-only and creates
-`ai_suggested` candidates; nothing is ever classified in the background unless
-the user opts in.
+`ai_suggested` candidates linked to their analysis (`mistake_records.analysis_id`);
+nothing is ever classified in the background unless the user opts in, and a
+candidate counts toward the profile only once the user confirms it. See
+[ARCHITECTURE.md](ARCHITECTURE.md#session-analysis-byok).
 
 ## Profile aggregation
 
@@ -212,8 +214,9 @@ the user to log their next mistake; it never invents insights.
   re-checked for ownership inside the create transaction (no IDOR).
 - Free text and tags are length-bounded; lists are paginated (max 50).
 - Code and notes are linked, never copied, and never logged.
-- An AI suggestion (later) sends only the minimum evidence, is labeled as AI,
-  and never auto-confirms.
+- Session analysis sends one session's bounded evidence (verdicts, selected
+  code revisions, judge output) only to the user's own provider, is labeled as
+  AI, and never auto-confirms.
 
 ## Delivery
 
@@ -221,7 +224,7 @@ the user to log their next mistake; it never invents insights.
 | --- | --- |
 | PR1 | Migration, contracts, `server/mistakes.ts`, routes, record dialog and chip strip, the four entry points, en/zh strings, export, DB tests |
 | PR2 | Dashboard with both tiers, drill-down, review links, empty/low-data states |
-| PR3 | Optional AI suggestions with candidate accept/edit/dismiss (extension-first Phase 4B); feed source |
+| PR3 | AI session analysis with candidate confirm/recategorize/dismiss in the extension (extension-first Phase 4B); feed source later |
 | PR4 | Subcategories and concept tags, Study Coach read tool `read_mistake_profile` (confirmed records only, no new credit path) |
 
 ## Tests

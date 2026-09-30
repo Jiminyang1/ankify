@@ -15,6 +15,7 @@ const IMPLEMENTED_WORKFLOWS: readonly WorkflowId[] = [
   "credit_checkout",
   "practice_sessions",
   "session_rating",
+  "session_analysis",
 ];
 
 /**
@@ -38,6 +39,16 @@ export function isWorkflowEnabled(workflow: WorkflowId) {
 export function enabledWorkflows(): WorkflowId[] {
   const disabled = disabledWorkflows();
   return IMPLEMENTED_WORKFLOWS.filter((workflow) => !disabled.has(workflow));
+}
+
+/**
+ * Automatic session analysis additionally needs dispatch recovery on the
+ * deployment: a job whose queue message was never sent would otherwise wait
+ * for the user's next visit. Operators set `ANKIFY_AUTOMATIC_ANALYSIS=enabled`
+ * only after the recovery cron is verified (see DEPLOYMENT.md).
+ */
+export function isAutomaticAnalysisEnabled() {
+  return isWorkflowEnabled("session_analysis") && process.env.ANKIFY_AUTOMATIC_ANALYSIS === "enabled";
 }
 
 /** Retired workflows old clients may still call, and how each is retired. */
