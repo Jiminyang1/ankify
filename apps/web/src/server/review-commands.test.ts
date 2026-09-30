@@ -49,6 +49,27 @@ describe("legacy rating and Undo characterization", () => {
       metadata: { undo: { reps: 4, due: memory.fsrsDue.toISOString() }, result: { nextDue: rated.fsrsDue!.toISOString() } } });
   });
 
+  it("advances the schedule revision on every rating and Undo, recording legacy provenance", async () => {
+    expect((await problem()).scheduleRevision).toBe(0);
+    await rateProblemReview(USER, request);
+    expect((await problem()).scheduleRevision).toBe(1);
+    const [event] = await getDb().select().from(schema.reviewEvents).where(eq(schema.reviewEvents.userId, USER));
+    expect(event).toMatchObject({ policyVersion: "legacy_self_recall_v1", reviewMethod: "self_recall", scheduleRevision: 1, practiceSessionId: null });
+    await rateProblemReview(USER, request);
+    expect((await problem()).scheduleRevision).toBe(1);
+    await undoLatestProblemReview(USER, { problemId: "p1" });
+    expect((await problem()).scheduleRevision).toBe(2);
+  });
+
+  it("refuses to rate a problem whose initial learning has not completed", async () => {
+    await getDb().update(schema.problems).set({ enrollment: "awaiting_initial" })
+      .where(and(eq(schema.problems.userId, USER), eq(schema.problems.id, "p1")));
+    const before = await problem();
+    expect(await rateProblemReview(USER, request)).toEqual({ ok: false, error: "problem_not_enrolled" });
+    expect(await problem()).toEqual(before);
+    expect(await getDb().select().from(schema.reviewEvents)).toEqual([]);
+  });
+
   it("rejects reusing a request for another rating or problem", async () => {
     await rateProblemReview(USER, request);
     const rated = await problem();
@@ -109,5 +130,13 @@ describe("legacy rating and Undo characterization", () => {
       fsrsState: "review", fsrsDue: memory.fsrsDue.toISOString(), fsrsStability: 7.5, fsrsReps: 4, fsrsLapses: 1, cardCount: 1,
     }]);
     expect(await loadReviewQueueData(USER, 0)).toEqual({ queue: result.queue, problems: [] });
+  });
+
+  it("keeps problems awaiting initial learning out of the due queue", async () => {
+    await getDb().update(schema.problems).set({ enrollment: "awaiting_initial", fsrsDue: null })
+      .where(and(eq(schema.problems.userId, USER), eq(schema.problems.id, "p1")));
+    const result = await loadReviewQueueData(USER, 20);
+    expect(result.queue).toMatchObject({ totalDue: 0, dueCount: 0 });
+    expect(result.problems).toEqual([]);
   });
 });

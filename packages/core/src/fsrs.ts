@@ -35,6 +35,12 @@ const STR_TO_STATE: Record<FsrsCardState["state"], State> = {
   relearning: State.Relearning,
 };
 
+/** Scheduling provenance recorded on review events written after migration 0021. */
+export const SCHEDULING_POLICIES = {
+  /** The legacy review route: default FSRS with short-term learning steps. */
+  legacySelfRecall: "legacy_self_recall_v1",
+} as const;
+
 export function defaultScheduler() {
   // 0.9 retention is the FSRS-recommended default for a balance of workload vs forgetting.
   return fsrs(generatorParameters({ enable_fuzz: true, request_retention: 0.9 }));

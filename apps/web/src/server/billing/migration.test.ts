@@ -21,30 +21,17 @@ it("upgrades from 0016 without touching existing users, jobs, or starter usage",
   const db = getDb();
   expect(await tableSql("credit_purchases")).toBeNull();
 
-  await db.insert(schema.user).values({ id: "existing-user", name: "Existing", email: "existing@example.com" });
-  await db.insert(schema.settings).values({ userId: "existing-user", key: "starter-ai-usage", value: { used: 7 } });
-  await db.insert(schema.problems).values({
-    id: "existing-problem",
-    userId: "existing-user",
-    leetcodeSlug: "coin-change",
-    title: "Coin Change",
-    difficulty: "Medium",
-    url: "https://leetcode.com/problems/coin-change/",
-  });
-  await db.insert(schema.aiJobs).values({
-    id: "existing-job",
-    userId: "existing-user",
-    problemId: "existing-problem",
-    kind: "quiz",
-    action: "quiz_generate",
-    status: "succeeded",
-    idempotencyKey: "existing-request",
-    inputEnvelope: { v: 1, iv: "x", ciphertext: "x" },
-    provider: "deepseek",
-    model: "deepseek-v4-flash",
-    reasoningMode: "fast",
-    generationLanguage: "en",
-  });
+  // Data written under 0016 (raw SQL: the current Drizzle schema is newer).
+  await testDb.exec(`
+    INSERT INTO user (id, name, email) VALUES ('existing-user', 'Existing', 'existing@example.com');
+    INSERT INTO settings (user_id, key, value) VALUES ('existing-user', 'starter-ai-usage', json('{"used":7}'));
+    INSERT INTO problems (id, user_id, leetcode_slug, title, difficulty, url)
+      VALUES ('existing-problem', 'existing-user', 'coin-change', 'Coin Change', 'Medium', 'https://leetcode.com/problems/coin-change/');
+    INSERT INTO ai_jobs (id, user_id, problem_id, kind, action, status, idempotency_key, input_envelope,
+                         provider, model, reasoning_mode, generation_language)
+      VALUES ('existing-job', 'existing-user', 'existing-problem', 'quiz', 'quiz_generate', 'succeeded',
+              'existing-request', json('{"v":1,"iv":"x","ciphertext":"x"}'), 'deepseek', 'deepseek-v4-flash', 'fast', 'en');
+  `);
 
   await testDb.migrate();
 

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check, foreignKey } from "drizzle-orm/sqlite-core";
 import type {
   AgentNavigation,
   AgentPageContext,
@@ -129,6 +129,15 @@ export const problems = sqliteTable(
       .notNull()
       .default("new"),
     fsrsLastReview: optTs("fsrs_last_review"),
+    // Monotonic: incremented by every write to the FSRS fields above (ratings,
+    // Undo, initial scheduling). A pending session rating or Undo is rejected
+    // when the revision it observed is no longer current.
+    scheduleRevision: integer("schedule_revision").notNull().default(0),
+    // `awaiting_initial`: created by a practice session whose initial learning
+    // has not completed yet; excluded from the review queue until it does.
+    enrollment: text("enrollment", { enum: ["enrolled", "awaiting_initial"] })
+      .notNull()
+      .default("enrolled"),
 
     archivedAt: optTs("archived_at"),
     createdAt: ts("created_at"),
@@ -199,6 +208,189 @@ export const submissions = sqliteTable(
       t.problemId,
       t.leetcodeSubmissionId,
     ),
+    // Cross-problem identity checks look a LeetCode submission id up per user.
+    userLeetcodeSubmissionIdx: index("submissions_user_lc_submission_idx").on(t.userId, t.leetcodeSubmissionId),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * practice_sessions
+ * One tracked attempt at a problem on LeetCode. The server owns the lifecycle;
+ * the extension reports observations. `is_open` holds the single open slot per
+ * problem (active, or interrupted within 24 hours); a stale interrupted
+ * session keeps its history but releases the slot. Sessions never write FSRS
+ * state themselves: scheduling happens through session-linked review events.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const practiceSessions = sqliteTable(
+  "practice_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    /** Idempotency key of the command that created the session. */
+    requestId: text("request_id").notNull(),
+    type: text("type", { enum: ["initial_learning", "scheduled_review", "voluntary_practice"] }).notNull(),
+    reviewMethod: text("review_method", { enum: ["leetcode_full_solve"] })
+      .notNull()
+      .default("leetcode_full_solve"),
+    reviewIntent: text("review_intent", { enum: ["due", "early", "none"] }).notNull(),
+    status: text("status", { enum: ["active", "interrupted", "completed", "abandoned"] })
+      .notNull()
+      .default("active"),
+    isOpen: integer("is_open", { mode: "boolean" }).notNull().default(true),
+    outcome: text("outcome", { enum: ["accepted", "failed", "unknown"] }),
+    /** Incremented by every persisted change. */
+    revision: integer("revision").notNull().default(0),
+    /** The problem's schedule revision when the session started. */
+    scheduleRevisionAtStart: integer("schedule_revision_at_start").notNull(),
+    ratingDisposition: text("rating_disposition", {
+      enum: ["not_applicable", "pending", "deferred", "submitted", "dismissed", "expired", "superseded", "undone"],
+    })
+      .notNull()
+      .default("not_applicable"),
+    ratingExpiresAt: optTs("rating_expires_at"),
+    sourceSite: text("source_site", { enum: ["leetcode.com"] }).notNull().default("leetcode.com"),
+    /** LeetCode username the extension verified at start, when available. */
+    sourceAccount: text("source_account"),
+    /** Tab that currently controls the session, and its renewable lease. */
+    ownerToken: text("owner_token"),
+    ownerLeaseExpiresAt: optTs("owner_lease_expires_at"),
+    /** Newest LeetCode submission id seen before the session started. */
+    baselineState: text("baseline_state", { enum: ["pending", "established", "none", "unavailable"] })
+      .notNull()
+      .default("pending"),
+    baselineSubmissionId: text("baseline_submission_id"),
+    /** Worst LeetCode availability reported while tracking. */
+    captureCompleteness: text("capture_completeness", { enum: ["complete", "partial", "unavailable"] })
+      .notNull()
+      .default("complete"),
+    // Estimated foreground activity and observed (tracked) time. Committed
+    // totals come from previous owners; owner totals are the current tab's
+    // cumulative reports, merged with max() so replays cannot double count.
+    activeMs: integer("active_ms").notNull().default(0),
+    observedMs: integer("observed_ms").notNull().default(0),
+    ownerActiveMs: integer("owner_active_ms").notNull().default(0),
+    ownerObservedMs: integer("owner_observed_ms").notNull().default(0),
+    startedAt: ts("started_at"),
+    lastActivityAt: ts("last_activity_at"),
+    /** Client-reported completion time, validated against the session window. */
+    completedAt: optTs("completed_at"),
+    /** The client time was missing or implausible and had to be clamped. */
+    completedAtAdjusted: integer("completed_at_adjusted", { mode: "boolean" }).notNull().default(false),
+    /** Server time the finish/abandon command arrived. */
+    completionReceivedAt: optTs("completion_received_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userRequestIdx: uniqueIndex("practice_sessions_user_request_unique").on(t.userId, t.requestId),
+    // Target of composite foreign keys that pin children to the same owner.
+    ownerIdx: uniqueIndex("practice_sessions_id_owner_unique").on(t.id, t.userId, t.problemId),
+    openSlotIdx: uniqueIndex("practice_sessions_user_problem_open_unique")
+      .on(t.userId, t.problemId)
+      .where(sql`${t.isOpen} = 1`),
+    userStartedIdx: index("practice_sessions_user_started_idx").on(t.userId, t.startedAt, t.id),
+    userProblemStartedIdx: index("practice_sessions_user_problem_started_idx").on(t.userId, t.problemId, t.startedAt),
+    userRatingIdx: index("practice_sessions_user_rating_idx").on(t.userId, t.ratingDisposition, t.ratingExpiresAt),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * practice_session_submissions
+ * Submission observations associated with a session. Kept apart from
+ * `submissions` so a verdict seen in the list can be recorded even when
+ * LeetCode does not return code details. A LeetCode submission id belongs to
+ * at most one session per user and site.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const practiceSessionSubmissions = sqliteTable(
+  "practice_session_submissions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull(),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    sourceSite: text("source_site", { enum: ["leetcode.com"] }).notNull().default("leetcode.com"),
+    leetcodeSubmissionId: text("leetcode_submission_id"),
+    /** Durable client id for an observation LeetCode reported without an id. */
+    clientObservationId: text("client_observation_id"),
+    submissionId: text("submission_id").references(() => submissions.id, { onDelete: "set null" }),
+    verdict: text("verdict", {
+      enum: [
+        "Accepted",
+        "Wrong Answer",
+        "Time Limit Exceeded",
+        "Memory Limit Exceeded",
+        "Runtime Error",
+        "Compile Error",
+        "Other",
+      ],
+    }).notNull(),
+    /** LeetCode's submission time, when known. */
+    submittedAt: optTs("submitted_at"),
+    firstObservedAt: ts("first_observed_at"),
+    detailStatus: text("detail_status", { enum: ["complete", "pending", "unavailable", "capacity_blocked"] }).notNull(),
+    /** `ambiguous` observations are kept for explicit association and excluded from evidence. */
+    association: text("association", { enum: ["automatic", "ambiguous", "confirmed", "rejected"] }).notNull(),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    sessionOwnerFk: foreignKey({
+      name: "practice_session_submissions_session_owner_fk",
+      columns: [t.sessionId, t.userId, t.problemId],
+      foreignColumns: [practiceSessions.id, practiceSessions.userId, practiceSessions.problemId],
+    }).onDelete("cascade"),
+    userSiteSubmissionIdx: uniqueIndex("practice_session_submissions_user_site_lc_unique")
+      .on(t.userId, t.sourceSite, t.leetcodeSubmissionId)
+      .where(sql`${t.leetcodeSubmissionId} IS NOT NULL`),
+    userClientObservationIdx: uniqueIndex("practice_session_submissions_user_client_obs_unique")
+      .on(t.userId, t.clientObservationId)
+      .where(sql`${t.clientObservationId} IS NOT NULL`),
+    sessionObservedIdx: index("practice_session_submissions_session_idx").on(t.sessionId, t.firstObservedAt),
+    identityCheck: check(
+      "practice_session_submissions_identity",
+      sql`${t.leetcodeSubmissionId} IS NOT NULL OR ${t.clientObservationId} IS NOT NULL`,
+    ),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * practice_session_commands
+ * Idempotency records for session commands (start, resume, takeover, finish,
+ * abandon, rating decisions). A replay with the same request id and payload
+ * returns the stored response; a changed payload is a conflict. Heartbeats and
+ * observations are idempotent by construction and are not recorded here.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export const practiceSessionCommands = sqliteTable(
+  "practice_session_commands",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => practiceSessions.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    command: text("command", {
+      enum: ["start", "resume", "takeover", "finish", "abandon", "set_baseline", "defer_rating", "dismiss_rating", "rate"],
+    }).notNull(),
+    /** SHA-256 of the canonical command payload, excluding the request id. */
+    payloadDigest: text("payload_digest").notNull(),
+    response: text("response", { mode: "json" }).$type<unknown>().notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    userRequestIdx: uniqueIndex("practice_session_commands_user_request_unique").on(t.userId, t.requestId),
+    sessionIdx: index("practice_session_commands_session_idx").on(t.sessionId),
   }),
 );
 
@@ -266,6 +458,14 @@ export const reviewEvents = sqliteTable(
 
     cardId: text("card_id").references(() => cards.id, { onDelete: "set null" }),
     submissionId: text("submission_id").references(() => submissions.id, { onDelete: "set null" }),
+    // Scheduling provenance for events written after migration 0021; older
+    // events keep NULL. A session is deleted only with its problem or user,
+    // which also deletes these events, so the reference needs no action.
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id),
+    policyVersion: text("policy_version"),
+    reviewMethod: text("review_method", { enum: ["self_recall", "leetcode_full_solve"] }),
+    /** The problem's schedule revision produced by this event. */
+    scheduleRevision: integer("schedule_revision"),
 
     fsrsStabilitySnap: real("fsrs_stability_snap"),
     fsrsDifficultySnap: real("fsrs_difficulty_snap"),
@@ -281,6 +481,11 @@ export const reviewEvents = sqliteTable(
     occurredIdx: index("review_events_occurred_idx").on(t.occurredAt),
     userTypeOccurredIdx: index("review_events_user_type_occurred_idx").on(t.userId, t.eventType, t.occurredAt),
     userRequestIdx: uniqueIndex("review_events_user_request_unique").on(t.userId, t.requestId),
+    // Exactly-once scheduling: a session gets at most one rating and one
+    // initial scheduling event, even across replays and Undo.
+    sessionSchedulingIdx: uniqueIndex("review_events_session_scheduling_unique")
+      .on(t.practiceSessionId, t.eventType)
+      .where(sql`${t.practiceSessionId} IS NOT NULL AND ${t.eventType} IN ('self_recall_rated', 'fsrs_scheduled')`),
   }),
 );
 
@@ -683,6 +888,11 @@ export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
 export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
+export type PracticeSession = typeof practiceSessions.$inferSelect;
+export type NewPracticeSession = typeof practiceSessions.$inferInsert;
+export type PracticeSessionSubmission = typeof practiceSessionSubmissions.$inferSelect;
+export type NewPracticeSessionSubmission = typeof practiceSessionSubmissions.$inferInsert;
+export type PracticeSessionCommand = typeof practiceSessionCommands.$inferSelect;
 export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;

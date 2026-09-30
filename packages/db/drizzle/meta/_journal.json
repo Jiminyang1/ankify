@@ -148,6 +148,13 @@
       "when": 1790664975954,
       "tag": "0020_new_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790737657393,
+      "tag": "0021_m1_practice_sessions",
+      "breakpoints": true
     }
   ]
 }

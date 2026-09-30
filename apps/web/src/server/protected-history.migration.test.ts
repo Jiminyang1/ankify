@@ -43,6 +43,13 @@ it("preserves protected history across 0019 -> 0020, future migrations, and repl
     rows.forEach((row, index) => expect(after[key]![index]).toMatchObject(row));
   }
   expect((await getDb().$client.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
+  // M1: existing problems stay enrolled at revision zero; existing events and
+  // submissions stay sessionless and carry no invented scheduling provenance.
+  for (const row of after[`problems/${owners[0]}`]!) expect(row).toMatchObject({ schedule_revision: 0, enrollment: "enrolled" });
+  for (const row of after[`review_events/${owners[0]}`]!) {
+    expect(row).toMatchObject({ practice_session_id: null, policy_version: null, review_method: null, schedule_revision: null });
+  }
+  expect((await getDb().$client.execute("SELECT count(*) AS count FROM practice_session_submissions")).rows[0]).toMatchObject({ count: 0 });
   await testDb.migrate();
   expect(await snapshot(tables)).toEqual(after);
 

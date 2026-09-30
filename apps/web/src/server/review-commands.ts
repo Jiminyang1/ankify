@@ -4,9 +4,9 @@ import type {
   ReviewUndoInput,
   ReviewUndoResponseDto,
 } from "@ankify/contracts";
-import { rate, retrievability, type FsrsCardState } from "@ankify/core";
+import { rate, retrievability, SCHEDULING_POLICIES, type FsrsCardState } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { markFirstReview } from "./onboarding";
@@ -16,7 +16,7 @@ type RateReviewResult =
   | ReviewRateResponseDto
   | {
       ok: false;
-      error: "problem_not_found" | "fsrs_race_conflict" | "review_request_conflict";
+      error: "problem_not_found" | "problem_not_enrolled" | "fsrs_race_conflict" | "review_request_conflict";
     };
 
 type UndoReviewResult =
@@ -84,6 +84,9 @@ export async function rateProblemReview(
             : problem.fsrsDue?.toISOString() ?? null,
       } as const;
     }
+    // Initial learning schedules the first review without a recall rating;
+    // rating before that would fabricate one.
+    if (problem.enrollment !== "enrolled") return { ok: false, error: "problem_not_enrolled" } as const;
 
     const state: FsrsCardState = {
       due: problem.fsrsDue,
@@ -112,6 +115,7 @@ export async function rateProblemReview(
         fsrsLapses: next.lapses,
         fsrsState: next.state,
         fsrsLastReview: next.lastReview,
+        scheduleRevision: sql`${schema.problems.scheduleRevision} + 1`,
         updatedAt: now,
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
       })
@@ -122,7 +126,7 @@ export async function rateProblemReview(
           eq(schema.problems.fsrsReps, state.reps),
         ),
       )
-      .returning({ id: schema.problems.id });
+      .returning({ id: schema.problems.id, scheduleRevision: schema.problems.scheduleRevision });
     if (!updated) return { ok: false, error: "fsrs_race_conflict" } as const;
 
     await tx.insert(schema.reviewEvents).values({
@@ -132,6 +136,9 @@ export async function rateProblemReview(
       eventType: "self_recall_rated",
       fsrsRating: input.rating,
       requestId,
+      policyVersion: SCHEDULING_POLICIES.legacySelfRecall,
+      reviewMethod: "self_recall",
+      scheduleRevision: updated.scheduleRevision,
       fsrsStabilitySnap: next.stability,
       fsrsDifficultySnap: next.difficulty,
       fsrsRetrievabilitySnap: retrievabilityAtReview,
@@ -216,6 +223,7 @@ export async function undoLatestProblemReview(
         fsrsLapses: previous.lapses,
         fsrsState: previous.state,
         fsrsLastReview: previous.lastReview ? new Date(previous.lastReview) : null,
+        scheduleRevision: sql`${schema.problems.scheduleRevision} + 1`,
         updatedAt: now,
       })
       .where(
