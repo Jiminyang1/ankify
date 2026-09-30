@@ -520,9 +520,21 @@ export const translations = {
         todo: "Not started",
       },
       reviewDue: (count: number) => `Review ${count} due`,
+      start: {
+        title: "Your roadmap is lit up",
+        body: (solved: number, total: number, plan: string, group: string, count: number, groupSolved: number) =>
+          `You've solved ${solved} of ${total} ${plan} problems on LeetCode. Start with ${group}: add ${count === groupSolved ? `its ${count}` : `${count} of its ${groupSolved}`} solved problems to review, then rate each one to set when you'll see it again.`,
+        add: (count: number) => `Add ${count} to review`,
+        orPick: "Or open any pattern below and pick your own.",
+        failed: "Couldn't add those problems. Try again in a minute.",
+        connectTitle: "Bring in your LeetCode history",
+        connectBody:
+          "Install the ankify extension and open any LeetCode problem. It syncs every problem you've solved and lights up this roadmap, so you can pick what to keep fresh.",
+        install: "Install the extension",
+      },
       nextProblem: "Next problem",
       openOnLeetcode: "Open on LeetCode",
-      planComplete: "You've solved every problem in this plan. Keep the due ones fresh.",
+      planComplete: "You've solved every problem in this plan.",
       nodeDue: (count: number) => `${count} due`,
       nextUp: "Next up",
       openGroup: (name: string) => `Open ${name}`,
@@ -559,7 +571,6 @@ export const translations = {
         nodeTitle: "Each box is one pattern",
         nodeBody: "The bar reads left to right: remembered, due, solved, not started. 15/24 means you've solved 15 of its 24 problems. Open a box to review, or add solved problems to review in one click.",
       },
-      connectHint: "Install the ankify extension and open any LeetCode problem to count everything you've solved, or link your profile below.",
       leetcodeNote:
         "LeetCode shares only your 20 most recent accepted problems publicly. Open any LeetCode problem with the ankify extension to sync your full solved list.",
       solvedSynced: (count: number, relative: string) =>
@@ -1132,9 +1143,21 @@ export const translations = {
         todo: "没做",
       },
       reviewDue: (count: number) => `复习 ${count} 道到期的题`,
+      start: {
+        title: "你的路线图已经点亮了",
+        body: (solved: number, total: number, plan: string, group: string, count: number, groupSolved: number) =>
+          `${plan} 的 ${total} 道题里，你在 LeetCode 上做过 ${solved} 道。先从 ${group} 开始：${count === groupSolved ? `把它做过的 ${count} 道题` : `从它做过的 ${groupSolved} 道里先挑 ${count} 道`}加入复习，再逐道评分，ankify 会据此安排下次复习时间。`,
+        add: (count: number) => `把 ${count} 道加入复习`,
+        orPick: "也可以点开下面任意一个题型，自己挑。",
+        failed: "没能加入这些题，请稍后再试。",
+        connectTitle: "导入你的 LeetCode 做题记录",
+        connectBody:
+          "安装 ankify 插件，然后打开任意一道 LeetCode 题。插件会同步你做过的全部题，点亮这张路线图，你再挑想保持记忆的题加入复习。",
+        install: "安装插件",
+      },
       nextProblem: "下一题",
       openOnLeetcode: "去 LeetCode 做",
-      planComplete: "这个计划的题你都做过了。记得复习到期的题。",
+      planComplete: "这个计划的题你都做过了。",
       nodeDue: (count: number) => `${count} 该复习`,
       nextUp: "下一步",
       openGroup: (name: string) => `打开 ${name}`,
@@ -1171,7 +1194,6 @@ export const translations = {
         nodeTitle: "每个方框是一个题型",
         nodeBody: "进度条从左到右依次是：记得、该复习、做过、没做。15/24 表示这个题型的 24 道题你做过 15 道。点开方框可以复习，也可以把做过的题一键加入复习。",
       },
-      connectHint: "装好 ankify 插件并打开任意一道 LeetCode 题，就能计入你做过的全部题；也可以在下方关联你的主页。",
       leetcodeNote: "LeetCode 只公开你最近 20 道 AC 的题。装着 ankify 插件打开任意一道 LeetCode 题，就会同步你的完整做题记录。",
       solvedSynced: (count: number, relative: string) => `插件已同步完整做题记录（${relative}）：共 ${count} 道。`,
       leetcode: {

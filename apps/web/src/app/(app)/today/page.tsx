@@ -13,6 +13,7 @@ import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
 import { getAiSettings } from "@/server/settings";
 import { getStarterAiStatus } from "@/server/starter-ai";
+import { loadSolvedSummary } from "@/server/profile";
 import { getOnboardingProgress } from "@/server/onboarding";
 import { OnboardingCard } from "./onboarding-card";
 import { loadToday } from "@/server/today";
@@ -23,11 +24,12 @@ export default async function HomePage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
 
-  const [data, onboarding, ai, starter] = await Promise.all([
+  const [data, onboarding, ai, starter, solvedSummary] = await Promise.all([
     loadToday(user.id),
     getOnboardingProgress(user.id),
     getAiSettings(user.id),
     getStarterAiStatus(user.id),
+    loadSolvedSummary(user.id),
   ]);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
@@ -65,6 +67,7 @@ export default async function HomePage() {
           starter={{ enabled: starter.enabled, remaining: starter.remaining, limit: starter.limit }}
           installUrl={getExtensionInstallUrl()}
           language={language}
+          solvedSummary={solvedSummary}
         />
       )}
 

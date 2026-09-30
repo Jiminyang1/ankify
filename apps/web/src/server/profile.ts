@@ -108,3 +108,20 @@ export async function loadProfile(userId: string) {
       (!leetcode.fetchedAt || now.getTime() - new Date(leetcode.fetchedAt).getTime() > LEETCODE_STALE_MS),
   };
 }
+
+/** How much of the current plan the extension's solved list covers, for the
+ *  Today onboarding step. null until the extension has synced something. */
+export async function loadSolvedSummary(userId: string) {
+  const [solved, current] = await Promise.all([getLeetcodeSolved(userId), getCurrentStudyPlan(userId)]);
+  if (!solved || solved.slugs.length === 0) return null;
+  const solvedSlugs = new Set(solved.slugs);
+  const planSlugs = current.plan.groups.flatMap((group) => group.questions.map((question) => question.slug));
+  return {
+    solved: solvedSlugs.size,
+    planName: current.plan.name,
+    planSolved: planSlugs.filter((slug) => solvedSlugs.has(slug)).length,
+    planTotal: planSlugs.length,
+  };
+}
+
+export type SolvedSummary = NonNullable<Awaited<ReturnType<typeof loadSolvedSummary>>>;

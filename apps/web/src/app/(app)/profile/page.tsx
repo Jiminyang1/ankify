@@ -3,6 +3,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { PageFrame, PageHeader } from "@/components/ui/page";
 import { DifficultyPill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
+import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { cn, formatRelative } from "@/lib/utils";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
@@ -11,6 +12,7 @@ import { ProfileGuide } from "./guide";
 import { LeetcodeCard } from "./leetcode-card";
 import { PlanPicker } from "./plan-picker";
 import { Roadmap } from "./roadmap";
+import { RoadmapStart } from "./roadmap-start";
 import { StatusBar } from "./status-bar";
 import { STATUS_ORDER, STATUS_SWATCH } from "./status-style";
 
@@ -25,6 +27,11 @@ export default async function ProfilePage() {
   ]);
   const copy = t.profile;
   const solved = data.total - data.counts.todo;
+  // First step, only while nothing from this plan is in review yet.
+  const inReview = data.counts.remembered + data.counts.due;
+  const startGroup =
+    inReview === 0 ? data.groups.find((group) => group.items.some((item) => item.status === "solved")) : undefined;
+  const showConnect = !startGroup && !data.solvedSync;
 
   return (
     <PageFrame width="wide" className="space-y-6">
@@ -50,7 +57,6 @@ export default async function ProfilePage() {
               </li>
             ))}
           </ul>
-          {!data.solvedSync && <p className="mt-4 text-xs text-muted">{copy.connectHint}</p>}
         </div>
 
         <div className="flex flex-col gap-4 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
@@ -86,6 +92,21 @@ export default async function ProfilePage() {
           </div>
         </div>
       </Surface>
+
+      {startGroup ? (
+        <RoadmapStart
+          kind="start"
+          plan={data.plan.name}
+          solved={solved}
+          total={data.total}
+          group={{
+            name: startGroup.name,
+            slugs: startGroup.items.filter((item) => item.status === "solved").map((item) => item.slug),
+          }}
+        />
+      ) : (
+        showConnect && <RoadmapStart kind="connect" installUrl={getExtensionInstallUrl()} />
+      )}
 
       <ProfileGuide solvedSynced={data.solvedSync != null} />
 

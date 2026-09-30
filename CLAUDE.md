@@ -19,6 +19,7 @@ pnpm db:backup              # dump prod Turso into backups/ankify-prod-<ts>.db (
 pnpm dev                    # Next.js web app on :3000 (LOCAL profile)
 pnpm dev:ext                # Chrome extension build in watch mode
 pnpm dev:demo               # English demo deck on the QA DB (README/landing screenshots); login at /api/qa/login
+                            # /api/qa/login?as=fresh signs in as a brand-new empty account (wiped on every login) for onboarding runs
 
 pnpm typecheck              # run tsc --noEmit across all packages
 pnpm lint                   # run linter across all packages
@@ -101,7 +102,7 @@ Monorepo with three layers:
   - `study-plan/` - session-only. POST `{ plan }` switches the profile's plan; DELETE `{ plan }` removes an imported list and falls back to the default.
   - `study-plan/import/` - session-only POST `{ link }`: reads a public LeetCode problem list (`leetcode.com/problem-list/<slug>/`) through public GraphQL, groups it by pattern, saves it, and switches to it. Re-importing the same list refreshes it.
   - `profile/add-to-review/` - session-only POST `{ slugs }` (slugs from the user's official or imported plans, max 30). Captures each problem into the deck from LeetCode's public problem data, without submissions; the extension syncs those on the next visit.
-  - `leetcode/solved/` - POST `{ username, slugs }` from the extension: the signed-in LeetCode user's full solved list (slugs only). Stored in `settings` (`leetcode-solved`) and links that LeetCode account; the profile counts these problems as solved.
+  - `leetcode/solved/` - POST `{ username, slugs }` from the extension: the signed-in LeetCode user's full solved list (slugs only). Stored in `settings` (`leetcode-solved`) and links that LeetCode account; the profile counts these problems as solved. It also marks the onboarding extension step done, since only the extension posts here.
   - `leetcode/account/` - session-only. POST `{ profile }` (username or leetcode.com profile URL) verifies the user via LeetCode's public GraphQL and stores it; DELETE unlinks. leetcode.cn returns `unsupported_site`.
   - `settings/ai-test/` - session-only POST. Runs a tiny `generateObject` probe against the configured provider/model/key (or supplied overrides) to verify the connection. Returns `{ ok, latencyMs }` on success or `{ ok: false, code, message }` on failure with categorized error codes (`invalid_api_key`, `model_not_found`, `quota_or_rate_limit`, `timeout`, `network`, `forbidden`, `unknown`).
   - `settings/ai-models/` - session-only POST. Body `{ provider, apiKey? }`. Calls the provider's `/v1/models` endpoint (Anthropic / OpenAI / DeepSeek) and returns chat-capable model ids so the Settings UI doesn't go stale when providers ship new models. Falls back to the user's stored encrypted key when `apiKey` is omitted; OpenAI list is filtered against an embeddings/audio/image/moderation block list.
@@ -126,6 +127,7 @@ Monorepo with three layers:
   - `/profile` - study-plan roadmap. Includes:
     - a plan picker: LeetCode's plans, your imported lists, and "Import a LeetCode list";
     - summary: solved count, four-state bar, "Review N due", next problem;
+    - a first-step card (`profile/roadmap-start.tsx`), shown only while nothing from the plan is in review. Once LeetCode history is synced it offers "Add N to review" for the first pattern with solved problems, capped at 10 so day one fits the daily limit; otherwise it shows an install-the-extension prompt;
     - a first-visit guide to the three concepts (solved / remembered / due), dismissible and stored in localStorage;
     - the roadmap itself: Top Interview 150 is hand-drawn in `profile/roadmap-layout.ts`, other plans follow a three-per-row snake path in plan order, and everything is a plain list below `lg`; each node opens a dialog with Review / Open / Add to review / LeetCode per problem;
     - the LeetCode account link.
