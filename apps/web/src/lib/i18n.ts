@@ -523,7 +523,9 @@ export const translations = {
       connectHint: "Connect LeetCode below so problems you've solved there count toward your plan.",
       leetcodeSection: "LeetCode account",
       leetcodeNote:
-        "LeetCode shares only your 20 most recent accepted problems publicly. Older solves count once you capture them with the extension.",
+        "LeetCode shares only your 20 most recent accepted problems publicly. Open any LeetCode problem with the ankify extension to sync your full solved list.",
+      solvedSynced: (count: number, relative: string) =>
+        `Full solved list synced from the extension ${relative}: ${count} problems.`,
       leetcode: {
         title: "LeetCode",
         connectTitle: "Connect LeetCode",
@@ -1094,7 +1096,8 @@ export const translations = {
       },
       connectHint: "在下方连接 LeetCode，你在那里做过的题也会计入计划。",
       leetcodeSection: "LeetCode 账号",
-      leetcodeNote: "LeetCode 只公开你最近 20 道 AC 的题。更早做过的题，用插件收录后就会计入。",
+      leetcodeNote: "LeetCode 只公开你最近 20 道 AC 的题。装着 ankify 插件打开任意一道 LeetCode 题，就会同步你的完整做题记录。",
+      solvedSynced: (count: number, relative: string) => `插件已同步完整做题记录（${relative}）：共 ${count} 道。`,
       leetcode: {
         title: "LeetCode",
         connectTitle: "连接 LeetCode",

@@ -9,7 +9,7 @@ import {
 } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
-import { getLeetcodeAccount } from "@/server/leetcode-account";
+import { getLeetcodeAccount, getLeetcodeSolved } from "@/server/leetcode-account";
 import { getStudyPlanSlug } from "@/server/settings";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
@@ -43,7 +43,7 @@ export type ProfileData = Awaited<ReturnType<typeof loadProfile>>;
 
 export async function loadProfile(userId: string) {
   const now = new Date();
-  const [rows, leetcode, planSlug] = await Promise.all([
+  const [rows, leetcode, solved, planSlug] = await Promise.all([
     getDb()
       .select({
         id: schema.problems.id,
@@ -63,14 +63,20 @@ export async function loadProfile(userId: string) {
       .from(schema.problems)
       .where(eq(schema.problems.userId, userId)),
     getLeetcodeAccount(userId),
+    getLeetcodeSolved(userId),
     getStudyPlanSlug(userId),
   ]);
 
   const plan = getStudyPlan(planSlug);
   const deck = new Map(rows.map((row) => [row.leetcodeSlug, row]));
-  // LeetCode only exposes the latest 20 accepted problems publicly; the
-  // extension will supply the full solved list later.
-  const solvedOnLeetcode = new Set(leetcode?.profile?.recentAccepted.map((item) => item.slug) ?? []);
+  // Publicly LeetCode shows only the latest 20 accepted problems; the
+  // extension's snapshot adds the full solved list for the linked account.
+  const solvedSync =
+    solved && leetcode && solved.username.toLowerCase() === leetcode.username.toLowerCase() ? solved : null;
+  const solvedOnLeetcode = new Set([
+    ...(leetcode?.profile?.recentAccepted.map((item) => item.slug) ?? []),
+    ...(solvedSync?.slugs ?? []),
+  ]);
 
   const groups: PlanGroup[] = plan.groups.map((group) => {
     const items = group.questions.map((question): PlanItem => {
@@ -134,6 +140,7 @@ export async function loadProfile(userId: string) {
     next,
     fading,
     leetcode,
+    solvedSync: solvedSync ? { count: solvedSync.slugs.length, syncedAt: solvedSync.syncedAt } : null,
     leetcodeStale:
       leetcode != null &&
       (!leetcode.fetchedAt || now.getTime() - new Date(leetcode.fetchedAt).getTime() > LEETCODE_STALE_MS),

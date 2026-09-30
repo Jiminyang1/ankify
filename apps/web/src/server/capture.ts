@@ -1,4 +1,4 @@
-import type { CaptureProblemInput } from "@ankify/contracts";
+import type { CaptureProblemInput, CaptureSubmissionInput } from "@ankify/contracts";
 import { emptyCardState, normalizeLeetcodeTags } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -28,20 +28,6 @@ export async function captureProblem(
   const db = getDb();
   // Older extension builds send display names; store slugs either way.
   const topicTags = normalizeLeetcodeTags(input.topicTags);
-  const submissions = input.submissions.map((submission) => ({
-    id: nanoid(12),
-    leetcodeSubmissionId: submission.leetcodeSubmissionId,
-    language: submission.language,
-    code: submission.code,
-    status: submission.status,
-    runtimeMs: submission.runtimeMs,
-    memoryKb: submission.memoryKb,
-    failedTestcase: submission.failedTestcase,
-    expectedOutput: submission.expectedOutput,
-    actualOutput: submission.actualOutput,
-    errorMessage: submission.errorMessage,
-    submittedAt: submission.submittedAt ? new Date(submission.submittedAt) : new Date(),
-  }));
 
   const outcome = await db.transaction(async (tx): Promise<CaptureOutcome> => {
     const existing = await tx
@@ -128,87 +114,13 @@ export async function captureProblem(
         .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)));
     }
 
-    const storedSubmissions = await tx
-      .select({ leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId })
-      .from(schema.submissions)
-      .where(
-        and(
-          eq(schema.submissions.problemId, problemId),
-          eq(schema.submissions.userId, userId),
-        ),
-      );
-    const availableSlots = Math.max(
-      0,
-      MAX_SUBMISSIONS_PER_PROBLEM - storedSubmissions.length,
-    );
-    const seenLeetcodeIds = new Set(
-      storedSubmissions
-        .map((submission) => submission.leetcodeSubmissionId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const seenSubmissionKeys = new Set<string>();
-
-    const incomingCodes = [...new Set(submissions.map((submission) => submission.code))];
-    const storedMatches = incomingCodes.length
-      ? await tx
-          .select({
-            language: schema.submissions.language,
-            status: schema.submissions.status,
-            code: schema.submissions.code,
-          })
-          .from(schema.submissions)
-          .where(
-            and(
-              eq(schema.submissions.userId, userId),
-              eq(schema.submissions.problemId, problemId),
-              inArray(schema.submissions.code, incomingCodes),
-            ),
-          )
-      : [];
-    const storedExactKeys = new Set(storedMatches.map(exactSubmissionKey));
-    const newSubmissions: Array<
-      (typeof submissions)[number] & { userId: string; problemId: string }
-    > = [];
-    let submissionLimitReached = false;
-
-    for (const submission of submissions) {
-      const row = { ...submission, userId, problemId };
-      if (row.leetcodeSubmissionId && seenLeetcodeIds.has(row.leetcodeSubmissionId)) continue;
-
-      const key = normalizedSubmissionKey(row);
-      if (seenSubmissionKeys.has(key)) continue;
-      if (newSubmissions.length >= availableSlots) {
-        submissionLimitReached = true;
-        break;
-      }
-      if (storedExactKeys.has(exactSubmissionKey(row))) {
-        seenSubmissionKeys.add(key);
-        continue;
-      }
-
-      newSubmissions.push(row);
-      if (row.leetcodeSubmissionId) seenLeetcodeIds.add(row.leetcodeSubmissionId);
-      seenSubmissionKeys.add(key);
-    }
-
-    if (newSubmissions.length > 0) {
-      await tx.insert(schema.submissions).values(newSubmissions);
-      await tx.insert(schema.reviewEvents).values(
-        newSubmissions.map((submission) => ({
-          id: nanoid(12),
-          userId,
-          problemId,
-          eventType: "submission_imported" as const,
-          submissionId: submission.id,
-        })),
-      );
-    }
+    const { imported, limitReached } = await insertNewSubmissions(tx, userId, problemId, input.submissions);
 
     return {
       problemId,
       created,
-      importedSubmissions: newSubmissions.length,
-      submissionLimitReached,
+      importedSubmissions: imported,
+      submissionLimitReached: limitReached,
     };
   });
 
@@ -219,6 +131,148 @@ export async function captureProblem(
   }
 
   return outcome;
+}
+
+/** LeetCode submission ids already stored for a captured problem, or null
+ *  when the slug isn't in the user's deck. Lets the extension send details
+ *  only for submissions ankify is missing. */
+export async function listLeetcodeSubmissionIds(userId: string, slug: string): Promise<string[] | null> {
+  const db = getDb();
+  const [problem] = await db
+    .select({ id: schema.problems.id })
+    .from(schema.problems)
+    .where(and(eq(schema.problems.userId, userId), eq(schema.problems.leetcodeSlug, slug)));
+  if (!problem) return null;
+  const rows = await db
+    .select({ leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId })
+    .from(schema.submissions)
+    .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problem.id)));
+  return rows.map((row) => row.leetcodeSubmissionId).filter((id): id is string => Boolean(id));
+}
+
+/** Append-only submission sync for an already-captured problem. Unlike
+ *  capture it never touches the problem row, so it can't un-archive it. */
+export async function appendSubmissions(
+  userId: string,
+  slug: string,
+  submissions: CaptureSubmissionInput[],
+): Promise<{ problemId: string; importedSubmissions: number; submissionLimitReached: boolean } | null> {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    const [problem] = await tx
+      .select({ id: schema.problems.id })
+      .from(schema.problems)
+      .where(and(eq(schema.problems.userId, userId), eq(schema.problems.leetcodeSlug, slug)));
+    if (!problem) return null;
+    const { imported, limitReached } = await insertNewSubmissions(tx, userId, problem.id, submissions);
+    return { problemId: problem.id, importedSubmissions: imported, submissionLimitReached: limitReached };
+  });
+}
+
+type Transaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/** Insert submissions the problem doesn't have yet (by LeetCode id, then by
+ *  language + status + code), log a `submission_imported` event for each, and
+ *  stop at the per-problem cap. Shared by capture and the extension's
+ *  append-only submission sync. */
+async function insertNewSubmissions(
+  tx: Transaction,
+  userId: string,
+  problemId: string,
+  inputs: CaptureSubmissionInput[],
+): Promise<{ imported: number; limitReached: boolean }> {
+  const submissions = inputs.map((submission) => ({
+    id: nanoid(12),
+    leetcodeSubmissionId: submission.leetcodeSubmissionId,
+    language: submission.language,
+    code: submission.code,
+    status: submission.status,
+    runtimeMs: submission.runtimeMs,
+    memoryKb: submission.memoryKb,
+    failedTestcase: submission.failedTestcase,
+    expectedOutput: submission.expectedOutput,
+    actualOutput: submission.actualOutput,
+    errorMessage: submission.errorMessage,
+    submittedAt: submission.submittedAt ? new Date(submission.submittedAt) : new Date(),
+  }));
+
+  const storedSubmissions = await tx
+    .select({ leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId })
+    .from(schema.submissions)
+    .where(
+      and(
+        eq(schema.submissions.problemId, problemId),
+        eq(schema.submissions.userId, userId),
+      ),
+    );
+  const availableSlots = Math.max(
+    0,
+    MAX_SUBMISSIONS_PER_PROBLEM - storedSubmissions.length,
+  );
+  const seenLeetcodeIds = new Set(
+    storedSubmissions
+      .map((submission) => submission.leetcodeSubmissionId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const seenSubmissionKeys = new Set<string>();
+
+  const incomingCodes = [...new Set(submissions.map((submission) => submission.code))];
+  const storedMatches = incomingCodes.length
+    ? await tx
+        .select({
+          language: schema.submissions.language,
+          status: schema.submissions.status,
+          code: schema.submissions.code,
+        })
+        .from(schema.submissions)
+        .where(
+          and(
+            eq(schema.submissions.userId, userId),
+            eq(schema.submissions.problemId, problemId),
+            inArray(schema.submissions.code, incomingCodes),
+          ),
+        )
+    : [];
+  const storedExactKeys = new Set(storedMatches.map(exactSubmissionKey));
+  const newSubmissions: Array<
+    (typeof submissions)[number] & { userId: string; problemId: string }
+  > = [];
+  let submissionLimitReached = false;
+
+  for (const submission of submissions) {
+    const row = { ...submission, userId, problemId };
+    if (row.leetcodeSubmissionId && seenLeetcodeIds.has(row.leetcodeSubmissionId)) continue;
+
+    const key = normalizedSubmissionKey(row);
+    if (seenSubmissionKeys.has(key)) continue;
+    if (newSubmissions.length >= availableSlots) {
+      submissionLimitReached = true;
+      break;
+    }
+    if (storedExactKeys.has(exactSubmissionKey(row))) {
+      seenSubmissionKeys.add(key);
+      continue;
+    }
+
+    newSubmissions.push(row);
+    if (row.leetcodeSubmissionId) seenLeetcodeIds.add(row.leetcodeSubmissionId);
+    seenSubmissionKeys.add(key);
+  }
+
+  if (newSubmissions.length > 0) {
+    await tx.insert(schema.submissions).values(newSubmissions);
+    await tx.insert(schema.reviewEvents).values(
+      newSubmissions.map((submission) => ({
+        id: nanoid(12),
+        userId,
+        problemId,
+        eventType: "submission_imported" as const,
+        submissionId: submission.id,
+      })),
+    );
+  }
+
+  return { imported: newSubmissions.length, limitReached: submissionLimitReached };
 }
 
 function normalizeCode(code: string) {

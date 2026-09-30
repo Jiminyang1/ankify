@@ -1,4 +1,5 @@
 import type { CaptureProblemInput, CaptureSubmissionInput } from "@ankify/contracts";
+import type { SubmissionSummary } from "../shared/messages";
 
 /**
  * LeetCode page extraction.
@@ -134,11 +135,10 @@ async function fetchRecentSubmissions(slug: string, limit = 5): Promise<RawSubmi
   }
 }
 
-/** True when any of the user's recent submissions for this slug is Accepted.
- *  Used by the capture badge to detect solved-but-uncaptured problems. */
-export async function hasRecentAcceptedSubmission(slug: string, limit = 10): Promise<boolean> {
+/** The user's latest submissions for this slug, newest first. */
+export async function fetchSubmissionSummaries(slug: string, limit = 20): Promise<SubmissionSummary[]> {
   const recent = await fetchRecentSubmissions(slug, limit);
-  return recent.some((s) => s.statusDisplay === "Accepted");
+  return recent.map((s) => ({ id: s.id, status: s.statusDisplay, timestamp: Number(s.timestamp) || 0 }));
 }
 
 async function fetchSubmissionDetails(submissionId: string) {
@@ -223,20 +223,10 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, mapper: (ite
   return results;
 }
 
-export async function captureCurrent(): Promise<CaptureProblemInput> {
-  const slug = slugFromUrl();
-  if (!slug) throw new Error("Not a LeetCode problem page");
-
-  const hasCsrf = !!csrfToken();
-  console.log("[ankify] capturing", slug, "csrf:", hasCsrf ? "present" : "MISSING");
-
-  const q = await fetchProblem(slug);
-  if (!q) throw new Error("Problem not found");
-
-  const recent = await fetchRecentSubmissions(slug, 20);
-  console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
-
-  const detailResults = await mapConcurrent(recent, 4, async (s): Promise<CaptureSubmissionInput | null> => {
+/** Full capture rows for the given submissions. Ones whose details fail to
+ *  load are skipped; the next sync retries them. */
+export async function fetchSubmissionInputs(summaries: SubmissionSummary[]): Promise<CaptureSubmissionInput[]> {
+  const results = await mapConcurrent(summaries, 4, async (s): Promise<CaptureSubmissionInput | null> => {
     try {
       const d = await fetchSubmissionDetails(s.id);
       if (!d) {
@@ -247,7 +237,7 @@ export async function captureCurrent(): Promise<CaptureProblemInput> {
         leetcodeSubmissionId: s.id,
         language: d.lang.verboseName || d.lang.name,
         code: d.code,
-        status: normaliseStatus(d.statusDisplay ?? s.statusDisplay),
+        status: normaliseStatus(d.statusDisplay ?? s.status),
         runtimeMs: parseRuntimeMs(d.runtimeDisplay),
         memoryKb: parseMemoryKb(d.memoryDisplay),
         failedTestcase: d.lastTestcase ?? undefined,
@@ -261,7 +251,74 @@ export async function captureCurrent(): Promise<CaptureProblemInput> {
       return null;
     }
   });
-  const submissions = detailResults.filter((submission): submission is CaptureSubmissionInput => submission != null);
+  return results.filter((submission): submission is CaptureSubmissionInput => submission != null);
+}
+
+/**
+ * Every problem the signed-in LeetCode user has solved, plus their username.
+ * `/api/problems/all/` answers both in one same-origin request; the GraphQL
+ * `questionList` status filter is the fallback if that endpoint changes.
+ * Returns null when nobody is signed in to LeetCode.
+ */
+export async function fetchSolvedList(): Promise<{ username: string; slugs: string[] } | null> {
+  try {
+    const res = await fetch("/api/problems/all/", { credentials: "include" });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        user_name?: string;
+        stat_status_pairs?: { status: string | null; stat: { question__title_slug: string } }[];
+      };
+      if (!body.user_name) return null;
+      return {
+        username: body.user_name,
+        slugs: (body.stat_status_pairs ?? [])
+          .filter((pair) => pair.status === "ac")
+          .map((pair) => pair.stat.question__title_slug),
+      };
+    }
+  } catch (err) {
+    console.warn("[ankify] /api/problems/all/ failed; trying GraphQL", err);
+  }
+
+  type Status = { userStatus: { username: string; isSignedIn: boolean } };
+  const status = await gql<Status>(`query { userStatus { username isSignedIn } }`);
+  if (!status.userStatus.isSignedIn || !status.userStatus.username) return null;
+
+  type Page = { questionList: { totalNum: number; data: { titleSlug: string }[] } };
+  const PAGE = 100;
+  const slugs: string[] = [];
+  for (let skip = 0; skip < 10_000; skip += PAGE) {
+    const page = await gql<Page>(
+      `query Q($skip: Int!, $limit: Int!) {
+         questionList(categorySlug: "", limit: $limit, skip: $skip, filters: { status: AC }) {
+           totalNum
+           data { titleSlug }
+         }
+       }`,
+      { skip, limit: PAGE },
+    );
+    slugs.push(...page.questionList.data.map((q) => q.titleSlug));
+    if (page.questionList.data.length < PAGE || slugs.length >= page.questionList.totalNum) break;
+  }
+  return { username: status.userStatus.username, slugs };
+}
+
+export async function captureCurrent(): Promise<CaptureProblemInput> {
+  const slug = slugFromUrl();
+  if (!slug) throw new Error("Not a LeetCode problem page");
+
+  const hasCsrf = !!csrfToken();
+  console.log("[ankify] capturing", slug, "csrf:", hasCsrf ? "present" : "MISSING");
+
+  const q = await fetchProblem(slug);
+  if (!q) throw new Error("Problem not found");
+
+  const recent = await fetchRecentSubmissions(slug, 20);
+  console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
+
+  const submissions = await fetchSubmissionInputs(
+    recent.map((s) => ({ id: s.id, status: s.statusDisplay, timestamp: Number(s.timestamp) || 0 })),
+  );
   console.log(`[ankify] captured ${submissions.length} submission details`);
 
   let similarSlugs: string[] = [];

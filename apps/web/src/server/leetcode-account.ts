@@ -1,16 +1,18 @@
 import type { LeetcodeAccountDto, LeetcodeProfileDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 /**
  * Linked LeetCode account: the username plus a cached copy of that user's
  * public profile. Everything here comes from LeetCode's public GraphQL — no
  * LeetCode session is ever sent or stored. The full solved list needs the
- * user's own login and belongs in the extension, not here.
+ * user's own login, so the extension reads it and posts only the slugs.
  */
 
 const KEY = "leetcode-account";
+/** Full solved list, pushed by the extension from the user's LeetCode login. */
+const SOLVED_KEY = "leetcode-solved";
 const GRAPHQL_URL = "https://leetcode.com/graphql";
 const FETCH_TIMEOUT_MS = 8_000;
 /** Refetch at most this often; the page falls back to the cache on failure. */
@@ -200,5 +202,63 @@ export async function linkLeetcodeAccount(
 export async function unlinkLeetcodeAccount(userId: string) {
   await getDb()
     .delete(schema.settings)
-    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY)));
+    .where(and(eq(schema.settings.userId, userId), inArray(schema.settings.key, [KEY, SOLVED_KEY])));
+}
+
+type StoredSolved = { username: string; slugs: string[]; syncedAt: number };
+
+export type LeetcodeSolved = { username: string; slugs: string[]; syncedAt: string };
+
+/** The extension's latest solved-list snapshot for the linked account. */
+export async function getLeetcodeSolved(userId: string): Promise<LeetcodeSolved | null> {
+  const [row] = await getDb()
+    .select({ value: schema.settings.value })
+    .from(schema.settings)
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, SOLVED_KEY)));
+  const value = row?.value as Partial<StoredSolved> | undefined;
+  if (!value || typeof value.username !== "string" || !Array.isArray(value.slugs)) return null;
+  return {
+    username: value.username,
+    slugs: value.slugs.filter((slug): slug is string => typeof slug === "string"),
+    syncedAt: new Date(typeof value.syncedAt === "number" ? value.syncedAt : 0).toISOString(),
+  };
+}
+
+/** Store the extension's solved list and link the LeetCode account it came
+ *  from. The extension reads the username from the signed-in LeetCode
+ *  session, so it replaces a different manually linked name. */
+export async function saveLeetcodeSolved(
+  userId: string,
+  username: string,
+  slugs: string[],
+): Promise<{ username: string; count: number } | { error: LinkLeetcodeError }> {
+  const parsed = parseLeetcodeProfile(username);
+  if ("error" in parsed) return parsed;
+
+  const current = await readAccount(userId);
+  if (!current || current.username.toLowerCase() !== parsed.username.toLowerCase()) {
+    let profile: LeetcodeProfileDto | null = null;
+    try {
+      profile = await fetchLeetcodeProfile(parsed.username);
+    } catch (error) {
+      // Link anyway; getLeetcodeAccount retries the profile on the next read.
+      console.warn("[leetcode] profile lookup during solved sync failed", error);
+    }
+    await writeAccount(userId, {
+      username: profile?.username ?? parsed.username,
+      linkedAt: Date.now(),
+      fetchedAt: profile ? Date.now() : null,
+      profile,
+    });
+  }
+
+  const value: StoredSolved = { username: parsed.username, slugs: [...new Set(slugs)], syncedAt: Date.now() };
+  await getDb()
+    .insert(schema.settings)
+    .values({ userId, key: SOLVED_KEY, value })
+    .onConflictDoUpdate({
+      target: [schema.settings.userId, schema.settings.key],
+      set: { value, updatedAt: new Date() },
+    });
+  return { username: parsed.username, count: value.slugs.length };
 }

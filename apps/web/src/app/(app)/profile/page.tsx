@@ -5,7 +5,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { PageFrame, PageHeader } from "@/components/ui/page";
 import { DifficultyPill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
-import { cn } from "@/lib/utils";
+import { cn, formatRelative } from "@/lib/utils";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { loadProfile } from "@/server/profile";
@@ -108,7 +108,13 @@ export default async function ProfilePage() {
 
       <section id="leetcode" className="space-y-2">
         <LeetcodeCard account={data.leetcode} stale={data.leetcodeStale} />
-        {data.leetcode && <p className="text-xs text-muted">{copy.leetcodeNote}</p>}
+        {data.leetcode && (
+          <p className="text-xs text-muted">
+            {data.solvedSync
+              ? copy.solvedSynced(data.solvedSync.count, formatRelative(data.solvedSync.syncedAt))
+              : copy.leetcodeNote}
+          </p>
+        )}
       </section>
     </PageFrame>
   );
