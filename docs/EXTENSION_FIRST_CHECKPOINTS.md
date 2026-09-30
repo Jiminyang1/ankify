@@ -856,3 +856,52 @@ Tests:
   - it links to the target on LeetCode;
   - skip and already attempted act on the same items the API and popup see;
   - the page in Chinese.
+
+## Checkpoint 6A.3: mistake profile on the web
+
+Status: **PASS**. No schema or API change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 482 tests in 76 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 24 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+`/analysis` opens with the mistake profile (`GET /api/mistakes/profile`
+data), followed by the FSRS dashboard:
+
+- A readiness notice until the profile is personalized.
+- **Recorded mistakes** (confirmed only). Per category:
+  - "Recurring" (weak and confirmed across problems) or "Needs more
+    evidence";
+  - sessions across problems;
+  - unresolved, resolved, and improvements;
+  - a trend against the previous period;
+  - example links to the problem pages where records are resolved.
+- **Suggested by session analysis**: unconfirmed AI findings, kept apart,
+  with Confirm and Dismiss (`PATCH /api/mistakes/:id`).
+- **Practice signals**: session outcomes, rating counts, the top ten topics
+  (sessions, Accepted, first try, median failures before Accepted), and an
+  incomplete-evidence note.
+- Each tier is a named region. English and Chinese strings.
+
+Deferred from the older PR2 dashboard spec:
+
+- the period, topic, and source filters, which the profile API does not take;
+- the quiz-accuracy tier, since quizzes are suspended in 6B.
+
+Improvements are confirmed per session, with the session history (6A.5).
+
+Found and fixed while gating: the QA AI worker (`apps/web/scripts/qa-worker.ts`,
+used by `pnpm dev:qa` and the browser harness) exited on the first
+`SQLITE_BUSY` from its poll query. It shares the local SQLite file with the
+dev server, so every AI job later in the run stayed queued. It now logs the
+error and keeps polling.
+
+Browser tests:
+
+- A session analyzed with the user's own key shows its findings under
+  suggestions, and not under recorded mistakes.
+- Confirming one moves it to recorded mistakes under its category.
+- The page reads in Chinese.

@@ -16,7 +16,7 @@ actionable; "I missed seven Tree questions" is not.
 | --- | --- |
 | PR1: manual logging (schema, API, record dialog, entry points, export) | Implemented on `feat/mistake-profile`; DB and contract tests |
 | Session evidence and profile aggregation ([extension-first](EXTENSION_FIRST_REFACTOR_PLAN.md) Phase 4A) | Implemented: session source and evidence (migration `0022`), improvements, `GET /api/mistakes/profile`; core, DB, and route tests |
-| PR2: profile dashboard | Planned as an extension-first Phase 6A web surface, over `GET /api/mistakes/profile` |
+| PR2: profile dashboard | Implemented (extension-first Phase 6A.3): a section of `/analysis` with confirmed patterns (readiness, contexts across problems, trend, resolved/unresolved, improvements, examples), analysis suggestions apart with Confirm/Dismiss, and practice signals per topic. The period, topic, and source filters and the quiz-accuracy tier are deferred |
 | PR3: AI session analysis ([extension-first](EXTENSION_FIRST_REFACTOR_PLAN.md) Phase 4B) | Implemented: BYOK-only analysis of one completed session (migration `0023`) whose findings become `ai_suggested` candidates, confirmed, recategorized, or dismissed in the extension panel; automatic analysis is opt-in per user and off per deployment until dispatch recovery is scheduled |
 | Daily practice feed | Engine implemented and tested; app wiring planned ([DAILY_FEED_PLAN.md](DAILY_FEED_PLAN.md)) |
 

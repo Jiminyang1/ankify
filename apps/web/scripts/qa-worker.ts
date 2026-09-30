@@ -41,13 +41,20 @@ async function nextQueuedJobId() {
 async function main() {
   console.log("✓ QA AI worker polling the local database");
   while (!stopping) {
-    const jobId = await nextQueuedJobId();
-    if (!jobId) {
-      await wait(250);
-      continue;
+    try {
+      const jobId = await nextQueuedJobId();
+      if (!jobId) {
+        await wait(250);
+        continue;
+      }
+      delivery += 1;
+      await processAiJob(jobId, `qa:${process.pid}:${delivery}`);
+    } catch (error) {
+      // The local database is shared with the dev server, so a read can meet
+      // SQLITE_BUSY. Keep polling, as a queue consumer would redeliver.
+      console.error("[qa-worker] poll failed; retrying", error instanceof Error ? error.message : error);
+      await wait(1_000);
     }
-    delivery += 1;
-    await processAiJob(jobId, `qa:${process.pid}:${delivery}`);
   }
 }
 

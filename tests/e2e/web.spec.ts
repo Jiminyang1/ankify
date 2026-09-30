@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import type { SuggestionListDto } from "../../packages/contracts/src";
+import type { SessionAnalysisStateDto, SuggestionListDto } from "../../packages/contracts/src";
 import { API_ORIGIN, test, expect } from "./fixtures";
 import { newProblem } from "./helpers";
 
@@ -84,5 +84,52 @@ test("the suggestions page acts on the same items as the popup", async ({ contex
     await expect(replacementCard).toHaveCount(0);
     expect((await api<SuggestionListDto>("/api/suggestions")).suggestions.find((item) => item.id === replacement.id)?.status).toBe("already_attempted");
   }
+  await page.close();
+});
+
+test("the mistake profile lists analysis suggestions apart and counts one only once confirmed", async ({ context, api, leetcode }) => {
+  // A finished session with three attempts, analyzed with the user's own key
+  // (the harness answers from its fake provider).
+  await api("/api/settings", { body: { provider: "deepseek", model: "deepseek-chat", apiKey: "e2e-own-key" } });
+  const slug = newProblem(leetcode, "web-profile");
+  const title = leetcode.problems[slug]!.title;
+  const ownerToken = crypto.randomUUID();
+  const started = await api<{ session: { id: string } }>("/api/practice-sessions", {
+    body: {
+      requestId: crypto.randomUUID(), ownerToken, mode: "practice", baseline: { state: "none" }, supersedePendingRating: false,
+      target: { kind: "leetcode", problem: { leetcodeSlug: slug, title, difficulty: "Easy", url: `https://leetcode.com/problems/${slug}/`, topicTags: ["E2E Profile"], similarSlugs: [] } },
+    },
+  });
+  const sessionId = started.session.id;
+  const now = Date.now();
+  await api(`/api/practice-sessions/${sessionId}/submissions`, {
+    body: {
+      observations: [["Wrong Answer", "return 0"], ["Wrong Answer", "return -1"], ["Accepted", "return 1"]].map(([verdict, code], index) => ({
+        leetcodeSubmissionId: String(70_000 + index), verdict, submittedAt: new Date(now + index * 1_000).toISOString(), detail: { language: "python3", code },
+      })),
+    },
+  });
+  await api(`/api/practice-sessions/${sessionId}/commands`, { body: { type: "finish", requestId: crypto.randomUUID(), ownerToken, result: "solved", occurredAt: new Date(now + 5_000).toISOString() } });
+  await api("/api/ai-jobs", { body: { action: "session_analyze", practiceSessionId: sessionId, requestId: crypto.randomUUID() } });
+  await expect.poll(async () => (await api<SessionAnalysisStateDto>(`/api/practice-sessions/${sessionId}/analysis`)).job?.status, { timeout: 30_000 }).toBe("succeeded");
+
+  const page = await openWeb(context, "/analysis");
+  const profile = page.getByRole("region", { name: "Mistake profile" });
+  await expect(profile).toBeVisible({ timeout: 30_000 });
+  const candidates = profile.getByRole("region", { name: "Suggested by session analysis" });
+  const recorded = profile.getByRole("region", { name: "Recorded mistakes" });
+  const suggestion = candidates.getByRole("listitem").filter({ hasText: title }).filter({ hasText: "Edge cases" });
+  await expect(suggestion).toHaveCount(1);
+  await expect(recorded.getByRole("link", { name: title })).toHaveCount(0);
+  await suggestion.getByRole("button", { name: "Confirm" }).click();
+  await expect(suggestion).toHaveCount(0);
+  await expect(recorded.getByRole("listitem").filter({ hasText: "Edge cases" }).getByRole("link", { name: title })).toHaveCount(1);
+  await page.close();
+});
+
+test("the mistake profile reads in Chinese", async ({ context, panel }) => {
+  await expect(panel).toHaveURL(/popup/);
+  const page = await openWeb(context, "/analysis", "zh");
+  await expect(page.getByRole("region", { name: "错误画像" })).toBeVisible({ timeout: 30_000 });
   await page.close();
 });
