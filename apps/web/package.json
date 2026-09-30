@@ -10,7 +10,7 @@
     "build": "next build",
     "build:vercel": "node ../../scripts/check-vercel-env.mjs && next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=7",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

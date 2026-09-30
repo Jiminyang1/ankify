@@ -270,6 +270,14 @@ export type CaptureResultDto = {
   created: boolean;
   importedSubmissions: number;
   submissionLimitReached: boolean;
+  /** Already stored (same LeetCode submission id, or identical id-less content). */
+  duplicateSubmissions: number;
+  /** Duplicates whose missing details were filled in from this delivery. */
+  enrichedSubmissions: number;
+  /** Submission ids already stored under a different problem; never reassigned. */
+  conflictingSubmissions: number;
+  /** Not stored because the problem reached its submission cap. */
+  capacityBlockedSubmissions: number;
 };
 
 export type MistakeRecordDto = {

@@ -3,6 +3,7 @@ import { captureProblemSchema, type CaptureProblemInput } from "@ankify/contract
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { captureProblem } from "./capture";
+import { MAX_SUBMISSIONS_PER_PROBLEM } from "./resource-limits";
 import { createTestDb } from "./test-db";
 
 const testDb = createTestDb();
@@ -46,18 +47,76 @@ describe("legacy capture characterization", () => {
 
   it("replays capture without duplicating problems, submissions, or events", async () => {
     const first = await capture();
-    expect(await capture()).toEqual({ ...first, created: false, importedSubmissions: 0 });
+    expect(await capture()).toEqual({ ...first, created: false, importedSubmissions: 0, duplicateSubmissions: 1 });
     expect(await getDb().select().from(schema.problems)).toHaveLength(1);
     expect(await getDb().select().from(schema.submissions)).toHaveLength(1);
     expect(await getDb().select().from(schema.reviewEvents)).toHaveLength(2);
   });
 
-  it("characterizes the known stable-ID suppression bug for the Phase 1 fix", async () => {
+  it("keeps separately identified attempts with identical code", async () => {
     await capture();
     const result = await capture({ ...input, submissions: [{ ...input.submissions[0]!, leetcodeSubmissionId: "102" }] });
-    // This is current behavior, not the desired identity policy. Phase 1 must
-    // change this assertion to retain both separately identified attempts.
-    expect(result.importedSubmissions).toBe(0);
+    expect(result).toMatchObject({ importedSubmissions: 1, duplicateSubmissions: 0 });
+    const inBatch = await capture({ ...input, submissions: [
+      { ...input.submissions[0]!, leetcodeSubmissionId: "103" },
+      { ...input.submissions[0]!, leetcodeSubmissionId: "104" },
+      { ...input.submissions[0]!, leetcodeSubmissionId: "104" },
+    ] });
+    expect(inBatch).toMatchObject({ importedSubmissions: 2, duplicateSubmissions: 1 });
+    const rows = await getDb().select().from(schema.submissions).where(eq(schema.submissions.userId, USER));
+    expect(rows.map((row) => row.leetcodeSubmissionId).sort()).toEqual(["101", "102", "103", "104"]);
+    expect(await getDb().select().from(schema.reviewEvents).where(eq(schema.reviewEvents.eventType, "submission_imported"))).toHaveLength(4);
+  });
+
+  it("fills in missing details on repeated delivery without overwriting stored values", async () => {
+    const bare = { leetcodeSubmissionId: "201", language: "python3", code: "return []", status: "Wrong Answer" as const,
+      submittedAt: "2026-09-01T11:00:00.000Z" };
+    await capture({ ...input, submissions: [{ ...bare, runtimeMs: 10 }] });
+    const enriched = await capture({ ...input, submissions: [
+      { ...bare, runtimeMs: 99, failedTestcase: "[3,3]", expectedOutput: "[0,1]", actualOutput: "[]" },
+    ] });
+    expect(enriched).toMatchObject({ importedSubmissions: 0, duplicateSubmissions: 1, enrichedSubmissions: 1 });
+    const [row] = await getDb().select().from(schema.submissions).where(eq(schema.submissions.leetcodeSubmissionId, "201"));
+    expect(row).toMatchObject({ runtimeMs: 10, failedTestcase: "[3,3]", expectedOutput: "[0,1]", actualOutput: "[]", code: "return []" });
+    expect(await capture({ ...input, submissions: [{ ...bare, failedTestcase: "changed" }] }))
+      .toMatchObject({ duplicateSubmissions: 1, enrichedSubmissions: 0 });
+    expect(await getDb().select().from(schema.submissions).where(eq(schema.submissions.leetcodeSubmissionId, "201"))).toEqual([row]);
+  });
+
+  it("never reassigns a submission id that belongs to another problem", async () => {
+    const { problemId } = await capture();
+    const other = await capture({ ...input, leetcodeSlug: "3sum", leetcodeId: 15, title: "3Sum", url: "https://leetcode.com/problems/3sum/" });
+    expect(other).toMatchObject({ created: true, importedSubmissions: 0, conflictingSubmissions: 1 });
+    const rows = await getDb().select().from(schema.submissions).where(eq(schema.submissions.userId, USER));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.problemId).toBe(problemId);
+  });
+
+  it("keeps content-based deduplication for id-less payloads from old clients", async () => {
+    await capture();
+    const idless = { ...input.submissions[0]!, leetcodeSubmissionId: undefined };
+    const result = await capture({ ...input, submissions: [
+      idless,
+      { ...idless, code: "return [0, 1]   \n" },
+      { ...idless, code: "return [1, 0]" },
+      { ...idless, code: "return [1, 0]  " },
+    ] });
+    expect(result).toMatchObject({ importedSubmissions: 1, duplicateSubmissions: 3 });
+    const rows = await getDb().select().from(schema.submissions).where(eq(schema.submissions.userId, USER));
+    expect(rows.map((row) => row.leetcodeSubmissionId ?? null).sort()).toEqual(["101", null]);
+  });
+
+  it("reports submissions blocked by the per-problem cap without dropping stored history", async () => {
+    const { problemId } = await capture();
+    await getDb().insert(schema.submissions).values(Array.from({ length: MAX_SUBMISSIONS_PER_PROBLEM - 2 }, (_, index) => ({
+      id: `filler-${index}`, userId: USER, problemId, leetcodeSubmissionId: `f${index}`, language: "python3",
+      code: `filler ${index}`, status: "Wrong Answer" as const,
+    })));
+    const result = await capture({ ...input, submissions: ["301", "302", "303", "101"].map((id) => ({
+      ...input.submissions[0]!, leetcodeSubmissionId: id,
+    })) });
+    expect(result).toMatchObject({ importedSubmissions: 1, duplicateSubmissions: 1, capacityBlockedSubmissions: 2, submissionLimitReached: true });
+    expect(await getDb().select().from(schema.submissions).where(eq(schema.submissions.problemId, problemId))).toHaveLength(MAX_SUBMISSIONS_PER_PROBLEM);
   });
 
   it("recaptures metadata and unarchives without rewriting notes or scheduling", async () => {

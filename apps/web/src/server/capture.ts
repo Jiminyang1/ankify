@@ -1,21 +1,14 @@
-import type { CaptureProblemInput } from "@ankify/contracts";
+import type { CaptureProblemInput, CaptureResultDto } from "@ankify/contracts";
 import { emptyCardState } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { markFirstCapture } from "@/server/onboarding";
-import {
-  MAX_PROBLEMS_PER_USER,
-  MAX_SUBMISSIONS_PER_PROBLEM,
-} from "@/server/resource-limits";
+import { MAX_PROBLEMS_PER_USER } from "@/server/resource-limits";
+import { storeSubmissions } from "@/server/submission-store";
 
 type CaptureOutcome =
-  | {
-      problemId: string;
-      created: boolean;
-      importedSubmissions: number;
-      submissionLimitReached: boolean;
-    }
+  | CaptureResultDto
   | {
       error: "duplicate_problem_conflict" | "problem_limit_reached";
       message: string;
@@ -26,21 +19,6 @@ export async function captureProblem(
   input: CaptureProblemInput,
 ): Promise<CaptureOutcome> {
   const db = getDb();
-  const submissions = input.submissions.map((submission) => ({
-    id: nanoid(12),
-    leetcodeSubmissionId: submission.leetcodeSubmissionId,
-    language: submission.language,
-    code: submission.code,
-    status: submission.status,
-    runtimeMs: submission.runtimeMs,
-    memoryKb: submission.memoryKb,
-    failedTestcase: submission.failedTestcase,
-    expectedOutput: submission.expectedOutput,
-    actualOutput: submission.actualOutput,
-    errorMessage: submission.errorMessage,
-    submittedAt: submission.submittedAt ? new Date(submission.submittedAt) : new Date(),
-  }));
-
   const outcome = await db.transaction(async (tx): Promise<CaptureOutcome> => {
     const existing = await tx
       .select()
@@ -126,87 +104,20 @@ export async function captureProblem(
         .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)));
     }
 
-    const storedSubmissions = await tx
-      .select({ leetcodeSubmissionId: schema.submissions.leetcodeSubmissionId })
-      .from(schema.submissions)
-      .where(
-        and(
-          eq(schema.submissions.problemId, problemId),
-          eq(schema.submissions.userId, userId),
-        ),
-      );
-    const availableSlots = Math.max(
-      0,
-      MAX_SUBMISSIONS_PER_PROBLEM - storedSubmissions.length,
-    );
-    const seenLeetcodeIds = new Set(
-      storedSubmissions
-        .map((submission) => submission.leetcodeSubmissionId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const seenSubmissionKeys = new Set<string>();
-
-    const incomingCodes = [...new Set(submissions.map((submission) => submission.code))];
-    const storedMatches = incomingCodes.length
-      ? await tx
-          .select({
-            language: schema.submissions.language,
-            status: schema.submissions.status,
-            code: schema.submissions.code,
-          })
-          .from(schema.submissions)
-          .where(
-            and(
-              eq(schema.submissions.userId, userId),
-              eq(schema.submissions.problemId, problemId),
-              inArray(schema.submissions.code, incomingCodes),
-            ),
-          )
-      : [];
-    const storedExactKeys = new Set(storedMatches.map(exactSubmissionKey));
-    const newSubmissions: Array<
-      (typeof submissions)[number] & { userId: string; problemId: string }
-    > = [];
-    let submissionLimitReached = false;
-
-    for (const submission of submissions) {
-      const row = { ...submission, userId, problemId };
-      if (row.leetcodeSubmissionId && seenLeetcodeIds.has(row.leetcodeSubmissionId)) continue;
-
-      const key = normalizedSubmissionKey(row);
-      if (seenSubmissionKeys.has(key)) continue;
-      if (newSubmissions.length >= availableSlots) {
-        submissionLimitReached = true;
-        break;
-      }
-      if (storedExactKeys.has(exactSubmissionKey(row))) {
-        seenSubmissionKeys.add(key);
-        continue;
-      }
-
-      newSubmissions.push(row);
-      if (row.leetcodeSubmissionId) seenLeetcodeIds.add(row.leetcodeSubmissionId);
-      seenSubmissionKeys.add(key);
-    }
-
-    if (newSubmissions.length > 0) {
-      await tx.insert(schema.submissions).values(newSubmissions);
-      await tx.insert(schema.reviewEvents).values(
-        newSubmissions.map((submission) => ({
-          id: nanoid(12),
-          userId,
-          problemId,
-          eventType: "submission_imported" as const,
-          submissionId: submission.id,
-        })),
-      );
-    }
+    const stored = await storeSubmissions(tx, userId, problemId, input.submissions);
+    const count = (kind: (typeof stored)[number]["kind"]) =>
+      stored.filter((outcome) => outcome.kind === kind).length;
+    const capacityBlockedSubmissions = count("capacity_blocked");
 
     return {
       problemId,
       created,
-      importedSubmissions: newSubmissions.length,
-      submissionLimitReached,
+      importedSubmissions: count("inserted"),
+      submissionLimitReached: capacityBlockedSubmissions > 0,
+      duplicateSubmissions: count("duplicate"),
+      enrichedSubmissions: stored.filter((outcome) => outcome.kind === "duplicate" && outcome.enriched).length,
+      conflictingSubmissions: count("conflict"),
+      capacityBlockedSubmissions,
     };
   });
 
@@ -217,29 +128,4 @@ export async function captureProblem(
   }
 
   return outcome;
-}
-
-function normalizeCode(code: string) {
-  return code
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .trim();
-}
-
-function normalizedSubmissionKey(submission: {
-  language: string;
-  code: string;
-  status: string;
-}) {
-  return `${submission.language}\x00${submission.status}\x00${normalizeCode(submission.code)}`;
-}
-
-function exactSubmissionKey(submission: {
-  language: string;
-  code: string;
-  status: string;
-}) {
-  return `${submission.language}\x00${submission.status}\x00${submission.code}`;
 }
