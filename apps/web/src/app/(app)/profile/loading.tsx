@@ -1,15 +1,12 @@
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 
-/** Progress summary, then one skeleton row per plan group. */
+/** Summary card, then roadmap-shaped node placeholders. */
 export default function Loading() {
   return (
     <SkeletonGroup className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-4 w-96 max-w-full" />
-        </div>
-        <Skeleton className="hidden h-10 w-56 rounded-lg sm:block" />
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-4 w-96 max-w-full" />
       </div>
       <div className="grid gap-6 rounded-xl border border-border p-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-4">
@@ -18,18 +15,15 @@ export default function Loading() {
           <Skeleton className="h-3 w-80 max-w-full" />
         </div>
         <div className="space-y-3">
-          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-10 w-full rounded-lg" />
           <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-8 w-36 rounded-lg" />
         </div>
       </div>
-      <div className="overflow-hidden rounded-xl border border-border">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0">
-            <Skeleton className="h-3 w-4" />
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-3.5 flex-1" />
-            <Skeleton className="h-3 w-8" />
+          <div key={i} className="space-y-2 rounded-xl border border-border px-3 py-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-1.5 w-full rounded-full" />
           </div>
         ))}
       </div>

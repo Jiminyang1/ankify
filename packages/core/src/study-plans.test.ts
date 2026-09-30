@@ -1,39 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { emptyCardState, type FsrsCardState } from "./fsrs";
-import { DEFAULT_STUDY_PLAN, STUDY_PLANS, getStudyPlan, planProblemStatus } from "./study-plans";
+import { STUDY_PLAN, planProblemStatus } from "./study-plans";
 
 const now = new Date("2026-09-29T00:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
-
-function reviewed(stability: number, daysSinceReview = 0): FsrsCardState {
-  const lastReview = new Date(now.getTime() - daysSinceReview * DAY);
-  return {
-    due: new Date(lastReview.getTime() + stability * DAY),
-    stability,
-    difficulty: 5,
-    elapsedDays: 0,
-    scheduledDays: stability,
-    learningSteps: 0,
-    reps: 3,
-    lapses: 0,
-    state: "review",
-    lastReview,
-  };
-}
+const inDays = (days: number) => new Date(now.getTime() + days * DAY);
 
 describe("study plan snapshot", () => {
-  it("ships the three plans with unique questions per plan", () => {
-    expect(STUDY_PLANS.map((plan) => plan.slug)).toEqual(["top-interview-150", "leetcode-75", "top-100-liked"]);
-    for (const plan of STUDY_PLANS) {
-      const slugs = plan.groups.flatMap((group) => group.questions.map((q) => q.slug));
-      expect(new Set(slugs).size).toBe(slugs.length);
-      expect(plan.groups.every((group) => group.questions.length > 0)).toBe(true);
-    }
-  });
-
-  it("falls back to the default plan", () => {
-    expect(getStudyPlan("nope").slug).toBe(DEFAULT_STUDY_PLAN);
-    expect(getStudyPlan("leetcode-75").slug).toBe("leetcode-75");
+  it("is Top Interview 150 with unique, non-empty groups", () => {
+    expect(STUDY_PLAN.slug).toBe("top-interview-150");
+    const slugs = STUDY_PLAN.groups.flatMap((group) => group.questions.map((q) => q.slug));
+    expect(slugs).toHaveLength(150);
+    expect(new Set(slugs).size).toBe(150);
+    expect(STUDY_PLAN.groups.every((group) => group.questions.length > 0)).toBe(true);
   });
 });
 
@@ -43,15 +21,15 @@ describe("planProblemStatus", () => {
     expect(planProblemStatus({ solvedOnLeetcode: true }, now)).toBe("solved");
   });
 
-  it("reads tracked problems from FSRS", () => {
-    const track = (fsrs: FsrsCardState) => planProblemStatus({ tracked: { fsrs, archived: false }, solvedOnLeetcode: false }, now);
-    expect(track(emptyCardState(now))).toBe("learning");
-    expect(track(reviewed(5))).toBe("learning");
-    expect(track(reviewed(30))).toBe("mastered");
-    expect(track(reviewed(2, 30))).toBe("fading");
+  it("splits reviewed problems by whether they are due", () => {
+    const track = (due: Date | null) => planProblemStatus({ tracked: { due, archived: false }, solvedOnLeetcode: true }, now);
+    expect(track(inDays(5))).toBe("remembered");
+    expect(track(inDays(-1))).toBe("due");
+    expect(track(now)).toBe("due");
+    expect(track(null)).toBe("due");
   });
 
   it("treats archived problems as solved but not reviewed", () => {
-    expect(planProblemStatus({ tracked: { fsrs: reviewed(30), archived: true }, solvedOnLeetcode: false }, now)).toBe("solved");
+    expect(planProblemStatus({ tracked: { due: inDays(-1), archived: true }, solvedOnLeetcode: false }, now)).toBe("solved");
   });
 });

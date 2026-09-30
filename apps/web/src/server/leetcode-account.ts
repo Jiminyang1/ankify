@@ -2,6 +2,7 @@ import type { LeetcodeAccountDto, LeetcodeProfileDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { leetcodeGraphql } from "@/server/leetcode-graphql";
 
 /**
  * Linked LeetCode account: the username plus a cached copy of that user's
@@ -13,8 +14,6 @@ import { z } from "zod";
 const KEY = "leetcode-account";
 /** Full solved list, pushed by the extension from the user's LeetCode login. */
 const SOLVED_KEY = "leetcode-solved";
-const GRAPHQL_URL = "https://leetcode.com/graphql";
-const FETCH_TIMEOUT_MS = 8_000;
 /** Refetch at most this often; the page falls back to the cache on failure. */
 const REFRESH_AFTER_MS = 12 * 60 * 60 * 1000;
 const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -87,20 +86,7 @@ const profileResponseSchema = z.object({
 /** null when LeetCode says the user doesn't exist; throws when LeetCode is
  *  unreachable or answers in a shape we don't recognise. */
 export async function fetchLeetcodeProfile(username: string): Promise<LeetcodeProfileDto | null> {
-  const res = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      referer: "https://leetcode.com/",
-      "user-agent": "Mozilla/5.0 (compatible; ankify)",
-    },
-    body: JSON.stringify({ query: PROFILE_QUERY, variables: { username } }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`leetcode_http_${res.status}`);
-
-  const parsed = profileResponseSchema.parse(await res.json());
+  const parsed = profileResponseSchema.parse(await leetcodeGraphql(PROFILE_QUERY, { username }));
   const user = parsed.data?.matchedUser;
   if (!user) {
     if (parsed.errors?.some((error) => /does not exist/i.test(error.message))) return null;

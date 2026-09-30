@@ -7,7 +7,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PLANS = ["top-interview-150", "leetcode-75", "top-100-liked"];
+const PLANS = ["top-interview-150"];
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/core/src/study-plans.generated.ts");
 const DIFFICULTY = { EASY: "Easy", MEDIUM: "Medium", HARD: "Hard" };
 

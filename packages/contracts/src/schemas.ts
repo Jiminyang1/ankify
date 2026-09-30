@@ -322,3 +322,8 @@ export const leetcodeSolvedSyncSchema = z.object({
   slugs: z.array(z.string().min(1).max(256)).max(6_000),
 });
 export type LeetcodeSolvedSyncInput = z.infer<typeof leetcodeSolvedSyncSchema>;
+
+/** POST /api/profile/add-to-review — study-plan problems to put in the deck. */
+export const addToReviewSchema = z.object({
+  slugs: z.array(z.string().min(1).max(256)).min(1).max(30),
+});

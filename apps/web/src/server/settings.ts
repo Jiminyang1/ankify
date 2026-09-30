@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import { cache } from "react";
 import {
   DEFAULT_REASONING_LEVEL,
-  getStudyPlan,
   normalizeReasoningLevel,
   type AiProvider,
   type AiReasoningLevel,
@@ -66,7 +65,6 @@ const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
 const KEY_AI = "ai";
 const KEY_REVIEW = "review";
 const KEY_GENERATION = "generation";
-const KEY_STUDY_PLAN = "study-plan";
 
 export async function getAiSettings(userId: string): Promise<AiSettings> {
   const db = getDb();
@@ -240,25 +238,4 @@ export async function setGenerationSettings(
 function clampDailyLimit(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_REVIEW_SETTINGS.dailyReviewLimit;
   return Math.max(1, Math.min(100, Math.trunc(value)));
-}
-
-/** The LeetCode study plan the profile page tracks; unknown values fall back
- *  to the default plan. */
-export async function getStudyPlanSlug(userId: string): Promise<string> {
-  const [row] = await getDb()
-    .select({ value: schema.settings.value })
-    .from(schema.settings)
-    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_STUDY_PLAN)));
-  return getStudyPlan((row?.value as { plan?: unknown } | undefined)?.plan).slug;
-}
-
-export async function setStudyPlanSlug(userId: string, plan: string) {
-  const value = { plan: getStudyPlan(plan).slug };
-  await getDb()
-    .insert(schema.settings)
-    .values({ userId, key: KEY_STUDY_PLAN, value })
-    .onConflictDoUpdate({
-      target: [schema.settings.userId, schema.settings.key],
-      set: { value, updatedAt: new Date() },
-    });
 }
