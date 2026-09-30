@@ -8,6 +8,7 @@
  * Problem statements are short paraphrases written for this demo, not copies
  * of LeetCode text.
  */
+import { normalizeLeetcodeTags } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { loadDbEnv } from "@ankify/db/client";
 import { and, eq } from "drizzle-orm";
@@ -544,7 +545,7 @@ async function main() {
       difficulty: p.difficulty,
       url: `https://leetcode.com/problems/${p.slug}/`,
       descriptionMd: p.statement,
-      topicTags: p.tags,
+      topicTags: normalizeLeetcodeTags(p.tags),
       similarSlugs: [],
       notes: p.notes ?? null,
       fsrsDue: p.state === "new" ? null : at(p.due ?? 0),

@@ -1,3 +1,4 @@
+import { leetcodeTagName } from "@ankify/core";
 import type { Card, Problem, Submission } from "@ankify/db";
 import type { QuizAnswer, QuizItem } from "@ankify/contracts";
 import type { Language } from "@/lib/i18n";
@@ -53,7 +54,7 @@ export function buildQuizPrompt(args: {
     `- Difficulty: ${problem.difficulty}`,
     `- Slug: \`${problem.leetcodeSlug}\``,
     `- URL: ${problem.url}`,
-    problem.topicTags.length > 0 ? `- Tags: ${problem.topicTags.join(", ")}` : null,
+    problem.topicTags.length > 0 ? `- Tags: ${problem.topicTags.map(leetcodeTagName).join(", ")}` : null,
     problem.descriptionMd?.trim()
       ? `\n### Statement markdown\n${truncate(problem.descriptionMd.trim(), TEXT_MAX)}`
       : "\n### Statement markdown\n(no statement captured)",

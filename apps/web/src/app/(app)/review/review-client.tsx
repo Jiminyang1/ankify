@@ -20,7 +20,7 @@ import type {
   ReviewRateResponseDto,
   SubmissionDto,
 } from "@ankify/contracts";
-import type { FsrsRating } from "@ankify/core";
+import { leetcodeTagName, type FsrsRating } from "@ankify/core";
 import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -648,7 +648,7 @@ function ReviewHeader({
       </div>
       <div className="flex min-w-0 items-center gap-3 overflow-hidden">
         {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
-          <span key={tag} className="shrink-0 text-xs text-muted">#{tag}</span>
+          <span key={tag} className="shrink-0 text-xs text-muted">#{leetcodeTagName(tag)}</span>
         ))}
         {cardTotal !== null && (
           <span className="shrink-0 text-xs text-muted">· {t.common.cards(cardTotal)}</span>

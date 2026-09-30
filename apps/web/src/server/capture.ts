@@ -1,5 +1,5 @@
 import type { CaptureProblemInput } from "@ankify/contracts";
-import { emptyCardState } from "@ankify/core";
+import { emptyCardState, normalizeLeetcodeTags } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -26,6 +26,8 @@ export async function captureProblem(
   input: CaptureProblemInput,
 ): Promise<CaptureOutcome> {
   const db = getDb();
+  // Older extension builds send display names; store slugs either way.
+  const topicTags = normalizeLeetcodeTags(input.topicTags);
   const submissions = input.submissions.map((submission) => ({
     id: nanoid(12),
     leetcodeSubmissionId: submission.leetcodeSubmissionId,
@@ -92,7 +94,7 @@ export async function captureProblem(
         difficulty: input.difficulty,
         url: input.url,
         descriptionMd: input.descriptionMd,
-        topicTags: input.topicTags,
+        topicTags,
         similarSlugs: input.similarSlugs,
         notes: input.notes,
         fsrsDue: initialState.due,
@@ -117,7 +119,7 @@ export async function captureProblem(
           leetcodeSlug: input.leetcodeSlug,
           leetcodeId: input.leetcodeId ?? existingProblem.leetcodeId,
           descriptionMd: input.descriptionMd ?? existingProblem.descriptionMd,
-          topicTags: input.topicTags,
+          topicTags,
           similarSlugs: input.similarSlugs,
           notes: input.notes ?? existingProblem.notes,
           archivedAt: null,

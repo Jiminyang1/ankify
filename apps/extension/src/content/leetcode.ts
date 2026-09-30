@@ -279,7 +279,7 @@ export async function captureCurrent(): Promise<CaptureProblemInput> {
     difficulty: q.difficulty,
     url: `https://leetcode.com/problems/${q.titleSlug}/`,
     descriptionMd: q.content ?? "",
-    topicTags: q.topicTags.map((t) => t.name),
+    topicTags: q.topicTags.map((t) => t.slug),
     similarSlugs,
     submissions,
   };

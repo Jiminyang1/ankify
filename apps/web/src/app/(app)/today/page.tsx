@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { leetcodeTagName } from "@ankify/core";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { buttonClasses } from "@/components/ui/button";
@@ -132,7 +133,7 @@ export default async function HomePage() {
                         <FsrsStatePill state={problem.fsrsState} language={language} />
                         {problem.topicTags.slice(0, 3).map((tag) => (
                           <span key={tag} className="text-xs text-muted">
-                            #{tag}
+                            #{leetcodeTagName(tag)}
                           </span>
                         ))}
                       </div>

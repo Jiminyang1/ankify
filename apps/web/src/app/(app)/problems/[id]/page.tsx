@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { leetcodeTagName } from "@ankify/core";
 import { notFound } from "next/navigation";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -139,7 +140,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             {problem.topicTags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted">
                 {problem.topicTags.slice(0, 6).map((t) => (
-                  <span key={t}>#{t}</span>
+                  <span key={t}>#{leetcodeTagName(t)}</span>
                 ))}
               </div>
             )}
