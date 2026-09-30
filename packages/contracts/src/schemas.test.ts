@@ -125,6 +125,12 @@ describe("public payload limits", () => {
     url: "https://leetcode.com/problems/two-sum/",
   };
 
+  it("fills collection defaults for older metadata-only capture clients", () => {
+    expect(captureProblemSchema.parse(baseCapture)).toEqual({
+      ...baseCapture, topicTags: [], similarSlugs: [], submissions: [],
+    });
+  });
+
   it("accepts at most 20 captured submissions", () => {
     const submission = {
       language: "TypeScript",
