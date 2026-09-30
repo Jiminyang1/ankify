@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const API_METHODS = "GET,POST,PATCH,DELETE,OPTIONS";
-const API_HEADERS = "Content-Type";
+const API_HEADERS = "Content-Type, X-Ankify-Owner-Token";
 
 function allowedExtensionOrigins() {
   return (process.env.ANKIFY_EXTENSION_ORIGINS ?? "")

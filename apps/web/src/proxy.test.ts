@@ -86,7 +86,7 @@ describe("extension session CORS", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-origin")).toBe(extensionOrigin);
     expect(response.headers.get("access-control-allow-credentials")).toBe("true");
-    expect(response.headers.get("access-control-allow-headers")).toBe("Content-Type");
+    expect(response.headers.get("access-control-allow-headers")).toBe("Content-Type, X-Ankify-Owner-Token");
   });
 
   it("does not let retired x-ankify-token headers bypass session auth", async () => {

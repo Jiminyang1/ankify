@@ -289,6 +289,8 @@ export type PracticeSessionErrorCode =
   | "not_enrolled"
   | "not_due"
   | "open_session_conflict"
+  /** The open session was started with a different LeetCode account. */
+  | "account_mismatch"
   | "rating_pending"
   | "not_owner"
   | "session_stale"

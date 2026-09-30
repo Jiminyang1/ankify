@@ -51,11 +51,12 @@ Tables (all in `packages/db/src/schema.ts`):
 | Table | Purpose |
 | --- | --- |
 | `user`, `session`, `account`, `verification` | Better Auth |
-| `problems` | One LeetCode problem per user; holds the FSRS state (problem-level scheduling), notes, `archivedAt` |
-| `submissions` | Captured attempts incl. code and failing test details |
+| `problems` | One LeetCode problem per user; holds the FSRS state (problem-level scheduling), notes, `archivedAt`, a monotonic `schedule_revision`, and `enrollment` (`awaiting_initial` until a session's initial learning completes) |
+| `submissions` | Captured attempts incl. code and failing test details; a LeetCode submission id identifies an attempt |
+| `practice_sessions`, `practice_session_submissions`, `practice_session_commands` | Tracked attempts on LeetCode, their submission observations, and command idempotency records (see Practice sessions) |
 | `cards` | Q&A flashcards; `aiStatus` `candidate | failed | ready`; integer `version` for optimistic concurrency |
 | `quiz_sessions` | 5-item quizzes (`active | completed | archived`), answers, score |
-| `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt` |
+| `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt`; newer events record session, policy, method, and schedule-revision provenance |
 | `mistake_records` | User-confirmed causes of failure, linked to a submission, quiz answer, or rating; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
 | `ai_jobs` | Durable async Card/Quiz generation commands (see below) |
 | `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps` | Persistent Study Coach conversations |
@@ -92,6 +93,42 @@ Tables (all in `packages/db/src/schema.ts`):
   `fsrsReps = prev.reps + 1`) and stamps `undoneAt`.
 - The due condition (`server/due-problems.ts`) excludes archived problems; the
   daily limit and time zone come from per-user review settings.
+
+## Practice sessions
+
+The extension-first workflow ([plan](EXTENSION_FIRST_REFACTOR_PLAN.md),
+[checkpoints](EXTENSION_FIRST_CHECKPOINTS.md)) tracks each attempt at a problem
+as a practice session. The server owns the lifecycle; the extension reports.
+Pure rules live in `packages/core/src/practice-session.ts`, services in
+`server/practice-sessions/`.
+
+- **Kinds**: `initial_learning` (a problem new to Ankify, created
+  `awaiting_initial` and kept out of the queue), `scheduled_review` (due, or
+  explicitly started early), `voluntary_practice` (never changes the schedule).
+- **Lifecycle**: `active` → `completed` | `abandoned`. An active session whose
+  owner lease lapsed reads as `interrupted` (never a failure); after 24 hours
+  without activity it is stale history and a new session is required. One
+  open session per problem (partial unique index on `is_open`).
+- **Ownership**: the controlling tab holds a 60 s lease renewed by heartbeats.
+  Another tab takes over explicitly; afterwards the old tab can neither
+  heartbeat, finish, nor rate. Without a live lease any tab may resume.
+- **Observations**: submission verdicts are stored per session even without
+  code details; details go through `storeSubmissions()` (capture's identity
+  rules). LeetCode's submission time (and the baseline id seen at start)
+  places each observation; historical submissions stay unassigned and
+  boundary cases are kept as ambiguous rather than guessed. A LeetCode
+  submission id belongs to at most one session per user.
+- **Idempotency**: start and every non-heartbeat command carry a request id;
+  a replay returns the stored response and a changed payload is `409`.
+  Heartbeats report cumulative per-tab timing merged with `max()`.
+- **Timing**: estimated foreground (`activeMs`) and tracked (`observedMs`)
+  time are stored apart from wall time; completion times from the client are
+  clamped into the session window and flagged when adjusted.
+- **API**: `POST/GET /api/practice-sessions`, `GET /api/practice-sessions/current`,
+  `GET /api/practice-sessions/:id`, `POST .../:id/commands`,
+  `POST .../:id/submissions`. Tabs send `X-Ankify-Owner-Token` on reads.
+- **Kill switch**: `ANKIFY_DISABLED_WORKFLOWS` (comma-separated workflow ids)
+  disables a workflow's routes and removes it from `GET /api/capabilities`.
 
 ## AI configuration and hosted keys
 
@@ -162,14 +199,16 @@ append-only ledger. Full design, invariants, and test instructions:
 ## Rate limits and caps
 
 `server/rate-limit.ts` is a DB-backed fixed-window limiter per user and scope
-(`agent` 12/min, `ai` 20/min, `capture` 60/min, `mistakes` 60/min, `billing` 10/min). Hard caps
+(`agent` 12/min, `ai` 20/min, `capture` 60/min, `sessions` 120/min, `mistakes` 60/min, `billing` 10/min). Hard caps
 limit cards and quiz sessions per problem and active AI jobs per user.
 
 ## Capture and the extension
 
 - The content script reads LeetCode via GraphQL (problem, submissions, failure
   details) and `POST /api/capture` upserts the problem idempotently by slug and
-  seeds FSRS state.
+  seeds FSRS state. Submissions are identified by LeetCode submission id, so
+  identical code under different ids stays distinct; id-less payloads from old
+  clients keep content deduplication.
 - The background worker sets a gold `!` badge when the current problem has an
   accepted submission but is not captured (`/api/problems/by-slug`, 60 s cache).
 - The popup/side panel offers Today, Problem (Review: Quiz/Card/Notes; Manage:

@@ -23,3 +23,4 @@ export const capabilitiesSchema = z.object({
 });
 
 export type CapabilitiesDto = z.infer<typeof capabilitiesSchema>;
+export type WorkflowId = z.infer<typeof workflowSchema>;

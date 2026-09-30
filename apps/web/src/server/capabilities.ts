@@ -1,11 +1,12 @@
 import type { CapabilitiesDto } from "@ankify/contracts";
+import { enabledWorkflows } from "./features";
 
 export function getCapabilities(): CapabilitiesDto {
-  // Preparation only: no new workflow is advertised before its API and worker
-  // invariants exist. Legacy suspension will share the guards at cutover.
+  // Only implemented, enabled workflows are advertised. Legacy suspension will
+  // add deprecations here once the API and worker guards enforce it.
   return {
     protocolVersion: 1,
-    supportedWorkflows: ["capture", "legacy_review", "coach", "card_generation", "quiz_generation", "credit_checkout"],
+    supportedWorkflows: enabledWorkflows(),
     sessionAnalysis: { available: false, automaticAvailable: false, requiresOwnKey: true },
     deprecations: [],
   };

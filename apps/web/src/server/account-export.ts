@@ -1,7 +1,17 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt } from "drizzle-orm";
 import { getDb, schema } from "@ankify/db";
 
 const PAGE_SIZE = 100;
+
+/** Every practice-session column except the owner token, which identifies a
+ *  browser tab only while a session is live. */
+const practiceSessionExportColumns = (() => {
+  const columns: Partial<ReturnType<typeof getTableColumns<typeof schema.practiceSessions>>> = {
+    ...getTableColumns(schema.practiceSessions),
+  };
+  delete columns.ownerToken;
+  return columns as Omit<ReturnType<typeof getTableColumns<typeof schema.practiceSessions>>, "ownerToken">;
+})();
 
 type AccountExportUser = {
   id: string;
@@ -20,6 +30,8 @@ type AccountExportRecord = {
     | "quiz_session"
     | "review_event"
     | "mistake_record"
+    | "practice_session"
+    | "practice_session_submission"
     | "agent_session"
     | "agent_run"
     | "agent_message"
@@ -121,6 +133,32 @@ export async function* iterateAccountExport(
         ),
       )
       .orderBy(asc(schema.mistakeRecords.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("practice_session", (afterId) =>
+    db
+      .select(practiceSessionExportColumns)
+      .from(schema.practiceSessions)
+      .where(
+        and(
+          eq(schema.practiceSessions.userId, user.id),
+          afterId ? gt(schema.practiceSessions.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.practiceSessions.id))
+      .limit(PAGE_SIZE),
+  );
+  yield* iteratePages("practice_session_submission", (afterId) =>
+    db
+      .select()
+      .from(schema.practiceSessionSubmissions)
+      .where(
+        and(
+          eq(schema.practiceSessionSubmissions.userId, user.id),
+          afterId ? gt(schema.practiceSessionSubmissions.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(schema.practiceSessionSubmissions.id))
       .limit(PAGE_SIZE),
   );
   yield* iteratePages("agent_session", (afterId) =>
