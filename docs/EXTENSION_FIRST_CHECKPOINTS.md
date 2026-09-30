@@ -197,3 +197,60 @@ extension capture payloads are unchanged (browser suite).
 
 Not executed: live LeetCode validation (see checkpoint 0). Rollback: set
 `ANKIFY_DISABLED_WORKFLOWS=practice_sessions`; M1 and the identity fix stay.
+
+## Checkpoint 2.1: scheduling policies
+
+Status: **PASS**, gated in isolation at commit `bac7a8b` (300 tests in 46
+files; all six checks passed).
+
+`leetcode_full_solve_v1` (default weights, 90% retention, fuzz, short-term
+steps disabled), `initial_delay_v1` (first review 1-168 h after initial
+learning, default 24 h, state stays `new`), `retrievabilityEstimate()`
+(`null` for never-reviewed problems), and `initialReviewDelayHours` in review
+settings and the settings API. A read-only probe of ts-fsrs 5.4.1 confirmed
+day-based outcomes for all four grades from new, review, and legacy learning
+and relearning states. Legacy FSRS tests are unchanged.
+
+## Checkpoint 2.2: transactional session rating
+
+Status: **PASS**. Commit `96385fd`; gate: 314 tests in 48 files, typecheck,
+lint (seven warnings), browser suite, builds, manifest.
+
+`POST /api/practice-sessions/:id/rating`, initial scheduling on finish, and
+exact Undo (`undo_rating` and the legacy route) as described in
+ARCHITECTURE.md. Tests: first-review initialization (with configured delay),
+abandoned and interrupted initial learning never scheduling, one schedule
+update per session, rating 20 hours after completion scheduled from the
+completion time (checked against `rateFullSolve`), response-loss replay,
+different request ids for one session, stale revision after a legacy
+rating, Undo restoring every FSRS field and blocking any re-rating or
+replay, legacy Undo marking the session undone, Undo conflict after a newer
+change, failed review rated Again, deferred and early reviews rated,
+dismissed/expired/voluntary/abandoned/unfinished never rated, and daily
+counts excluding initial learning. A race file runs duplicated and distinct
+rating requests concurrently (one event, one schedule update), three times.
+Mutations (rating at the rating time; replay after Undo) failed the suite.
+
+## Checkpoint 2.3: queue, statistics, and compatibility
+
+Status: **PASS**. Commit `5c999ed`. **Phase 2 gate: PASS.**
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 320 tests in 50 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm test:e2e`, `pnpm build`, manifest | PASS |
+
+`GET /api/review/overview` (due within the daily limit, most overdue first;
+upcoming; pending ratings; open sessions; separate counts for reviews,
+initial learning, and completed sessions). The problems list and problem page
+show "Not scheduled yet" for problems awaiting initial learning; review-ahead
+refuses them. Migration: no schema change in Phase 2 (the session command
+enum is application-level); existing scheduling values stay byte-identical
+(protected-history test).
+
+Acceptance: no invented initial recall rating, no default rating, no
+schedule change from capture, voluntary practice, or dashboard reads, and no
+duplicate scheduling. Browser coverage of finish → rate → postpone arrives
+with the extension workflow in Phase 3. Rollback:
+`ANKIFY_DISABLED_WORKFLOWS=session_rating`; already-written states and events
+stay and are not rewritten.
