@@ -26,7 +26,7 @@ async function loadStorage(storedSettings: Record<string, unknown> | undefined) 
 }
 
 describe("extension settings", () => {
-  it("uses the build origin and removes legacy connection data", async () => {
+  it("uses the build origin and removes legacy connection data and retired preferences", async () => {
     const { getSettings, set } = await loadStorage({
       apiBaseUrl: "https://custom.example",
       apiToken: "legacy-secret",
@@ -37,12 +37,10 @@ describe("extension settings", () => {
     await expect(getSettings()).resolves.toEqual({
       apiBaseUrl: PRODUCTION_ORIGIN,
       language: "zh",
-      resetCodeOnProblemOpen: true,
     });
     expect(set).toHaveBeenCalledWith({
       "ankify.settings": {
         language: "zh",
-        resetCodeOnProblemOpen: true,
       },
     });
   });
@@ -50,7 +48,6 @@ describe("extension settings", () => {
   it("never persists an API origin supplied as a user preference", async () => {
     const { setSettings, set } = await loadStorage({
       language: "en",
-      resetCodeOnProblemOpen: false,
     });
 
     await setSettings({
@@ -61,7 +58,6 @@ describe("extension settings", () => {
     expect(set).toHaveBeenCalledWith({
       "ankify.settings": {
         language: "zh",
-        resetCodeOnProblemOpen: false,
       },
     });
   });

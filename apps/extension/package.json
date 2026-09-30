@@ -11,13 +11,10 @@
     "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
-    "@ankify/api-client": "workspace:*",
     "@ankify/contracts": "workspace:*",
     "@ankify/core": "workspace:*",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

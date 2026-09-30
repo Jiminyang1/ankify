@@ -15,11 +15,12 @@ export default defineManifest(({ mode }) => {
     minimum_chrome_version: "116",
     name: "ankify",
     description:
-      "Capture LeetCode problems and submissions in one click, then review them with spaced repetition and AI quizzes.",
+      "Practice LeetCode problems with spaced repetition: track each attempt on the problem page and review when it's due.",
     version: "0.2.1",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
+      default_popup: "src/popup/index.html",
       default_icon: {
         "16": "icons/icon16.png",
         "32": "icons/icon32.png",
@@ -33,11 +34,9 @@ export default defineManifest(({ mode }) => {
       "48": "icons/icon48.png",
       "128": "icons/icon128.png",
     },
-    side_panel: {
-      default_path: "src/popup/index.html",
-    },
-    // alarms: wake the worker to retry durable sync after an outage.
-    permissions: ["storage", "sidePanel", "tabs", "alarms"],
+    // alarms: wake the worker to retry durable sync after an outage and to
+    // refresh the due-count badge.
+    permissions: ["storage", "tabs", "alarms"],
     host_permissions: ["https://leetcode.com/*", `${apiOrigin}/*`],
     homepage_url: apiOrigin,
     content_security_policy: {

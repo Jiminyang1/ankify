@@ -1,4 +1,4 @@
-import type { CapabilitiesDto } from "@ankify/contracts";
+import type { CapabilitiesDto, CaptureResultDto, ReviewOverviewDto } from "@ankify/contracts";
 import type { ContentMessage, PageMessage, SenderContext } from "../shared/protocol";
 import type { AccountStateApi } from "./account";
 import type { ApiClient } from "./api";
@@ -23,6 +23,9 @@ export function createRouter(deps: {
   tabs: TabsApi;
   tokens: { bind(tabId: number, token: string): Promise<void> };
   newId: () => string;
+  settings: () => Promise<{ language: "en" | "zh" }>;
+  /** Called with every overview the popup loads (the toolbar badge shows its due count). */
+  onOverview?: (overview: ReviewOverviewDto) => void;
 }) {
   const { controller, tabs } = deps;
 
@@ -30,6 +33,15 @@ export function createRouter(deps: {
     switch (message.type) {
       case "page_state":
         return controller.pageState(tabId, message.slug);
+      case "panel_settings":
+        return { ok: true, response: { language: (await deps.settings()).language } };
+      case "import_history": {
+        // Existing problems only refresh metadata and gain submissions; the
+        // legacy capture route never rewrites their schedule.
+        const result = await deps.api.request<CaptureResultDto>("/api/capture", { body: { ...message.problem, submissions: message.submissions } });
+        if (result.ok) return { ok: true, response: result.data };
+        return { ok: false, error: result.kind === "auth" ? "signed_out" : result.kind === "rejected" ? (result.code ?? "unexpected") : "offline" };
+      }
       case "session_start":
         return controller.start(
           { tabId },
@@ -64,11 +76,19 @@ export function createRouter(deps: {
     switch (message.type) {
       case "auth_status": {
         const state = await deps.account.current({ fresh: true });
-        return state.kind === "signed_in" ? { kind: "signed_in", user: state.user } : { kind: state.kind };
+        if (state.kind === "signed_in") {
+          // Onboarding records that the extension is connected (idempotent).
+          void deps.api.request("/api/onboarding", { body: { action: "extension_connected" } }).catch(() => undefined);
+          return { kind: "signed_in", user: state.user };
+        }
+        return { kind: state.kind };
       }
-      case "overview":
+      case "overview": {
         await controller.flush().catch(() => null);
-        return controller.overview();
+        const result = await controller.overview();
+        if (result.ok) deps.onOverview?.(result.response);
+        return result;
+      }
       case "capabilities": {
         const result = await deps.api.request<CapabilitiesDto>("/api/capabilities");
         return result.ok ? { ok: true, response: result.data } : { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
@@ -114,6 +134,21 @@ export function createRouter(deps: {
         await controller.retryBlocked();
         await controller.flush();
         return controller.syncStatus();
+      case "notes_load": {
+        const result = await deps.api.request<{ problem: { id: string; title: string; notes: string | null } }>(
+          `/api/problems/by-slug/${encodeURIComponent(message.slug)}`,
+        );
+        if (result.ok) return { ok: true, response: { problemId: result.data.problem.id, title: result.data.problem.title, notes: result.data.problem.notes ?? "" } };
+        if (result.status === 404) return { ok: true, response: null };
+        return { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
+      }
+      case "notes_save": {
+        const result = await deps.api.request(`/api/problems/${encodeURIComponent(message.problemId)}`, {
+          method: "PATCH",
+          body: { notes: message.notes },
+        });
+        return result.ok ? { ok: true, response: null } : { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
+      }
     }
   }
 

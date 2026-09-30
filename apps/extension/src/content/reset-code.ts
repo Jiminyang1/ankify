@@ -1,104 +1,13 @@
-import type { BackgroundRequest, ContentSettingsResponse } from "../shared/messages";
+/**
+ * Resets LeetCode's code editor to the problem's default code, as an explicit
+ * user action (never automatically on page open): it clicks LeetCode's own
+ * reset control and confirms its dialog.
+ */
+const RESET_WAIT_MS = 4_000;
 
-const LOCATION_EVENT = "ankify:locationchange";
-const RESET_WAIT_MS = 18_000;
-
-let started = false;
-let scheduledReset: number | undefined;
-let activeSlug: string | null = null;
-let lastResetSlug: string | null = null;
-let lastSeenUrl = window.location.href;
-
-type PatchedWindow = Window & {
-  __ankifyResetLocationPatched?: boolean;
-};
-
-export function startAutoResetCodeOnProblemPages(): void {
-  if (started) return;
-  started = true;
-
-  patchHistoryEvents();
-  window.addEventListener(LOCATION_EVENT, () => scheduleResetCheck(700));
-  window.addEventListener("popstate", () => scheduleResetCheck(700));
-  window.addEventListener("hashchange", () => scheduleResetCheck(700));
-  window.setInterval(() => {
-    if (window.location.href === lastSeenUrl) return;
-    lastSeenUrl = window.location.href;
-    scheduleResetCheck(700);
-  }, 1_000);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) scheduleResetCheck(250);
-  });
-  scheduleResetCheck(700);
-}
-
-function patchHistoryEvents() {
-  const w = window as PatchedWindow;
-  if (w.__ankifyResetLocationPatched) return;
-  w.__ankifyResetLocationPatched = true;
-
-  const originalPushState = history.pushState.bind(history);
-  history.pushState = ((data: unknown, unused: string, url?: string | URL | null) => {
-    const result = originalPushState(data, unused, url);
-    window.dispatchEvent(new Event(LOCATION_EVENT));
-    return result;
-  }) as History["pushState"];
-
-  const originalReplaceState = history.replaceState.bind(history);
-  history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
-    const result = originalReplaceState(data, unused, url);
-    window.dispatchEvent(new Event(LOCATION_EVENT));
-    return result;
-  }) as History["replaceState"];
-}
-
-function scheduleResetCheck(delayMs: number) {
-  if (scheduledReset != null) {
-    window.clearTimeout(scheduledReset);
-  }
-  scheduledReset = window.setTimeout(() => {
-    scheduledReset = undefined;
-    void maybeResetCurrentProblem();
-  }, delayMs);
-}
-
-async function maybeResetCurrentProblem() {
-  const slug = slugFromUrl();
-  if (!slug || slug === activeSlug || slug === lastResetSlug) return;
-
-  activeSlug = slug;
-  try {
-    if (!(await shouldResetCode())) return;
-
-    const result = await resetCodeToDefault();
-    if (result.clicked) {
-      lastResetSlug = slug;
-      console.info("[ankify] reset LeetCode code to default", { slug, confirmed: result.confirmed });
-    }
-  } catch (error) {
-    if (isInvalidatedExtensionContext(error)) return;
-    console.warn("[ankify] failed to reset LeetCode code", error);
-  } finally {
-    if (activeSlug === slug) activeSlug = null;
-  }
-}
-
-function isInvalidatedExtensionContext(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("Extension context invalidated");
-}
-
-async function shouldResetCode() {
-  const request: BackgroundRequest = { type: "get_content_settings" };
-  const response = (await chrome.runtime.sendMessage(request)) as
-    | ContentSettingsResponse
-    | undefined;
-  return response?.resetCodeOnProblemOpen === true;
-}
-
-function slugFromUrl(): string | null {
-  const m = window.location.pathname.match(/^\/problems\/([^/]+)/);
-  return m?.[1] ?? null;
+export async function resetEditorToDefault(): Promise<boolean> {
+  const result = await resetCodeToDefault();
+  return result.clicked;
 }
 
 async function resetCodeToDefault(): Promise<{ clicked: boolean; confirmed: boolean }> {

@@ -16,6 +16,12 @@ describe("message senders", () => {
     expect(classifySender({ ...content("https://leetcode.com/problems/two-sum/"), tab: {} }, ID)).toBeNull();
   });
 
+  it("follows the tab's current URL after LeetCode switches problems in place", () => {
+    const stale = { ...content("https://leetcode.com/problems/two-sum/"), tab: { id: 7, url: "https://leetcode.com/problems/3sum/description/" } };
+    expect(classifySender(stale, ID)).toEqual({ kind: "content", tabId: 7, slug: "3sum" });
+    expect(classifySender({ ...stale, tab: { id: 7, url: "https://evil.example/problems/3sum/" } }, ID)).toBeNull();
+  });
+
   it("accepts extension pages only from this extension and rejects other senders", () => {
     expect(classifySender({ id: ID, url: `chrome-extension://${ID}/src/popup/index.html` }, ID)).toEqual({ kind: "page" });
     // The same page opened in a tab carries a tab but is still an extension page.

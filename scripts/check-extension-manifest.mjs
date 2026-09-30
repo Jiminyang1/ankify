@@ -13,15 +13,22 @@ if (manifest.manifest_version !== 3) {
 if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(manifest.version ?? "")) {
   errors.push("version must be a Chrome-compatible numeric version");
 }
+if (manifest.action?.default_popup !== "src/popup/index.html") {
+  errors.push("the toolbar action must open the popup");
+}
+if ("side_panel" in manifest) {
+  errors.push("the side panel was replaced by the popup; do not ship both");
+}
 if ("key" in manifest) {
   errors.push("Chrome Web Store manifests must not contain the development-only key field");
 }
 
 const permissions = manifest.permissions ?? [];
-const requiredPermissions = ["alarms", "sidePanel", "storage", "tabs"];
+const requiredPermissions = ["alarms", "storage", "tabs"];
 const forbiddenPermissions = [
   "activeTab",
   "cookies",
+  "sidePanel",
   "declarativeNetRequest",
   "scripting",
   "webRequest",

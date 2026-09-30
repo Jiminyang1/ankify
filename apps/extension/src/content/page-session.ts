@@ -8,6 +8,7 @@ import type {
   PracticeSessionErrorCode,
   PracticeSessionRatingResponseDto,
   PracticeSessionStartResponseDto,
+  PracticeSessionSubmissionsResponseDto,
   SessionBaselineInput,
 } from "@ankify/contracts";
 import type { ContentMessage } from "../shared/protocol";
@@ -19,12 +20,12 @@ export const TICK_MS = 15_000;
 const MAX_POLL_BACKOFF_MS = 5 * 60_000;
 const FOCUS_POLL_DEBOUNCE_MS = 3_000;
 
-type BackgroundFailure = {
+export type BackgroundFailure = {
   ok: false;
   error: PracticeSessionErrorCode | "signed_out" | "offline" | "rate_limited" | "server_error" | "unexpected" | "invalid_message";
   session?: PracticeSessionDto;
 };
-type BackgroundOutcome<T> = { ok: true; response: T; queued?: false } | { ok: true; queued: true } | BackgroundFailure;
+export type BackgroundOutcome<T> = { ok: true; response: T; queued?: false } | { ok: true; queued: true } | BackgroundFailure;
 
 /** Something the panel should tell the user about the last action. */
 export type PageNotice =
@@ -118,8 +119,15 @@ export function createPageSession(deps: PageSessionDeps) {
           : { baselineState: "unavailable", baselineSubmissionId: null, startedAt: owned.timing.startedAt };
       },
       report: async (observations) => {
-        const result = await deps.send({ type: "session_observations", sessionId, observations });
+        const result = await deps.send<PracticeSessionSubmissionsResponseDto>({ type: "session_observations", sessionId, observations });
         if (!result.ok && result.error !== "offline") throw new Error(result.error);
+        // Show the new evidence at once rather than at the next heartbeat. Only
+        // evidence is taken: observations carry no owner token, so the
+        // response cannot say who controls the session.
+        const latest = currentSession();
+        if (result.ok && !result.queued && latest?.id === sessionId) {
+          ready({ session: { ...latest, evidence: result.response.session.evidence, capture: result.response.session.capture } });
+        }
       },
     });
     tracking = {
@@ -295,12 +303,10 @@ export function createPageSession(deps: PageSessionDeps) {
       if (!response.ok) return failureView(response);
       if (response.queued) return ready({ busy: null, session: { ...session, status: "completed" }, notice: { kind: "queued", action: "finish" } });
       const finished = response.response.session;
-      ready({
-        busy: null,
-        session: finished,
-        pendingRating: finished.rating.disposition === "pending" ? finished : null,
-        notice: null,
-      });
+      ready({ session: finished, pendingRating: finished.rating.disposition === "pending" ? finished : null });
+      // Finishing can schedule the problem (initial learning); read it back.
+      await refresh();
+      ready({ busy: null, notice: null });
     },
 
     async abandon() {
@@ -314,7 +320,9 @@ export function createPageSession(deps: PageSessionDeps) {
       });
       stopTracking();
       if (!response.ok) return failureView(response);
-      ready({ busy: null, session: null, notice: response.queued ? { kind: "queued", action: "abandon" } : null });
+      if (response.queued) return ready({ busy: null, session: null, notice: { kind: "queued", action: "abandon" } });
+      await refresh();
+      ready({ busy: null, notice: null });
     },
 
     async rate(rating: 1 | 2 | 3 | 4) {

@@ -1,4 +1,5 @@
 import {
+  captureSubmissionSchema,
   fsrsRatingSchema,
   leetcodeAvailabilityEnum,
   practiceModeEnum,
@@ -39,6 +40,17 @@ const ratingMessages = [
 export const contentMessageSchema = z.discriminatedUnion("type", [
   /** What the panel on this problem page should show. */
   z.object({ type: z.literal("page_state"), slug: leetcodeSlugSchema }).strict(),
+  /** Display preferences the panel may know (content scripts cannot read extension storage). */
+  z.object({ type: z.literal("panel_settings") }).strict(),
+  /** Import past submissions of a problem already in the deck (never schedules anything). */
+  z
+    .object({
+      type: z.literal("import_history"),
+      slug: leetcodeSlugSchema,
+      problem: practiceProblemSchema,
+      submissions: z.array(captureSubmissionSchema).max(20),
+    })
+    .strict(),
   z
     .object({
       type: z.literal("session_start"),
@@ -91,6 +103,9 @@ export const pageMessageSchema = z.discriminatedUnion("type", [
   ...ratingMessages,
   z.object({ type: z.literal("sync_status") }).strict(),
   z.object({ type: z.literal("sync_retry") }).strict(),
+  /** Notes of the problem in the active tab, when it is in the deck. */
+  z.object({ type: z.literal("notes_load"), slug: leetcodeSlugSchema }).strict(),
+  z.object({ type: z.literal("notes_save"), problemId: sessionIdSchema, notes: z.string().max(50_000) }).strict(),
 ]);
 export type PageMessage = z.infer<typeof pageMessageSchema>;
 
@@ -98,7 +113,7 @@ export type MessageSender = {
   id?: string;
   url?: string;
   frameId?: number;
-  tab?: { id?: number };
+  tab?: { id?: number; url?: string };
 };
 
 export type SenderContext =
@@ -122,7 +137,16 @@ export function classifySender(sender: MessageSender, extensionId: string): Send
   if (url.protocol === "chrome-extension:") return url.host === extensionId ? { kind: "page" } : null;
   if (sender.tab) {
     if (sender.tab.id == null || sender.frameId !== 0 || url.origin !== "https://leetcode.com") return null;
-    const slug = url.pathname.match(/^\/problems\/([^/]+)(?:\/|$)/)?.[1];
+    // LeetCode switches problems with history.pushState; the sender URL can
+    // still show the previous problem, while the tab's URL is current.
+    let current = url;
+    try {
+      if (sender.tab.url) current = new URL(sender.tab.url);
+    } catch {
+      return null;
+    }
+    if (current.origin !== "https://leetcode.com") return null;
+    const slug = current.pathname.match(/^\/problems\/([^/]+)(?:\/|$)/)?.[1];
     const parsed = leetcodeSlugSchema.safeParse(slug);
     return parsed.success ? { kind: "content", tabId: sender.tab.id, slug: parsed.data } : null;
   }
@@ -137,7 +161,7 @@ export function parseMessage(message: unknown, sender: SenderContext) {
     // A page can only speak about its own problem.
     const slug = "slug" in parsed.data ? parsed.data.slug : null;
     if (slug && slug !== sender.slug) return null;
-    if (parsed.data.type === "session_start" && parsed.data.problem.leetcodeSlug !== sender.slug) return null;
+    if ((parsed.data.type === "session_start" || parsed.data.type === "import_history") && parsed.data.problem.leetcodeSlug !== sender.slug) return null;
     return { channel: "content" as const, message: parsed.data };
   }
   const parsed = pageMessageSchema.safeParse(message);

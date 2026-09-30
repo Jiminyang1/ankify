@@ -202,19 +202,24 @@ describe("page session", () => {
 
   it("polls once more before Finish, then offers the rating and stops tracking", async () => {
     const finished = session({ status: "completed", outcome: "accepted", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
+    let done = false;
     const h = harness({
-      respond: (message) =>
-        message.type === "page_state" ? current()
-          : message.type === "session_control" ? { ok: true, response: { ok: true, session: finished } }
-            : { ok: true, response: { ok: true, session: session() } },
+      respond: (message) => {
+        if (message.type === "page_state") return done ? { ok: true, response: { problem, session: null, pendingRating: finished } } : current();
+        if (message.type === "session_control") {
+          done = true;
+          return { ok: true, response: { ok: true, session: finished } };
+        }
+        return { ok: true, response: { ok: true, session: session() } };
+      },
     });
     await h.page.refresh();
     h.advance(5_000);
     await h.page.finish("solved");
     expect(h.client.listSubmissions).toHaveBeenCalledTimes(1);
-    expect(h.sent.map((message) => message.type)).toEqual(["page_state", "session_activity", "session_control"]);
-    expect(h.sent.at(-1)).toMatchObject({ control: { command: "finish", result: "solved", occurredAt: new Date(Date.parse(START) + 5_000).toISOString() } });
-    expect(h.page.view()).toMatchObject({ session: { status: "completed" }, pendingRating: { id: "s1" }, busy: null });
+    expect(h.sent.map((message) => message.type)).toEqual(["page_state", "session_activity", "session_control", "page_state"]);
+    expect(h.sent[2]).toMatchObject({ control: { command: "finish", result: "solved", occurredAt: new Date(Date.parse(START) + 5_000).toISOString() } });
+    expect(h.page.view()).toMatchObject({ session: null, pendingRating: { id: "s1" }, busy: null });
     expect(h.pending()).toHaveLength(0);
   });
 

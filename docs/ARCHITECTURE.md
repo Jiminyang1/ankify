@@ -227,18 +227,41 @@ append-only ledger. Full design, invariants, and test instructions:
 (`agent` 12/min, `ai` 20/min, `capture` 60/min, `sessions` 120/min, `mistakes` 60/min, `billing` 10/min). Hard caps
 limit cards and quiz sessions per problem and active AI jobs per user.
 
-## Capture and the extension
+## The extension
 
-- The content script reads LeetCode via GraphQL (problem, submissions, failure
-  details) and `POST /api/capture` upserts the problem idempotently by slug and
-  seeds FSRS state. Submissions are identified by LeetCode submission id, so
-  identical code under different ids stays distinct; id-less payloads from old
-  clients keep content deduplication.
-- The background worker sets a gold `!` badge when the current problem has an
-  accepted submission but is not captured (`/api/problems/by-slug`, 60 s cache).
-- The popup/side panel offers Today, Problem (Review: Quiz/Card/Notes; Manage:
-  cards and AI candidates), and Settings. AI work goes through the same
-  durable jobs as the web app.
+The extension is the daily surface ([plan](EXTENSION_FIRST_REFACTOR_PLAN.md)).
+Three contexts, each with one job:
+
+- **Content script** (`src/content/`, LeetCode problem pages only): reads
+  LeetCode through its own GraphQL endpoint with the page's session
+  (`leetcode-client.ts`; every read reports `available`, `signed_out`,
+  `unavailable`, or `partial`, so an error is never "no submissions"), tracks
+  the practice session of the problem in the URL (`page-session.ts`: foreground
+  activity from visibility and focus only, polling every 15 s while visible and
+  at once on focus, a final poll before Finish), and renders the compact panel
+  in a shadow root (`panel.ts`). Resetting LeetCode's editor is an explicit
+  action; "Import past submissions" stores history for a problem already in
+  the deck through `POST /api/capture` (never a schedule change).
+- **Background worker** (`src/background/`): the only API client. It validates
+  every message and its sender (`shared/protocol.ts`: top-frame LeetCode
+  problem pages or this extension's pages), attaches each tab's owner token
+  (`chrome.storage.session`, never visible to pages), requires the server to
+  acknowledge a start, and sends finish, abandon, ratings, and observations
+  through a durable IndexedDB outbox (`outbox.ts`): persisted before sending,
+  replayed with the same id, delivered in order per session, paused on 401,
+  scoped to one account and API origin, retried with backoff and a
+  `chrome.alarms` wake-up. The toolbar badge shows due reviews plus pending
+  ratings.
+- **Popup** (`src/popup/`): today's view from `GET /api/review/overview` (open
+  sessions, pending ratings, due and upcoming problems), notes for the problem
+  in the active tab, and settings (language, theme, sync status). Opening a
+  due review starts its session before navigating and binds the session's
+  token to the new tab.
+
+The API origin is fixed at build time (`ANKIFY_EXTENSION_API_ORIGIN`); the
+extension reuses the web session cookie, and production CORS allows only
+`ANKIFY_EXTENSION_ORIGINS`. Permissions: `storage`, `tabs`, `alarms`; hosts:
+`leetcode.com` and the API origin.
 
 ## Web pages
 
