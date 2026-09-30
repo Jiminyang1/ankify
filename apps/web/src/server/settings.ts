@@ -1,7 +1,7 @@
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { cache } from "react";
-import type { AiProvider, AiReasoningMode } from "@ankify/core";
+import { clampInitialReviewDelayHours, INITIAL_REVIEW_DELAY_HOURS, type AiProvider, type AiReasoningMode } from "@ankify/core";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./secret-box";
 import { readStarterAiConfig } from "./starter-ai";
 import { isValidTimeZone, normalizeTimeZone } from "./time-zone";
@@ -29,6 +29,8 @@ interface ReviewSettings {
   dailyReviewLimit: number;
   timeZone: string;
   timeZoneConfigured: boolean;
+  /** Hours from completing initial learning to the first review (1-168). */
+  initialReviewDelayHours: number;
 }
 
 interface GenerationSettings {
@@ -45,6 +47,7 @@ const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
   dailyReviewLimit: 20,
   timeZone: "UTC",
   timeZoneConfigured: false,
+  initialReviewDelayHours: INITIAL_REVIEW_DELAY_HOURS.default,
 };
 
 const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
@@ -149,6 +152,7 @@ async function readReviewSettings(userId: string): Promise<ReviewSettings> {
     dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit),
     timeZone: normalizeTimeZone(value.timeZone),
     timeZoneConfigured,
+    initialReviewDelayHours: clampInitialReviewDelayHours(value.initialReviewDelayHours),
   };
 }
 
@@ -158,14 +162,15 @@ export const getReviewSettings = cache(readReviewSettings);
 
 export async function setReviewSettings(
   userId: string,
-  value: { dailyReviewLimit?: number; timeZone?: string },
+  value: { dailyReviewLimit?: number; timeZone?: string; initialReviewDelayHours?: number },
 ) {
   const db = getDb();
   const existing = await readReviewSettings(userId);
-  const next: { dailyReviewLimit: number; timeZone?: string } = {
+  const next: { dailyReviewLimit: number; timeZone?: string; initialReviewDelayHours: number } = {
     dailyReviewLimit: clampDailyLimit(value.dailyReviewLimit ?? existing.dailyReviewLimit),
     ...(existing.timeZoneConfigured ? { timeZone: existing.timeZone } : {}),
     ...(value.timeZone !== undefined ? { timeZone: normalizeTimeZone(value.timeZone) } : {}),
+    initialReviewDelayHours: clampInitialReviewDelayHours(value.initialReviewDelayHours ?? existing.initialReviewDelayHours),
   };
   await db
     .insert(schema.settings)

@@ -19,12 +19,14 @@ const settingsSchema = z
     reasoningMode: aiReasoningModeEnum.optional(),
     apiKey: z.string().optional(),
     dailyReviewLimit: z.number().int().min(1).max(100).optional(),
+    initialReviewDelayHours: z.number().int().min(1).max(168).optional(),
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
     generationLanguage: z.enum(["en", "zh"]).optional(),
   })
   .refine(
     (value) =>
       value.dailyReviewLimit != null ||
+      value.initialReviewDelayHours != null ||
       value.timeZone != null ||
       value.generationLanguage != null ||
       Boolean(value.provider && value.model),
@@ -72,10 +74,11 @@ export async function POST(req: Request) {
       apiKey: parsed.data.apiKey,
     });
   }
-  if (parsed.data.dailyReviewLimit != null || parsed.data.timeZone != null) {
+  if (parsed.data.dailyReviewLimit != null || parsed.data.timeZone != null || parsed.data.initialReviewDelayHours != null) {
     await setReviewSettings(user.id, {
       dailyReviewLimit: parsed.data.dailyReviewLimit,
       timeZone: parsed.data.timeZone,
+      initialReviewDelayHours: parsed.data.initialReviewDelayHours,
     });
   }
   if (parsed.data.generationLanguage != null) {

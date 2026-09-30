@@ -39,7 +39,25 @@ const STR_TO_STATE: Record<FsrsCardState["state"], State> = {
 export const SCHEDULING_POLICIES = {
   /** The legacy review route: default FSRS with short-term learning steps. */
   legacySelfRecall: "legacy_self_recall_v1",
+  /** Completing initial learning: the first review a fixed delay later, no rating. */
+  initialDelay: "initial_delay_v1",
+  /** A rated review after solving the problem again on LeetCode. */
+  leetcodeFullSolve: "leetcode_full_solve_v1",
 } as const;
+
+/** Delay between completing initial learning and the first review. */
+export const INITIAL_REVIEW_DELAY_HOURS = { default: 24, min: 1, max: 168 } as const;
+
+export function clampInitialReviewDelayHours(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return INITIAL_REVIEW_DELAY_HOURS.default;
+  return Math.min(INITIAL_REVIEW_DELAY_HOURS.max, Math.max(INITIAL_REVIEW_DELAY_HOURS.min, Math.round(value)));
+}
+
+/** When the first review falls due after initial learning completed. The FSRS
+ *  state stays `new` with no review recorded: no recall rating is invented. */
+export function initialReviewDue(completedAt: Date, delayHours: number) {
+  return new Date(completedAt.getTime() + clampInitialReviewDelayHours(delayHours) * 3_600_000);
+}
 
 export function defaultScheduler() {
   // 0.9 retention is the FSRS-recommended default for a balance of workload vs forgetting.
@@ -88,6 +106,40 @@ export function rate(state: FsrsCardState, rating: FsrsRating, now = new Date())
     next: toState(result.card),
     log: result.log,
   };
+}
+
+/**
+ * `leetcode_full_solve_v1`: the default weights, 90% retention, and fuzz, with
+ * short-term learning steps disabled. A full solve is a day-scale event, so
+ * every outcome (including from legacy learning or relearning states) is a
+ * day-based interval chosen by FSRS itself, never rewritten here.
+ */
+export function fullSolveScheduler() {
+  return fsrs(generatorParameters({ enable_fuzz: true, request_retention: 0.9, enable_short_term: false }));
+}
+
+/** Rates a completed full-solve review as of when it was completed, so a
+ *  rating given later schedules from the actual review time. */
+export function rateFullSolve(state: FsrsCardState, rating: FsrsRating, reviewedAt: Date) {
+  const result = fullSolveScheduler().next(fromState(state), reviewedAt, rating as Grade);
+  return { next: toState(result.card), log: result.log };
+}
+
+/** All four full-solve outcomes as of `reviewedAt`, for rating buttons. */
+export function previewFullSolve(state: FsrsCardState, reviewedAt: Date) {
+  const record = fullSolveScheduler().repeat(fromState(state), reviewedAt);
+  return {
+    1: { due: record[1].card.due.toISOString() },
+    2: { due: record[2].card.due.toISOString() },
+    3: { due: record[3].card.due.toISOString() },
+    4: { due: record[4].card.due.toISOString() },
+  } as const;
+}
+
+/** Retrievability for display: `null` for a problem never reviewed, whose
+ *  recall is not yet estimated (not proven perfect). */
+export function retrievabilityEstimate(state: FsrsCardState, at = new Date()): number | null {
+  return state.state === "new" ? null : retrievability(state, at);
 }
 
 /** Compute all four rating outcomes at once — use for previews. */
