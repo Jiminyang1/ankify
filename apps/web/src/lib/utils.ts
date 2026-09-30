@@ -60,3 +60,10 @@ export function formatAbsolute(date: Date | string | null | undefined) {
   });
 }
 
+
+/** Recall percent tone: low reads red, mid reads gold, healthy stays neutral. */
+export function recallToneClass(pct: number): string {
+  if (pct < 50) return "font-medium text-danger";
+  if (pct < 70) return "font-medium text-warning";
+  return "text-fg";
+}

@@ -5,7 +5,7 @@ import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Stat, Surface } from "@/components/ui/surface";
-import { formatRelative } from "@/lib/utils";
+import { formatRelative, recallToneClass } from "@/lib/utils";
 import { PageFrame, PageHeader } from "@/components/ui/page";
 import { loadAnalysis, type AnalysisData } from "@/server/analysis";
 
@@ -21,13 +21,6 @@ const STABILITY_BAR_COLOR: Record<string, string> = {
   "7—30d": "bg-success/45",
   "30d+": "bg-success/85",
 };
-
-/** Low recall reads red, mid reads gold, healthy stays neutral. */
-function recallToneClass(pct: number): string {
-  if (pct < 50) return "font-medium text-danger";
-  if (pct < 70) return "font-medium text-warning";
-  return "text-fg";
-}
 
 type Headline = { text: string; tone: "default" | "accent" | "success" | "danger" };
 

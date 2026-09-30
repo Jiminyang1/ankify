@@ -303,3 +303,8 @@ export const quizAnswerRequestSchema = z.object({
 export const quizSaveCardRequestSchema = z.object({
   itemId: z.string().min(1),
 });
+
+/** POST /api/leetcode/account — a LeetCode username or profile URL. */
+export const leetcodeAccountLinkSchema = z.object({
+  profile: z.string().trim().min(1).max(200),
+});

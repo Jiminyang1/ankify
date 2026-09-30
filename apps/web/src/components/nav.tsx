@@ -22,6 +22,7 @@ const LINKS = [
   { href: "/review", key: "review" },
   { href: "/problems", key: "problems" },
   { href: "/analysis", key: "analysis" },
+  { href: "/profile", key: "profile" },
   { href: "/settings", key: "settings" },
 ] as const;
 
@@ -112,7 +113,7 @@ export function Nav({
         </Link>
 
         {!isPublicPage && (
-          <div className="order-3 col-span-2 grid w-full grid-cols-5 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
+          <div className="order-3 col-span-2 grid w-full grid-cols-6 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
             {LINKS.map((l) => {
               const active = pathname === l.href || pathname.startsWith(l.href + "/");
               const showBadge = l.href === "/review" && dueCount > 0;
@@ -122,7 +123,7 @@ export function Nav({
                   href={l.href as Route}
                   prefetch={false}
                   className={cn(
-                    "relative isolate min-h-9 rounded-md px-1.5 py-2 text-center transition-colors font-ui sm:min-h-0 sm:px-3 sm:py-1.5",
+                    "relative isolate min-h-9 rounded-md px-0.5 py-2 text-center transition-colors font-ui sm:min-h-0 sm:px-3 sm:py-1.5",
                     active
                       ? "text-accent"
                       : "text-muted hover:bg-subtle hover:text-fg",

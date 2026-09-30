@@ -268,3 +268,22 @@ export type CaptureResultDto = {
   importedSubmissions: number;
   submissionLimitReached: boolean;
 };
+
+/** Public LeetCode profile data; no LeetCode login is involved. */
+export type LeetcodeProfileDto = {
+  username: string;
+  avatarUrl: string | null;
+  ranking: number | null;
+  solved: { all: number; easy: number; medium: number; hard: number };
+  streak: number;
+  activeDays: number;
+  /** LeetCode exposes only the latest 20 accepted submissions publicly. */
+  recentAccepted: { slug: string; title: string; acceptedAt: string }[];
+};
+
+export type LeetcodeAccountDto = {
+  username: string;
+  linkedAt: string;
+  fetchedAt: string | null;
+  profile: LeetcodeProfileDto | null;
+};
