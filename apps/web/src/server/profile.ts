@@ -1,5 +1,4 @@
 import {
-  STUDY_PLAN,
   planProblemStatus,
   type LeetCodeDifficulty,
   type PlanProblemStatus,
@@ -7,6 +6,7 @@ import {
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
 import { getLeetcodeAccount, getLeetcodeSolved } from "@/server/leetcode-account";
+import { getCurrentStudyPlan } from "@/server/study-plans";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
  *  refreshes are failing and the numbers may be out of date. */
@@ -36,7 +36,7 @@ const emptyCounts = (): Record<PlanProblemStatus, number> => ({ todo: 0, solved:
 
 export async function loadProfile(userId: string) {
   const now = new Date();
-  const [rows, leetcode, solved] = await Promise.all([
+  const [rows, leetcode, solved, current] = await Promise.all([
     getDb()
       .select({
         id: schema.problems.id,
@@ -48,7 +48,9 @@ export async function loadProfile(userId: string) {
       .where(eq(schema.problems.userId, userId)),
     getLeetcodeAccount(userId),
     getLeetcodeSolved(userId),
+    getCurrentStudyPlan(userId),
   ]);
+  const plan = current.plan;
 
   const deck = new Map(rows.map((row) => [row.leetcodeSlug, row]));
   // Publicly LeetCode shows only the latest 20 accepted problems; the
@@ -61,7 +63,7 @@ export async function loadProfile(userId: string) {
   ]);
 
   const counts = emptyCounts();
-  const groups: PlanGroup[] = STUDY_PLAN.groups.map((group) => {
+  const groups: PlanGroup[] = plan.groups.map((group) => {
     const groupCounts = emptyCounts();
     const items = group.questions.map((question): PlanItem => {
       const row = deck.get(question.slug);
@@ -93,7 +95,8 @@ export async function loadProfile(userId: string) {
   const next = groups.flatMap((group) => group.items).find((item) => item.status === "todo") ?? null;
 
   return {
-    plan: { slug: STUDY_PLAN.slug, name: STUDY_PLAN.name },
+    plan: { slug: plan.slug, name: plan.name, custom: current.custom },
+    plans: current.options,
     groups,
     counts,
     total: groups.reduce((sum, group) => sum + group.items.length, 0),

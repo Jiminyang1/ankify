@@ -55,7 +55,7 @@ Monorepo with three layers:
 
 **Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
 
-**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key. `leetcode-account` holds the linked LeetCode username plus a cached copy of that user's public profile.
+**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key. `leetcode-account` holds the linked LeetCode username plus a cached copy of that user's public profile. `study-plan` is the plan the profile shows; `custom-study-plans` holds up to 5 plans imported from public LeetCode lists (slug `list:<list slug>`).
 
 ### `packages/core` - Shared business logic
 
@@ -64,7 +64,9 @@ Monorepo with three layers:
 - `schemas.ts`: Zod schemas for capture, card drafts, synchronous AI card generation/follow-up, manual cards, card updates, review rating, quiz generation (`generate | regenerate | nextBatch`), quiz answers, scoped quiz items, and quiz save-as-card
 - `quiz-format.ts`: small Markdown formatter that wraps complexity expressions, DP states, and code-like variables in inline code before rendering quiz text.
 - `leetcode-tags.ts`: LeetCode tag catalog keyed by slug. `leetcodeTagSlug()` maps any past name or slug to the canonical slug; `leetcodeTagName()` gives the current display name. `problems.topicTags` stores slugs (capture normalizes names from older extension builds), so render tags through `leetcodeTagName()`.
-- `study-plans.ts`: LeetCode's Top Interview 150 study plan (`STUDY_PLAN`) as the profile roadmap, from the snapshot in `study-plans.generated.ts` (regenerate with `pnpm plans:sync`; never edit by hand). `planProblemStatus()` answers two questions per problem with four states: solved on LeetCode? (`todo` / `solved`) and, for problems in the deck, due? (`due` / `remembered`). Archived deck problems count as `solved`. FSRS's finer states never reach the UI.
+- `study-plans.ts`: the plans behind the profile roadmap.
+  - Official plans (`OFFICIAL_STUDY_PLANS`) are LeetCode's own: Top Interview 150 (default), LeetCode 75, Top 100 Liked, and the DP / Graph Theory / Binary Search plans. They come from the snapshot in `study-plans.generated.ts` (regenerate with `pnpm plans:sync`; never edit by hand; Top 100 Liked is re-sorted into learning order).
+  - Imported lists are grouped into patterns from LeetCode tags by `groupByPattern()`. `planProblemStatus()` answers two questions per problem with four states: solved on LeetCode? (`todo` / `solved`) and, for problems in the deck, due? (`due` / `remembered`). Archived deck problems count as `solved`. FSRS's finer states never reach the UI.
 
 ### `apps/web` - Next.js 16 App Router
 
@@ -96,7 +98,9 @@ Monorepo with three layers:
   - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`. The rated event stores a pre-rating FSRS snapshot in `metadata.undo`.
   - `review/undo/` - POST `{ problemId }` reverts the most recent rating: restores the problem's FSRS fields from the event's `metadata.undo` snapshot and stamps `undoneAt` on that event (guarded by `fsrsReps = prev.reps + 1` against races; events without the snapshot return 409).
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
-  - `profile/add-to-review/` - session-only POST `{ slugs }` (study-plan slugs, max 30). Captures each problem into the deck from LeetCode's public problem data, without submissions; the extension syncs those on the next visit.
+  - `study-plan/` - session-only. POST `{ plan }` switches the profile's plan; DELETE `{ plan }` removes an imported list and falls back to the default.
+  - `study-plan/import/` - session-only POST `{ link }`: reads a public LeetCode problem list (`leetcode.com/problem-list/<slug>/`) through public GraphQL, groups it by pattern, saves it, and switches to it. Re-importing the same list refreshes it.
+  - `profile/add-to-review/` - session-only POST `{ slugs }` (slugs from the user's official or imported plans, max 30). Captures each problem into the deck from LeetCode's public problem data, without submissions; the extension syncs those on the next visit.
   - `leetcode/solved/` - POST `{ username, slugs }` from the extension: the signed-in LeetCode user's full solved list (slugs only). Stored in `settings` (`leetcode-solved`) and links that LeetCode account; the profile counts these problems as solved.
   - `leetcode/account/` - session-only. POST `{ profile }` (username or leetcode.com profile URL) verifies the user via LeetCode's public GraphQL and stores it; DELETE unlinks. leetcode.cn returns `unsupported_site`.
   - `settings/ai-test/` - session-only POST. Runs a tiny `generateObject` probe against the configured provider/model/key (or supplied overrides) to verify the connection. Returns `{ ok, latencyMs }` on success or `{ ok: false, code, message }` on failure with categorized error codes (`invalid_api_key`, `model_not_found`, `quota_or_rate_limit`, `timeout`, `network`, `forbidden`, `unknown`).
@@ -110,7 +114,8 @@ Monorepo with three layers:
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. `getAiRuntimeSettings()` returns the user's own settings, or the starter-credit settings (`source: "starter"`) when the user has none and `ANKIFY_STARTER_AI_API_KEY` is set.
   - `leetcode-account.ts`: parses profile links and fetches the public LeetCode profile (solved counts, streak, latest 20 accepted). Refetches after 12h and serves the cache when LeetCode fails. Never sends or stores a LeetCode session; login-only data (full solved list) belongs in the extension.
-  - `profile.ts`: `loadProfile()` maps every Top Interview 150 problem to its four-state status (deck FSRS due date + LeetCode solved list), with per-group counts and the next unsolved problem.
+  - `study-plans.ts`: current plan selection, imported lists, and LeetCode list import.
+  - `profile.ts`: `loadProfile()` maps every problem in the current plan to its four-state status (deck FSRS due date + LeetCode solved list), with per-group counts and the next unsolved problem.
   - `rate-limit.ts`: atomic database-backed fixed-window limiter keyed by `userId` for AI and capture paths. Hard storage caps also limit problems, submissions, cards, and quiz sessions per user/problem.
 - **Pages**:
   - `/` - home: due queue, progress, daily stats
@@ -118,10 +123,11 @@ Monorepo with three layers:
   - `/problems` - list with difficulty/state/tag/search filters; the state filter's `Archived` option refetches with `?archived=1`
   - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline, Archive/Unarchive (archived problems hide the Review button and show a notice)
   - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
-  - `/profile` - Top Interview 150 roadmap. Includes:
+  - `/profile` - study-plan roadmap. Includes:
+    - a plan picker: LeetCode's plans, your imported lists, and "Import a LeetCode list";
     - summary: solved count, four-state bar, "Review N due", next problem;
     - a first-visit guide to the three concepts (solved / remembered / due), dismissible and stored in localStorage;
-    - the roadmap itself: hand-drawn layout in `profile/roadmap-layout.ts`, shown as a plain list below `lg`; each node opens a dialog with Review / Open / Add to review / LeetCode per problem;
+    - the roadmap itself: Top Interview 150 is hand-drawn in `profile/roadmap-layout.ts`, other plans follow a three-per-row snake path in plan order, and everything is a plain list below `lg`; each node opens a dialog with Review / Open / Add to review / LeetCode per problem;
     - the LeetCode account link.
   - `/settings` - AI provider configuration + daily review limit
 

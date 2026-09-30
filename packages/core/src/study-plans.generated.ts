@@ -274,4 +274,613 @@ export const STUDY_PLAN_DATA: readonly StudyPlan[] = [
       },
     ],
   },
+  {
+    slug: "leetcode-75",
+    name: "LeetCode 75",
+    groups: [
+      {
+        name: "Array / String",
+        questions: [
+          {"id":1768,"slug":"merge-strings-alternately","title":"Merge Strings Alternately","difficulty":"Easy"},
+          {"id":1071,"slug":"greatest-common-divisor-of-strings","title":"Greatest Common Divisor of Strings","difficulty":"Easy"},
+          {"id":1431,"slug":"kids-with-the-greatest-number-of-candies","title":"Kids With the Greatest Number of Candies","difficulty":"Easy"},
+          {"id":605,"slug":"can-place-flowers","title":"Can Place Flowers","difficulty":"Easy"},
+          {"id":345,"slug":"reverse-vowels-of-a-string","title":"Reverse Vowels of a String","difficulty":"Easy"},
+          {"id":151,"slug":"reverse-words-in-a-string","title":"Reverse Words in a String","difficulty":"Medium"},
+          {"id":238,"slug":"product-of-array-except-self","title":"Product of Array Except Self","difficulty":"Medium"},
+          {"id":334,"slug":"increasing-triplet-subsequence","title":"Increasing Triplet Subsequence","difficulty":"Medium"},
+          {"id":443,"slug":"string-compression","title":"String Compression","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Two Pointers",
+        questions: [
+          {"id":283,"slug":"move-zeroes","title":"Move Zeroes","difficulty":"Easy"},
+          {"id":392,"slug":"is-subsequence","title":"Is Subsequence","difficulty":"Easy"},
+          {"id":11,"slug":"container-with-most-water","title":"Container With Most Water","difficulty":"Medium"},
+          {"id":1679,"slug":"max-number-of-k-sum-pairs","title":"Max Number of K-Sum Pairs","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Sliding Window",
+        questions: [
+          {"id":643,"slug":"maximum-average-subarray-i","title":"Maximum Average Subarray I","difficulty":"Easy"},
+          {"id":1456,"slug":"maximum-number-of-vowels-in-a-substring-of-given-length","title":"Maximum Number of Vowels in a Substring of Given Length","difficulty":"Medium"},
+          {"id":1004,"slug":"max-consecutive-ones-iii","title":"Max Consecutive Ones III","difficulty":"Medium"},
+          {"id":1493,"slug":"longest-subarray-of-1s-after-deleting-one-element","title":"Longest Subarray of 1's After Deleting One Element","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Prefix Sum",
+        questions: [
+          {"id":1732,"slug":"find-the-highest-altitude","title":"Find the Highest Altitude","difficulty":"Easy"},
+          {"id":724,"slug":"find-pivot-index","title":"Find Pivot Index","difficulty":"Easy"},
+        ],
+      },
+      {
+        name: "Hash Map / Set",
+        questions: [
+          {"id":2215,"slug":"find-the-difference-of-two-arrays","title":"Find the Difference of Two Arrays","difficulty":"Easy"},
+          {"id":1207,"slug":"unique-number-of-occurrences","title":"Unique Number of Occurrences","difficulty":"Easy"},
+          {"id":1657,"slug":"determine-if-two-strings-are-close","title":"Determine if Two Strings Are Close","difficulty":"Medium"},
+          {"id":2352,"slug":"equal-row-and-column-pairs","title":"Equal Row and Column Pairs","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Stack",
+        questions: [
+          {"id":2390,"slug":"removing-stars-from-a-string","title":"Removing Stars From a String","difficulty":"Medium"},
+          {"id":735,"slug":"asteroid-collision","title":"Asteroid Collision","difficulty":"Medium"},
+          {"id":394,"slug":"decode-string","title":"Decode String","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Queue",
+        questions: [
+          {"id":933,"slug":"number-of-recent-calls","title":"Number of Recent Calls","difficulty":"Easy"},
+          {"id":649,"slug":"dota2-senate","title":"Dota2 Senate","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Linked List",
+        questions: [
+          {"id":2095,"slug":"delete-the-middle-node-of-a-linked-list","title":"Delete the Middle Node of a Linked List","difficulty":"Medium"},
+          {"id":328,"slug":"odd-even-linked-list","title":"Odd Even Linked List","difficulty":"Medium"},
+          {"id":206,"slug":"reverse-linked-list","title":"Reverse Linked List","difficulty":"Easy"},
+          {"id":2130,"slug":"maximum-twin-sum-of-a-linked-list","title":"Maximum Twin Sum of a Linked List","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Tree - DFS",
+        questions: [
+          {"id":104,"slug":"maximum-depth-of-binary-tree","title":"Maximum Depth of Binary Tree","difficulty":"Easy"},
+          {"id":872,"slug":"leaf-similar-trees","title":"Leaf-Similar Trees","difficulty":"Easy"},
+          {"id":1448,"slug":"count-good-nodes-in-binary-tree","title":"Count Good Nodes in Binary Tree","difficulty":"Medium"},
+          {"id":437,"slug":"path-sum-iii","title":"Path Sum III","difficulty":"Medium"},
+          {"id":1372,"slug":"longest-zigzag-path-in-a-binary-tree","title":"Longest ZigZag Path in a Binary Tree","difficulty":"Medium"},
+          {"id":236,"slug":"lowest-common-ancestor-of-a-binary-tree","title":"Lowest Common Ancestor of a Binary Tree","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Tree - BFS",
+        questions: [
+          {"id":199,"slug":"binary-tree-right-side-view","title":"Binary Tree Right Side View","difficulty":"Medium"},
+          {"id":1161,"slug":"maximum-level-sum-of-a-binary-tree","title":"Maximum Level Sum of a Binary Tree","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Search Tree",
+        questions: [
+          {"id":700,"slug":"search-in-a-binary-search-tree","title":"Search in a Binary Search Tree","difficulty":"Easy"},
+          {"id":450,"slug":"delete-node-in-a-bst","title":"Delete Node in a BST","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Graphs - DFS",
+        questions: [
+          {"id":841,"slug":"keys-and-rooms","title":"Keys and Rooms","difficulty":"Medium"},
+          {"id":547,"slug":"number-of-provinces","title":"Number of Provinces","difficulty":"Medium"},
+          {"id":1466,"slug":"reorder-routes-to-make-all-paths-lead-to-the-city-zero","title":"Reorder Routes to Make All Paths Lead to the City Zero","difficulty":"Medium"},
+          {"id":399,"slug":"evaluate-division","title":"Evaluate Division","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Graphs - BFS",
+        questions: [
+          {"id":1926,"slug":"nearest-exit-from-entrance-in-maze","title":"Nearest Exit from Entrance in Maze","difficulty":"Medium"},
+          {"id":994,"slug":"rotting-oranges","title":"Rotting Oranges","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Heap / Priority Queue",
+        questions: [
+          {"id":215,"slug":"kth-largest-element-in-an-array","title":"Kth Largest Element in an Array","difficulty":"Medium"},
+          {"id":2336,"slug":"smallest-number-in-infinite-set","title":"Smallest Number in Infinite Set","difficulty":"Medium"},
+          {"id":2542,"slug":"maximum-subsequence-score","title":"Maximum Subsequence Score","difficulty":"Medium"},
+          {"id":2462,"slug":"total-cost-to-hire-k-workers","title":"Total Cost to Hire K Workers","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Search",
+        questions: [
+          {"id":374,"slug":"guess-number-higher-or-lower","title":"Guess Number Higher or Lower","difficulty":"Easy"},
+          {"id":2300,"slug":"successful-pairs-of-spells-and-potions","title":"Successful Pairs of Spells and Potions","difficulty":"Medium"},
+          {"id":162,"slug":"find-peak-element","title":"Find Peak Element","difficulty":"Medium"},
+          {"id":875,"slug":"koko-eating-bananas","title":"Koko Eating Bananas","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Backtracking",
+        questions: [
+          {"id":17,"slug":"letter-combinations-of-a-phone-number","title":"Letter Combinations of a Phone Number","difficulty":"Medium"},
+          {"id":216,"slug":"combination-sum-iii","title":"Combination Sum III","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "DP - 1D",
+        questions: [
+          {"id":1137,"slug":"n-th-tribonacci-number","title":"N-th Tribonacci Number","difficulty":"Easy"},
+          {"id":746,"slug":"min-cost-climbing-stairs","title":"Min Cost Climbing Stairs","difficulty":"Easy"},
+          {"id":198,"slug":"house-robber","title":"House Robber","difficulty":"Medium"},
+          {"id":790,"slug":"domino-and-tromino-tiling","title":"Domino and Tromino Tiling","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "DP - Multidimensional",
+        questions: [
+          {"id":62,"slug":"unique-paths","title":"Unique Paths","difficulty":"Medium"},
+          {"id":1143,"slug":"longest-common-subsequence","title":"Longest Common Subsequence","difficulty":"Medium"},
+          {"id":714,"slug":"best-time-to-buy-and-sell-stock-with-transaction-fee","title":"Best Time to Buy and Sell Stock with Transaction Fee","difficulty":"Medium"},
+          {"id":72,"slug":"edit-distance","title":"Edit Distance","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Bit Manipulation",
+        questions: [
+          {"id":338,"slug":"counting-bits","title":"Counting Bits","difficulty":"Easy"},
+          {"id":136,"slug":"single-number","title":"Single Number","difficulty":"Easy"},
+          {"id":1318,"slug":"minimum-flips-to-make-a-or-b-equal-to-c","title":"Minimum Flips to Make a OR b Equal to c","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Trie",
+        questions: [
+          {"id":208,"slug":"implement-trie-prefix-tree","title":"Implement Trie (Prefix Tree)","difficulty":"Medium"},
+          {"id":1268,"slug":"search-suggestions-system","title":"Search Suggestions System","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Intervals",
+        questions: [
+          {"id":435,"slug":"non-overlapping-intervals","title":"Non-overlapping Intervals","difficulty":"Medium"},
+          {"id":452,"slug":"minimum-number-of-arrows-to-burst-balloons","title":"Minimum Number of Arrows to Burst Balloons","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Monotonic Stack",
+        questions: [
+          {"id":739,"slug":"daily-temperatures","title":"Daily Temperatures","difficulty":"Medium"},
+          {"id":901,"slug":"online-stock-span","title":"Online Stock Span","difficulty":"Medium"},
+        ],
+      },
+    ],
+  },
+  {
+    slug: "top-100-liked",
+    name: "Top 100 Liked",
+    groups: [
+      {
+        name: "Backtracking",
+        questions: [
+          {"id":17,"slug":"letter-combinations-of-a-phone-number","title":"Letter Combinations of a Phone Number","difficulty":"Medium"},
+          {"id":22,"slug":"generate-parentheses","title":"Generate Parentheses","difficulty":"Medium"},
+          {"id":39,"slug":"combination-sum","title":"Combination Sum","difficulty":"Medium"},
+          {"id":46,"slug":"permutations","title":"Permutations","difficulty":"Medium"},
+          {"id":51,"slug":"n-queens","title":"N-Queens","difficulty":"Hard"},
+          {"id":78,"slug":"subsets","title":"Subsets","difficulty":"Medium"},
+          {"id":79,"slug":"word-search","title":"Word Search","difficulty":"Medium"},
+          {"id":131,"slug":"palindrome-partitioning","title":"Palindrome Partitioning","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Search",
+        questions: [
+          {"id":4,"slug":"median-of-two-sorted-arrays","title":"Median of Two Sorted Arrays","difficulty":"Hard"},
+          {"id":33,"slug":"search-in-rotated-sorted-array","title":"Search in Rotated Sorted Array","difficulty":"Medium"},
+          {"id":34,"slug":"find-first-and-last-position-of-element-in-sorted-array","title":"Find First and Last Position of Element in Sorted Array","difficulty":"Medium"},
+          {"id":35,"slug":"search-insert-position","title":"Search Insert Position","difficulty":"Easy"},
+          {"id":74,"slug":"search-a-2d-matrix","title":"Search a 2D Matrix","difficulty":"Medium"},
+          {"id":124,"slug":"binary-tree-maximum-path-sum","title":"Binary Tree Maximum Path Sum","difficulty":"Hard"},
+          {"id":153,"slug":"find-minimum-in-rotated-sorted-array","title":"Find Minimum in Rotated Sorted Array","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Binary Tree",
+        questions: [
+          {"id":94,"slug":"binary-tree-inorder-traversal","title":"Binary Tree Inorder Traversal","difficulty":"Easy"},
+          {"id":98,"slug":"validate-binary-search-tree","title":"Validate Binary Search Tree","difficulty":"Medium"},
+          {"id":101,"slug":"symmetric-tree","title":"Symmetric Tree","difficulty":"Easy"},
+          {"id":102,"slug":"binary-tree-level-order-traversal","title":"Binary Tree Level Order Traversal","difficulty":"Medium"},
+          {"id":104,"slug":"maximum-depth-of-binary-tree","title":"Maximum Depth of Binary Tree","difficulty":"Easy"},
+          {"id":105,"slug":"construct-binary-tree-from-preorder-and-inorder-traversal","title":"Construct Binary Tree from Preorder and Inorder Traversal","difficulty":"Medium"},
+          {"id":108,"slug":"convert-sorted-array-to-binary-search-tree","title":"Convert Sorted Array to Binary Search Tree","difficulty":"Easy"},
+          {"id":114,"slug":"flatten-binary-tree-to-linked-list","title":"Flatten Binary Tree to Linked List","difficulty":"Medium"},
+          {"id":199,"slug":"binary-tree-right-side-view","title":"Binary Tree Right Side View","difficulty":"Medium"},
+          {"id":226,"slug":"invert-binary-tree","title":"Invert Binary Tree","difficulty":"Easy"},
+          {"id":230,"slug":"kth-smallest-element-in-a-bst","title":"Kth Smallest Element in a BST","difficulty":"Medium"},
+          {"id":236,"slug":"lowest-common-ancestor-of-a-binary-tree","title":"Lowest Common Ancestor of a Binary Tree","difficulty":"Medium"},
+          {"id":437,"slug":"path-sum-iii","title":"Path Sum III","difficulty":"Medium"},
+          {"id":543,"slug":"diameter-of-binary-tree","title":"Diameter of Binary Tree","difficulty":"Easy"},
+        ],
+      },
+      {
+        name: "Dynamic Programming",
+        questions: [
+          {"id":5,"slug":"longest-palindromic-substring","title":"Longest Palindromic Substring","difficulty":"Medium"},
+          {"id":32,"slug":"longest-valid-parentheses","title":"Longest Valid Parentheses","difficulty":"Hard"},
+          {"id":62,"slug":"unique-paths","title":"Unique Paths","difficulty":"Medium"},
+          {"id":64,"slug":"minimum-path-sum","title":"Minimum Path Sum","difficulty":"Medium"},
+          {"id":70,"slug":"climbing-stairs","title":"Climbing Stairs","difficulty":"Easy"},
+          {"id":72,"slug":"edit-distance","title":"Edit Distance","difficulty":"Medium"},
+          {"id":118,"slug":"pascals-triangle","title":"Pascal's Triangle","difficulty":"Easy"},
+          {"id":139,"slug":"word-break","title":"Word Break","difficulty":"Medium"},
+          {"id":152,"slug":"maximum-product-subarray","title":"Maximum Product Subarray","difficulty":"Medium"},
+          {"id":198,"slug":"house-robber","title":"House Robber","difficulty":"Medium"},
+          {"id":279,"slug":"perfect-squares","title":"Perfect Squares","difficulty":"Medium"},
+          {"id":300,"slug":"longest-increasing-subsequence","title":"Longest Increasing Subsequence","difficulty":"Medium"},
+          {"id":322,"slug":"coin-change","title":"Coin Change","difficulty":"Medium"},
+          {"id":416,"slug":"partition-equal-subset-sum","title":"Partition Equal Subset Sum","difficulty":"Medium"},
+          {"id":1143,"slug":"longest-common-subsequence","title":"Longest Common Subsequence","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Graph",
+        questions: [
+          {"id":200,"slug":"number-of-islands","title":"Number of Islands","difficulty":"Medium"},
+          {"id":207,"slug":"course-schedule","title":"Course Schedule","difficulty":"Medium"},
+          {"id":994,"slug":"rotting-oranges","title":"Rotting Oranges","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Greedy",
+        questions: [
+          {"id":45,"slug":"jump-game-ii","title":"Jump Game II","difficulty":"Medium"},
+          {"id":55,"slug":"jump-game","title":"Jump Game","difficulty":"Medium"},
+          {"id":121,"slug":"best-time-to-buy-and-sell-stock","title":"Best Time to Buy and Sell Stock","difficulty":"Easy"},
+          {"id":763,"slug":"partition-labels","title":"Partition Labels","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Hashing",
+        questions: [
+          {"id":1,"slug":"two-sum","title":"Two Sum","difficulty":"Easy"},
+          {"id":49,"slug":"group-anagrams","title":"Group Anagrams","difficulty":"Medium"},
+          {"id":128,"slug":"longest-consecutive-sequence","title":"Longest Consecutive Sequence","difficulty":"Medium"},
+          {"id":560,"slug":"subarray-sum-equals-k","title":"Subarray Sum Equals K","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Heap",
+        questions: [
+          {"id":215,"slug":"kth-largest-element-in-an-array","title":"Kth Largest Element in an Array","difficulty":"Medium"},
+          {"id":295,"slug":"find-median-from-data-stream","title":"Find Median from Data Stream","difficulty":"Hard"},
+          {"id":347,"slug":"top-k-frequent-elements","title":"Top K Frequent Elements","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Linked Lists",
+        questions: [
+          {"id":2,"slug":"add-two-numbers","title":"Add Two Numbers","difficulty":"Medium"},
+          {"id":19,"slug":"remove-nth-node-from-end-of-list","title":"Remove Nth Node From End of List","difficulty":"Medium"},
+          {"id":21,"slug":"merge-two-sorted-lists","title":"Merge Two Sorted Lists","difficulty":"Easy"},
+          {"id":23,"slug":"merge-k-sorted-lists","title":"Merge k Sorted Lists","difficulty":"Hard"},
+          {"id":24,"slug":"swap-nodes-in-pairs","title":"Swap Nodes in Pairs","difficulty":"Medium"},
+          {"id":25,"slug":"reverse-nodes-in-k-group","title":"Reverse Nodes in k-Group","difficulty":"Hard"},
+          {"id":138,"slug":"copy-list-with-random-pointer","title":"Copy List with Random Pointer","difficulty":"Medium"},
+          {"id":141,"slug":"linked-list-cycle","title":"Linked List Cycle","difficulty":"Easy"},
+          {"id":142,"slug":"linked-list-cycle-ii","title":"Linked List Cycle II","difficulty":"Medium"},
+          {"id":146,"slug":"lru-cache","title":"LRU Cache","difficulty":"Medium"},
+          {"id":148,"slug":"sort-list","title":"Sort List","difficulty":"Medium"},
+          {"id":160,"slug":"intersection-of-two-linked-lists","title":"Intersection of Two Linked Lists","difficulty":"Easy"},
+          {"id":206,"slug":"reverse-linked-list","title":"Reverse Linked List","difficulty":"Easy"},
+          {"id":234,"slug":"palindrome-linked-list","title":"Palindrome Linked List","difficulty":"Easy"},
+        ],
+      },
+      {
+        name: "Matrix",
+        questions: [
+          {"id":48,"slug":"rotate-image","title":"Rotate Image","difficulty":"Medium"},
+          {"id":54,"slug":"spiral-matrix","title":"Spiral Matrix","difficulty":"Medium"},
+          {"id":73,"slug":"set-matrix-zeroes","title":"Set Matrix Zeroes","difficulty":"Medium"},
+          {"id":240,"slug":"search-a-2d-matrix-ii","title":"Search a 2D Matrix II","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Sliding Window",
+        questions: [
+          {"id":3,"slug":"longest-substring-without-repeating-characters","title":"Longest Substring Without Repeating Characters","difficulty":"Medium"},
+          {"id":76,"slug":"minimum-window-substring","title":"Minimum Window Substring","difficulty":"Hard"},
+          {"id":239,"slug":"sliding-window-maximum","title":"Sliding Window Maximum","difficulty":"Hard"},
+          {"id":438,"slug":"find-all-anagrams-in-a-string","title":"Find All Anagrams in a String","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Stack",
+        questions: [
+          {"id":20,"slug":"valid-parentheses","title":"Valid Parentheses","difficulty":"Easy"},
+          {"id":84,"slug":"largest-rectangle-in-histogram","title":"Largest Rectangle in Histogram","difficulty":"Hard"},
+          {"id":155,"slug":"min-stack","title":"Min Stack","difficulty":"Medium"},
+          {"id":394,"slug":"decode-string","title":"Decode String","difficulty":"Medium"},
+          {"id":739,"slug":"daily-temperatures","title":"Daily Temperatures","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Two Pointers",
+        questions: [
+          {"id":11,"slug":"container-with-most-water","title":"Container With Most Water","difficulty":"Medium"},
+          {"id":15,"slug":"3sum","title":"3Sum","difficulty":"Medium"},
+          {"id":42,"slug":"trapping-rain-water","title":"Trapping Rain Water","difficulty":"Hard"},
+          {"id":283,"slug":"move-zeroes","title":"Move Zeroes","difficulty":"Easy"},
+        ],
+      },
+      {
+        name: "Trie",
+        questions: [
+          {"id":208,"slug":"implement-trie-prefix-tree","title":"Implement Trie (Prefix Tree)","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Misc",
+        questions: [
+          {"id":31,"slug":"next-permutation","title":"Next Permutation","difficulty":"Medium"},
+          {"id":41,"slug":"first-missing-positive","title":"First Missing Positive","difficulty":"Hard"},
+          {"id":53,"slug":"maximum-subarray","title":"Maximum Subarray","difficulty":"Medium"},
+          {"id":56,"slug":"merge-intervals","title":"Merge Intervals","difficulty":"Medium"},
+          {"id":75,"slug":"sort-colors","title":"Sort Colors","difficulty":"Medium"},
+          {"id":136,"slug":"single-number","title":"Single Number","difficulty":"Easy"},
+          {"id":169,"slug":"majority-element","title":"Majority Element","difficulty":"Easy"},
+          {"id":189,"slug":"rotate-array","title":"Rotate Array","difficulty":"Medium"},
+          {"id":238,"slug":"product-of-array-except-self","title":"Product of Array Except Self","difficulty":"Medium"},
+          {"id":287,"slug":"find-the-duplicate-number","title":"Find the Duplicate Number","difficulty":"Medium"},
+        ],
+      },
+    ],
+  },
+  {
+    slug: "dynamic-programming",
+    name: "Dynamic Programming",
+    groups: [
+      {
+        name: "Fibonacci style",
+        questions: [
+          {"id":70,"slug":"climbing-stairs","title":"Climbing Stairs","difficulty":"Easy"},
+          {"id":509,"slug":"fibonacci-number","title":"Fibonacci Number","difficulty":"Easy"},
+          {"id":1137,"slug":"n-th-tribonacci-number","title":"N-th Tribonacci Number","difficulty":"Easy"},
+          {"id":746,"slug":"min-cost-climbing-stairs","title":"Min Cost Climbing Stairs","difficulty":"Easy"},
+          {"id":198,"slug":"house-robber","title":"House Robber","difficulty":"Medium"},
+          {"id":740,"slug":"delete-and-earn","title":"Delete and Earn","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Matrix",
+        questions: [
+          {"id":62,"slug":"unique-paths","title":"Unique Paths","difficulty":"Medium"},
+          {"id":64,"slug":"minimum-path-sum","title":"Minimum Path Sum","difficulty":"Medium"},
+          {"id":63,"slug":"unique-paths-ii","title":"Unique Paths II","difficulty":"Medium"},
+          {"id":120,"slug":"triangle","title":"Triangle","difficulty":"Medium"},
+          {"id":931,"slug":"minimum-falling-path-sum","title":"Minimum Falling Path Sum","difficulty":"Medium"},
+          {"id":221,"slug":"maximal-square","title":"Maximal Square","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "On Strings",
+        questions: [
+          {"id":5,"slug":"longest-palindromic-substring","title":"Longest Palindromic Substring","difficulty":"Medium"},
+          {"id":139,"slug":"word-break","title":"Word Break","difficulty":"Medium"},
+          {"id":516,"slug":"longest-palindromic-subsequence","title":"Longest Palindromic Subsequence","difficulty":"Medium"},
+          {"id":72,"slug":"edit-distance","title":"Edit Distance","difficulty":"Medium"},
+          {"id":712,"slug":"minimum-ascii-delete-sum-for-two-strings","title":"Minimum ASCII Delete Sum for Two Strings","difficulty":"Medium"},
+          {"id":115,"slug":"distinct-subsequences","title":"Distinct Subsequences","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Longest Increasing Subsequence",
+        questions: [
+          {"id":300,"slug":"longest-increasing-subsequence","title":"Longest Increasing Subsequence","difficulty":"Medium"},
+          {"id":673,"slug":"number-of-longest-increasing-subsequence","title":"Number of Longest Increasing Subsequence","difficulty":"Medium"},
+          {"id":646,"slug":"maximum-length-of-pair-chain","title":"Maximum Length of Pair Chain","difficulty":"Medium"},
+          {"id":1218,"slug":"longest-arithmetic-subsequence-of-given-difference","title":"Longest Arithmetic Subsequence of Given Difference","difficulty":"Medium"},
+          {"id":1027,"slug":"longest-arithmetic-subsequence","title":"Longest Arithmetic Subsequence","difficulty":"Medium"},
+          {"id":354,"slug":"russian-doll-envelopes","title":"Russian Doll Envelopes","difficulty":"Hard"},
+          {"id":1964,"slug":"find-the-longest-valid-obstacle-course-at-each-position","title":"Find the Longest Valid Obstacle Course at Each Position","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Longest Common Subsequence",
+        questions: [
+          {"id":1143,"slug":"longest-common-subsequence","title":"Longest Common Subsequence","difficulty":"Medium"},
+          {"id":1035,"slug":"uncrossed-lines","title":"Uncrossed Lines","difficulty":"Medium"},
+          {"id":1312,"slug":"minimum-insertion-steps-to-make-a-string-palindrome","title":"Minimum Insertion Steps to Make a String Palindrome","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Best Time to Buy & Sell Stock / State Machine",
+        questions: [
+          {"id":309,"slug":"best-time-to-buy-and-sell-stock-with-cooldown","title":"Best Time to Buy and Sell Stock with Cooldown","difficulty":"Medium"},
+          {"id":714,"slug":"best-time-to-buy-and-sell-stock-with-transaction-fee","title":"Best Time to Buy and Sell Stock with Transaction Fee","difficulty":"Medium"},
+          {"id":123,"slug":"best-time-to-buy-and-sell-stock-iii","title":"Best Time to Buy and Sell Stock III","difficulty":"Hard"},
+          {"id":188,"slug":"best-time-to-buy-and-sell-stock-iv","title":"Best Time to Buy and Sell Stock IV","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "On Trees",
+        questions: [
+          {"id":96,"slug":"unique-binary-search-trees","title":"Unique Binary Search Trees","difficulty":"Medium"},
+          {"id":95,"slug":"unique-binary-search-trees-ii","title":"Unique Binary Search Trees II","difficulty":"Medium"},
+          {"id":337,"slug":"house-robber-iii","title":"House Robber III","difficulty":"Medium"},
+          {"id":124,"slug":"binary-tree-maximum-path-sum","title":"Binary Tree Maximum Path Sum","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Knapsack",
+        questions: [
+          {"id":279,"slug":"perfect-squares","title":"Perfect Squares","difficulty":"Medium"},
+          {"id":518,"slug":"coin-change-ii","title":"Coin Change II","difficulty":"Medium"},
+          {"id":377,"slug":"combination-sum-iv","title":"Combination Sum IV","difficulty":"Medium"},
+          {"id":474,"slug":"ones-and-zeroes","title":"Ones and Zeroes","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "General 1D",
+        questions: [
+          {"id":2140,"slug":"solving-questions-with-brainpower","title":"Solving Questions With Brainpower","difficulty":"Medium"},
+          {"id":322,"slug":"coin-change","title":"Coin Change","difficulty":"Medium"},
+          {"id":2466,"slug":"count-ways-to-build-good-strings","title":"Count Ways To Build Good Strings","difficulty":"Medium"},
+          {"id":91,"slug":"decode-ways","title":"Decode Ways","difficulty":"Medium"},
+          {"id":983,"slug":"minimum-cost-for-tickets","title":"Minimum Cost For Tickets","difficulty":"Medium"},
+          {"id":790,"slug":"domino-and-tromino-tiling","title":"Domino and Tromino Tiling","difficulty":"Medium"},
+        ],
+      },
+    ],
+  },
+  {
+    slug: "graph-theory",
+    name: "Graph Theory",
+    groups: [
+      {
+        name: "Standard Traversal",
+        questions: [
+          {"id":547,"slug":"number-of-provinces","title":"Number of Provinces","difficulty":"Medium"},
+          {"id":802,"slug":"find-eventual-safe-states","title":"Find Eventual Safe States","difficulty":"Medium"},
+          {"id":841,"slug":"keys-and-rooms","title":"Keys and Rooms","difficulty":"Medium"},
+          {"id":1129,"slug":"shortest-path-with-alternating-colors","title":"Shortest Path with Alternating Colors","difficulty":"Medium"},
+          {"id":1376,"slug":"time-needed-to-inform-all-employees","title":"Time Needed to Inform All Employees","difficulty":"Medium"},
+          {"id":1466,"slug":"reorder-routes-to-make-all-paths-lead-to-the-city-zero","title":"Reorder Routes to Make All Paths Lead to the City Zero","difficulty":"Medium"},
+          {"id":797,"slug":"all-paths-from-source-to-target","title":"All Paths From Source to Target","difficulty":"Medium"},
+          {"id":1192,"slug":"critical-connections-in-a-network","title":"Critical Connections in a Network","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "BFS",
+        questions: [
+          {"id":1926,"slug":"nearest-exit-from-entrance-in-maze","title":"Nearest Exit from Entrance in Maze","difficulty":"Medium"},
+          {"id":934,"slug":"shortest-bridge","title":"Shortest Bridge","difficulty":"Medium"},
+          {"id":433,"slug":"minimum-genetic-mutation","title":"Minimum Genetic Mutation","difficulty":"Medium"},
+          {"id":127,"slug":"word-ladder","title":"Word Ladder","difficulty":"Hard"},
+          {"id":1306,"slug":"jump-game-iii","title":"Jump Game III","difficulty":"Medium"},
+          {"id":542,"slug":"01-matrix","title":"01 Matrix","difficulty":"Medium"},
+          {"id":1091,"slug":"shortest-path-in-binary-matrix","title":"Shortest Path in Binary Matrix","difficulty":"Medium"},
+          {"id":863,"slug":"all-nodes-distance-k-in-binary-tree","title":"All Nodes Distance K in Binary Tree","difficulty":"Medium"},
+          {"id":864,"slug":"shortest-path-to-get-all-keys","title":"Shortest Path to Get All Keys","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Matrix Graphs",
+        questions: [
+          {"id":200,"slug":"number-of-islands","title":"Number of Islands","difficulty":"Medium"},
+          {"id":1020,"slug":"number-of-enclaves","title":"Number of Enclaves","difficulty":"Medium"},
+          {"id":1254,"slug":"number-of-closed-islands","title":"Number of Closed Islands","difficulty":"Medium"},
+          {"id":695,"slug":"max-area-of-island","title":"Max Area of Island","difficulty":"Medium"},
+          {"id":417,"slug":"pacific-atlantic-water-flow","title":"Pacific Atlantic Water Flow","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Graph Theory",
+        questions: [
+          {"id":997,"slug":"find-the-town-judge","title":"Find the Town Judge","difficulty":"Easy"},
+          {"id":1557,"slug":"minimum-number-of-vertices-to-reach-all-nodes","title":"Minimum Number of Vertices to Reach All Nodes","difficulty":"Medium"},
+          {"id":1615,"slug":"maximal-network-rank","title":"Maximal Network Rank","difficulty":"Medium"},
+          {"id":785,"slug":"is-graph-bipartite","title":"Is Graph Bipartite?","difficulty":"Medium"},
+          {"id":261,"slug":"graph-valid-tree","title":"Graph Valid Tree","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Union Find / DSU",
+        questions: [
+          {"id":721,"slug":"accounts-merge","title":"Accounts Merge","difficulty":"Medium"},
+          {"id":990,"slug":"satisfiability-of-equality-equations","title":"Satisfiability of Equality Equations","difficulty":"Medium"},
+          {"id":1061,"slug":"lexicographically-smallest-equivalent-string","title":"Lexicographically Smallest Equivalent String","difficulty":"Medium"},
+          {"id":839,"slug":"similar-string-groups","title":"Similar String Groups","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Topological Sort",
+        questions: [
+          {"id":207,"slug":"course-schedule","title":"Course Schedule","difficulty":"Medium"},
+          {"id":210,"slug":"course-schedule-ii","title":"Course Schedule II","difficulty":"Medium"},
+          {"id":269,"slug":"alien-dictionary","title":"Alien Dictionary","difficulty":"Hard"},
+          {"id":1203,"slug":"sort-items-by-groups-respecting-dependencies","title":"Sort Items by Groups Respecting Dependencies","difficulty":"Hard"},
+          {"id":1857,"slug":"largest-color-value-in-a-directed-graph","title":"Largest Color Value in a Directed Graph","difficulty":"Hard"},
+        ],
+      },
+    ],
+  },
+  {
+    slug: "binary-search",
+    name: "Binary Search",
+    groups: [
+      {
+        name: "Search In Array",
+        questions: [
+          {"id":704,"slug":"binary-search","title":"Binary Search","difficulty":"Easy"},
+          {"id":35,"slug":"search-insert-position","title":"Search Insert Position","difficulty":"Easy"},
+          {"id":744,"slug":"find-smallest-letter-greater-than-target","title":"Find Smallest Letter Greater Than Target","difficulty":"Easy"},
+          {"id":1351,"slug":"count-negative-numbers-in-a-sorted-matrix","title":"Count Negative Numbers in a Sorted Matrix","difficulty":"Easy"},
+          {"id":34,"slug":"find-first-and-last-position-of-element-in-sorted-array","title":"Find First and Last Position of Element in Sorted Array","difficulty":"Medium"},
+          {"id":436,"slug":"find-right-interval","title":"Find Right Interval","difficulty":"Medium"},
+          {"id":981,"slug":"time-based-key-value-store","title":"Time Based Key-Value Store","difficulty":"Medium"},
+          {"id":1146,"slug":"snapshot-array","title":"Snapshot Array","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Rotated Array",
+        questions: [
+          {"id":33,"slug":"search-in-rotated-sorted-array","title":"Search in Rotated Sorted Array","difficulty":"Medium"},
+          {"id":153,"slug":"find-minimum-in-rotated-sorted-array","title":"Find Minimum in Rotated Sorted Array","difficulty":"Medium"},
+          {"id":154,"slug":"find-minimum-in-rotated-sorted-array-ii","title":"Find Minimum in Rotated Sorted Array II","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "Standard Search",
+        questions: [
+          {"id":374,"slug":"guess-number-higher-or-lower","title":"Guess Number Higher or Lower","difficulty":"Easy"},
+          {"id":278,"slug":"first-bad-version","title":"First Bad Version","difficulty":"Easy"},
+          {"id":74,"slug":"search-a-2d-matrix","title":"Search a 2D Matrix","difficulty":"Medium"},
+          {"id":702,"slug":"search-in-a-sorted-array-of-unknown-size","title":"Search in a Sorted Array of Unknown Size","difficulty":"Medium"},
+          {"id":1533,"slug":"find-the-index-of-the-large-integer","title":"Find the Index of the Large Integer","difficulty":"Medium"},
+        ],
+      },
+      {
+        name: "Math",
+        questions: [
+          {"id":367,"slug":"valid-perfect-square","title":"Valid Perfect Square","difficulty":"Easy"},
+          {"id":69,"slug":"sqrtx","title":"Sqrt(x)","difficulty":"Easy"},
+          {"id":441,"slug":"arranging-coins","title":"Arranging Coins","difficulty":"Easy"},
+        ],
+      },
+      {
+        name: "Tricky Invariant",
+        questions: [
+          {"id":1539,"slug":"kth-missing-positive-number","title":"Kth Missing Positive Number","difficulty":"Easy"},
+          {"id":275,"slug":"h-index-ii","title":"H-Index II","difficulty":"Medium"},
+          {"id":540,"slug":"single-element-in-a-sorted-array","title":"Single Element in a Sorted Array","difficulty":"Medium"},
+          {"id":852,"slug":"peak-index-in-a-mountain-array","title":"Peak Index in a Mountain Array","difficulty":"Medium"},
+          {"id":658,"slug":"find-k-closest-elements","title":"Find K Closest Elements","difficulty":"Medium"},
+          {"id":4,"slug":"median-of-two-sorted-arrays","title":"Median of Two Sorted Arrays","difficulty":"Hard"},
+        ],
+      },
+      {
+        name: "As A Tool",
+        questions: [
+          {"id":1099,"slug":"two-sum-less-than-k","title":"Two Sum Less Than K","difficulty":"Easy"},
+          {"id":611,"slug":"valid-triangle-number","title":"Valid Triangle Number","difficulty":"Medium"},
+          {"id":2300,"slug":"successful-pairs-of-spells-and-potions","title":"Successful Pairs of Spells and Potions","difficulty":"Medium"},
+          {"id":1498,"slug":"number-of-subsequences-that-satisfy-the-given-sum-condition","title":"Number of Subsequences That Satisfy the Given Sum Condition","difficulty":"Medium"},
+          {"id":528,"slug":"random-pick-with-weight","title":"Random Pick with Weight","difficulty":"Medium"},
+          {"id":300,"slug":"longest-increasing-subsequence","title":"Longest Increasing Subsequence","difficulty":"Medium"},
+          {"id":354,"slug":"russian-doll-envelopes","title":"Russian Doll Envelopes","difficulty":"Hard"},
+        ],
+      },
+    ],
+  },
 ];

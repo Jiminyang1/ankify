@@ -1,5 +1,5 @@
 /**
- * Hand-drawn roadmap for Top Interview 150, keyed by LeetCode's group names.
+ * Roadmap layouts. Top Interview 150 is hand-drawn, keyed by LeetCode's group names.
  * `x` is the node's horizontal center as a fraction of the width; `row` is its
  * row, top to bottom. Edges read "builds on", NeetCode-roadmap style. A group
  * LeetCode adds later without a layout entry lands in an extra bottom row.
@@ -56,19 +56,59 @@ export const ROADMAP_EDGES: readonly (readonly [string, string])[] = [
   ["Bit Manipulation", "Math"],
 ];
 
-/** Layout for the given groups, with unknown groups spread over a new last row. */
-export function roadmapLayout(groupNames: readonly string[]) {
-  const lastRow = Math.max(...Object.values(ROADMAP_NODES).map((node) => node.row));
-  const unknown = groupNames.filter((name) => !ROADMAP_NODES[name]);
+export type RoadmapEdge = { from: string; to: string; kind: "down" | "side" };
+
+export type RoadmapLayout = {
+  positions: Map<string, { x: number; row: number }>;
+  rows: number;
+  edges: RoadmapEdge[];
+};
+
+/** Plans with a hand-drawn layout; every other plan walks a snake path. */
+const HAND_DRAWN: Record<string, { nodes: typeof ROADMAP_NODES; edges: typeof ROADMAP_EDGES }> = {
+  "top-interview-150": { nodes: ROADMAP_NODES, edges: ROADMAP_EDGES },
+};
+
+export function roadmapLayout(planSlug: string, groupNames: readonly string[]): RoadmapLayout {
+  const hand = HAND_DRAWN[planSlug];
+  return hand ? handDrawnLayout(hand, groupNames) : pathLayout(groupNames);
+}
+
+/** Hand-drawn positions; groups LeetCode adds later spread over a new last row. */
+function handDrawnLayout(
+  hand: { nodes: typeof ROADMAP_NODES; edges: typeof ROADMAP_EDGES },
+  groupNames: readonly string[],
+): RoadmapLayout {
+  const lastRow = Math.max(...Object.values(hand.nodes).map((node) => node.row));
+  const unknown = groupNames.filter((name) => !hand.nodes[name]);
   const positions = new Map<string, { x: number; row: number }>();
   for (const name of groupNames) {
-    const known = ROADMAP_NODES[name];
+    const known = hand.nodes[name];
     if (known) positions.set(name, known);
   }
   unknown.forEach((name, index) => positions.set(name, { x: (index + 1) / (unknown.length + 1), row: lastRow + 1 }));
   return {
     positions,
     rows: lastRow + 1 + (unknown.length > 0 ? 1 : 0),
-    edges: ROADMAP_EDGES.filter(([from, to]) => positions.has(from) && positions.has(to)),
+    edges: hand.edges
+      .filter(([from, to]) => positions.has(from) && positions.has(to))
+      .map(([from, to]) => ({ from, to, kind: "down" as const })),
   };
+}
+
+const PATH_COLUMNS = [0.2, 0.5, 0.8];
+
+/** Plan order as a snake: three per row, alternating direction, so each
+ *  step is either sideways within a row or straight down at a row's end. */
+function pathLayout(groupNames: readonly string[]): RoadmapLayout {
+  const positions = new Map<string, { x: number; row: number }>();
+  const edges: RoadmapEdge[] = [];
+  groupNames.forEach((name, index) => {
+    const row = Math.floor(index / PATH_COLUMNS.length);
+    const column = index % PATH_COLUMNS.length;
+    const x = row % 2 === 0 ? PATH_COLUMNS[column]! : PATH_COLUMNS[PATH_COLUMNS.length - 1 - column]!;
+    positions.set(name, { x, row });
+    if (index > 0) edges.push({ from: groupNames[index - 1]!, to: name, kind: column === 0 ? "down" : "side" });
+  });
+  return { positions, rows: Math.ceil(groupNames.length / PATH_COLUMNS.length), edges };
 }

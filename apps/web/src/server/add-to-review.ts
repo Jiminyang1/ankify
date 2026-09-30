@@ -1,8 +1,8 @@
 import type { CaptureProblemInput } from "@ankify/contracts";
-import { STUDY_PLAN } from "@ankify/core";
 import { z } from "zod";
 import { captureProblem } from "@/server/capture";
 import { leetcodeGraphql } from "@/server/leetcode-graphql";
+import { studyPlanSlugsForUser } from "@/server/study-plans";
 
 /**
  * "Add to review" for plan problems solved on LeetCode but not in the deck:
@@ -10,7 +10,6 @@ import { leetcodeGraphql } from "@/server/leetcode-graphql";
  * need the user's LeetCode login; the extension syncs them on the next visit).
  */
 
-const PLAN_SLUGS = new Set(STUDY_PLAN.groups.flatMap((group) => group.questions.map((q) => q.slug)));
 const CONCURRENCY = 4;
 
 const QUESTION_QUERY = `query ankifyQuestion($slug: String!) {
@@ -63,7 +62,8 @@ export async function addPlanProblemsToReview(
   userId: string,
   slugs: string[],
 ): Promise<{ added: string[]; failed: string[]; limitReached: boolean }> {
-  const queue = [...new Set(slugs)].filter((slug) => PLAN_SLUGS.has(slug));
+  const planSlugs = await studyPlanSlugsForUser(userId);
+  const queue = [...new Set(slugs)].filter((slug) => planSlugs.has(slug));
   const added: string[] = [];
   const failed: string[] = [];
   let limitReached = false;

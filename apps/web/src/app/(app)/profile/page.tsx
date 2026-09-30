@@ -9,6 +9,7 @@ import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { loadProfile } from "@/server/profile";
 import { ProfileGuide } from "./guide";
 import { LeetcodeCard } from "./leetcode-card";
+import { PlanPicker } from "./plan-picker";
 import { Roadmap } from "./roadmap";
 import { StatusBar } from "./status-bar";
 import { STATUS_ORDER, STATUS_SWATCH } from "./status-style";
@@ -27,7 +28,11 @@ export default async function ProfilePage() {
 
   return (
     <PageFrame width="wide" className="space-y-6">
-      <PageHeader title={copy.title} description={copy.subtitle(data.plan.name)} />
+      <PageHeader
+        title={copy.title}
+        description={copy.subtitle(data.plan.name)}
+        actions={<PlanPicker plans={data.plans} current={data.plan} />}
+      />
 
       <Surface className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0">
@@ -84,7 +89,7 @@ export default async function ProfilePage() {
 
       <ProfileGuide solvedSynced={data.solvedSync != null} />
 
-      <Roadmap groups={data.groups} nextSlug={data.next?.slug ?? null} />
+      <Roadmap planSlug={data.plan.slug} groups={data.groups} nextSlug={data.next?.slug ?? null} />
 
       <section id="leetcode" className="space-y-2">
         <LeetcodeCard account={data.leetcode} stale={data.leetcodeStale} />
