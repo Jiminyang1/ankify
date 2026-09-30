@@ -601,10 +601,11 @@ export function LanguageRegionSettingsForm({
   );
 }
 
-export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number } }) {
+export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: number; initialReviewDelayHours: number } }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [dailyReviewLimit, setDailyReviewLimit] = useState(initial.dailyReviewLimit);
+  const [initialReviewDelayHours, setInitialReviewDelayHours] = useState(initial.initialReviewDelayHours);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -616,7 +617,7 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dailyReviewLimit }),
+        body: JSON.stringify({ dailyReviewLimit, initialReviewDelayHours }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
@@ -646,6 +647,22 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         />
       </div>
 
+      <div className="max-w-sm space-y-1">
+        <div className="flex items-center gap-1.5 text-sm">
+          <label htmlFor="initial-review-delay">{t.settings.initialReviewDelay}</label>
+          <InfoTip label={t.settings.initialReviewDelayHelp} align="left" />
+        </div>
+        <Input
+          id="initial-review-delay"
+          type="number"
+          min={1}
+          max={168}
+          value={initialReviewDelayHours}
+          onChange={(e) => setInitialReviewDelayHours(Number(e.target.value))}
+          className="tabular-nums"
+        />
+      </div>
+
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
         {msg && (
           <span className="mr-auto text-sm text-muted" role="status" aria-live="polite">
@@ -659,6 +676,95 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
           disabled={saving}
         >
           {saving ? t.common.saving : t.settings.saveReviewSettings}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Whether session analysis can run, and whether automation can be configured. */
+export type AnalysisAvailability = "disabled" | "needs_key" | "manual_only" | "automatic";
+
+export function AnalysisSettingsForm({
+  initial,
+  availability,
+}: {
+  initial: { automatic: boolean; dailyAutomaticLimit: number };
+  availability: AnalysisAvailability;
+}) {
+  const router = useRouter();
+  const { t } = useLanguage();
+  const [automatic, setAutomatic] = useState(initial.automatic);
+  const [dailyAutomaticLimit, setDailyAutomaticLimit] = useState(initial.dailyAutomaticLimit);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const limitId = useId();
+
+  if (availability !== "automatic") {
+    const text =
+      availability === "disabled" ? t.settings.analysisUnavailable
+      : availability === "needs_key" ? t.settings.analysisNeedsKey
+      : t.settings.analysisManualOnly;
+    return <p className="max-w-2xl text-sm leading-6 text-muted">{text}</p>;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ analysisAutomatic: automatic, analysisDailyAutomaticLimit: dailyAutomaticLimit }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setMsg(t.common.saved);
+      router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : t.settings.failedToSave);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="max-w-2xl space-y-5">
+      <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={automatic}
+          onChange={(event) => setAutomatic(event.target.checked)}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-accent"
+        />
+        <span>
+          {t.settings.analysisAutomatic}
+          <span className="mt-1 block text-muted">{t.settings.analysisAutomaticHelp}</span>
+        </span>
+      </label>
+      <div className="max-w-sm space-y-1">
+        <label htmlFor={limitId} className="text-sm">
+          {t.settings.analysisDailyLimit}
+        </label>
+        <Input
+          id={limitId}
+          type="number"
+          min={0}
+          max={5}
+          value={dailyAutomaticLimit}
+          disabled={!automatic}
+          onChange={(e) => setDailyAutomaticLimit(Number(e.target.value))}
+          className="tabular-nums"
+        />
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {msg && (
+          <span className="mr-auto text-sm text-muted" role="status" aria-live="polite">
+            {msg}
+          </span>
+        )}
+        <Button type="submit" variant="primary" className={SETTINGS_ACTION_CLASS} disabled={saving}>
+          {saving ? t.common.saving : t.settings.saveAnalysisSettings}
         </Button>
       </div>
     </form>

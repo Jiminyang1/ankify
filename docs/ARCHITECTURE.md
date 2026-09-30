@@ -395,8 +395,8 @@ extension reuses the web session cookie, and production CORS allows only
 onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
 Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
 `/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/analysis` FSRS dashboard,
-`/settings` (AI provider, AI credits, language/region, review schedule,
-account export/delete), plus `/privacy` and `/terms`.
+`/settings` (AI provider, AI credits, language/region, review schedule and
+first-review delay, session-analysis automation, account export/delete), plus `/privacy` and `/terms`.
 
 ## Testing
 

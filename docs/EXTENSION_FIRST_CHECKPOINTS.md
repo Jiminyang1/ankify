@@ -784,3 +784,40 @@ Recorded exceptions:
 
 Rollback: `ANKIFY_DISABLED_WORKFLOWS=suggestions` hides the popup section.
 `set_baseline` without `problem` behaves exactly as before.
+
+## Checkpoint 6A.1: settings for the extension-first workflow
+
+Status: **PASS**. No schema or API change: the settings route already
+accepted these fields.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 481 tests in 76 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 21 tests (two new web settings tests) |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+- Review schedule gains "First review after (hours)" (1 to 168), the
+  initial-review delay of Phase 2.
+- A new "Session analysis" section.
+  - It states that analysis uses only the user's own key.
+  - It offers the automatic-analysis toggle and daily limit (0 to 5) only
+    when:
+    - the deployment enables automatic analysis;
+    - analysis is not switched off;
+    - the user has a complete own configuration.
+  - Otherwise it explains which of those is missing.
+- Settings sections now carry an accessible name (`aria-label`).
+- English and Chinese strings.
+
+Browser tests:
+
+- save and reload the first-review delay;
+- the no-key explanation;
+- with a key, enable automatic analysis with a limit, checked through
+  `GET /api/settings`;
+- the page in Chinese.
+
+The local `next dev` server once took over ten minutes to compile
+`/settings` after an edit (seen as one hung run). The same test passed in
+3 to 5 s on rerun and in the gate.

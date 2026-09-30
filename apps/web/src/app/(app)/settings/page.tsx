@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requirePageUser } from "@/server/auth";
 import { getRequestTranslations } from "@/server/i18n";
-import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/server/settings";
+import { getAiSettings, getAnalysisSettings, getGenerationSettings, getReviewSettings } from "@/server/settings";
+import { isAutomaticAnalysisEnabled, isWorkflowEnabled } from "@/server/features";
 import { getHostedCreditStatus } from "@/server/ai-credits";
 import { CREDIT_PACKS } from "@/server/billing/config";
 import { confirmCheckoutReturn, listCreditPurchases } from "@/server/billing/credits";
@@ -10,6 +11,7 @@ import { CreditsSettingsForm, type BillingNotice } from "./credits-form";
 import {
   AccountDataForm,
   AiSettingsForm,
+  AnalysisSettingsForm,
   AppearanceSettingsForm,
   LanguageRegionSettingsForm,
   ReviewSettingsForm,
@@ -46,14 +48,21 @@ export default async function SettingsPage({
   const user = await requirePageUser();
   // Fulfill a returning Checkout before reading balances so they include it.
   const billingNotice = await resolveBillingNotice(user.id, await searchParams);
-  const [ai, credits, purchases, generation, review, t] = await Promise.all([
+  const [ai, credits, purchases, generation, review, analysis, t] = await Promise.all([
     getAiSettings(user.id),
     getHostedCreditStatus(user.id),
     listCreditPurchases(user.id),
     getGenerationSettings(user.id),
     getReviewSettings(user.id),
+    getAnalysisSettings(user.id),
     getRequestTranslations(),
   ]);
+  // Analysis runs only on the user's own complete configuration.
+  const analysisAvailability =
+    !isWorkflowEnabled("session_analysis") ? "disabled"
+    : !(ai.provider && ai.model && ai.encryptedApiKey) ? "needs_key"
+    : !isAutomaticAnalysisEnabled() ? "manual_only"
+    : "automatic";
   const starter = {
     enabled: credits.enabled,
     remaining: credits.starterRemaining,
@@ -150,7 +159,11 @@ export default async function SettingsPage({
           </SettingsSection>
 
           <SettingsSection title={t.settings.reviewSchedule}>
-            <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit }} />
+            <ReviewSettingsForm initial={{ dailyReviewLimit: review.dailyReviewLimit, initialReviewDelayHours: review.initialReviewDelayHours }} />
+          </SettingsSection>
+
+          <SettingsSection id="analysis" title={t.settings.sessionAnalysis} info={t.settings.sessionAnalysisHelp}>
+            <AnalysisSettingsForm initial={analysis} availability={analysisAvailability} />
           </SettingsSection>
 
           <SettingsSection title={t.settings.accountData}>
@@ -183,7 +196,7 @@ function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-20 p-5 sm:p-6">
+    <section id={id} aria-label={title} className="scroll-mt-20 p-5 sm:p-6">
       <div className="grid gap-5 lg:grid-cols-[11rem_minmax(0,1fr)] lg:gap-10">
         <div className="flex items-center gap-1.5 self-start">
           <h2 className="text-base font-semibold">{title}</h2>
