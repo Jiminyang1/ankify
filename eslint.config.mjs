@@ -8,5 +8,7 @@ import tseslint from "typescript-eslint";
 export default defineConfig([
   globalIgnores(["**/node_modules/**", "artifacts/**", "test-results/**", "playwright-report/**", "apps/**", "packages/db/drizzle/**"]),
   { files: ["**/*.mjs"], extends: [js.configs.recommended], languageOptions: { globals: globals.node } },
+  // Console snippets pasted into a LeetCode tab; `copy` is a DevTools helper.
+  { files: ["scripts/*.js"], extends: [js.configs.recommended], languageOptions: { globals: { ...globals.browser, copy: "readonly" } } },
   { files: ["**/*.ts"], extends: [tseslint.configs.recommended], languageOptions: { globals: { ...globals.node, ...globals.browser, chrome: "readonly" } } },
 ]);
