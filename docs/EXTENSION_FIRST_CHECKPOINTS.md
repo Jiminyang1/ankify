@@ -127,3 +127,73 @@ New tests: identical code under different ids across and within batches,
 enrichment without overwrite, cross-problem id conflict, id-less
 deduplication, and the per-problem cap. No migration. Rollback: revert the
 commit; no stored data changes shape.
+
+## Checkpoint 1.2: session schema and contracts (M1)
+
+Status: **PASS**. Commit `6bf6a8f`.
+
+Migration `0021_m1_practice_sessions` is additive (new tables, `ADD COLUMN`
+with defaults, new indexes; no table rebuild). It adds `practice_sessions`,
+`practice_session_submissions`, `practice_session_commands`,
+`problems.schedule_revision` (0) and `problems.enrollment` (`enrolled`), and
+session/policy/method/revision provenance on `review_events` (NULL for
+existing rows). Database-level invariants: one open session per problem, a
+composite foreign key pinning observations to their session's user and
+problem, one session per LeetCode submission id per user and site, an
+observation identity check, and at most one rating and one initial-scheduling
+event per session.
+
+The legacy rating route now advances `schedule_revision` (rating and Undo),
+records `legacy_self_recall_v1` / `self_recall` provenance, and refuses
+problems awaiting initial learning; the due condition excludes them. Pure
+session rules are in `@ankify/core`, wire contracts in `@ankify/contracts`.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 257 tests in 41 files |
+| `pnpm typecheck`, `pnpm lint`, `pnpm test:e2e`, `pnpm build`, manifest | PASS |
+
+Migration evidence: the protected-history test upgrades the 0019/0020
+fixtures through M1 and asserts unchanged rows, `schedule_revision = 0`,
+`enrollment = 'enrolled'`, NULL provenance, no observations, a clean
+`PRAGMA foreign_key_check`, and idempotent re-migration. The 0016 billing
+upgrade test now seeds with raw SQL (the ORM schema is newer than that
+database). Rollback: code can roll back freely; the additive schema stays.
+
+## Checkpoint 1.3: session lifecycle, API, and export
+
+Status: **PASS**. Commit `e267a7f`. **Phase 1 gate: PASS.**
+
+Routes: `POST/GET /api/practice-sessions`, `GET /api/practice-sessions/current`,
+`GET /api/practice-sessions/:id`, `POST .../:id/commands`,
+`POST .../:id/submissions`, all authenticated, validated by
+`@ankify/contracts`, returning DTOs, and rate limited (`sessions`, 120/min).
+Capture and session start share `server/problem-upsert.ts`. The export adds
+`practice_session` (without owner tokens) and `practice_session_submission`.
+`ANKIFY_DISABLED_WORKFLOWS` disables a workflow and removes it from
+capabilities; `practice_sessions` is advertised.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 295 tests in 46 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm test:e2e`, `pnpm build`, manifest | PASS |
+
+Tests added: 29 lifecycle/observation integration tests (initial learning
+creation, replay and payload conflicts, kind selection, resume and
+ownership, open-session conflicts, account mismatch, stale release,
+explicit rating supersession, heartbeats and timing caps, takeover, finish
+outcomes and clamping, abandon, defer/dismiss/expiry/supersession, baseline,
+user isolation, details and enrichment, historical and ambiguous
+placement, linking captured details, cross-session conflicts, the per-problem
+cap, late observations, pagination, export, and FSRS isolation); three race
+files (starts, duplicated finish, duplicated observation), each run three
+times; five route tests. Two deliberate mutations (dropping the finish
+owner check; accepting historical observations) each failed the suite.
+
+Acceptance: every distinct identified submission survives; duplicate delivery
+creates no extra submission, observation, or session; no session operation
+changes FSRS state or the schedule revision (asserted end to end). Old
+extension capture payloads are unchanged (browser suite).
+
+Not executed: live LeetCode validation (see checkpoint 0). Rollback: set
+`ANKIFY_DISABLED_WORKFLOWS=practice_sessions`; M1 and the identity fix stay.
