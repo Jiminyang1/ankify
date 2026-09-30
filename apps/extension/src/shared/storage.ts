@@ -1,4 +1,4 @@
-import type { ExtSettings } from "./messages";
+import type { ExtSettings, SolvedSyncState } from "./messages";
 
 export const SETTINGS_KEY = "ankify.settings";
 /** Map LeetCode slug → unsent draft text for "+ my card" (survives popup close). */
@@ -8,6 +8,7 @@ const DEFAULTS: ExtSettings = {
   apiBaseUrl: __ANKIFY_DEFAULT_API_ORIGIN__,
   language: "en",
   resetCodeOnProblemOpen: false,
+  autoCapture: true,
 };
 
 const MAX_DRAFT_KEYS = 48;
@@ -67,4 +68,35 @@ export async function setCardDraft(slug: string, text: string): Promise<void> {
 
 export async function clearCardDraft(slug: string): Promise<void> {
   await setCardDraft(slug, "");
+}
+
+const SOLVED_SYNC_KEY = "ankify.solvedSync";
+/** Session-scoped, per slug: submission ids already sent to ankify. The
+ *  server skips exact duplicates without storing their id, so without this
+ *  the same submission would be re-sent on every check. */
+const SENT_SUBMISSIONS_KEY = "ankify.sentSubmissions";
+const MAX_SENT_SLUGS = 64;
+
+export async function getSolvedSyncState(): Promise<SolvedSyncState | null> {
+  const r = await chrome.storage.local.get(SOLVED_SYNC_KEY);
+  return (r[SOLVED_SYNC_KEY] as SolvedSyncState | undefined) ?? null;
+}
+
+export async function setSolvedSyncState(state: SolvedSyncState): Promise<void> {
+  await chrome.storage.local.set({ [SOLVED_SYNC_KEY]: state });
+}
+
+export async function getSentSubmissionIds(slug: string): Promise<Set<string>> {
+  const r = await chrome.storage.session.get(SENT_SUBMISSIONS_KEY);
+  const map = (r[SENT_SUBMISSIONS_KEY] as Record<string, string[]> | undefined) ?? {};
+  return new Set(map[slug] ?? []);
+}
+
+export async function addSentSubmissionIds(slug: string, ids: string[]): Promise<void> {
+  const r = await chrome.storage.session.get(SENT_SUBMISSIONS_KEY);
+  const map = { ...((r[SENT_SUBMISSIONS_KEY] as Record<string, string[]> | undefined) ?? {}) };
+  map[slug] = [...new Set([...(map[slug] ?? []), ...ids])].slice(-200);
+  const slugs = Object.keys(map);
+  for (const stale of slugs.slice(0, Math.max(0, slugs.length - MAX_SENT_SLUGS))) delete map[stale];
+  await chrome.storage.session.set({ [SENT_SUBMISSIONS_KEY]: map });
 }

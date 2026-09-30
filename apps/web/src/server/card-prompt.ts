@@ -1,3 +1,4 @@
+import { leetcodeTagName } from "@ankify/core";
 import type { Problem, Submission } from "@ankify/db";
 import type { CardDraft } from "@ankify/contracts";
 import type { Language } from "@/lib/i18n";
@@ -41,7 +42,7 @@ function buildAiCardPromptContext(args: {
   sectionALines.push(`- **Slug**: \`${problem.leetcodeSlug}\``);
   sectionALines.push(`- **URL**: ${problem.url}`);
   if (problem.topicTags.length > 0) {
-    sectionALines.push(`- **Tags**: ${problem.topicTags.join(", ")}`);
+    sectionALines.push(`- **Tags**: ${problem.topicTags.map(leetcodeTagName).join(", ")}`);
   }
   if (problem.notes?.trim()) {
     sectionALines.push("### User notes");

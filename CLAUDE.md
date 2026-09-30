@@ -13,6 +13,7 @@ pnpm db:migrate             # apply migrations to local SQLite (packages/db/loca
 pnpm db:migrate:prod        # apply migrations to prod Turso (requires .env.production.local)
 pnpm db:studio              # drizzle-kit studio against local SQLite
 pnpm db:studio:prod         # drizzle-kit studio against prod Turso
+pnpm plans:sync             # re-snapshot LeetCode study plans into packages/core
 pnpm db:backup              # dump prod Turso into backups/ankify-prod-<ts>.db (gitignored; requires .env.production.local)
 
 pnpm dev                    # Next.js web app on :3000 (LOCAL profile)
@@ -54,7 +55,7 @@ Monorepo with three layers:
 
 **Quiz sessions table**: per-problem review quiz sessions with `status` (`active | completed | archived`), `itemsJson` (5 generated quiz items with source + scope), `answersJson`, `score`, timestamps, and cascade delete through `problemId`.
 
-**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key.
+**Settings table**: per-user key/value store keyed by `(userId, key)`. AI settings include provider/model plus an AES-GCM encrypted API key envelope; API responses expose only `hasApiKey`, never the raw key. `leetcode-account` holds the linked LeetCode username plus a cached copy of that user's public profile; `study-plan` holds the plan the profile tracks.
 
 ### `packages/core` - Shared business logic
 
@@ -62,6 +63,8 @@ Monorepo with three layers:
 - `types.ts`: shared TypeScript types (`LeetCodeDifficulty`, `AiProvider`, `FsrsRating`)
 - `schemas.ts`: Zod schemas for capture, card drafts, synchronous AI card generation/follow-up, manual cards, card updates, review rating, quiz generation (`generate | regenerate | nextBatch`), quiz answers, scoped quiz items, and quiz save-as-card
 - `quiz-format.ts`: small Markdown formatter that wraps complexity expressions, DP states, and code-like variables in inline code before rendering quiz text.
+- `leetcode-tags.ts`: LeetCode tag catalog keyed by slug. `leetcodeTagSlug()` maps any past name or slug to the canonical slug; `leetcodeTagName()` gives the current display name. `problems.topicTags` stores slugs (capture normalizes names from older extension builds), so render tags through `leetcodeTagName()`.
+- `study-plans.ts`: LeetCode's official study plans (Top Interview 150, LeetCode 75, Top 100 Liked) as the profile's learning path, from the snapshot in `study-plans.generated.ts` (regenerate with `pnpm plans:sync`; never edit by hand). `planProblemStatus()` classifies a plan problem as `mastered | learning | fading | solved | todo` from deck FSRS state and LeetCode evidence.
 
 ### `apps/web` - Next.js 16 App Router
 
@@ -80,6 +83,7 @@ Monorepo with three layers:
   - `problems/` - list problems with card counts. Supports `?search=` for title search and `?archived=1` to list archived problems instead of active ones.
   - `problems/[id]/` - PATCH accepts `{ notes }` (autosave from review) and/or `{ archived }` (sets/clears `archivedAt`; archived problems keep all data but leave the review rotation). DELETE permanently removes the problem and cascades to its submissions, cards, quiz sessions, and review events.
   - `problems/by-slug/[slug]/` - extension lookup by LeetCode slug. Returns problem, ready cards, candidates, FSRS previews, and queue state.
+  - `problems/by-slug/[slug]/submissions/` - GET the LeetCode submission ids already stored (404 when not captured); POST `{ submissions }` appends missing ones. Append-only: unlike `/api/capture` it never updates the problem row, so it can't un-archive.
   - `problems/[id]/user-card/` - POST saves a manual card directly as `ready` (just `question` + `answer`).
   - `problems/[id]/ai-cards/` - GET returns candidate/failed candidates. POST synchronously runs AI for `single/generate` (auto or from rawText) or `single/followup` with instruction. AI produces `candidate` drafts; user confirms to `ready`.
   - `problems/[id]/quiz/` - GET current non-archived quiz session; POST `{ action: "generate" | "regenerate" | "nextBatch" }`. `nextBatch` requires the current session to be completed, archives existing non-archived sessions, and uses recent completed quiz history for prompt context.
@@ -92,6 +96,9 @@ Monorepo with three layers:
   - `review/rate/` - records recall self-rating + applies FSRS scheduling to the problem. Notes written to `problems.notes`. The rated event stores a pre-rating FSRS snapshot in `metadata.undo`.
   - `review/undo/` - POST `{ problemId }` reverts the most recent rating: restores the problem's FSRS fields from the event's `metadata.undo` snapshot and stamps `undoneAt` on that event (guarded by `fsrsReps = prev.reps + 1` against races; events without the snapshot return 409).
   - `settings/` - session-only GET/POST AI provider/model/encrypted key + daily review limit. No prompt customization.
+  - `study-plan/` - session-only POST `{ plan }` to choose the study plan the profile tracks.
+  - `leetcode/solved/` - POST `{ username, slugs }` from the extension: the signed-in LeetCode user's full solved list (slugs only). Stored in `settings` (`leetcode-solved`) and links that LeetCode account; the profile counts these problems as solved.
+  - `leetcode/account/` - session-only. POST `{ profile }` (username or leetcode.com profile URL) verifies the user via LeetCode's public GraphQL and stores it; DELETE unlinks. leetcode.cn returns `unsupported_site`.
   - `settings/ai-test/` - session-only POST. Runs a tiny `generateObject` probe against the configured provider/model/key (or supplied overrides) to verify the connection. Returns `{ ok, latencyMs }` on success or `{ ok: false, code, message }` on failure with categorized error codes (`invalid_api_key`, `model_not_found`, `quota_or_rate_limit`, `timeout`, `network`, `forbidden`, `unknown`).
   - `settings/ai-models/` - session-only POST. Body `{ provider, apiKey? }`. Calls the provider's `/v1/models` endpoint (Anthropic / OpenAI / DeepSeek) and returns chat-capable model ids so the Settings UI doesn't go stale when providers ship new models. Falls back to the user's stored encrypted key when `apiKey` is omitted; OpenAI list is filtered against an embeddings/audio/image/moderation block list.
 - **`src/proxy.ts`**: lightweight auth gate and credentialed Chrome-extension CORS preflight handler (Next 16's `proxy` file convention; replaces the old `middleware.ts`). Web pages and extension API requests require the same Better Auth session cookie; API routes and server pages must still call the auth helpers above before touching data.
@@ -102,6 +109,8 @@ Monorepo with three layers:
   - `due-problems.ts`: shared due condition (`not archived` and `fsrs_due <= now` or null).
   - `review-queue.ts`: computes due count, done-today, remaining within daily limit.
   - `settings.ts`: reads/writes per-user AI and review settings to the `settings` k/v table. Default review limit 20; AI defaults to empty, and user API keys are AES-GCM encrypted with `AI_KEY_ENCRYPTION_SECRET`. `getAiRuntimeSettings()` returns the user's own settings, or the starter-credit settings (`source: "starter"`) when the user has none and `ANKIFY_STARTER_AI_API_KEY` is set.
+  - `leetcode-account.ts`: parses profile links and fetches the public LeetCode profile (solved counts, streak, latest 20 accepted). Refetches after 12h and serves the cache when LeetCode fails. Never sends or stores a LeetCode session; login-only data (full solved list) belongs in the extension.
+  - `profile.ts`: `loadProfile()` maps every problem in the chosen study plan to a status, and picks the current stage (first group with an unstarted problem) and next problem.
   - `rate-limit.ts`: atomic database-backed fixed-window limiter keyed by `userId` for AI and capture paths. Hard storage caps also limit problems, submissions, cards, and quiz sessions per user/problem.
 - **Pages**:
   - `/` - home: due queue, progress, daily stats
@@ -109,20 +118,26 @@ Monorepo with three layers:
   - `/problems` - list with difficulty/state/tag/search filters; the state filter's `Archived` option refetches with `?archived=1`
   - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline, Archive/Unarchive (archived problems hide the Review button and show a notice)
   - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
+  - `/profile` - progress through the chosen LeetCode study plan: status counts, "up next" (current stage + next problem, review fading), a map with one row per plan group and one square per problem (rows expand into the problem list with Review/Open/LeetCode actions), and the LeetCode account link
   - `/settings` - AI provider configuration + daily review limit
 
 ### `apps/extension` - Chrome MV3 Extension
 
 - **Content script** (`content/leetcode.ts`): scrapes LeetCode problem pages via their GraphQL endpoint - fetches problem metadata, recent submissions, and submission details (code, status, failures). Falls back from `questionSubmissionList` to legacy `submissionList`.
-- **Capture badge** (`content/capture-badge.ts` + background): the content script watches the SPA URL (plus a 60s in-place re-check) and reports `{ slug, hasAccepted }`; the background worker checks `/api/problems/by-slug` (60s in-memory cache) and sets a per-tab gold `!` action badge when a problem has an accepted submission but isn't captured. Missing config or API errors never badge. A successful capture from the popup sends `capture_badge_captured` to clear matching tabs.
-- **Background** (`background/index.ts`): MV3 service worker — side-panel behavior plus the capture-badge message handler.
+- **Problem watch** (`content/problem-watch.ts` + background): the content script watches the SPA URL (plus a 60s in-place re-check and quick re-checks after Submit / Cmd+Enter) and reports the problem's recent submissions. The background worker looks the slug up via `/api/problems/by-slug/[slug]/submissions` (60s in-memory cache), then:
+  - sets a per-tab gold `!` badge when the problem has an Accepted submission but isn't captured;
+  - auto-captures it when a *new* Accepted lands (made while the page was open, or within 10 minutes) and the `autoCapture` setting is on (default). Opening an old solved problem never auto-captures;
+  - posts any submissions ankify is missing for captured problems to the append-only endpoint. Ids already sent are remembered in `chrome.storage.session`.
+  Missing config, sign-out, and API errors never badge or capture. A successful capture from the popup sends `capture_badge_captured` to clear matching tabs.
+- **Solved-list sync**: once a day (or via popup Settings "Sync now"), a problem page reads the signed-in user's solved list from LeetCode's same-origin `/api/problems/all/` (GraphQL `questionList` status filter as fallback) and the background posts the slugs to `/api/leetcode/solved`. No LeetCode cookie or code leaves the browser.
+- **Background** (`background/index.ts`): MV3 service worker — side-panel behavior, problem-page handling, and solved-list sync.
 - **Popup** (`popup/`):
   - Top nav: `Today`, `Problem`, `Settings`.
   - Theme control: `System`, `Light`, `Dark`.
   - `Problem` has compact `Review` / `Manage` modes.
   - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation is synchronous; if the user switches tabs while generation is pending, the Quiz tab shows pending state until the session appears. Completed quizzes can create a new batch and bulk-create cards for missed items.
   - `Manage` contains manual card creation, synchronous AI candidate generation/follow-up/confirm/discard, pending-state preservation for in-flight AI calls, and existing card management.
-  - `Settings` stores only the API base URL and preferences. Test connection calls `/api/me` with the shared web session and shows the signed-in email.
+  - `Settings` stores only the API base URL and preferences (including `autoCapture`), shows LeetCode solved-list sync status with a Sync now button, and Test connection calls `/api/me` with the shared web session to show the signed-in email.
   - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
 

@@ -303,3 +303,22 @@ export const quizAnswerRequestSchema = z.object({
 export const quizSaveCardRequestSchema = z.object({
   itemId: z.string().min(1),
 });
+
+/** POST /api/leetcode/account — a LeetCode username or profile URL. */
+export const leetcodeAccountLinkSchema = z.object({
+  profile: z.string().trim().min(1).max(200),
+});
+
+/** POST /api/problems/by-slug/:slug/submissions — append-only sync of
+ *  submissions ankify is missing for an already-captured problem. */
+export const submissionSyncSchema = z.object({
+  submissions: z.array(captureSubmissionSchema).min(1).max(20),
+});
+
+/** POST /api/leetcode/solved — the extension's snapshot of every problem the
+ *  signed-in LeetCode user has solved. Slugs only; no code or session data. */
+export const leetcodeSolvedSyncSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  slugs: z.array(z.string().min(1).max(256)).max(6_000),
+});
+export type LeetcodeSolvedSyncInput = z.infer<typeof leetcodeSolvedSyncSchema>;

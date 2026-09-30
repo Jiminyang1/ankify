@@ -24,6 +24,8 @@ export const RATE_LIMITS = {
   ai: { limit: 20, windowMs: 60_000 },
   /** Capture writes: cheaper, but the extension can fire in bursts. */
   capture: { limit: 60, windowMs: 60_000 },
+  /** LeetCode account links: each one calls LeetCode's public GraphQL. */
+  leetcode: { limit: 10, windowMs: 60_000 },
 } as const;
 
 export async function checkRateLimit(

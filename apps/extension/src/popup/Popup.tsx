@@ -17,8 +17,16 @@ import type {
   QuizSessionDto as QuizSession,
   ReviewQueuePayloadDto as QueueResponse,
 } from "@ankify/contracts";
-import type { BackgroundRequest, ContentResponse, ExtSettings } from "../shared/messages";
-import { clearCardDraft, getCardDraft, getSettings, setCardDraft, setSettings } from "../shared/storage";
+import type { BackgroundRequest, ContentResponse, ExtSettings, SolvedSyncState } from "../shared/messages";
+import { encodeCapturePayload } from "../shared/capture-payload";
+import {
+  clearCardDraft,
+  getCardDraft,
+  getSettings,
+  getSolvedSyncState,
+  setCardDraft,
+  setSettings,
+} from "../shared/storage";
 import { PopupMarkdown } from "./PopupMarkdown";
 
 type LocalCandidate = ApiCard & {
@@ -253,6 +261,17 @@ const EXT_I18N = {
       reviewGuardHelp: "Keeps LeetCode problem pages clean while reviewing.",
       resetCode: "Reset code on problem pages",
       resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
+      leetcodeSync: "LeetCode sync",
+      autoCapture: "Auto-capture on Accepted",
+      autoCaptureHelp:
+        "When you get Accepted on a problem that isn't in ankify yet, capture it automatically. New submissions on problems you've captured always sync.",
+      solvedSynced: (count: number, when: string) => `Solved list synced ${when}: ${count} problems.`,
+      solvedNever: "Your LeetCode solved list syncs once a day when you open a problem page.",
+      solvedFailed: (error: string) => `Last sync failed (${error}).`,
+      syncNow: "Sync now",
+      syncing: "Syncing",
+      syncOpenLeetcode: "Open a LeetCode problem page first, then sync.",
+      syncLeetcodeSignedOut: "Sign in to LeetCode first, then sync.",
       testConnection: "Test connection",
       testing: "Testing...",
       checking: "Checking connection...",
@@ -446,6 +465,16 @@ const EXT_I18N = {
       reviewGuardHelp: "复习时保持 LeetCode 题目页干净。",
       resetCode: "打开题目时重置代码",
       resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
+      leetcodeSync: "LeetCode 同步",
+      autoCapture: "AC 后自动收录",
+      autoCaptureHelp: "在还没收录的题上拿到 Accepted 时，自动收录这道题。已收录题目的新提交会一直自动同步。",
+      solvedSynced: (count: number, when: string) => `已同步做题记录（${when}）：共 ${count} 道。`,
+      solvedNever: "打开 LeetCode 题目页时，每天自动同步一次你的做题记录。",
+      solvedFailed: (error: string) => `上次同步失败（${error}）。`,
+      syncNow: "立即同步",
+      syncing: "同步中",
+      syncOpenLeetcode: "请先打开一道 LeetCode 题目页，再同步。",
+      syncLeetcodeSignedOut: "请先登录 LeetCode，再同步。",
       testConnection: "测试连接",
       testing: "测试中...",
       checking: "正在检查连接...",
@@ -623,58 +652,6 @@ async function markExtensionConnected(apiBaseUrl: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "extension_connected" }),
   });
-}
-
-/* Per-field caps mirror packages/contracts/src/schemas.ts captureProblemSchema. */
-const CAPTURE_LIMITS = {
-  descriptionMd: 200_000,
-  code: 100_000,
-  output: 20_000,
-  errorMessage: 10_000,
-  submissions: 20,
-  requestBytes: 3_800_000,
-} as const;
-
-function clip(value: string | undefined, max: number): string | undefined {
-  if (value == null) return value;
-  return value.length > max ? value.slice(0, max) : value;
-}
-
-function trimCapturePayload(p: CaptureProblemInput): CaptureProblemInput {
-  return {
-    ...p,
-    descriptionMd: clip(p.descriptionMd, CAPTURE_LIMITS.descriptionMd),
-    submissions: p.submissions.slice(0, CAPTURE_LIMITS.submissions).map((s) => ({
-      ...s,
-      code: clip(s.code, CAPTURE_LIMITS.code) ?? "",
-      failedTestcase: clip(s.failedTestcase, CAPTURE_LIMITS.output),
-      expectedOutput: clip(s.expectedOutput, CAPTURE_LIMITS.output),
-      actualOutput: clip(s.actualOutput, CAPTURE_LIMITS.output),
-      errorMessage: clip(s.errorMessage, CAPTURE_LIMITS.errorMessage),
-    })),
-  };
-}
-
-function encodeCapturePayload(problem: CaptureProblemInput): string {
-  const payload = trimCapturePayload(problem);
-  let body = JSON.stringify(payload);
-  const encoder = new TextEncoder();
-
-  // Vercel Functions reject request bodies above 4.5 MB. Keep enough margin
-  // for UTF-8 expansion and platform framing by dropping the oldest captured
-  // submissions until the serialized request is safely below that ceiling.
-  while (
-    payload.submissions.length > 0 &&
-    encoder.encode(body).byteLength > CAPTURE_LIMITS.requestBytes
-  ) {
-    payload.submissions.pop();
-    body = JSON.stringify(payload);
-  }
-
-  if (encoder.encode(body).byteLength > CAPTURE_LIMITS.requestBytes) {
-    throw new Error("Capture payload is too large even without submissions.");
-  }
-  return body;
 }
 
 function isMissingContentScriptError(error: unknown): boolean {
@@ -3399,6 +3376,55 @@ function SettingsTab({
     message: "",
   });
   const apiBaseUrl = settings.apiBaseUrl.replace(/\/+$/, "");
+  const [solvedSync, setSolvedSync] = useState<SolvedSyncState | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getSolvedSyncState().then(setSolvedSync);
+  }, []);
+
+  async function syncSolvedNow() {
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) throw new Error(t.settings.syncOpenLeetcode);
+      let resp: ContentResponse;
+      try {
+        resp = (await chrome.tabs.sendMessage(tab.id, { type: "sync_solved_now" })) as ContentResponse;
+      } catch (error) {
+        throw isMissingContentScriptError(error) ? new Error(t.settings.syncOpenLeetcode) : error;
+      }
+      if (resp.type === "solved_synced") {
+        setSolvedSync(resp.result);
+      } else {
+        const message = resp.type === "error" ? resp.message : "Unexpected response";
+        throw new Error(message === "leetcode_signed_out" ? t.settings.syncLeetcodeSignedOut : message);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const solvedSyncText = syncError
+    ? syncError
+    : !solvedSync
+      ? t.settings.solvedNever
+      : solvedSync.ok
+        ? t.settings.solvedSynced(
+            solvedSync.count,
+            new Date(solvedSync.at).toLocaleString(settings.language === "zh" ? "zh-CN" : "en-US", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+          )
+        : t.settings.solvedFailed(solvedSync.error);
+  const solvedSyncKind = syncError || (solvedSync && !solvedSync.ok) ? "error" : solvedSync ? "success" : "loading";
 
   async function testConnection() {
     setTestState({ kind: "loading", message: t.settings.checking });
@@ -3504,6 +3530,37 @@ function SettingsTab({
               <span aria-hidden="true" />
             </label>
           </div>
+        </div>
+      </section>
+
+      <section className="settings-module panel" aria-labelledby="settings-leetcode-sync">
+        <div className="settings-module-head">
+          <SettingsTitle as="strong" id="settings-leetcode-sync">
+            {t.settings.leetcodeSync}
+          </SettingsTitle>
+        </div>
+        <div className="settings-preference-list">
+          <div className="settings-preference-row">
+            <div className="settings-preference-copy">
+              <SettingsTitle info={t.settings.autoCaptureHelp}>{t.settings.autoCapture}</SettingsTitle>
+            </div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={settings.autoCapture}
+                onChange={(e) => onSave({ autoCapture: e.target.checked })}
+                aria-label={t.settings.autoCapture}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+        </div>
+        <p className={`connection-status connection-status-${solvedSyncKind}`}>{solvedSyncText}</p>
+        <div className="settings-actions">
+          <button type="button" className="btn btn-secondary" onClick={syncSolvedNow} disabled={syncing}>
+            {syncing && <span className="btn-spinner" />}
+            {syncing ? t.settings.syncing : t.settings.syncNow}
+          </button>
         </div>
       </section>
 

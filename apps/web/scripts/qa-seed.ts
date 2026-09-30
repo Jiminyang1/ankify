@@ -157,7 +157,7 @@ async function main() {
         url: "https://leetcode.com/problems/two-sum/",
         descriptionMd:
           "Given an array of integers `nums` and an integer `target`, return indices of the two numbers that add up to `target`.",
-        topicTags: ["Array", "Hash Table"],
+        topicTags: ["array", "hash-table"],
         similarSlugs: ["three-sum", "two-sum-ii-input-array-is-sorted"],
         notes: "一遍扫描。先查 `target - nums[i]`，再记录当前值，避免同一下标重复使用。",
         fsrsDue: ago(1),
@@ -183,7 +183,7 @@ async function main() {
         url: "https://leetcode.com/problems/lru-cache/",
         descriptionMd:
           "Design a data structure that follows the constraints of a Least Recently Used cache with `O(1)` get and put operations.",
-        topicTags: ["Hash Table", "Linked List", "Design"],
+        topicTags: ["hash-table", "linked-list", "design"],
         similarSlugs: ["lfu-cache"],
         notes: "哈希表负责定位节点，双向链表维护最近使用顺序。",
         fsrsDue: null,
@@ -200,7 +200,7 @@ async function main() {
         difficulty: "Easy",
         url: "https://leetcode.com/problems/binary-search/",
         descriptionMd: "Given a sorted array and a target, return its index or `-1`.",
-        topicTags: ["Array", "Binary Search"],
+        topicTags: ["array", "binary-search"],
         similarSlugs: ["search-insert-position"],
         notes: "闭区间模板：循环条件 `left <= right`。",
         fsrsDue: fromNow(3),

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, isNull, like } from "drizzle-orm";
 import { tool } from "ai";
 import { z } from "zod";
 import type { AgentNavigation, AgentProposal, AgentStepDto } from "@ankify/contracts";
+import { leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
@@ -98,6 +99,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
           truncated: stats.totalDue > problems.length,
           problems: problems.map((problem) => ({
             ...problem,
+            tags: problem.tags.map(leetcodeTagName),
             fsrsDue: problem.fsrsDue?.toISOString() ?? null,
             fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue, now) : null,
           })),
@@ -139,6 +141,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
         });
         return problems.map((problem) => ({
           ...problem,
+          tags: problem.tags.map(leetcodeTagName),
           fsrsDue: problem.fsrsDue?.toISOString() ?? null,
           fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue) : null,
         }));
@@ -209,6 +212,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
         });
         return {
           ...problem,
+          tags: problem.tags.map(leetcodeTagName),
           description: limitText(problem.description, 60_000),
           notes: limitText(problem.notes, 30_000),
           fsrsDue: problem.fsrsDue?.toISOString() ?? null,

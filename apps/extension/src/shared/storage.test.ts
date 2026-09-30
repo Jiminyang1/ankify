@@ -38,6 +38,7 @@ describe("extension settings", () => {
       apiBaseUrl: PRODUCTION_ORIGIN,
       language: "zh",
       resetCodeOnProblemOpen: true,
+      autoCapture: true,
     });
     expect(set).toHaveBeenCalledWith({
       "ankify.settings": {
@@ -62,6 +63,7 @@ describe("extension settings", () => {
       "ankify.settings": {
         language: "zh",
         resetCodeOnProblemOpen: false,
+        autoCapture: true,
       },
     });
   });

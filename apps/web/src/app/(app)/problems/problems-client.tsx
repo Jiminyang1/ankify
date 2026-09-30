@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { LeetCodeDifficulty } from "@ankify/core";
+import { leetcodeTagName, type LeetCodeDifficulty } from "@ankify/core";
 import type {
   ProblemListItemDto,
   ProblemsListPayloadDto,
@@ -156,7 +156,9 @@ export default function ProblemsPage({
   const allTags = useMemo(() => {
     const set = new Set<string>();
     problems.forEach((p) => p.topicTags.forEach((t) => set.add(t)));
-    return [...set].sort();
+    return [...set]
+      .map((slug) => ({ slug, name: leetcodeTagName(slug) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [problems]);
 
   const filtered = useMemo(() => {
@@ -328,7 +330,7 @@ export default function ProblemsPage({
         >
           <option value="">{t.problems.allTags}</option>
           {allTags.map((tag) => (
-            <option key={tag} value={tag}>{tag}</option>
+            <option key={tag.slug} value={tag.slug}>{tag.name}</option>
           ))}
         </Select>
 
@@ -412,7 +414,7 @@ export default function ProblemsPage({
                         </div>
                         {p.topicTags.length > 0 && (
                           <p className="mt-0.5 truncate text-[11px] text-muted">
-                            {p.topicTags.map((t) => `#${t}`).join("  ")}
+                            {p.topicTags.map((t) => `#${leetcodeTagName(t)}`).join("  ")}
                           </p>
                         )}
                       </Link>
