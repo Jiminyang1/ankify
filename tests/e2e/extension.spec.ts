@@ -21,7 +21,7 @@ test("loads the extension, authenticates, captures fixtures, and recovers after 
   expect(data.topicTags).toEqual(["Stack"]);
   expect(data.similarSlugs).toEqual(["generate-parentheses"]);
   expect(data.submissions).toHaveLength(2); // Legacy capture drops unavailable details.
-  expect(data.submissions[0]).toMatchObject({ leetcodeSubmissionId: "9001", code: fixtureCode, runtimeMs: 4, memoryKb: 16896 });
+  expect(data.submissions[0]).toMatchObject({ leetcodeSubmissionId: "9003", code: fixtureCode, runtimeMs: 4, memoryKb: 16896 });
   expect(data.submissions[1]).toMatchObject({ status: "Wrong Answer", failedTestcase: '"()"', actualOutput: "false" });
 
   const save = () => panel.evaluate(async ({ origin, payload }) => {

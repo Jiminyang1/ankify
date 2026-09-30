@@ -18,7 +18,7 @@ if ("key" in manifest) {
 }
 
 const permissions = manifest.permissions ?? [];
-const requiredPermissions = ["sidePanel", "storage", "tabs"];
+const requiredPermissions = ["alarms", "sidePanel", "storage", "tabs"];
 const forbiddenPermissions = [
   "activeTab",
   "cookies",

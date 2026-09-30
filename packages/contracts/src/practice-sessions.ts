@@ -185,6 +185,8 @@ export type PracticeSessionDto = {
   capture: {
     completeness: z.infer<typeof captureCompletenessEnum>;
     baselineState: z.infer<typeof baselineStateEnum>;
+    /** Newest LeetCode submission id seen before the start, when established. */
+    baselineSubmissionId: string | null;
   };
   timing: {
     startedAt: string;

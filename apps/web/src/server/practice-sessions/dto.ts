@@ -101,7 +101,7 @@ export function toPracticeSessionDto(
       disposition: effectiveRatingDisposition(row, context.problemScheduleRevision, now),
       expiresAt: row.ratingExpiresAt?.toISOString() ?? null,
     },
-    capture: { completeness, baselineState: row.baselineState },
+    capture: { completeness, baselineState: row.baselineState, baselineSubmissionId: row.baselineSubmissionId },
     timing: {
       startedAt: row.startedAt.toISOString(),
       lastActivityAt: row.lastActivityAt.toISOString(),

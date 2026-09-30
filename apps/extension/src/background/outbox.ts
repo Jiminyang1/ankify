@@ -54,7 +54,7 @@ export interface OutboxStore {
 }
 
 export type DeliveryOutcome =
-  | { kind: "delivered" }
+  | { kind: "delivered"; data?: unknown }
   /** Delivered except a part that needs the user; keep that part, blocked. */
   | { kind: "blocked"; body: unknown; code: string }
   | { kind: "retry"; retryAfterMs?: number; status: number | null; code?: string }
@@ -70,6 +70,10 @@ export type FlushReport = {
   blocked: number;
   rejected: number;
   authRequired: boolean;
+  /** Server responses of the operations delivered in this run, by id. */
+  responses: Record<string, unknown>;
+  /** Rejections recorded in this run, by id. */
+  rejections: Record<string, { status: number | null; code: string | null }>;
 };
 
 export type OutboxStatus = {
@@ -106,10 +110,10 @@ export function createOutbox(deps: {
   const { store, deliver } = deps;
   const now = deps.now ?? Date.now;
   const random = deps.random ?? Math.random;
-  let inFlight: Promise<FlushReport> | null = null;
+  let tail: Promise<unknown> = Promise.resolve();
 
   async function runFlush(scope: OutboxScope): Promise<FlushReport> {
-    const report: FlushReport = { delivered: 0, retrying: 0, blocked: 0, rejected: 0, authRequired: false };
+    const report: FlushReport = { delivered: 0, retrying: 0, blocked: 0, rejected: 0, authRequired: false, responses: {}, rejections: {} };
     const operations = (await store.all()).filter(inScope(scope)).sort(byCreation);
     const halted = new Set<string>();
     for (const operation of operations) {
@@ -129,6 +133,7 @@ export function createOutbox(deps: {
         case "delivered":
           await store.remove(operation.id);
           report.delivered += 1;
+          report.responses[operation.id] = outcome.data;
           break;
         case "blocked":
           await store.put({
@@ -172,6 +177,7 @@ export function createOutbox(deps: {
             KEEP_REJECTIONS,
           );
           report.rejected += 1;
+          report.rejections[operation.id] = { status: outcome.status, code: outcome.code };
           break;
       }
     }
@@ -188,14 +194,13 @@ export function createOutbox(deps: {
       await store.put({ ...input, createdAt: at, attempts: 0, nextAttemptAt: at, state: "pending", lastError: null });
     },
 
-    /** Delivers what is due for this account. Concurrent calls share one run. */
+    /** Delivers what is due for this account. Runs never overlap: a call made
+     *  during a run starts after it, so anything enqueued before the call is
+     *  attempted (unless its session must wait). */
     flush(scope: OutboxScope): Promise<FlushReport> {
-      if (!inFlight) {
-        inFlight = runFlush(scope).finally(() => {
-          inFlight = null;
-        });
-      }
-      return inFlight;
+      const run = tail.then(() => runFlush(scope));
+      tail = run.catch(() => undefined);
+      return run;
     },
 
     async status(scope: OutboxScope): Promise<OutboxStatus> {

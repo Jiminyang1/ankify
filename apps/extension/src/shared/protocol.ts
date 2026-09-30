@@ -77,7 +77,14 @@ export const pageMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("overview") }).strict(),
   z.object({ type: z.literal("capabilities") }).strict(),
   /** Start (or resume) a due review, then open its problem page. */
-  z.object({ type: z.literal("open_review"), problemId: sessionIdSchema, slug: leetcodeSlugSchema }).strict(),
+  z
+    .object({
+      type: z.literal("open_review"),
+      problemId: sessionIdSchema,
+      slug: leetcodeSlugSchema,
+      supersedePendingRating: z.boolean().default(false),
+    })
+    .strict(),
   z.object({ type: z.literal("open_problem"), slug: leetcodeSlugSchema }).strict(),
   /** Act on a session that no tab controls (interrupted), from the popup. */
   z.object({ type: z.literal("session_control"), sessionId: sessionIdSchema, control: sessionControl }).strict(),
@@ -110,13 +117,16 @@ export function classifySender(sender: MessageSender, extensionId: string): Send
   } catch {
     return null;
   }
+  // Extension pages (the popup, or one opened in a tab) are identified by
+  // their own origin, which no web page can claim.
+  if (url.protocol === "chrome-extension:") return url.host === extensionId ? { kind: "page" } : null;
   if (sender.tab) {
     if (sender.tab.id == null || sender.frameId !== 0 || url.origin !== "https://leetcode.com") return null;
     const slug = url.pathname.match(/^\/problems\/([^/]+)(?:\/|$)/)?.[1];
     const parsed = leetcodeSlugSchema.safeParse(slug);
     return parsed.success ? { kind: "content", tabId: sender.tab.id, slug: parsed.data } : null;
   }
-  return url.protocol === "chrome-extension:" && url.host === extensionId ? { kind: "page" } : null;
+  return null;
 }
 
 /** Validates a message for its sender's channel; `null` when it is rejected. */

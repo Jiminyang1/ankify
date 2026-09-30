@@ -18,6 +18,8 @@ describe("message senders", () => {
 
   it("accepts extension pages only from this extension and rejects other senders", () => {
     expect(classifySender({ id: ID, url: `chrome-extension://${ID}/src/popup/index.html` }, ID)).toEqual({ kind: "page" });
+    // The same page opened in a tab carries a tab but is still an extension page.
+    expect(classifySender({ id: ID, url: `chrome-extension://${ID}/src/popup/index.html`, frameId: 0, tab: { id: 3 } }, ID)).toEqual({ kind: "page" });
     expect(classifySender({ id: ID, url: "chrome-extension://otherextensionidotherextensionid/x.html" }, ID)).toBeNull();
     expect(classifySender({ id: "someone-else", url: `chrome-extension://${ID}/src/popup/index.html` }, ID)).toBeNull();
     expect(classifySender({ id: ID, url: "https://leetcode.com/problems/two-sum/" }, ID)).toBeNull();

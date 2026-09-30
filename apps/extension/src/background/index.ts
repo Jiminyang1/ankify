@@ -1,5 +1,13 @@
 import type { BackgroundRequest, ContentSettingsResponse } from "../shared/messages";
+import { classifySender, parseMessage } from "../shared/protocol";
 import { getSettings } from "../shared/storage";
+import { createAccountState } from "./account";
+import { createApiClient } from "./api";
+import { chromeKeyValueStore, createActivityTotals, createTokenRegistry } from "./chrome-adapters";
+import { createIdbOutboxStore, openSyncDatabase } from "./idb-store";
+import { createOutbox, type DeliveryOutcome, type OutboxOperation } from "./outbox";
+import { createRouter } from "./router";
+import { createSessionController } from "./sessions";
 
 // Extension settings and drafts are private to trusted extension contexts.
 void chrome.storage.local
@@ -44,7 +52,100 @@ const CACHE_TTL_MS = 60_000;
  *  re-hit the API. Lives only as long as the service worker. */
 const captureCache = new Map<string, { captured: boolean; at: number }>();
 
+/* ------------------------------------------------------------------------ *
+ * Practice sessions: validated messages, the session controller, and the
+ * durable outbox. Everything here is rebuilt cheaply when the worker restarts;
+ * durable state lives in IndexedDB and chrome.storage.session.
+ * ------------------------------------------------------------------------ */
+
+const SYNC_ALARM = "ankify-sync";
+const newId = () => crypto.randomUUID();
+const api = createApiClient({ origin: __ANKIFY_DEFAULT_API_ORIGIN__ });
+const account = createAccountState({ api, store: chromeKeyValueStore(chrome.storage.local) });
+const tokens = createTokenRegistry(chrome.storage.session, newId);
+
+async function deliver(operation: OutboxOperation): Promise<DeliveryOutcome> {
+  const result = await api.request<{ results?: { index: number; outcome: string }[] }>(operation.path, { body: operation.body });
+  if (result.ok) {
+    // Observations whose details hit the storage cap stay local, blocked,
+    // until the user frees space; everything else was stored.
+    if (operation.kind === "observations") {
+      const blockedIndexes = new Set((result.data?.results ?? []).filter((item) => item.outcome === "capacity_blocked").map((item) => item.index));
+      if (blockedIndexes.size > 0) {
+        const observations = (operation.body as { observations: unknown[] }).observations.filter((_, index) => blockedIndexes.has(index));
+        return { kind: "blocked", body: { observations }, code: "capacity_blocked" };
+      }
+    }
+    return { kind: "delivered", data: result.data };
+  }
+  if (result.kind === "auth") return { kind: "auth" };
+  if (result.kind === "rejected") return { kind: "rejected", status: result.status, code: result.code ?? null };
+  return { kind: "retry", status: result.status, code: result.code, retryAfterMs: result.retryAfterMs };
+}
+
+const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase()), deliver });
+const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
+const router = createRouter({
+  controller,
+  account,
+  api,
+  tokens,
+  newId,
+  tabs: {
+    findProblemTab: async (slug) => {
+      const [tab] = await chrome.tabs.query({ url: `https://leetcode.com/problems/${slug}/*` });
+      return tab?.id ?? null;
+    },
+    open: async (slug) => (await chrome.tabs.create({ url: `https://leetcode.com/problems/${slug}/` })).id!,
+    focus: async (tabId) => {
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+    },
+  },
+});
+
+/** Wakes the worker for the next retry; Chrome enforces a 30 s minimum. */
+async function scheduleSync() {
+  const status = await controller.syncStatus().catch(() => null);
+  if (!status?.nextAttemptAt) {
+    await chrome.alarms.clear(SYNC_ALARM);
+    return;
+  }
+  await chrome.alarms.create(SYNC_ALARM, { when: Math.max(status.nextAttemptAt, Date.now() + 30_000) });
+}
+
+async function syncNow() {
+  await controller.flush().catch((error) => console.warn("ankify: sync failed", error));
+  await scheduleSync();
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === SYNC_ALARM) void syncNow();
+});
+chrome.tabs.onRemoved.addListener((tabId) => void tokens.forget(tabId));
+void syncNow();
+
 chrome.runtime.onMessage.addListener((msg: BackgroundRequest | { type?: string }, sender, sendResponse) => {
+  if (msg?.type !== "capture_badge_check" && msg?.type !== "capture_badge_captured" && msg?.type !== "get_content_settings") {
+    const context = classifySender(sender, chrome.runtime.id);
+    if (!context) return false;
+    const parsed = parseMessage(msg, context);
+    if (!parsed) {
+      sendResponse({ ok: false, error: "invalid_message" });
+      return false;
+    }
+    router
+      .handle(parsed, context)
+      .then((response) => {
+        sendResponse(response);
+        void scheduleSync();
+      })
+      .catch((error: unknown) => {
+        console.warn("ankify: message failed", error);
+        sendResponse({ ok: false, error: "unexpected" });
+      });
+    return true;
+  }
   if (msg?.type === "capture_badge_check") {
     const { slug, hasAccepted } = msg as Extract<BackgroundRequest, { type: "capture_badge_check" }>;
     const tabId = sender.tab?.id;

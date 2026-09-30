@@ -36,7 +36,8 @@ export default defineManifest(({ mode }) => {
     side_panel: {
       default_path: "src/popup/index.html",
     },
-    permissions: ["storage", "sidePanel", "tabs"],
+    // alarms: wake the worker to retry durable sync after an outage.
+    permissions: ["storage", "sidePanel", "tabs", "alarms"],
     host_permissions: ["https://leetcode.com/*", `${apiOrigin}/*`],
     homepage_url: apiOrigin,
     content_security_policy: {

@@ -142,7 +142,7 @@ describe("outbox", () => {
     expect(await outbox.status(scope)).toMatchObject({ pending: 0, otherAccounts: 2 });
   });
 
-  it("shares one run between concurrent flushes", async () => {
+  it("serializes concurrent flushes so each delivers an operation at most once", async () => {
     clock = 1_000_000;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -156,7 +156,22 @@ describe("outbox", () => {
     const first = outbox.flush(scope);
     const second = outbox.flush(scope);
     release();
-    expect(await first).toBe(await second);
+    expect(await first).toMatchObject({ delivered: 1 });
+    expect(await second).toMatchObject({ delivered: 0 });
     expect(deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the server's response for delivered operations and the reason for rejected ones", async () => {
+    clock = 1_000_000;
+    const { outbox } = setup((operation) =>
+      operation.id === "finish" ? { kind: "delivered", data: { session: { status: "completed" } } } : { kind: "rejected", status: 409, code: "rating_not_pending" },
+    );
+    await outbox.enqueue(op("finish"));
+    clock += 1;
+    await outbox.enqueue({ ...op("rate"), kind: "rating" });
+    expect(await outbox.flush(scope)).toMatchObject({
+      responses: { finish: { session: { status: "completed" } } },
+      rejections: { rate: { status: 409, code: "rating_not_pending" } },
+    });
   });
 });
