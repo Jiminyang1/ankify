@@ -49,9 +49,11 @@ export function createAccountState(deps: { api: ApiClient; store: KeyValueStore;
       if (!options.fresh && memo && now() - memo.at < FRESH_MS && memo.state.kind !== "unknown") return memo.state;
       return refresh();
     },
-    /** The account new durable work belongs to, or null when none is known. */
+    /** The account durable work belongs to, or null when none is known. It is
+     *  confirmed with the server every time: after an account switch, queued
+     *  work of the previous account must never be sent with the new cookie. */
     async scopeAccountId(): Promise<string | null> {
-      const state = await this.current();
+      const state = await this.current({ fresh: true });
       if (state.kind === "signed_in") return state.user.id;
       if (state.kind === "unknown") return state.cached?.id ?? null;
       return null;

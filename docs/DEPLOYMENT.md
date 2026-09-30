@@ -110,7 +110,9 @@ Production smoke testing.
    unauthenticated app page must redirect to `/login`, while `/api/me` returns
    `401`.
 4. Sign in and verify `/today`, `/review`, `/problems`, and `/settings` against
-   recognizable Production data.
+   recognizable Production data. With the extension, start and finish a
+   practice session on a LeetCode problem and check it in
+   `GET /api/practice-sessions`.
 5. Open Study Coach from a global page and a problem page. Verify session list,
    page-context updates, one ToolLoopAgent turn, a read-only tool call,
    streaming completion, and navigation. A valid provider/model/key must be
@@ -135,7 +137,31 @@ ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app \
 Confirm `apps/extension/dist/manifest.json` contains only the exact LeetCode and
 Production API hosts and does not include the unpacked-development `key` field.
 The unpacked build uses a stable development key and must not be uploaded to the
-Chrome Web Store.
+Chrome Web Store. `pnpm extension:check-manifest` enforces these rules.
+
+### Extension-first release (0.3.0)
+
+0.3.0 replaces the side panel with a toolbar popup and an in-page session
+panel, and records practice sessions instead of capturing on demand. Its
+permissions are `storage`, `tabs`, and `alarms` (new: wakes the worker to retry
+queued sync and refresh the badge; Chrome shows no install warning for it);
+`sidePanel` is gone. Order:
+
+1. Apply migration `0021_m1_practice_sessions` (additive) and deploy the web
+   app. Both old (0.2.x) and new extensions work against it: capture, the
+   legacy queue, and legacy ratings keep their shapes.
+2. Publish 0.3.0 to the Chrome Web Store.
+3. Cutover: once old extensions no longer matter, set
+   `ANKIFY_DISABLED_WORKFLOWS=legacy_review` in Vercel and redeploy. Legacy
+   `POST /api/review/rate` and `/undo` then answer `426 upgrade_required`, so
+   an old client cannot schedule outside practice sessions, and
+   `/api/capabilities` lists the deprecation. The web review page uses those
+   routes until Phase 6B replaces it; do not retire them before that.
+
+Rollback: remove a workflow from `ANKIFY_DISABLED_WORKFLOWS` and redeploy;
+`practice_sessions` and `session_rating` can be switched off the same way.
+Installed extensions cannot be downgraded, so a bad extension release is fixed
+forward with a higher version.
 
 ## Rollback boundaries
 

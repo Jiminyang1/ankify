@@ -2,6 +2,7 @@ import { makeSignature } from "better-auth/crypto";
 import { NextResponse } from "next/server";
 import {
   isQaProfile,
+  QA_SECOND_SESSION_TOKEN,
   QA_SESSION_MAX_AGE_SECONDS,
   QA_SESSION_TOKEN,
 } from "@/server/qa";
@@ -11,11 +12,13 @@ export async function GET(req: Request) {
     return new NextResponse("Not Found", { status: 404 });
   }
 
-  const signature = await makeSignature(QA_SESSION_TOKEN, process.env.BETTER_AUTH_SECRET!);
+  // `?account=second` signs in to the second, empty QA account.
+  const token = new URL(req.url).searchParams.get("account") === "second" ? QA_SECOND_SESSION_TOKEN : QA_SESSION_TOKEN;
+  const signature = await makeSignature(token, process.env.BETTER_AUTH_SECRET!);
   const response = NextResponse.redirect(new URL("/today", req.url));
   response.cookies.set(
     "better-auth.session_token",
-    `${QA_SESSION_TOKEN}.${signature}`,
+    `${token}.${signature}`,
     {
       httpOnly: true,
       maxAge: QA_SESSION_MAX_AGE_SECONDS,

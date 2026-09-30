@@ -1,11 +1,15 @@
 import { reviewRatingSchema } from "@ankify/contracts";
 import { NextResponse } from "next/server";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { isWorkflowEnabled, legacyWorkflowResponse } from "@/server/features";
 import { rateProblemReview } from "@/server/review-commands";
 
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
+  // After the extension-first cutover, old clients may not bypass
+  // session-based scheduling.
+  if (!isWorkflowEnabled("legacy_review")) return legacyWorkflowResponse("legacy_review");
 
   const parsed = reviewRatingSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

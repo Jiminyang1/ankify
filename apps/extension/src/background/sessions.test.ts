@@ -11,12 +11,13 @@ type Responder = (call: Call) => ApiResult<unknown>;
 function harness(respond: Responder) {
   const calls: Call[] = [];
   let online = true;
+  let signedInAs = "user-1";
   const api: ApiClient = {
     origin: ORIGIN,
     request: async <T,>(path: string, init: ApiRequest = {}) => {
       calls.push({ path, init });
       if (!online) return { ok: false, kind: "network", status: null } as ApiResult<T>;
-      if (path === "/api/me") return { ok: true, status: 200, data: { user: { id: "user-1", email: "u@x", name: "U" } } } as ApiResult<T>;
+      if (path === "/api/me") return { ok: true, status: 200, data: { user: { id: signedInAs, email: "u@x", name: "U" } } } as ApiResult<T>;
       return respond({ path, init }) as ApiResult<T>;
     },
   };
@@ -59,7 +60,13 @@ function harness(respond: Responder) {
     },
     newId: () => `req-${++id}`,
   });
-  return { controller, calls, store, setOnline: (value: boolean) => void (online = value) };
+  return {
+    controller,
+    calls,
+    store,
+    setOnline: (value: boolean) => void (online = value),
+    signIn: (userId: string) => void (signedInAs = userId),
+  };
 }
 
 const ok = (data: unknown): ApiResult<unknown> => ({ ok: true, status: 200, data });
@@ -126,6 +133,23 @@ describe("session controller", () => {
     expect(calls.at(-1)).toMatchObject({ path: "/api/practice-sessions/s2/rating", init: { body: { requestId: "req-2", rating: 3 } } });
     await controller.ratingDecision("s3", "defer");
     expect(calls.at(-1)).toMatchObject({ path: "/api/practice-sessions/s3/commands", init: { body: { type: "defer_rating", requestId: "req-3" } } });
+  });
+
+  it("never sends one account's queued work while another account is signed in", async () => {
+    const { controller, calls, store, setOnline, signIn } = harness(() => ok({ ok: true }));
+    await controller.syncStatus();
+    setOnline(false);
+    await controller.control({ tabId: 7 }, "s1", { command: "finish", result: "solved", occurredAt: "2026-09-29T12:00:00.000Z" });
+    setOnline(true);
+    for (const operation of await store.all()) await store.put({ ...operation, nextAttemptAt: 0 });
+    // Another account signs in right away; the memoized account must not decide.
+    signIn("user-2");
+    const before = calls.length;
+    expect(await controller.flush()).toMatchObject({ delivered: 0 });
+    expect(calls.slice(before).some((call) => call.path.endsWith("/commands"))).toBe(false);
+    expect(await controller.syncStatus()).toMatchObject({ pending: 0, otherAccounts: 1 });
+    signIn("user-1");
+    expect(await controller.flush()).toMatchObject({ delivered: 1 });
   });
 
   it("delivers observations before a later finish of the same session", async () => {

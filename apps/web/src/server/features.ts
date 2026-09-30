@@ -40,6 +40,27 @@ export function enabledWorkflows(): WorkflowId[] {
   return IMPLEMENTED_WORKFLOWS.filter((workflow) => !disabled.has(workflow));
 }
 
+/** Retired workflows old clients may still call, and how each is retired. */
+export const LEGACY_WORKFLOWS: Partial<Record<WorkflowId, { code: "upgrade_required" | "workflow_suspended"; message: string }>> = {
+  legacy_review: {
+    code: "upgrade_required",
+    message: "Update the ankify extension: reviews are now rated after solving the problem on LeetCode.",
+  },
+  coach: { code: "workflow_suspended", message: "Study Coach is no longer available." },
+  card_generation: { code: "workflow_suspended", message: "Card generation is no longer available." },
+  quiz_generation: { code: "workflow_suspended", message: "Quiz generation is no longer available." },
+  credit_checkout: { code: "workflow_suspended", message: "AI credit purchases are suspended." },
+};
+
+/** The structured answer old clients get from a retired workflow's route. */
+export function legacyWorkflowResponse(workflow: WorkflowId) {
+  const retired = LEGACY_WORKFLOWS[workflow] ?? { code: "workflow_suspended" as const, message: "This feature is no longer available." };
+  return NextResponse.json(
+    { error: retired.code, workflow, message: retired.message },
+    { status: retired.code === "upgrade_required" ? 426 : 410 },
+  );
+}
+
 export function workflowDisabledResponse() {
   return NextResponse.json(
     { error: "workflow_disabled", message: "This feature is temporarily unavailable." },

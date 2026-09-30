@@ -5,6 +5,10 @@ import { and, eq } from "drizzle-orm";
 import { encryptSecret } from "../src/server/secret-box";
 import {
   isQaProfile,
+  QA_SECOND_SESSION_ID,
+  QA_SECOND_SESSION_TOKEN,
+  QA_SECOND_USER_EMAIL,
+  QA_SECOND_USER_ID,
   QA_SESSION_ID,
   QA_SESSION_MAX_AGE_SECONDS,
   QA_SESSION_TOKEN,
@@ -145,6 +149,25 @@ async function main() {
       id: QA_SESSION_ID,
       userId: QA_USER_ID,
       token: QA_SESSION_TOKEN,
+      expiresAt: new Date(now.getTime() + QA_SESSION_MAX_AGE_SECONDS * 1000),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // A second, empty account for cross-account checks.
+    await tx.delete(schema.user).where(eq(schema.user.id, QA_SECOND_USER_ID));
+    await tx.insert(schema.user).values({
+      id: QA_SECOND_USER_ID,
+      name: "Ankify QA 2",
+      email: QA_SECOND_USER_EMAIL,
+      emailVerified: true,
+      createdAt: ago(1),
+      updatedAt: now,
+    });
+    await tx.insert(schema.session).values({
+      id: QA_SECOND_SESSION_ID,
+      userId: QA_SECOND_USER_ID,
+      token: QA_SECOND_SESSION_TOKEN,
       expiresAt: new Date(now.getTime() + QA_SESSION_MAX_AGE_SECONDS * 1000),
       createdAt: now,
       updatedAt: now,

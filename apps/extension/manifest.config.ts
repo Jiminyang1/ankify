@@ -16,7 +16,7 @@ export default defineManifest(({ mode }) => {
     name: "ankify",
     description:
       "Practice LeetCode problems with spaced repetition: track each attempt on the problem page and review when it's due.",
-    version: "0.2.1",
+    version: "0.3.0",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",

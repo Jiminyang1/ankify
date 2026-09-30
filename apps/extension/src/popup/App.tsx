@@ -222,6 +222,11 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
             </Button>
           </section>
         )}
+        {capabilities && !capabilities.supportedWorkflows.includes("practice_sessions") && (
+          <section className="panel" role="alert">
+            {t.popup.serverOutdated}
+          </section>
+        )}
         {!overview && !error && (
           <div className="center">
             <Spinner label={t.common.loading} />
