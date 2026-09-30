@@ -254,3 +254,83 @@ duplicate scheduling. Browser coverage of finish → rate → postpone arrives
 with the extension workflow in Phase 3. Rollback:
 `ANKIFY_DISABLED_WORKFLOWS=session_rating`; already-written states and events
 stay and are not rewritten.
+
+## Checkpoint 3.1: durable transport
+
+Status: **PASS**. Commit `f718016`; gate: 338 tests in 54 files, typecheck,
+lint, browser suite, builds, manifest.
+
+Background API client with failure classes (sign-in, rate limited with
+Retry-After, network, server, rejected); an IndexedDB outbox that persists
+before sending, replays with the same id, keeps per-session order, pauses on
+401, records rejections, holds storage-cap parts for the user without blocking
+later work, and never replays across accounts or API origins; zod-validated
+messages with sender checks (top-frame LeetCode problem pages; this
+extension's pages). Unit tests use an in-memory store and `fake-indexeddb`
+(dev-only), including a reopened database as after a worker restart.
+
+## Checkpoint 3.2: capture and session controller
+
+Status: **PASS**. Commit `d76975f`; gate: 369 tests in 58 files and 3
+browser tests.
+
+LeetCode adapter with explicit availability, lastKey pagination with a
+single-page fallback, baseline stop, and account read; page session with
+foreground-only activity, 15 s polling while visible, immediate polls on
+focus and start, backoff, and a final poll before Finish; background session
+controller (tab tokens in `chrome.storage.session`, online starts, durable
+finish/abandon/ratings/observations, `chrome.alarms` retries; new `alarms`
+permission). A browser test opened a due review from the extension and saw
+the new tab set the baseline and record a later Accepted submission.
+
+## Checkpoint 3.3: popup and in-page panel
+
+Status: **PASS**. Commit `32b243c`; gate: 373 tests in 59 files and 10
+browser tests.
+
+Toolbar popup and shadow-root panel as described in ARCHITECTURE.md; explicit
+editor reset; history import for problems in the deck; the legacy popup and
+its dependencies removed (popup bundle 427 kB to 209 kB). Browser testing found
+and fixed: messages classified by a stale sender URL after LeetCode's
+pushState navigation, the panel keeping pre-finish problem state, and
+observation responses clearing ownership.
+
+## Checkpoint 3.4: cutover readiness
+
+Status: **PASS**. Commit `cc679c7`. **Phase 3 gate: PASS with the live
+LeetCode exception below.**
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 377 tests in 60 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 15 tests, twice in a row |
+| `pnpm extension:check-manifest` | PASS: 0.3.0, `storage`/`tabs`/`alarms`, popup, no side panel |
+
+Legacy review guard behind `ANKIFY_DISABLED_WORKFLOWS=legacy_review` (426
+`upgrade_required`, advertised in capabilities); durable work scoped by a
+freshly confirmed account (fixes a real cross-account drop found while
+writing the account-switch test; a mutation test confirms the guard); server
+capability banner; extension 0.3.0; release and cutover order in
+DEPLOYMENT.md.
+
+Phase 3 browser coverage: popup close, reload, SPA navigation, browser close
+and reopen on the same profile, worker termination with a queued finish,
+same-problem tabs with explicit takeover, account switching, Accepted then
+continued work, failure then Again, deferred rating, history import, notes,
+both languages. Sender validation, message bounds, and invalid problem URLs
+are unit-tested.
+
+Acceptance: an authenticated user completes initial learning and a scheduled
+review entirely on LeetCode plus the extension, without a web review page
+(browser suite, fixture LeetCode).
+
+Recorded exception: **live LeetCode validation is still pending**
+(`scripts/leetcode-live-probe.js`). The adapter degrades to explicit
+unavailable/partial states and a single page if LeetCode rejects pagination
+fields; field shapes, pagination, and account identity are validated only
+against fixtures until the probe report is recorded here.
+
+Rollback: switch off `practice_sessions`/`session_rating`; publish a higher
+extension version to undo an extension release (installed versions cannot be
+downgraded). The legacy routes stay available until the cutover switch.
