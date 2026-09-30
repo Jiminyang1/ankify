@@ -7,7 +7,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PLANS = ["top-interview-150", "leetcode-75", "top-100-liked"];
+const PLANS = ["top-interview-150", "leetcode-75", "top-100-liked", "dynamic-programming", "graph-theory", "binary-search"];
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../packages/core/src/study-plans.generated.ts");
 const DIFFICULTY = { EASY: "Easy", MEDIUM: "Medium", HARD: "Hard" };
 
@@ -32,7 +32,8 @@ async function fetchPlan(slug) {
   return {
     slug: plan.slug,
     name: plan.name,
-    groups: plan.planSubGroups.map((group) => ({
+    // LeetCode keeps some groups with no questions; they can't be progressed.
+    groups: plan.planSubGroups.filter((group) => group.questions.length > 0).map((group) => ({
       name: group.name,
       questions: group.questions.map((q) => {
         const difficulty = DIFFICULTY[q.difficulty];

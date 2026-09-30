@@ -14,5 +14,10 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
     },
+    server: {
+      // Vite 6 limits dev-server CORS to localhost pages, but the unpacked
+      // dev extension loads its modules from a chrome-extension:// origin.
+      cors: { origin: [/^chrome-extension:\/\//] },
+    },
   };
 });

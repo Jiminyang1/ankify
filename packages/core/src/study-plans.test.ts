@@ -1,39 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { emptyCardState, type FsrsCardState } from "./fsrs";
-import { DEFAULT_STUDY_PLAN, STUDY_PLANS, getStudyPlan, planProblemStatus } from "./study-plans";
+import {
+  DEFAULT_STUDY_PLAN,
+  OFFICIAL_STUDY_PLANS,
+  findOfficialStudyPlan,
+  groupByPattern,
+  planProblemStatus,
+} from "./study-plans";
 
 const now = new Date("2026-09-29T00:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
+const inDays = (days: number) => new Date(now.getTime() + days * DAY);
 
-function reviewed(stability: number, daysSinceReview = 0): FsrsCardState {
-  const lastReview = new Date(now.getTime() - daysSinceReview * DAY);
-  return {
-    due: new Date(lastReview.getTime() + stability * DAY),
-    stability,
-    difficulty: 5,
-    elapsedDays: 0,
-    scheduledDays: stability,
-    learningSteps: 0,
-    reps: 3,
-    lapses: 0,
-    state: "review",
-    lastReview,
-  };
-}
-
-describe("study plan snapshot", () => {
-  it("ships the three plans with unique questions per plan", () => {
-    expect(STUDY_PLANS.map((plan) => plan.slug)).toEqual(["top-interview-150", "leetcode-75", "top-100-liked"]);
-    for (const plan of STUDY_PLANS) {
+describe("official study plans", () => {
+  it("ships six plans with unique, non-empty groups", () => {
+    expect(OFFICIAL_STUDY_PLANS.map((plan) => plan.slug)).toEqual([
+      "top-interview-150",
+      "leetcode-75",
+      "top-100-liked",
+      "dynamic-programming",
+      "graph-theory",
+      "binary-search",
+    ]);
+    for (const plan of OFFICIAL_STUDY_PLANS) {
       const slugs = plan.groups.flatMap((group) => group.questions.map((q) => q.slug));
-      expect(new Set(slugs).size).toBe(slugs.length);
-      expect(plan.groups.every((group) => group.questions.length > 0)).toBe(true);
+      expect(new Set(slugs).size, plan.slug).toBe(slugs.length);
+      expect(plan.groups.every((group) => group.questions.length > 0), plan.slug).toBe(true);
     }
   });
 
-  it("falls back to the default plan", () => {
-    expect(getStudyPlan("nope").slug).toBe(DEFAULT_STUDY_PLAN);
-    expect(getStudyPlan("leetcode-75").slug).toBe("leetcode-75");
+  it("finds plans by slug, including the default", () => {
+    expect(findOfficialStudyPlan(DEFAULT_STUDY_PLAN)?.groups).toHaveLength(23);
+    expect(findOfficialStudyPlan("nope")).toBeNull();
+  });
+
+  it("puts Top 100 Liked in learning order, not alphabetical", () => {
+    const names = findOfficialStudyPlan("top-100-liked")!.groups.map((group) => group.name);
+    expect(names[0]).toBe("Hashing");
+    expect(names.at(-1)).toBe("Misc");
+    expect(names).toHaveLength(15);
   });
 });
 
@@ -43,15 +47,41 @@ describe("planProblemStatus", () => {
     expect(planProblemStatus({ solvedOnLeetcode: true }, now)).toBe("solved");
   });
 
-  it("reads tracked problems from FSRS", () => {
-    const track = (fsrs: FsrsCardState) => planProblemStatus({ tracked: { fsrs, archived: false }, solvedOnLeetcode: false }, now);
-    expect(track(emptyCardState(now))).toBe("learning");
-    expect(track(reviewed(5))).toBe("learning");
-    expect(track(reviewed(30))).toBe("mastered");
-    expect(track(reviewed(2, 30))).toBe("fading");
+  it("splits reviewed problems by whether they are due", () => {
+    const track = (due: Date | null) => planProblemStatus({ tracked: { due, archived: false }, solvedOnLeetcode: true }, now);
+    expect(track(inDays(5))).toBe("remembered");
+    expect(track(inDays(-1))).toBe("due");
+    expect(track(now)).toBe("due");
+    expect(track(null)).toBe("due");
   });
 
   it("treats archived problems as solved but not reviewed", () => {
-    expect(planProblemStatus({ tracked: { fsrs: reviewed(30), archived: true }, solvedOnLeetcode: false }, now)).toBe("solved");
+    expect(planProblemStatus({ tracked: { due: inDays(-1), archived: true }, solvedOnLeetcode: false }, now)).toBe("solved");
+  });
+});
+
+describe("groupByPattern", () => {
+  const q = (slug: string, tagSlugs: string[]) => ({ id: 1, slug, title: slug, difficulty: "Medium" as const, tagSlugs });
+
+  it("assigns the most specific technique and keeps learning order", () => {
+    const groups = groupByPattern([
+      q("coin-change", ["array", "dynamic-programming", "breadth-first-search"]),
+      q("two-sum", ["array", "hash-table"]),
+      q("word-search-ii", ["array", "string", "backtracking", "trie", "matrix"]),
+      q("number-of-islands", ["array", "depth-first-search", "breadth-first-search", "union-find", "matrix"]),
+      q("max-depth", ["tree", "depth-first-search", "breadth-first-search", "binary-tree"]),
+      q("word-ladder", ["hash-table", "string", "breadth-first-search"]),
+      q("valid-parentheses", ["string", "stack"]),
+      q("mystery", ["brainteaser"]),
+    ]);
+    expect(groups.map((group) => [group.name, group.questions.map((question) => question.slug)])).toEqual([
+      ["Arrays & Hashing", ["two-sum"]],
+      ["Stack", ["valid-parentheses"]],
+      ["Trees", ["max-depth"]],
+      ["Tries", ["word-search-ii"]],
+      ["Graphs", ["number-of-islands", "word-ladder"]],
+      ["Dynamic Programming", ["coin-change"]],
+      ["Other", ["mystery"]],
+    ]);
   });
 });

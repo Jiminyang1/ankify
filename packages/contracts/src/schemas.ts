@@ -322,3 +322,19 @@ export const leetcodeSolvedSyncSchema = z.object({
   slugs: z.array(z.string().min(1).max(256)).max(6_000),
 });
 export type LeetcodeSolvedSyncInput = z.infer<typeof leetcodeSolvedSyncSchema>;
+
+/** POST /api/profile/add-to-review — study-plan problems to put in the deck. */
+export const addToReviewSchema = z.object({
+  slugs: z.array(z.string().min(1).max(256)).min(1).max(30),
+});
+
+/** POST /api/study-plan (switch) and DELETE /api/study-plan (remove an
+ *  imported list): an official plan slug or `list:<leetcode list slug>`. */
+export const studyPlanSelectSchema = z.object({
+  plan: z.string().min(1).max(100),
+});
+
+/** POST /api/study-plan/import — a public LeetCode problem list link. */
+export const studyPlanImportSchema = z.object({
+  link: z.string().trim().min(1).max(500),
+});
