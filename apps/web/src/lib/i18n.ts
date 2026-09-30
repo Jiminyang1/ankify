@@ -522,8 +522,8 @@ export const translations = {
       reviewDue: (count: number) => `Review ${count} due`,
       start: {
         title: "Your roadmap is lit up",
-        body: (solved: number, total: number, plan: string, group: string, count: number) =>
-          `You've solved ${solved} of ${total} ${plan} problems on LeetCode. Start with ${group}: add its ${count} solved problems to review, then rate each one to set when you'll see it again.`,
+        body: (solved: number, total: number, plan: string, group: string, count: number, groupSolved: number) =>
+          `You've solved ${solved} of ${total} ${plan} problems on LeetCode. Start with ${group}: add ${count === groupSolved ? `its ${count}` : `${count} of its ${groupSolved}`} solved problems to review, then rate each one to set when you'll see it again.`,
         add: (count: number) => `Add ${count} to review`,
         orPick: "Or open any pattern below and pick your own.",
         failed: "Couldn't add those problems. Try again in a minute.",
@@ -1145,8 +1145,8 @@ export const translations = {
       reviewDue: (count: number) => `复习 ${count} 道到期的题`,
       start: {
         title: "你的路线图已经点亮了",
-        body: (solved: number, total: number, plan: string, group: string, count: number) =>
-          `${plan} 的 ${total} 道题里，你在 LeetCode 上做过 ${solved} 道。先从 ${group} 开始：把它做过的 ${count} 道题加入复习，再逐道评分，ankify 会据此安排下次复习时间。`,
+        body: (solved: number, total: number, plan: string, group: string, count: number, groupSolved: number) =>
+          `${plan} 的 ${total} 道题里，你在 LeetCode 上做过 ${solved} 道。先从 ${group} 开始：${count === groupSolved ? `把它做过的 ${count} 道题` : `从它做过的 ${groupSolved} 道里先挑 ${count} 道`}加入复习，再逐道评分，ankify 会据此安排下次复习时间。`,
         add: (count: number) => `把 ${count} 道加入复习`,
         orPick: "也可以点开下面任意一个题型，自己挑。",
         failed: "没能加入这些题，请稍后再试。",

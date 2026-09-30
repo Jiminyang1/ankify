@@ -8,8 +8,9 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Surface } from "@/components/ui/surface";
 
-/** Addable in one request; matches the add-to-review API cap. */
-const MAX_ADD = 30;
+/** A first session a new user can finish: well under the default daily
+ *  review limit of 20. The rest of the pattern stays one click away. */
+const FIRST_BATCH = 10;
 
 /**
  * The first step on the roadmap, shown only while the user has nothing from
@@ -56,7 +57,7 @@ export function RoadmapStart(
     );
   }
 
-  const slugs = props.group.slugs.slice(0, MAX_ADD);
+  const slugs = props.group.slugs.slice(0, FIRST_BATCH);
 
   async function add() {
     setBusy(true);
@@ -86,7 +87,7 @@ export function RoadmapStart(
             {copy.title}
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-            {copy.body(props.solved, props.total, props.plan, props.group.name, slugs.length)}
+            {copy.body(props.solved, props.total, props.plan, props.group.name, slugs.length, props.group.slugs.length)}
           </p>
           <p className="mt-1 text-xs text-muted">{copy.orPick}</p>
         </div>
