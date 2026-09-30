@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createAiJobClient } from "@ankify/api-client";
 import { formatQuizMarkdown, type FsrsRating } from "@ankify/core";
 import type {
@@ -27,7 +27,6 @@ type LocalCandidate = ApiCard & {
   localError: string | null;
 };
 type ThemePreference = "system" | "light" | "dark";
-type Language = ExtSettings["language"];
 
 type State =
   | { kind: "detecting" }
@@ -1139,7 +1138,7 @@ function TodayTab({
     } finally {
       setLoading(false);
     }
-  }, [settings]);
+  }, [settings, t.quiz.failedLoad]);
 
   useEffect(() => {
     void load();
@@ -1737,7 +1736,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
     } finally {
       if (!opts?.silent) setLoading(false);
     }
-  }, [problem.id, settings]);
+  }, [problem.id, settings, t.quiz.failedLoad]);
 
   useEffect(() => {
     void (async () => {
@@ -1759,7 +1758,7 @@ function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; sett
         if (generationError) setError(generationError);
       }
     })();
-  }, [loadSession, problem.id, settings]);
+  }, [loadSession, problem.id, settings, t.quiz.failedGenerate]);
 
   async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
     setGenerating(true);
@@ -2795,6 +2794,7 @@ function AddCardForm({
   const [rawText, setRawText] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const userEditedRef = useRef(false);
+  const onJobResumed = useEffectEvent(() => onAdded());
   const generationElapsedSeconds = useElapsedSeconds(
     busy === "auto" || busy === "note",
     generationStartedAt,
@@ -2829,7 +2829,7 @@ function AddCardForm({
         }
         // Manage may have been unmounted while the job finished. Revalidate
         // candidates even when there is no longer an active job to resume.
-        onAdded();
+        onJobResumed();
       } catch (e) {
         setError(e instanceof Error ? e.message : t.cards.aiFailed);
       } finally {
@@ -2838,7 +2838,7 @@ function AddCardForm({
         setCheckingJob(false);
       }
     })();
-  }, [problem.id, settings]);
+  }, [problem.id, settings, t.cards.aiFailed]);
 
   const updateRawText = (v: string) => {
     userEditedRef.current = true;
@@ -3011,6 +3011,7 @@ function CandidateList({
   const [local, setLocal] = useState<LocalCandidate[]>([]);
   const [clock, setClock] = useState(Date.now());
   const [jobStartedAt, setJobStartedAt] = useState<Record<string, number>>({});
+  const onFollowupResumed = useEffectEvent(() => onRefresh());
 
   useEffect(() => {
     setLocal((prev) => {
@@ -3036,7 +3037,7 @@ function CandidateList({
           void waitForAiJob(settings, job)
             .then(() => {
               update(cardId, { busy: null, instruction: "" });
-              onRefresh();
+              onFollowupResumed();
             })
             .catch((e) => update(cardId, {
               busy: null,
@@ -3045,7 +3046,7 @@ function CandidateList({
         }
       })
       .catch((error) => console.error("[ai-job] failed to resume follow-up", error));
-  }, [problem.id, settings]);
+  }, [problem.id, settings, t.cards.aiFailed]);
 
   useEffect(() => {
     if (!local.some((card) => card.busy === "followup")) return;

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:unpacked": "ANKIFY_EXTENSION_BUILD_TARGET=unpacked vite build --outDir dist-unpacked",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
     "@ankify/api-client": "workspace:*",

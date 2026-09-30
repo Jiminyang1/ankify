@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node", "chrome"] },
+  "include": ["./**/*.ts", "../../playwright.config.ts"]
+}

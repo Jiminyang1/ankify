@@ -18,12 +18,33 @@ importers:
 
   .:
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.4
+        version: 9.39.4
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
+      '@types/chrome':
+        specifier: ^0.0.290
+        version: 0.0.290
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4(jiti@1.21.7)
+      eslint-plugin-react-hooks:
+        specifier: ^7.1.1
+        version: 7.1.1(eslint@9.39.4(jiti@1.21.7))
+      globals:
+        specifier: ^16.4.0
+        version: 16.4.0
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.59.2
+        version: 8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0))
@@ -99,19 +120,19 @@ importers:
         version: link:../../packages/db
       '@vercel/analytics':
         specifier: ^2.0.1
-        version: 2.0.1(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+        version: 2.0.1(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       '@vercel/queue':
         specifier: ^0.4.0
         version: 0.4.0(@opentelemetry/api@1.9.0)
       '@vercel/speed-insights':
         specifier: ^2.0.0
-        version: 2.0.0(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+        version: 2.0.0(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       ai:
         specifier: ^7.0.58
         version: 7.0.58(zod@4.4.3)
       better-auth:
         specifier: 1.6.26
-        version: 1.6.26(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17))(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0)))
+        version: 1.6.26(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17))(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0)))
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -132,7 +153,7 @@ importers:
         version: 5.1.16
       next:
         specifier: 16.3.6
-        version: 16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -1304,6 +1325,11 @@ packages:
 
   '@petamoriken/float16@3.9.3':
     resolution: {integrity: sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==}
+
+  '@playwright/test@1.63.0':
+    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
@@ -3538,6 +3564,16 @@ packages:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
 
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.63.0:
+    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -4327,7 +4363,7 @@ snapshots:
 
   '@babel/generator@7.29.1':
     dependencies:
-      '@babel/parser': 7.29.2
+      '@babel/parser': 7.29.3
       '@babel/types': 7.29.0
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
@@ -4395,7 +4431,7 @@ snapshots:
   '@babel/template@7.28.6':
     dependencies:
       '@babel/code-frame': 7.29.0
-      '@babel/parser': 7.29.2
+      '@babel/parser': 7.29.3
       '@babel/types': 7.29.0
 
   '@babel/traverse@7.29.0':
@@ -4403,7 +4439,7 @@ snapshots:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
       '@babel/helper-globals': 7.28.0
-      '@babel/parser': 7.29.2
+      '@babel/parser': 7.29.3
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
       debug: 4.4.3
@@ -5061,6 +5097,10 @@ snapshots:
   '@petamoriken/float16@3.9.3':
     optional: true
 
+  '@playwright/test@1.63.0':
+    dependencies:
+      playwright: 1.63.0
+
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 
   '@rollup/pluginutils@4.2.1':
@@ -5210,7 +5250,7 @@ snapshots:
 
   '@types/babel__template@7.4.4':
     dependencies:
-      '@babel/parser': 7.29.2
+      '@babel/parser': 7.29.3
       '@babel/types': 7.29.0
 
   '@types/babel__traverse@7.28.0':
@@ -5457,9 +5497,9 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@vercel/analytics@2.0.1(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
+  '@vercel/analytics@2.0.1(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
     optionalDependencies:
-      next: 16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      next: 16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
 
   '@vercel/cli-config@0.2.2':
@@ -5488,9 +5528,9 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
 
-  '@vercel/speed-insights@2.0.0(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
+  '@vercel/speed-insights@2.0.0(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)':
     optionalDependencies:
-      next: 16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      next: 16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
 
   '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0))':
@@ -5691,7 +5731,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.26: {}
 
-  better-auth@1.6.26(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17))(next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0))):
+  better-auth@1.6.26(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17))(next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0))):
     dependencies:
       '@better-auth/core': 1.6.26(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@opentelemetry/api@1.9.0)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.26(@better-auth/core@1.6.26(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@opentelemetry/api@1.9.0)(better-call@1.3.7(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(drizzle-orm@0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17))
@@ -5713,7 +5753,7 @@ snapshots:
     optionalDependencies:
       drizzle-kit: 0.31.10
       drizzle-orm: 0.45.2(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(gel@2.2.0)(kysely@0.28.17)
-      next: 16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      next: 16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       vitest: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(vite@6.4.3(@types/node@22.19.17)(jiti@1.21.7)(tsx@4.21.0))
@@ -6213,8 +6253,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.3.6(eslint@9.39.4(jiti@1.21.7))
       eslint: 9.39.4(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@1.21.7))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.4(jiti@1.21.7))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@1.21.7))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.4(jiti@1.21.7))
@@ -6236,7 +6276,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@1.21.7)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -6247,22 +6287,22 @@ snapshots:
       tinyglobby: 0.2.16
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@1.21.7))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@1.21.7)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
       eslint: 9.39.4(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@1.21.7))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@1.21.7)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -6273,7 +6313,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.4(jiti@1.21.7)
       eslint-import-resolver-node: 0.3.10
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@1.21.7))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7)))(eslint@9.39.4(jiti@1.21.7))
       hasown: 2.0.3
       is-core-module: 2.16.2
       is-glob: 4.0.3
@@ -7411,7 +7451,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@16.3.6(@opentelemetry/api@1.9.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  next@16.3.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@22.19.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       '@next/env': 16.3.6
       '@swc/helpers': 0.5.23
@@ -7420,7 +7460,7 @@ snapshots:
       postcss: 8.5.26
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
-      styled-jsx: 5.1.6(react@19.2.8)
+      styled-jsx: 5.1.6(@babel/core@7.29.0)(react@19.2.8)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.3.6
       '@next/swc-darwin-x64': 16.3.6
@@ -7431,6 +7471,7 @@ snapshots:
       '@next/swc-win32-arm64-msvc': 16.3.6
       '@next/swc-win32-x64-msvc': 16.3.6
       '@opentelemetry/api': 1.9.0
+      '@playwright/test': 1.63.0
       sharp: 0.35.4(@types/node@22.19.17)
     transitivePeerDependencies:
       - '@babel/core'
@@ -7579,6 +7620,12 @@ snapshots:
   pify@2.3.0: {}
 
   pirates@4.0.7: {}
+
+  playwright-core@1.63.0: {}
+
+  playwright@1.63.0:
+    dependencies:
+      playwright-core: 1.63.0
 
   possible-typed-array-names@1.1.0: {}
 
@@ -8083,10 +8130,12 @@ snapshots:
     dependencies:
       inline-style-parser: 0.2.7
 
-  styled-jsx@5.1.6(react@19.2.8):
+  styled-jsx@5.1.6(@babel/core@7.29.0)(react@19.2.8):
     dependencies:
       client-only: 0.0.1
       react: 19.2.8
+    optionalDependencies:
+      '@babel/core': 7.29.0
 
   sucrase@3.35.1:
     dependencies:

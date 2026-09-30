@@ -37,6 +37,8 @@ const contentSecurityPolicy = [
 
 const config: NextConfig = {
   transpilePackages: ["@ankify/api-client", "@ankify/contracts", "@ankify/core", "@ankify/db"],
+  // Browser tests run their own dev server beside a developer's `pnpm dev`.
+  ...(process.env.ANKIFY_E2E === "1" ? { distDir: ".next-e2e" } : {}),
   poweredByHeader: false,
   async headers() {
     return [

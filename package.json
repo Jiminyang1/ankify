@@ -19,11 +19,13 @@
     "dev:demo": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --demo",
     "demo:reset": "node --env-file=.env.qa --env-file-if-exists=.env.qa.local scripts/qa-dev.mjs --demo --reset-only",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
+    "lint": "eslint . --max-warnings=0 && pnpm -r lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "pnpm -r typecheck",
-    "release:check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm extension:check-manifest && pnpm audit --prod --audit-level=high --ignore-registry-errors",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
+    "typecheck": "pnpm -r typecheck && tsc -p tests/e2e/tsconfig.json",
+    "release:check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e && pnpm build && pnpm extension:check-manifest && pnpm audit --prod --audit-level=high --ignore-registry-errors",
     "extension:build:unpacked": "pnpm --filter @ankify/extension build:unpacked",
     "extension:check-manifest": "node scripts/check-extension-manifest.mjs",
     "db:generate": "pnpm --filter @ankify/db generate",
@@ -39,8 +41,15 @@
     "db:release": "pnpm db:backup && pnpm db:migrate:prod"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.0.290",
     "@types/node": "^22.10.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.4.0",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.59.2",
     "vitest": "^4.1.10"
   },
   "pnpm": {

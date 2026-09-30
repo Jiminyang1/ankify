@@ -7,7 +7,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-that-is-long-enough
       BETTER_AUTH_URL: http://localhost:3000
@@ -32,6 +32,14 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
       - run: pnpm build
       - run: pnpm extension:check-manifest
       - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results/
+          if-no-files-found: ignore
