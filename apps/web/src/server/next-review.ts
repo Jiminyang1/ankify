@@ -42,6 +42,8 @@ export async function loadNextReview(
               eq(schema.problems.id, targetId),
               eq(schema.problems.userId, userId),
               isNull(schema.problems.archivedAt),
+              // Initial learning has no recall rating to preview or record.
+              eq(schema.problems.enrollment, "enrolled"),
             ),
           )
           .limit(1)

@@ -160,6 +160,8 @@ export type ProblemListItemDto = {
   fsrsReps: number;
   fsrsLapses: number;
   fsrsState: "new" | "learning" | "review" | "relearning";
+  /** `awaiting_initial`: first practice not finished; no review is scheduled. */
+  enrollment: "enrolled" | "awaiting_initial";
   archivedAt: string | null;
   createdAt: string;
   cardTotal: number;

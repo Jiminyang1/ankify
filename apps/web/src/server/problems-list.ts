@@ -91,6 +91,7 @@ export async function loadProblemsList(
         fsrsReps: schema.problems.fsrsReps,
         fsrsLapses: schema.problems.fsrsLapses,
         fsrsState: schema.problems.fsrsState,
+        enrollment: schema.problems.enrollment,
         archivedAt: schema.problems.archivedAt,
         createdAt: schema.problems.createdAt,
       })

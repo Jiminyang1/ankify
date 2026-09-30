@@ -28,6 +28,7 @@ export const translations = {
     },
     common: {
       loading: "Loading...",
+      notScheduled: "Not scheduled yet",
       save: "Save",
       saving: "Saving...",
       saved: "Saved.",
@@ -619,6 +620,7 @@ export const translations = {
     },
     common: {
       loading: "加载中...",
+      notScheduled: "尚未安排",
       save: "保存",
       saving: "保存中...",
       saved: "已保存。",

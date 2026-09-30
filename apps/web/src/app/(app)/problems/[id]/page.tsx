@@ -43,7 +43,8 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   if (!detail) notFound();
   const { problem, submissions, cards, reviewHistory, mistakes } = detail;
 
-  const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
+  const awaitingInitial = problem.enrollment === "awaiting_initial";
+  const isDue = !awaitingInitial && (!problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs());
 
   const statementPanel = problem.descriptionMd ? (
     <Markdown>{problem.descriptionMd}</Markdown>
@@ -162,7 +163,11 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               {t.detail.scheduling}
             </div>
             <dl className="divide-y divide-border">
-              <MetaRow label={t.detail.due} value={isDue ? t.common.now : formatRelative(problem.fsrsDue)} accent={isDue} />
+              <MetaRow
+                label={t.detail.due}
+                value={awaitingInitial ? t.common.notScheduled : isDue ? t.common.now : formatRelative(problem.fsrsDue)}
+                accent={isDue}
+              />
               <MetaRow
                 label={t.detail.reviews}
                 value={

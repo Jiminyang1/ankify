@@ -83,16 +83,41 @@ Tables (all in `packages/db/src/schema.ts`):
 
 ## Review scheduling (FSRS)
 
-- FSRS-6 via `ts-fsrs` in `packages/core/src/fsrs.ts`: `rate()`, `preview()`
-  (all four outcomes), `retrievability()`. Elapsed days are recomputed from
-  `last_review`, never trusted from storage.
-- Only the **problem** is scheduled. Cards and quizzes support recall; a quiz
-  score only *suggests* a rating (0-1 Again, 2 Hard, 3-4 Good, 5 Easy).
-- `POST /api/review/rate` stores a pre-rating snapshot in the event's
-  `metadata.undo`; `POST /api/review/undo` restores it (guarded by
-  `fsrsReps = prev.reps + 1`) and stamps `undoneAt`.
-- The due condition (`server/due-problems.ts`) excludes archived problems; the
-  daily limit and time zone come from per-user review settings.
+- FSRS-6 via `ts-fsrs` in `packages/core/src/fsrs.ts`. Elapsed days are
+  recomputed from `last_review`, never trusted from storage. Only the
+  **problem** is scheduled. Every FSRS write advances `problems.schedule_revision`
+  and records its policy on the review event:
+  - `leetcode_full_solve_v1` (sessions): default weights, 90% retention, fuzz,
+    short-term learning steps disabled, so every grade yields a day-based
+    interval. A rating is computed as of the review's completion time, so a
+    rating given hours later schedules from when the review happened.
+  - `initial_delay_v1`: finishing initial learning schedules the first review
+    `initialReviewDelayHours` (1-168, default 24) after completion; the state
+    stays `new` and no rating is recorded (`fsrs_scheduled` event).
+  - `legacy_self_recall_v1`: `POST /api/review/rate` (default FSRS with
+    minute-scale learning steps), kept for old clients until cutover. It
+    refuses problems still awaiting initial learning.
+- `POST /api/practice-sessions/:id/rating` is the exactly-once session rating:
+  a completed review (due, or explicitly early) whose rating is pending or
+  deferred and whose problem schedule is unchanged since the session started.
+  One rating event per session is enforced by a unique index; the response is
+  stored for replay. Voluntary practice, capture, and dashboard visits never
+  change the schedule. Deferred ratings expire 24 hours after completion.
+- Undo (`undo_rating` session command, or `POST /api/review/undo`) restores the
+  event's `metadata.undo` snapshot. It is allowed only while the event still
+  accounts for the current revision: the revision must equal the event's plus
+  two per later scheduling event that was itself undone (each such event and
+  its Undo advanced it once). Any other change blocks it, even one that keeps
+  the repetition count; successive Undo still works. An undone session can
+  never be rated again. Events from before migration 0021 use the legacy
+  repetition check.
+- The due condition (`server/due-problems.ts`) excludes archived problems and
+  problems awaiting initial learning; the daily limit and time zone come from
+  per-user review settings. `GET /api/review/overview` returns due (most
+  overdue first, within the daily limit), upcoming, pending ratings, open
+  sessions, and today's counts, which keep reviews, initial learning, and
+  completed sessions apart. Retrievability of a never-reviewed problem is
+  "not yet estimated" (`retrievabilityEstimate()` returns `null`).
 
 ## Practice sessions
 

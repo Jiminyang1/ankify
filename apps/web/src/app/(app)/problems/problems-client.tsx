@@ -26,6 +26,13 @@ type FilterState = {
 
 type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
 
+/** Due for review: initial learning finished and scheduled at or before now
+ *  (legacy captures without a schedule count as due). */
+function isProblemDue(problem: Pick<ProblemListItemDto, "enrollment" | "fsrsDue">, nowMs: number) {
+  if (problem.enrollment !== "enrolled") return false;
+  return !problem.fsrsDue || new Date(problem.fsrsDue).valueOf() <= nowMs;
+}
+
 export default function ProblemsPage({
   initialData,
 }: {
@@ -168,10 +175,10 @@ export default function ProblemsPage({
 
     switch (filters.state) {
       case "due":
-        list = list.filter((p) => !p.fsrsDue || new Date(p.fsrsDue).valueOf() <= nowMs);
+        list = list.filter((p) => isProblemDue(p, nowMs));
         break;
       case "not-due":
-        list = list.filter((p) => p.fsrsDue && new Date(p.fsrsDue).valueOf() > nowMs);
+        list = list.filter((p) => !isProblemDue(p, nowMs));
         break;
       case "archived":
         // Server already returned only archived problems; nothing to narrow.
@@ -393,7 +400,7 @@ export default function ProblemsPage({
             </thead>
             <tbody>
               {filtered.map((p) => {
-                const isDue = !p.fsrsDue || new Date(p.fsrsDue).getTime() <= nowMs;
+                const isDue = isProblemDue(p, nowMs);
                 return (
                   <tr
                     key={p.id}
@@ -427,7 +434,11 @@ export default function ProblemsPage({
                           isDue ? "text-accent font-medium" : "text-muted",
                         )}
                       >
-                        {isDue && p.fsrsReps > 0 ? t.common.now : formatRelative(p.fsrsDue)}
+                        {p.enrollment === "awaiting_initial"
+                          ? t.common.notScheduled
+                          : isDue && p.fsrsReps > 0
+                            ? t.common.now
+                            : formatRelative(p.fsrsDue)}
                       </span>
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
