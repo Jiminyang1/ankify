@@ -272,6 +272,20 @@ or explains them.
     records its slug first, so it can never look new.
 - **Coverage**: history counts as complete only for a coverage scope read to
   its last page. Nothing infers completeness from a partial list.
+- **Planner**: `planSuggestion()` (`packages/core/src/suggestions/`) is pure
+  and deterministic. Its seed is the user, local date, ordinal, and planner
+  version.
+  - Once the profile is personalized, weak dimensions confirmed across
+    problems share suggestions through the daily feed's weighted rotation;
+    the rest is general practice.
+  - A targeted pick prefers similar questions of problems with confirmed
+    mistakes in the dimension, then topic affinity, then the same or easier
+    difficulty.
+  - General practice prefers the user's practiced topics and their recent
+    difficulty (Easy with no history).
+  - Explanations state only what the metadata shows. "Similar to X" names a
+    category only when a mistake of that category was confirmed on X; a
+    topic-only match is reported as a topic.
 
 ## Study Coach
 

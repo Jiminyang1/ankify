@@ -578,3 +578,58 @@ Recorded exceptions:
 
 Rollback: nothing reads the new tables for suggestions yet. Candidate
 recording and deletion history are additive writes.
+
+## Checkpoint 5.2: new-problem planner
+
+Status: **PASS**. Pure core module; no schema or API change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 460 tests in 71 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 18 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+`planSuggestion()` in `packages/core/src/suggestions/` adapts the daily
+feed's engine to new problems only. It keeps the weakness shares,
+deficit-based weighted rotation, and seeded `unitHash` tie-breaks, and drops
+drills and quiz retries.
+
+- Input weakness: the 4A profile's categories, with readiness. Only
+  dimensions both weak and confirmed across problems are targeted, and only
+  once the profile is personalized; otherwise the pick is labeled general
+  practice.
+- Eligibility: verified metadata, free, not attempted (problem rows and
+  attempt history), not pending, and not suggested in the last 30 days.
+- Targeted ranking:
+  - similar questions of problems with confirmed mistakes in the dimension;
+  - then topic affinity (the dimension's confirmed contexts split across
+    topics);
+  - then same-or-easier difficulty.
+- General practice ranking: the user's practiced topics, similarity to a
+  practiced problem, and the recent median difficulty (Easy with no history).
+- Explanations state only what metadata shows. "Similar to X" carries a
+  category only when that category was confirmed on X, and a topic-only match
+  is a topic. General practice says why: not personalized, no focus, rotation,
+  or no targeted candidate.
+- The seed is the user, local date, ordinal, and planner version
+  (`suggestions-v1`, stored with each suggestion from 5.3).
+
+Tests:
+
+- scoring and explanation;
+- every eligibility exclusion, including the 30-day boundary;
+- truthful general-practice labels;
+- cold start by topic and difficulty;
+- determinism, with variation across ordinals and users;
+- a topic-only explanation;
+- a 28-day rotation over two weak dimensions: shares within 0.1 of 0.50,
+  0.35, and 0.15, no weak dimension unserved for more than 7 days, and no
+  repeated target.
+
+Mutation checks, each failing a test:
+
+- dropping the 30-day exposure;
+- ignoring readiness;
+- removing the rotation's served counts;
+- labeling a topic-only match as similar.

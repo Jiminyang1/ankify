@@ -14,9 +14,9 @@ FSRS state**: its outcomes only feed the weakness model.
 
 | Area | Status |
 | --- | --- |
-| Engine: `planDailyFeed()` in `packages/core/src/daily-feed/` (pure, tested) | Implemented on `feat/mistake-profile`; not yet called by the app |
-| Persistence (`feed_items`), settings, API, Today UI | Planned |
-| Capturing `similarQuestions` title/difficulty/paid flag | Planned (needed for `new_problem`) |
+| Engine: `planDailyFeed()` in `packages/core/src/daily-feed/` (pure, tested) | Implemented; never called by the app. Its weakness shares, deficit rotation, and seeded hashing are reused by `planSuggestion()` |
+| Persistence (`feed_items`), settings, API, Today UI | Superseded: the [extension-first refactor](EXTENSION_FIRST_REFACTOR_PLAN.md#recommendations) replaces the mixed drill/quiz feed with new-problem suggestions (Phase 5) |
+| Capturing `similarQuestions` title/difficulty/paid flag | Implemented (Phase 5.1): stored as verified suggestion candidates rather than on `problems` |
 
 ## Item kinds
 
