@@ -5,12 +5,14 @@ import type {
   ReviewUndoResponseDto,
 } from "@ankify/contracts";
 import { rate, retrievability, SCHEDULING_POLICIES, type FsrsCardState } from "@ankify/core";
-import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { getDb, schema, type Problem, type ReviewEvent } from "@ankify/db";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { markFirstReview } from "./onboarding";
 import { getReviewQueueStatus } from "./review-queue";
+
+type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
 type RateReviewResult =
   | ReviewRateResponseDto
@@ -38,6 +40,136 @@ const undoSnapshotSchema = z.object({
   state: z.enum(["new", "learning", "review", "relearning"]),
   lastReview: z.string().nullable(),
 });
+
+export function problemFsrsState(problem: Problem): FsrsCardState {
+  return {
+    due: problem.fsrsDue,
+    stability: problem.fsrsStability,
+    difficulty: problem.fsrsDifficulty,
+    elapsedDays: problem.fsrsElapsedDays,
+    scheduledDays: problem.fsrsScheduledDays,
+    learningSteps: problem.fsrsLearningSteps,
+    reps: problem.fsrsReps,
+    lapses: problem.fsrsLapses,
+    state: problem.fsrsState,
+    lastReview: problem.fsrsLastReview,
+  };
+}
+
+/** Problem columns for a new FSRS state. Every write also advances the
+ *  schedule revision so stale pending ratings and Undo are detected. */
+export function fsrsWriteColumns(next: FsrsCardState) {
+  return {
+    fsrsDue: next.due,
+    fsrsStability: next.stability,
+    fsrsDifficulty: next.difficulty,
+    fsrsElapsedDays: next.elapsedDays,
+    fsrsScheduledDays: next.scheduledDays,
+    fsrsLearningSteps: next.learningSteps,
+    fsrsReps: next.reps,
+    fsrsLapses: next.lapses,
+    fsrsState: next.state,
+    fsrsLastReview: next.lastReview,
+    scheduleRevision: sql<number>`${schema.problems.scheduleRevision} + 1`,
+  };
+}
+
+/** Pre-rating state stored in the event's `metadata.undo`. */
+export function undoSnapshot(state: FsrsCardState) {
+  return {
+    due: state.due?.toISOString() ?? null,
+    stability: state.stability,
+    difficulty: state.difficulty,
+    elapsedDays: state.elapsedDays,
+    scheduledDays: state.scheduledDays,
+    learningSteps: state.learningSteps,
+    reps: state.reps,
+    lapses: state.lapses,
+    state: state.state,
+    lastReview: state.lastReview?.toISOString() ?? null,
+  };
+}
+
+const SCHEDULING_EVENT_TYPES = ["self_recall_rated", "fsrs_scheduled"] as const;
+
+/**
+ * Reverts one rating event inside the caller's transaction: restores the
+ * pre-rating FSRS state, advances the schedule revision, stamps `undoneAt`,
+ * and marks a session's rating undone (it can never be rated again).
+ *
+ * The event must still account for the current schedule. Every FSRS write
+ * advances the revision by one and every Undo by one more, so the schedule is
+ * unchanged since the event exactly when the revision equals the event's plus
+ * two per later scheduling event that was itself undone. Any other write,
+ * even one that keeps the repetition count, is caught. Events from before
+ * migration 0021 have no revision and keep the legacy repetition check.
+ */
+export async function undoRatingEvent(
+  tx: DbTransaction,
+  userId: string,
+  event: ReviewEvent,
+  now: Date,
+): Promise<{ ok: true } | { ok: false; error: "nothing_to_undo" | "undo_conflict" }> {
+  const snapshot = undoSnapshotSchema.safeParse((event.metadata as { undo?: unknown } | null)?.undo);
+  if (!snapshot.success || event.undoneAt != null) return { ok: false, error: "nothing_to_undo" };
+  const previous = snapshot.data;
+  const p = schema.problems;
+  const e = schema.reviewEvents;
+  let expectedRevision: number | null = null;
+  if (event.scheduleRevision != null) {
+    const later = await tx
+      .select({ undoneAt: e.undoneAt })
+      .from(e)
+      .where(
+        and(
+          eq(e.userId, userId),
+          eq(e.problemId, event.problemId),
+          inArray(e.eventType, [...SCHEDULING_EVENT_TYPES]),
+          gt(e.scheduleRevision, event.scheduleRevision),
+        ),
+      );
+    if (later.some((row) => row.undoneAt == null)) return { ok: false, error: "undo_conflict" };
+    expectedRevision = event.scheduleRevision + 2 * later.length;
+  }
+  const [updated] = await tx
+    .update(p)
+    .set({
+      fsrsDue: previous.due ? new Date(previous.due) : null,
+      fsrsStability: previous.stability,
+      fsrsDifficulty: previous.difficulty,
+      fsrsElapsedDays: previous.elapsedDays,
+      fsrsScheduledDays: previous.scheduledDays,
+      fsrsLearningSteps: previous.learningSteps,
+      fsrsReps: previous.reps,
+      fsrsLapses: previous.lapses,
+      fsrsState: previous.state,
+      fsrsLastReview: previous.lastReview ? new Date(previous.lastReview) : null,
+      scheduleRevision: sql`${p.scheduleRevision} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(p.id, event.problemId),
+        eq(p.userId, userId),
+        expectedRevision != null ? eq(p.scheduleRevision, expectedRevision) : eq(p.fsrsReps, previous.reps + 1),
+      ),
+    )
+    .returning({ id: p.id });
+  if (!updated) return { ok: false, error: "undo_conflict" };
+
+  await tx
+    .update(schema.reviewEvents)
+    .set({ undoneAt: now })
+    .where(and(eq(schema.reviewEvents.id, event.id), eq(schema.reviewEvents.userId, userId)));
+  if (event.practiceSessionId) {
+    const s = schema.practiceSessions;
+    await tx
+      .update(s)
+      .set({ ratingDisposition: "undone", revision: sql`${s.revision} + 1`, updatedAt: now })
+      .where(and(eq(s.id, event.practiceSessionId), eq(s.userId, userId)));
+  }
+  return { ok: true };
+}
 
 export async function rateProblemReview(
   userId: string,
@@ -88,34 +220,13 @@ export async function rateProblemReview(
     // rating before that would fabricate one.
     if (problem.enrollment !== "enrolled") return { ok: false, error: "problem_not_enrolled" } as const;
 
-    const state: FsrsCardState = {
-      due: problem.fsrsDue,
-      stability: problem.fsrsStability,
-      difficulty: problem.fsrsDifficulty,
-      elapsedDays: problem.fsrsElapsedDays,
-      scheduledDays: problem.fsrsScheduledDays,
-      learningSteps: problem.fsrsLearningSteps,
-      reps: problem.fsrsReps,
-      lapses: problem.fsrsLapses,
-      state: problem.fsrsState,
-      lastReview: problem.fsrsLastReview,
-    };
+    const state = problemFsrsState(problem);
     const retrievabilityAtReview = retrievability(state);
     const { next } = rate(state, input.rating, now);
     const [updated] = await tx
       .update(schema.problems)
       .set({
-        fsrsDue: next.due,
-        fsrsStability: next.stability,
-        fsrsDifficulty: next.difficulty,
-        fsrsElapsedDays: next.elapsedDays,
-        fsrsScheduledDays: next.scheduledDays,
-        fsrsLearningSteps: next.learningSteps,
-        fsrsReps: next.reps,
-        fsrsLapses: next.lapses,
-        fsrsState: next.state,
-        fsrsLastReview: next.lastReview,
-        scheduleRevision: sql`${schema.problems.scheduleRevision} + 1`,
+        ...fsrsWriteColumns(next),
         updatedAt: now,
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
       })
@@ -143,18 +254,7 @@ export async function rateProblemReview(
       fsrsDifficultySnap: next.difficulty,
       fsrsRetrievabilitySnap: retrievabilityAtReview,
       metadata: {
-        undo: {
-          due: state.due?.toISOString() ?? null,
-          stability: state.stability,
-          difficulty: state.difficulty,
-          elapsedDays: state.elapsedDays,
-          scheduledDays: state.scheduledDays,
-          learningSteps: state.learningSteps,
-          reps: state.reps,
-          lapses: state.lapses,
-          state: state.state,
-          lastReview: state.lastReview?.toISOString() ?? null,
-        },
+        undo: undoSnapshot(state),
         result: { nextDue: next.due?.toISOString() ?? null },
       },
     });
@@ -199,48 +299,15 @@ export async function undoLatestProblemReview(
           isNull(schema.reviewEvents.undoneAt),
         ),
       )
-      .orderBy(desc(schema.reviewEvents.occurredAt))
-      .limit(1);
-    const snapshot = undoSnapshotSchema.safeParse(
-      (event?.metadata as { undo?: unknown } | null)?.undo,
-    );
-    if (!event || !snapshot.success) {
-      return { ok: false, error: "nothing_to_undo" } as const;
-    }
-
-    const previous = snapshot.data;
-    const now = new Date();
-    const [updated] = await tx
-      .update(schema.problems)
-      .set({
-        fsrsDue: previous.due ? new Date(previous.due) : null,
-        fsrsStability: previous.stability,
-        fsrsDifficulty: previous.difficulty,
-        fsrsElapsedDays: previous.elapsedDays,
-        fsrsScheduledDays: previous.scheduledDays,
-        fsrsLearningSteps: previous.learningSteps,
-        fsrsReps: previous.reps,
-        fsrsLapses: previous.lapses,
-        fsrsState: previous.state,
-        fsrsLastReview: previous.lastReview ? new Date(previous.lastReview) : null,
-        scheduleRevision: sql`${schema.problems.scheduleRevision} + 1`,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(schema.problems.id, input.problemId),
-          eq(schema.problems.userId, userId),
-          eq(schema.problems.fsrsReps, previous.reps + 1),
-        ),
+      // Newest by schedule revision; events from before revisions existed last.
+      .orderBy(
+        asc(sql`${schema.reviewEvents.scheduleRevision} IS NULL`),
+        desc(schema.reviewEvents.scheduleRevision),
+        desc(schema.reviewEvents.occurredAt),
       )
-      .returning({ id: schema.problems.id });
-    if (!updated) return { ok: false, error: "undo_conflict" } as const;
-
-    await tx
-      .update(schema.reviewEvents)
-      .set({ undoneAt: now })
-      .where(eq(schema.reviewEvents.id, event.id));
-    return { ok: true } as const;
+      .limit(1);
+    if (!event) return { ok: false, error: "nothing_to_undo" } as const;
+    return undoRatingEvent(tx, userId, event, new Date());
   });
 
   if (!result.ok) return result;

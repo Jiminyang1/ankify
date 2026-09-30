@@ -1,6 +1,6 @@
 import { ownerTokenSchema } from "@ankify/contracts";
 import { NextResponse } from "next/server";
-import type { SessionFailure } from "./commands";
+import type { SessionFailure } from "./store";
 
 /** Tabs identify themselves on reads with this header, so the response can say
  *  whether the session is controlled by the caller or another tab. */

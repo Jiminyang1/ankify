@@ -381,7 +381,7 @@ export const practiceSessionCommands = sqliteTable(
       .references(() => practiceSessions.id, { onDelete: "cascade" }),
     requestId: text("request_id").notNull(),
     command: text("command", {
-      enum: ["start", "resume", "takeover", "finish", "abandon", "set_baseline", "defer_rating", "dismiss_rating", "rate"],
+      enum: ["start", "resume", "takeover", "finish", "abandon", "set_baseline", "defer_rating", "dismiss_rating", "rate", "undo_rating"],
     }).notNull(),
     /** SHA-256 of the canonical command payload, excluding the request id. */
     payloadDigest: text("payload_digest").notNull(),

@@ -2,8 +2,6 @@ import type {
   CaptureSubmissionInput,
   PracticeSessionCommandInput,
   PracticeSessionCommandResponseDto,
-  PracticeSessionDto,
-  PracticeSessionErrorCode,
   PracticeSessionStartInput,
   PracticeSessionStartResponseDto,
   PracticeSessionSubmissionsInput,
@@ -23,101 +21,33 @@ import {
   SESSION_LEASE_MS,
   sessionKindFor,
 } from "@ankify/core";
-import {
-  getDb,
-  schema,
-  type NewPracticeSession,
-  type PracticeSession,
-  type PracticeSessionCommand,
-  type PracticeSessionSubmission,
-  type Problem,
-} from "@ankify/db";
+import { getDb, schema, type PracticeSession, type PracticeSessionSubmission, type Problem } from "@ankify/db";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { markFirstCapture } from "@/server/onboarding";
+import { getReviewSettings } from "@/server/settings";
 import { findLeetcodeProblem, upsertLeetcodeProblem } from "@/server/problem-upsert";
 import { storeSubmissions } from "@/server/submission-store";
 import { payloadDigest } from "./digest";
-import { isProblemDue, loadSessionEvidence, toPracticeSessionDto, toProblemStatusDto, worseCompleteness } from "./dto";
-
-type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
-
-export type SessionFailure = {
-  ok: false;
-  error: PracticeSessionErrorCode;
-  message?: string;
-  session?: PracticeSessionDto;
-};
+import { initializeProblemSchedule, undoSessionRating } from "./scheduling";
+import { isProblemDue, loadSessionEvidence, toProblemStatusDto, worseCompleteness } from "./dto";
+import {
+  fail,
+  findReplay,
+  loadProblem,
+  loadSession,
+  recordCommand,
+  sessionDto,
+  updateSession,
+  type SessionFailure,
+  type SessionPatch,
+} from "./store";
 
 type StartResult = { ok: true; response: PracticeSessionStartResponseDto } | SessionFailure;
 type CommandResult = { ok: true; response: PracticeSessionCommandResponseDto } | SessionFailure;
 type IngestResult = { ok: true; response: PracticeSessionSubmissionsResponseDto } | SessionFailure;
-type SessionPatch = Partial<Omit<NewPracticeSession, "id" | "userId" | "problemId" | "requestId">>;
 
 const ps = schema.practiceSessions;
-
-function fail(error: PracticeSessionErrorCode, session?: PracticeSessionDto, message?: string): SessionFailure {
-  return { ok: false, error, ...(session ? { session } : {}), ...(message ? { message } : {}) };
-}
-
-async function loadSession(tx: DbTransaction, userId: string, sessionId: string) {
-  const [row] = await tx.select().from(ps).where(and(eq(ps.id, sessionId), eq(ps.userId, userId))).limit(1);
-  return row ?? null;
-}
-
-async function loadProblem(tx: DbTransaction, userId: string, problemId: string) {
-  const [row] = await tx
-    .select()
-    .from(schema.problems)
-    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)))
-    .limit(1);
-  return row ?? null;
-}
-
-async function findReplay(tx: DbTransaction, userId: string, requestId: string) {
-  const c = schema.practiceSessionCommands;
-  const [row] = await tx
-    .select()
-    .from(c)
-    .where(and(eq(c.userId, userId), eq(c.requestId, requestId)))
-    .limit(1);
-  return row ?? null;
-}
-
-async function recordCommand(
-  tx: DbTransaction,
-  row: Pick<PracticeSessionCommand, "userId" | "sessionId" | "requestId" | "command" | "payloadDigest" | "response">,
-  now: Date,
-) {
-  await tx.insert(schema.practiceSessionCommands).values({ id: nanoid(12), ...row, createdAt: now });
-}
-
-async function updateSession(
-  tx: DbTransaction,
-  userId: string,
-  session: PracticeSession,
-  patch: SessionPatch,
-  now: Date,
-): Promise<PracticeSession> {
-  const [row] = await tx
-    .update(ps)
-    .set({ ...patch, revision: session.revision + 1, updatedAt: now })
-    .where(and(eq(ps.id, session.id), eq(ps.userId, userId)))
-    .returning();
-  return row!;
-}
-
-async function sessionDto(
-  tx: DbTransaction,
-  userId: string,
-  session: PracticeSession,
-  problem: Pick<Problem, "scheduleRevision">,
-  now: Date,
-  ownerToken?: string | null,
-) {
-  const evidence = (await loadSessionEvidence(tx, userId, [session.id])).get(session.id);
-  return toPracticeSessionDto(session, { problemScheduleRevision: problem.scheduleRevision, evidence, ownerToken, now });
-}
 
 /** Moves control to `token`. A new owner starts its own cumulative timing, so
  *  the previous owner's totals are committed first. */
@@ -312,6 +242,8 @@ export async function runSessionCommand(
   now = new Date(),
 ): Promise<CommandResult> {
   if (input.type === "heartbeat") return heartbeat(userId, sessionId, input, now);
+  // Read outside the write transaction; only finishing initial learning uses it.
+  const initialReviewDelayHours = input.type === "finish" ? (await getReviewSettings(userId)).initialReviewDelayHours : 0;
   const { requestId, ...payload } = input;
   const digest = payloadDigest({ sessionId, ...payload });
 
@@ -325,7 +257,7 @@ export async function runSessionCommand(
     }
     const session = await loadSession(tx, userId, sessionId);
     if (!session) return fail("session_not_found");
-    const problem = (await loadProblem(tx, userId, session.problemId))!;
+    let problem = (await loadProblem(tx, userId, session.problemId))!;
     const token = "ownerToken" in input ? input.ownerToken : null;
     const dtoOf = (row: PracticeSession) => sessionDto(tx, userId, row, problem, now, token);
     const stale = isSessionStale(session, now);
@@ -378,6 +310,11 @@ export async function runSessionCommand(
           },
           now,
         );
+        if (session.type === "initial_learning") {
+          // Any explicit finish completes initial learning; abandoned or
+          // interrupted sessions never schedule anything.
+          problem = (await initializeProblemSchedule(tx, userId, next, completed.at, initialReviewDelayHours, now)) ?? problem;
+        }
         break;
       }
       case "abandon": {
@@ -422,6 +359,14 @@ export async function runSessionCommand(
           { ratingDisposition: input.type === "defer_rating" ? "deferred" : "dismissed" },
           now,
         );
+        break;
+      }
+      case "undo_rating": {
+        if (session.ratingDisposition !== "submitted") return fail("nothing_to_undo", await dtoOf(session));
+        const undone = await undoSessionRating(tx, userId, session, now);
+        if (!undone.ok) return fail(undone.error, await dtoOf(session));
+        problem = (await loadProblem(tx, userId, session.problemId))!;
+        next = (await loadSession(tx, userId, session.id))!;
         break;
       }
     }

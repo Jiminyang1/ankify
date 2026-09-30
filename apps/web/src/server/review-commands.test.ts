@@ -98,11 +98,23 @@ describe("legacy rating and Undo characterization", () => {
     expect(await problem()).toEqual(rated);
   });
 
-  it("refuses Undo after a newer scheduling change", async () => {
+  it("refuses Undo after a newer scheduling change, even one that keeps the repetition count", async () => {
     await rateProblemReview(USER, request);
-    await getDb().update(schema.problems).set({ fsrsReps: memory.fsrsReps + 2 })
+    const rated = await problem();
+    // Any other schedule write advances the revision; repetitions alone would
+    // not reveal this one.
+    await getDb().update(schema.problems).set({ fsrsDue: new Date("2027-01-01T00:00:00.000Z"), scheduleRevision: rated.scheduleRevision + 1 })
       .where(and(eq(schema.problems.userId, USER), eq(schema.problems.id, "p1")));
     expect(await undoLatestProblemReview(USER, { problemId: "p1" })).toEqual({ ok: false, error: "undo_conflict" });
+  });
+
+  it("undoes successive ratings newest first back to the original schedule", async () => {
+    await rateProblemReview(USER, request);
+    await rateProblemReview(USER, { ...request, rating: 1, requestId: "22222222-2222-4222-8222-222222222222" });
+    expect(await undoLatestProblemReview(USER, { problemId: "p1" })).toMatchObject({ ok: true });
+    expect(await undoLatestProblemReview(USER, { problemId: "p1" })).toMatchObject({ ok: true });
+    expect(await problem()).toMatchObject({ ...memory, scheduleRevision: 4 });
+    expect(await undoLatestProblemReview(USER, { problemId: "p1" })).toEqual({ ok: false, error: "nothing_to_undo" });
   });
 
   it("rolls back memory changes when inserting the review event fails", async () => {

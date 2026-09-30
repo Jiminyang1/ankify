@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { captureProblemSchema, captureSubmissionSchema, difficultyEnum, submissionStatusEnum } from "./schemas";
+import { captureProblemSchema, captureSubmissionSchema, difficultyEnum, fsrsRatingSchema, submissionStatusEnum } from "./schemas";
 
 export const practiceSessionTypeEnum = z.enum(["initial_learning", "scheduled_review", "voluntary_practice"]);
 export const reviewIntentEnum = z.enum(["due", "early", "none"]);
@@ -105,8 +105,18 @@ export const practiceSessionCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("abandon"), ...ownedCommand, occurredAt: occurredAtSchema }).strict(),
   z.object({ type: z.literal("defer_rating"), requestId: z.string().uuid() }).strict(),
   z.object({ type: z.literal("dismiss_rating"), requestId: z.string().uuid() }).strict(),
+  /** Reverts this session's rating if no later scheduling change happened.
+   *  An undone session can never be rated again. */
+  z.object({ type: z.literal("undo_rating"), requestId: z.string().uuid() }).strict(),
 ]);
 export type PracticeSessionCommandInput = z.infer<typeof practiceSessionCommandSchema>;
+
+/** POST /api/practice-sessions/:id/rating — one FSRS rating per completed
+ *  review, chosen explicitly (no default), scheduled from the completion time. */
+export const practiceSessionRatingSchema = z
+  .object({ requestId: z.string().uuid(), rating: fsrsRatingSchema })
+  .strict();
+export type PracticeSessionRatingInput = z.infer<typeof practiceSessionRatingSchema>;
 
 /** Code and judge output fetched from LeetCode for one submission. */
 export const observationDetailSchema = captureSubmissionSchema.omit({
@@ -267,6 +277,14 @@ export type PracticeSessionCommandResponseDto = {
   idempotentReplay: boolean;
 };
 
+export type PracticeSessionRatingResponseDto = {
+  ok: true;
+  session: PracticeSessionDto;
+  problem: PracticeProblemStatusDto;
+  nextDue: string | null;
+  idempotentReplay: boolean;
+};
+
 export type SessionObservationOutcome =
   | "recorded"
   | "recorded_pending_detail"
@@ -297,6 +315,9 @@ export type PracticeSessionErrorCode =
   | "invalid_transition"
   | "baseline_already_set"
   | "rating_not_pending"
+  /** A later scheduling change happened; Undo would overwrite it. */
+  | "undo_conflict"
+  | "nothing_to_undo"
   | "request_conflict"
   | "duplicate_problem_conflict"
   | "problem_limit_reached"

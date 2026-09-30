@@ -4,6 +4,7 @@ import { getRequestUser } from "@/server/auth";
 import { createTestDb } from "@/server/test-db";
 import { GET as getDetail } from "./[id]/route";
 import { POST as postCommand } from "./[id]/commands/route";
+import { POST as postRating } from "./[id]/rating/route";
 import { POST as postSubmissions } from "./[id]/submissions/route";
 import { GET as getCurrent } from "./current/route";
 import { GET as list, POST as start } from "./route";
@@ -103,6 +104,18 @@ describe("practice session routes", () => {
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ error: "not_owner", session: { id: session.id, ownership: "other_tab" } });
     expect((await getDetail(request("/api/practice-sessions/missing"), params("missing"))).status).toBe(404);
+  });
+
+  it("rates only completed reviews, idempotently, behind its own kill switch", async () => {
+    const { session } = await (await start(request("/api/practice-sessions", { body: startBody() }))).json();
+    const rating = { requestId: crypto.randomUUID(), rating: 3 };
+    const early = await postRating(request(`/api/practice-sessions/${session.id}/rating`, { body: rating }), params(session.id));
+    expect(early.status).toBe(409);
+    expect(await early.json()).toMatchObject({ error: "rating_not_pending", session: { type: "initial_learning" } });
+    expect((await postRating(request(`/api/practice-sessions/${session.id}/rating`, { body: { ...rating, rating: 0 } }), params(session.id))).status).toBe(400);
+    expect((await postRating(request("/api/practice-sessions/missing/rating", { body: rating }), params("missing"))).status).toBe(404);
+    vi.stubEnv("ANKIFY_DISABLED_WORKFLOWS", "session_rating");
+    expect((await postRating(request(`/api/practice-sessions/${session.id}/rating`, { body: rating }), params(session.id))).status).toBe(503);
   });
 
   it("reports ownership relative to the tab's owner-token header", async () => {

@@ -14,6 +14,7 @@ const IMPLEMENTED_WORKFLOWS: readonly WorkflowId[] = [
   "quiz_generation",
   "credit_checkout",
   "practice_sessions",
+  "session_rating",
 ];
 
 /**
