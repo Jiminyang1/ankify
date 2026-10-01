@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
@@ -64,6 +65,26 @@ export async function getActiveModel(userId: string, opts: BuildModelOptions = {
   return { model: buildModel(settings, opts), settings };
 }
 
+/** Gemini counts its thinking tokens against `maxOutputTokens`, so a call
+ * capped for the answer alone can run out before it writes any output.
+ * Gemini calls keep thinking low and get this much extra room for it. */
+export const GEMINI_THINKING_HEADROOM_TOKENS = 4_000;
+
+/** Per-call options for a provider, merged into `generateText`. Gemini 3 takes a
+ * thinking level and Gemini 2.5 a token budget; other ids get only headroom. */
+export function providerCallOptions(settings: Pick<BuildModelSettings, "provider" | "model">, maxOutputTokens: number) {
+  if (settings.provider !== "google") return { maxOutputTokens };
+  const thinkingConfig = /^gemini-3/.test(settings.model)
+    ? { thinkingLevel: "low" as const }
+    : /^gemini-2\.5/.test(settings.model)
+      ? { thinkingBudget: 1_024 }
+      : undefined;
+  return {
+    maxOutputTokens: maxOutputTokens + GEMINI_THINKING_HEADROOM_TOKENS,
+    ...(thinkingConfig ? { providerOptions: { google: { thinkingConfig } } } : {}),
+  };
+}
+
 export function buildModel(settings: BuildModelSettings, opts: BuildModelOptions = {}): LanguageModel {
   if (settings.provider === "anthropic") {
     const client = createAnthropic({ apiKey: settings.apiKey });
@@ -76,7 +97,12 @@ export function buildModel(settings: BuildModelSettings, opts: BuildModelOptions
     const client = createOpenAI({ apiKey: settings.apiKey });
     return client(settings.model);
   }
-  // OpenAI-compatible providers (DeepSeek today; Gemini/Groq/etc. later).
+  if (settings.provider === "google") {
+    // Native Gemini client: structured output uses Gemini's response schema.
+    const client = createGoogleGenerativeAI({ apiKey: settings.apiKey });
+    return client(settings.model);
+  }
+  // OpenAI-compatible providers (DeepSeek today).
   const preset = OPENAI_COMPATIBLE_PRESETS[settings.provider as keyof typeof OPENAI_COMPATIBLE_PRESETS];
   if (preset) {
     const disableThinking = preset.supportsThinkingToggle

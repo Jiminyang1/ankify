@@ -104,7 +104,7 @@ function qaAiSettings() {
   const configured = provider || model || apiKey;
   if (!configured) return null;
   if (
-    (provider !== "openai" && provider !== "anthropic" && provider !== "deepseek") ||
+    (provider !== "openai" && provider !== "anthropic" && provider !== "deepseek" && provider !== "google") ||
     !model ||
     !apiKey ||
     (reasoningMode !== "fast" && reasoningMode !== "thinking")

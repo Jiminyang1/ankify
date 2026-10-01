@@ -17,7 +17,7 @@ export const STARTER_AI_USAGE_KEY = "starter-ai-usage";
 const DEFAULT_PROVIDER = "deepseek";
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const DEFAULT_CREDITS = 20;
-const PROVIDERS: ReadonlyArray<Exclude<AiProvider, "">> = ["anthropic", "openai", "deepseek"];
+const PROVIDERS: ReadonlyArray<Exclude<AiProvider, "">> = ["anthropic", "openai", "deepseek", "google"];
 
 export interface StarterAiConfig {
   provider: Exclude<AiProvider, "">;

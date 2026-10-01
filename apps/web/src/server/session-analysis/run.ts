@@ -10,7 +10,7 @@ import { hasAnalyzableCode } from "@ankify/core";
 import { getDb, schema, type AiJob } from "@ankify/db";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { and, eq, ne } from "drizzle-orm";
-import { buildModel } from "../ai";
+import { buildModel, providerCallOptions } from "../ai";
 import { nonRetryableJobError } from "../ai-generation/errors";
 import { loadRunningJob, markSucceeded } from "../ai-generation/jobs";
 import { isWorkflowEnabled } from "../features";
@@ -72,7 +72,7 @@ async function callAnalyzer(ai: AiRuntimeSettings, system: string, prompt: strin
       output: Output.object({ schema: sessionAnalysisOutputSchema }),
       system,
       prompt,
-      maxOutputTokens: ANALYSIS_OUTPUT_TOKENS,
+      ...providerCallOptions(ai, ANALYSIS_OUTPUT_TOKENS),
       // One provider call per job attempt; the job allows three attempts.
       maxRetries: 0,
       ...(!usesDeepSeekThinking ? { temperature: 0.2 } : {}),

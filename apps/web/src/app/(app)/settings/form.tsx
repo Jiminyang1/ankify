@@ -44,6 +44,7 @@ const MODEL_PRESETS: Record<AiProvider, string[]> = {
   // `deepseek-v4-flash` = 284B MoE, ~10x cheaper, fine for card generation.
   // Legacy `deepseek-chat` / `deepseek-reasoner` retire after 2026-07-24.
   deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+  google: ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro"],
 };
 
 type ModelEntry = { id: string; label?: string };
@@ -51,6 +52,7 @@ const PROVIDER_LABELS: Partial<Record<AiProvider, string>> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   deepseek: "DeepSeek",
+  google: "Google Gemini",
 };
 const SETTINGS_ACTION_CLASS = "min-w-28";
 
@@ -95,6 +97,7 @@ export function AiSettingsForm({
     anthropic: null,
     openai: null,
     deepseek: null,
+    google: null,
   });
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -313,6 +316,7 @@ export function AiSettingsForm({
           <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
           <option value="deepseek">DeepSeek</option>
+          <option value="google">Google Gemini</option>
         </Select>
       </div>
 
@@ -495,7 +499,6 @@ export function LanguageRegionSettingsForm({
 }: {
   initial: {
     generationLanguage: Language;
-    timeZone: string;
   };
 }) {
   const router = useRouter();
@@ -563,14 +566,6 @@ export function LanguageRegionSettingsForm({
             <option value="en">{t.settings.generationLanguageEnglish}</option>
             <option value="zh">{t.settings.generationLanguageChinese}</option>
           </Select>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-sm">
-            <span className="font-medium text-fg">{t.settings.timeZone}</span>
-            <InfoTip label={t.settings.timeZoneHelp} align="left" />
-          </div>
-          <p className="text-sm text-muted">{t.settings.timeZoneFromDevice(initial.timeZone)}</p>
         </div>
       </div>
 

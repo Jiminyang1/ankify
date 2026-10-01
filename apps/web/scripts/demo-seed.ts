@@ -804,7 +804,7 @@ function qaAiSettings() {
   const apiKey = process.env.ANKIFY_QA_AI_API_KEY?.trim();
   const reasoningMode = process.env.ANKIFY_QA_AI_REASONING_MODE?.trim() || "fast";
   if (!provider || !model || !apiKey) return null;
-  if (provider !== "openai" && provider !== "anthropic" && provider !== "deepseek") return null;
+  if (provider !== "openai" && provider !== "anthropic" && provider !== "deepseek" && provider !== "google") return null;
   return { provider, model, reasoningMode, encryptedApiKey: encryptSecret(apiKey) };
 }
 

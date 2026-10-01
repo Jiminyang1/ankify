@@ -108,7 +108,6 @@ export default async function SettingsPage({
             <LanguageRegionSettingsForm
               initial={{
                 generationLanguage: generation.language,
-                timeZone: review.timeZone,
               }}
             />
           </SettingsSection>

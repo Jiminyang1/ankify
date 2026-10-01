@@ -55,7 +55,38 @@ function listModels(provider: ModelProvider, apiKey: string, signal: AbortSignal
       return listOpenAi(apiKey, signal);
     case "deepseek":
       return listDeepseek(apiKey, signal);
+    case "google":
+      return listGoogle(apiKey, signal);
   }
+}
+
+/** Gemini models that can generate content, newest first. */
+async function listGoogle(apiKey: string, signal: AbortSignal): Promise<ModelEntry[]> {
+  const models: ModelEntry[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < 5; page += 1) {
+    const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+    url.searchParams.set("pageSize", "1000");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await fetch(url, { headers: { "x-goog-api-key": apiKey }, signal });
+    // Gemini answers an invalid key with 400 API_KEY_INVALID, not 401.
+    if (response.status === 400) throw new ProviderError(401);
+    if (!response.ok) throw new ProviderError(response.status);
+    const json = (await response.json()) as {
+      models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }>;
+      nextPageToken?: string;
+    };
+    for (const model of json.models ?? []) {
+      const id = model.name.replace(/^models\//, "");
+      if (id.startsWith("gemini-") && model.supportedGenerationMethods?.includes("generateContent")) {
+        models.push({ id, label: model.displayName });
+      }
+    }
+    pageToken = json.nextPageToken;
+    if (!pageToken) break;
+  }
+  models.sort((a, b) => b.id.localeCompare(a.id));
+  return models;
 }
 
 async function listAnthropic(apiKey: string, signal: AbortSignal): Promise<ModelEntry[]> {

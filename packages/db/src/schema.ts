@@ -697,7 +697,7 @@ export const aiJobs = sqliteTable(
     activeDedupKey: text("active_dedup_key"),
     inputEnvelope: text("input_envelope", { mode: "json" }).$type<EncryptedJobInput>().notNull(),
 
-    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek", "google"] }).notNull(),
     model: text("model").notNull(),
     reasoningMode: text("reasoning_mode", { enum: ["fast", "thinking"] }).notNull(),
     generationLanguage: text("generation_language", { enum: ["en", "zh"] }).notNull(),
@@ -770,7 +770,7 @@ export const sessionAnalyses = sqliteTable(
     jobId: text("job_id").notNull(),
     evidenceDigest: text("evidence_digest").notNull(),
     analyzerVersion: text("analyzer_version").notNull(),
-    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek", "google"] }).notNull(),
     model: text("model").notNull(),
     result: text("result", { mode: "json" }).$type<SessionAnalysisResult>().notNull(),
     coverage: text("coverage", { mode: "json" }).$type<SessionAnalysisCoverage>().notNull(),
@@ -978,7 +978,7 @@ export const agentRuns = sqliteTable(
       .notNull()
       .default("running"),
     contextJson: text("context_json", { mode: "json" }).$type<AgentPageContext>().notNull(),
-    provider: text("provider", { enum: ["anthropic", "openai", "deepseek"] }).notNull(),
+    provider: text("provider", { enum: ["anthropic", "openai", "deepseek", "google"] }).notNull(),
     model: text("model").notNull(),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),

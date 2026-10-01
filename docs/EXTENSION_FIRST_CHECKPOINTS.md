@@ -1134,3 +1134,55 @@ Phase 6 acceptance:
 - Active navigation matches the new product.
 - No card, quiz, or Coach generation path and no credit sale remains active:
   6B.1 guards the server, and 6B.2 removes the UI.
+
+## Phase 7: documentation and owner-review fixes
+
+Phase 7 is in progress. Its commits so far, after owner review of a local
+build:
+
+- `890de4e`: the panel is findable.
+  - The popup has a "This problem" section: open the panel, or reload a tab
+    that predates the extension.
+  - Due problems open the panel automatically, and the pill reads "New
+    problem" for an untracked problem.
+  - The gear icon opens settings.
+- `b2830a6`: README, SELF_HOSTING, and CLAUDE.md/AGENTS.md describe the
+  extension-first product.
+- `a07ce70`:
+  - DeepSeek analysis no longer fails with `ai_request_rejected`: its
+    JSON-object mode needs the schema in the prompt.
+  - The time zone follows the device (web `TimeZoneSync`, extension
+    overview).
+  - Generation language defaults to English.
+  - Problem-page actions are stacked.
+- **Google Gemini provider:**
+  - `google` is added to the provider enums. Drizzle text enums carry no CHECK
+    constraint, so `db:generate` reports no migration.
+  - `buildModel` uses `@ai-sdk/google`, pinned to `4.0.50`: the newest
+    release on the `@ai-sdk/provider` spec that `ai@7.0.58` uses, since later
+    ones fail typecheck.
+  - Model listing reads `v1beta/models` and keeps `generateContent` Gemini
+    models. Gemini's 400 for a bad key reports as `invalid_api_key`.
+  - Gemini counts thinking against `maxOutputTokens`. `providerCallOptions()`
+    sets thinking low (a level for Gemini 3, a budget for 2.5) and adds 4,000
+    tokens of headroom for analysis.
+  - Settings and onboarding offer Gemini presets.
+- **Settings:** the time-zone row and its strings are removed, because the
+  device decides the zone. The section is now "Language".
+
+Gate for the Gemini/time-zone commit:
+
+- `pnpm test`: 494 tests.
+- `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest: all passed.
+- `pnpm test:e2e`: 28 tests.
+  - The first run, right after the dependency change, had 6 timeouts in
+    submission-tracking specs and a dev-server "destination stream closed
+    early".
+  - An unchanged re-run passed all 28 in 1.9 minutes.
+
+Still open in Phase 7:
+
+- dead-code cleanup (unused i18n `agent`/`quiz` groups, `LanguageToggle`,
+  `ThemeToggle`);
+- the live LeetCode probe report;
+- a real-provider analysis run with Gemini.

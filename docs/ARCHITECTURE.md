@@ -190,8 +190,10 @@ Details: [MISTAKE_PROFILE_PLAN.md](MISTAKE_PROFILE_PLAN.md).
    purchased credits (`server/ai-credits.ts`).
 3. Otherwise a clear `AI_NOT_CONFIGURED` / `AI_KEY_MISSING` error.
 
-Providers: Anthropic, OpenAI, and OpenAI-compatible presets (DeepSeek) built in
-`server/ai.ts`. DeepSeek thinking can be disabled per call.
+Providers: Anthropic, OpenAI, Google Gemini (`@ai-sdk/google`), and
+OpenAI-compatible presets (DeepSeek) built in `server/ai.ts`. DeepSeek thinking
+can be disabled per call; Gemini counts thinking against the output cap, so
+`providerCallOptions()` keeps its thinking low and adds headroom.
 
 ## Asynchronous AI generation (cards and quizzes)
 

@@ -21,6 +21,7 @@ const MODEL_PRESETS: Record<Exclude<AiProvider, "">, string[]> = {
   anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   openai: ["gpt-5", "gpt-4o-mini"],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
+  google: ["gemini-3.8-flash", "gemini-3.5-flash"],
 };
 
 type Copy = {
@@ -207,6 +208,7 @@ export function OnboardingCard({
       { value: "anthropic", label: "Anthropic (Claude)" },
       { value: "openai", label: "OpenAI" },
       { value: "deepseek", label: "DeepSeek" },
+      { value: "google", label: "Google Gemini" },
     ] as const,
     [],
   );

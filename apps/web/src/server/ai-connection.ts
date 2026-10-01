@@ -145,6 +145,7 @@ function classifyAiError(error: unknown): { code: string; message: string } {
     lower.includes("401") ||
     lower.includes("unauthorized") ||
     lower.includes("invalid api key") ||
+    lower.includes("api key not valid") ||
     lower.includes("authentication")
   ) {
     return { code: "invalid_api_key", message: "API key was rejected by the provider." };

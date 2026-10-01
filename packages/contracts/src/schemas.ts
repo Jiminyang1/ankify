@@ -12,7 +12,7 @@ export const submissionStatusEnum = z.enum([
   "Other",
 ]);
 
-export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
+export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek", "google"]);
 export const aiReasoningModeEnum = z.enum(["fast", "thinking"]);
 export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
 export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
