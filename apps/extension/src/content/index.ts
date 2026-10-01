@@ -86,6 +86,14 @@ void send<{ language: Language }>({ type: "panel_settings" }).then((result) => {
   current?.panel.rerender();
 });
 
+// The popup asks the page to show its panel (only this extension can send).
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== "open_panel") return;
+  mount();
+  current?.panel.expand();
+  sendResponse({ ok: Boolean(current) });
+});
+
 const onActivityChange = () => current?.page.onVisibilityChange();
 document.addEventListener("visibilitychange", onActivityChange);
 window.addEventListener("focus", onActivityChange);

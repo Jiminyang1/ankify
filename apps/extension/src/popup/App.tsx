@@ -230,6 +230,7 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
             {t.popup.serverOutdated}
           </section>
         )}
+        <CurrentProblemSection t={t} />
         {!overview && !error && (
           <div className="center">
             <Spinner label={t.common.loading} />
@@ -583,6 +584,47 @@ function SuggestionCard({
         </div>
       )}
     </div>
+  );
+}
+
+/** The LeetCode problem in the active tab: its practice runs in the page's panel. */
+function CurrentProblemSection({ t }: { t: ExtensionStrings }) {
+  const [tabId, setTabId] = useState<number | null>(null);
+  const [missing, setMissing] = useState(false);
+
+  useEffect(() => {
+    void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (tab?.id != null && /^https:\/\/leetcode\.com\/problems\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/|$)/.test(tab.url ?? "")) setTabId(tab.id);
+    });
+  }, []);
+
+  if (tabId == null) return null;
+
+  async function openPanel(id: number) {
+    try {
+      const response = (await chrome.tabs.sendMessage(id, { type: "open_panel" })) as { ok?: boolean } | undefined;
+      if (response?.ok) return void closePopup();
+    } catch {
+      // No content script yet: the tab was open before the extension loaded.
+    }
+    setMissing(true);
+  }
+
+  return (
+    <Section title={t.popup.thisProblem}>
+      <div className="panel stack">
+        <p className="muted small">{missing ? t.popup.panelMissing : t.popup.thisProblemHint}</p>
+        {missing ? (
+          <Button size="sm" variant="primary" onClick={() => void chrome.tabs.reload(tabId).then(closePopup)}>
+            {t.popup.reloadTab}
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" onClick={() => void openPanel(tabId)}>
+            {t.popup.openPanel}
+          </Button>
+        )}
+      </div>
+    </Section>
   );
 }
 

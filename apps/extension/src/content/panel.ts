@@ -78,6 +78,8 @@ export function mountPanel(deps: {
     if (next.notice) return `notice:${JSON.stringify(next.notice)}`;
     const session = next.session;
     if (session && session.ownership !== "you" && (session.status === "active" || session.status === "interrupted")) return `session:${session.id}:${session.status}`;
+    // A due problem with no session yet: offer to start the review once.
+    if (!session && next.problem?.due && next.problem.enrollment === "enrolled") return `due:${next.problem.id}`;
     return null;
   }
 
@@ -151,7 +153,7 @@ export function mountPanel(deps: {
       if (session.status === "interrupted") return { tone: "warning", status: t.popup.interrupted };
       return { tone: "success", status: session.ownership === "you" ? t.kinds[session.type] : t.popup.active };
     }
-    if (!view.problem) return { tone: "muted", status: "" };
+    if (!view.problem) return { tone: "accent", status: t.panel.newProblem };
     if (view.problem.enrollment === "awaiting_initial") return { tone: "accent", status: t.kinds.initial_learning };
     if (view.problem.due) return { tone: "accent", status: t.popup.due };
     return { tone: "muted", status: relativeDay(view.problem.fsrsDue, deps.language()) };
@@ -450,6 +452,12 @@ export function mountPanel(deps: {
   render();
   return {
     rerender: render,
+    /** Opens the card, as when the popup asks for it. */
+    expand() {
+      open = true;
+      render();
+      (root.querySelector('[data-key="pill"]') as HTMLElement | null)?.focus();
+    },
     unmount() {
       unsubscribe();
       host.remove();

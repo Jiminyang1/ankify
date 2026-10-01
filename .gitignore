@@ -54,6 +54,7 @@ drizzle/meta/_journal.json.bak
 apps/extension/dist
 apps/extension/dist-unpacked
 apps/extension/dist-e2e
+apps/extension/dist-local
 apps/extension/.output
 artifacts/
 .vercel
