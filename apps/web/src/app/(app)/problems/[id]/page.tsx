@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -11,8 +10,6 @@ import { ProblemDetailLayout } from "./problem-detail-layout";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { cn, formatRelative } from "@/lib/utils";
-import { UserCardButton } from "./user-card-button";
-import { CardList } from "./card-list";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
@@ -42,7 +39,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
-  const { problem, submissions, cards, timeline, sessions, improvements, mistakes } = detail;
+  const { problem, submissions, timeline, sessions, improvements, mistakes } = detail;
   const dateFormat = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const ratingBySession = new Map(timeline.flatMap((event) => (event.kind === "rated" && event.practiceSessionId ? [[event.practiceSessionId, event.rating] as const] : [])));
 
@@ -57,35 +54,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       description={t.detail.statementHelp}
     />
   );
-
-  const cardsPanel =
-    cards.length === 0 ? (
-      <EmptyState
-        title={t.detail.noCards}
-        description={t.detail.cardsHelp}
-        action={
-          <UserCardButton
-            problemId={problem.id}
-            problemTitle={problem.title}
-            problemDescription={problem.descriptionMd}
-          />
-        }
-      />
-    ) : (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted">
-            {t.detail.savedCards(cards.length)}
-          </p>
-          <UserCardButton
-            problemId={problem.id}
-            problemTitle={problem.title}
-            problemDescription={problem.descriptionMd}
-          />
-        </div>
-        <CardList cards={cards} />
-      </div>
-    );
 
   const submissionsPanel =
     submissions.length === 0 ? (
@@ -162,7 +130,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
   const panels: WorkspacePanel[] = [
     { id: "statement", label: t.detail.statement, node: statementPanel },
-    { id: "cards", label: t.review.cards, count: cards.length, node: cardsPanel },
     { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
     { id: "mistakes", label: t.mistakes.tab, count: mistakes.length, node: mistakesPanel },
     { id: "sessions", label: t.sessions.tab, count: sessions.length, node: sessionsPanel },
@@ -233,7 +200,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                 value={!awaitingInitial && problem.fsrsDue ? dateFormat.format(new Date(problem.fsrsDue)) : "—"}
               />
               <MetaRow label={t.detail.lastReviewed} value={formatRelative(problem.fsrsLastReview)} />
-              <MetaRow label={t.review.cards} value={cards.length} />
             </dl>
           </Surface>
 
@@ -245,12 +211,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
           <div className="flex gap-2">
             {problem.archivedAt == null && (
-              <Link
-                href={`/review?problemId=${problem.id}`}
-                className={buttonClasses({ variant: "primary", className: "flex-1" })}
-              >
-                {isDue || problem.fsrsReps === 0 ? t.nav.review : t.detail.reviewAhead}
-              </Link>
+              <a href={problem.url} target="_blank" rel="noreferrer" className={buttonClasses({ variant: "primary", className: "flex-1" })}>
+                {t.detail.practiceOnLeetcode}
+              </a>
             )}
             <ArchiveProblemButton problemId={problem.id} archived={problem.archivedAt != null} />
             <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
@@ -261,8 +224,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
           <ProblemWorkspace
             defaultTab="statement"
             panels={panels}
-            problemId={problem.id}
-            problemTitle={problem.title}
           />
         }
       />

@@ -180,3 +180,21 @@ test("a problem's page lists its sessions and scheduling timeline, and records w
   await expect(history.getByText(/^Next review /)).toBeVisible();
   await page.close();
 });
+
+test("legacy review, Study Coach, and card controls are retired from the web", async ({ context, api, leetcode }) => {
+  const page = await openWeb(context, "/review");
+  await expect(page).toHaveURL(/\/today\?retired=review$/, { timeout: 30_000 });
+  await expect(page.getByText("The web review page is retired.", { exact: false })).toBeVisible();
+  const nav = page.getByRole("navigation").first();
+  await expect(nav.getByRole("link", { name: "Review" })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Suggestions" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Study Coach/ })).toHaveCount(0);
+
+  const { slug } = await finishedSession(api, leetcode, "web-retired");
+  const { problem } = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  await page.goto(`${API_ORIGIN}/problems/${problem!.id}`);
+  await expect(page.getByRole("tab", { name: /Sessions/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("tab", { name: /Cards/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Practice on LeetCode" })).toHaveAttribute("href", `https://leetcode.com/problems/${slug}/`);
+  await page.close();
+});

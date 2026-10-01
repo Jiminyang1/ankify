@@ -10,7 +10,7 @@
     "build": "next build",
     "build:vercel": "node ../../scripts/check-vercel-env.mjs && next build",
     "start": "next start",
-    "lint": "eslint . --max-warnings=7",
+    "lint": "eslint . --max-warnings=5",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -28,7 +28,6 @@
     "better-auth": "1.6.26",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
-    "flexlayout-react": "0.10.1",
     "lucide-react": "^0.469.0",
     "motion": "^12.43.0",
     "nanoid": "^5.1.16",

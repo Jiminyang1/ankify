@@ -29,11 +29,12 @@ TURSO_DATABASE_URL= TURSO_AUTH_TOKEN= LOCAL_DB_PATH=/tmp/ankify-build.db \
 pnpm build
 ```
 
-The seven recorded web lint warnings are all
-`@next/next/no-location-assign-relative-destination` (three in
-`problems-client.tsx`, two in `review-client.tsx`, one in the settings form,
-one in `nav.tsx`). `apps/web` lint runs with `--max-warnings=7`, so any new
-warning fails the gate; lower the cap as those files change.
+The recorded web lint warnings are all
+`@next/next/no-location-assign-relative-destination`: three in
+`problems-client.tsx`, one in the settings form, and one in `nav.tsx`. There
+were seven until 6B.2 removed `review-client.tsx` with its two. `apps/web`
+lint runs with `--max-warnings=5`, so any new warning fails the gate; lower
+the cap as those files change.
 
 ## Checkpoint 0: baseline, harness, and characterization
 
@@ -1061,3 +1062,75 @@ Tests:
 
 Rollback: an operator may re-enable a workflow explicitly. The web pages that
 still call these routes are retired in 6B.2.
+
+## Checkpoint 6B.2: legacy web UI retired
+
+Status: **PASS**. **Phase 6 gate: PASS** (6A and 6B). No schema change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 490 tests in 78 files |
+| `pnpm typecheck`, `pnpm lint` (five warnings; the cap is lowered to 5), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 28 tests (two new) |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+- **Study Coach.** The authenticated layout no longer mounts the Coach shell,
+  and problem pages no longer report page context to it.
+- **`/review`.** The workspace (quiz and card panels, shortcuts, the
+  flexlayout workspace) is removed. `/review` redirects to
+  `/today?retired=review`, which explains that reviews happen on LeetCode.
+  Nav: no Review link; the due badge moved to Today; five links again, which
+  also fits the mobile grid.
+- **Problem pages.** No Cards tab or card controls. The primary action is
+  "Practice on LeetCode", and the loader no longer reads cards.
+- **Onboarding** describes the extension-first flow: the AI step is the
+  optional own key for session analysis, the third step is the first
+  practice, and the fourth is rating the first review. The starter-credit
+  path and the `/review` button are gone.
+- **Settings.**
+  - Hosted-credit messaging appears only when an operator re-enabled a
+    hosted-AI workflow.
+  - Credit packs appear only when checkout is enabled; balances and purchase
+    history still show.
+  - The language and key-security help now describe session analysis.
+- **The public landing page** describes the extension-first product. The
+  hero is the still-accurate analysis capture, and text cards replace the
+  quiz, Coach, and side-panel screenshots, whose captures were deleted.
+- **Removed:** client code nothing imports any more. A reachability check
+  from the Next.js entry points, tests, and scripts found these, and removed
+  `flexlayout-react` and its stylesheet:
+  - the Coach shell and sidebar;
+  - the card list and the user-card button;
+  - the mistake quick strip;
+  - the agent event and AI-job client libraries.
+
+Kept:
+
+- the server code of the suspended workflows, guarded (6B.1), until the
+  Phase 7 cleanup;
+- `components/ui` primitives that are now unused (`tabs`,
+  `indeterminate-progress`);
+- two components that were already unused before this checkpoint
+  (`LanguageToggle`, `ThemeToggle`).
+
+The README still describes the old product and is updated in Phase 7, as the
+plan schedules.
+
+`legacy_review` stays an operator switch: its rate and undo routes now serve
+only 0.2.x extensions, and DEPLOYMENT sequences that cutover after the 0.3.0
+publish.
+
+Tests (browser):
+
+- `/review` lands on the dashboard with the notice;
+- the nav has no Review link and no Coach control;
+- problem pages have no Cards tab, and "Practice on LeetCode" links the
+  problem;
+- the signed-out landing page shows the new copy and none of the retired
+  claims.
+
+Phase 6 acceptance:
+
+- Active navigation matches the new product.
+- No card, quiz, or Coach generation path and no credit sale remains active:
+  6B.1 guards the server, and 6B.2 removes the UI.

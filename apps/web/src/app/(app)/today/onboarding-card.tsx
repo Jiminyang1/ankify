@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   BookOpenCheck,
   Check,
@@ -40,9 +39,6 @@ type Copy = {
   aiSkipped: string;
   connectAi: string;
   skip: string;
-  starterBody: (remaining: number) => string;
-  starterUsing: (remaining: number) => string;
-  useStarter: string;
   usesAi: string;
   aiUses: string[];
   noAi: string;
@@ -67,35 +63,30 @@ type Copy = {
   reviewTitle: string;
   reviewBody: string;
   reviewDone: string;
-  startReview: string;
   reviewLocked: string;
 };
 
 const COPY: Record<"en" | "zh", Copy> = {
   en: {
     eyebrow: "Quick setup",
-    title: "Build your first review",
-    description: "Four small steps take you from a new account to a scheduled memory.",
+    title: "Start practicing with ankify",
+    description: "Four small steps take you from a new account to your first scheduled review.",
     progress: (done) => `${done} of 4 handled`,
     extensionTitle: "Install and connect the extension",
-    extensionBody: "Install it, then click ankify once so it can reuse this web login and capture from LeetCode.",
+    extensionBody: "Install it, then click ankify once so it reuses this web login and tracks your practice on LeetCode.",
     extensionDone: "Extension connected",
     install: "Install extension",
     aiTitle: "Connect AI",
     optional: "Optional",
-    aiBody: "Used only for Quiz, AI Card drafts, and Follow-up rewrites. Capture, FSRS, notes, and manual cards work without it.",
+    aiBody: "Used only to analyze a finished practice session, with your own key. Practice, scheduling, notes, and suggestions work without it.",
     aiConfigured: "AI connected",
     aiSkipped: "Skipped for now",
     connectAi: "Connect AI",
     skip: "Skip for now",
-    starterBody: (remaining) =>
-      `You have ${remaining} free AI credits, so quizzes, AI cards, and Study Coach work right away. Add your own key anytime.`,
-    starterUsing: (remaining) => `Using free AI credits · ${remaining} left`,
-    useStarter: "Use free credits",
     usesAi: "Uses AI",
-    aiUses: ["Generate quizzes", "Draft AI cards", "Rewrite cards with follow-up instructions"],
+    aiUses: ["Explain why a practice session went wrong", "Suggest mistake categories for you to confirm"],
     noAi: "Does not use AI",
-    noAiUses: ["Capture problems and submissions", "FSRS scheduling", "Notes and manual cards"],
+    noAiUses: ["Practice sessions on LeetCode", "FSRS scheduling", "Notes, suggestions, and your mistake profile"],
     provider: "Provider",
     model: "Model",
     apiKey: "API key",
@@ -108,40 +99,36 @@ const COPY: Record<"en" | "zh", Copy> = {
     testUsage: "The connection test makes one tiny model request and may incur a small provider charge.",
     aiSuccess: (model, latencyMs) => `${model} connected in ${latencyMs} ms.`,
     aiMissing: "Choose a provider and model, then add its API key.",
-    captureTitle: "Capture your first problem",
-    captureBody: "Open a LeetCode problem, click ankify, then choose “Capture this problem”.",
-    captureDone: "First problem captured",
+    captureTitle: "Practice your first problem",
+    captureBody: "Open a LeetCode problem and click Start practice in the ankify panel.",
+    captureDone: "First practice started",
     openSample: "Open Two Sum",
     captureLocked: "Connect the extension first.",
-    reviewTitle: "Complete your first review",
-    reviewBody: "Recall the approach, inspect your context, then rate it for FSRS scheduling.",
-    reviewDone: "First review completed",
-    startReview: "Start first review",
-    reviewLocked: "Capture a problem first.",
+    reviewTitle: "Rate your first review",
+    reviewBody: "When a problem comes due, solve it again on LeetCode, finish the session, and rate how it went.",
+    reviewDone: "First review rated",
+    reviewLocked: "Practice a problem first.",
   },
   zh: {
     eyebrow: "快速设置",
-    title: "建立你的第一次复习",
-    description: "四个小步骤，把新账号变成一条真正开始运转的记忆。",
+    title: "开始用 ankify 练习",
+    description: "四个小步骤，从新账号到第一次安排好的复习。",
     progress: (done) => `已处理 ${done}/4`,
     extensionTitle: "安装并连接扩展",
-    extensionBody: "安装后点击一次 ankify，让扩展复用当前网页登录并从 LeetCode 捕获数据。",
+    extensionBody: "安装后点击一次 ankify，让扩展复用当前网页登录，并记录你在 LeetCode 上的练习。",
     extensionDone: "扩展已连接",
     install: "安装扩展",
     aiTitle: "连接 AI",
     optional: "可选",
-    aiBody: "只有 Quiz、AI Card 草稿和 Follow-up 改写会使用 AI；捕获、FSRS、Notes 和手动 Card 都不需要。",
+    aiBody: "只用于用你自己的密钥分析已完成的练习；练习、调度、笔记和推荐都不需要 AI。",
     aiConfigured: "AI 已连接",
     aiSkipped: "暂时跳过",
     connectAi: "连接 AI",
     skip: "暂时跳过",
-    starterBody: (remaining) => `你有 ${remaining} 点免费 AI 额度，测验、AI 卡片和 Study Coach 可以直接使用。随时可以换成自己的 key。`,
-    starterUsing: (remaining) => `正在使用免费 AI 额度 · 剩余 ${remaining} 点`,
-    useStarter: "先用免费额度",
     usesAi: "会使用 AI",
-    aiUses: ["生成 Quiz", "生成 AI Card 草稿", "根据 Follow-up 指令改写 Card"],
+    aiUses: ["解释一次练习出错的原因", "建议错误类别，由你确认"],
     noAi: "不会使用 AI",
-    noAiUses: ["捕获题目和提交", "FSRS 调度", "Notes 和手动 Card"],
+    noAiUses: ["在 LeetCode 上的练习", "FSRS 调度", "笔记、推荐和错误画像"],
     provider: "供应商",
     model: "模型",
     apiKey: "API Key",
@@ -154,23 +141,21 @@ const COPY: Record<"en" | "zh", Copy> = {
     testUsage: "连接测试会发起一次很小的模型请求，可能产生少量供应商费用。",
     aiSuccess: (model, latencyMs) => `${model} 连接成功，用时 ${latencyMs} ms。`,
     aiMissing: "请选择供应商和模型，并填写对应的 API Key。",
-    captureTitle: "捕获第一道题",
-    captureBody: "打开 LeetCode 题目，点击 ankify，然后选择“捕获这道题”。",
-    captureDone: "已捕获第一道题",
+    captureTitle: "练习第一道题",
+    captureBody: "打开一道 LeetCode 题目，在 ankify 面板中点击开始练习。",
+    captureDone: "已开始第一次练习",
     openSample: "打开 Two Sum",
     captureLocked: "请先连接扩展。",
-    reviewTitle: "完成第一次复习",
-    reviewBody: "回忆解法、查看上下文，然后评分并交给 FSRS 安排下次复习。",
-    reviewDone: "已完成第一次复习",
-    startReview: "开始第一次复习",
-    reviewLocked: "请先捕获一道题。",
+    reviewTitle: "完成第一次复习评分",
+    reviewBody: "题目到期后，在 LeetCode 上重新解题，结束练习并评分。",
+    reviewDone: "已完成第一次复习评分",
+    reviewLocked: "请先练习一道题。",
   },
 };
 
 export function OnboardingCard({
   initialProgress,
   initialAi,
-  starter,
   installUrl,
   language,
 }: {
@@ -180,7 +165,6 @@ export function OnboardingCard({
     model: string;
     hasApiKey: boolean;
   };
-  starter: { enabled: boolean; remaining: number; limit: number };
   installUrl: string;
   language: "en" | "zh";
 }) {
@@ -207,7 +191,6 @@ export function OnboardingCard({
   }, [refreshProgress]);
 
   const aiHandled = progress.aiChoice !== "not_started";
-  const hasStarterCredits = starter.enabled && starter.remaining > 0;
   const doneCount = [
     Boolean(progress.extensionConnectedAt),
     aiHandled,
@@ -342,12 +325,8 @@ export function OnboardingCard({
             progress.aiChoice === "configured"
               ? t.aiConfigured
               : progress.aiChoice === "skipped"
-                ? hasStarterCredits
-                  ? t.starterUsing(starter.remaining)
-                  : t.aiSkipped
-                : hasStarterCredits
-                  ? t.starterBody(starter.remaining)
-                  : t.aiBody
+                ? t.aiSkipped
+                : t.aiBody
           }
         >
           {!showAi && progress.aiChoice !== "configured" && (
@@ -357,7 +336,7 @@ export function OnboardingCard({
               </Button>
               {progress.aiChoice === "not_started" && (
                 <Button size="sm" onClick={() => void skipAi()} disabled={aiBusy}>
-                  {hasStarterCredits ? t.useStarter : t.skip}
+                  {t.skip}
                 </Button>
               )}
             </div>
@@ -421,7 +400,7 @@ export function OnboardingCard({
                 </Button>
                 <Button size="sm" disabled={aiBusy} onClick={() => setShowAi(false)}>{t.cancel}</Button>
                 {progress.aiChoice === "not_started" && (
-                  <Button size="sm" variant="ghost" disabled={aiBusy} onClick={() => void skipAi()}>{hasStarterCredits ? t.useStarter : t.skip}</Button>
+                  <Button size="sm" variant="ghost" disabled={aiBusy} onClick={() => void skipAi()}>{t.skip}</Button>
                 )}
               </div>
               {aiMessage && (
@@ -462,15 +441,7 @@ export function OnboardingCard({
           title={t.reviewTitle}
           description={progress.firstReviewAt ? t.reviewDone : t.reviewBody}
         >
-          {!progress.firstReviewAt && (
-            progress.firstCaptureAt ? (
-              <Link href="/review" className={buttonClasses({ variant: "primary", size: "sm" })}>
-                {t.startReview}
-              </Link>
-            ) : (
-              <span className="text-xs text-muted">{t.reviewLocked}</span>
-            )
-          )}
+          {!progress.firstReviewAt && !progress.firstCaptureAt && <span className="text-xs text-muted">{t.reviewLocked}</span>}
         </OnboardingStep>
       </div>
     </Surface>

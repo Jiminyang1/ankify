@@ -63,8 +63,13 @@ export default async function SettingsPage({
     : !(ai.provider && ai.model && ai.encryptedApiKey) ? "needs_key"
     : !isAutomaticAnalysisEnabled() ? "manual_only"
     : "automatic";
+  // Hosted credits only power Study Coach and card/quiz generation, which are
+  // suspended unless an operator re-enabled one; session analysis needs the
+  // user's own key.
+  const hostedAiInUse = (["coach", "card_generation", "quiz_generation"] as const).some(isWorkflowEnabled);
+  const creditSales = credits.billingEnabled && isWorkflowEnabled("credit_checkout");
   const starter = {
-    enabled: credits.enabled,
+    enabled: credits.enabled && hostedAiInUse,
     remaining: credits.starterRemaining,
     limit: credits.starterLimit,
     paidBalance: credits.paidBalance,
@@ -123,16 +128,16 @@ export default async function SettingsPage({
             />
           </SettingsSection>
 
-          {(credits.enabled || credits.paidBalance > 0 || purchases.length > 0) && (
+          {((credits.enabled && hostedAiInUse) || credits.paidBalance > 0 || purchases.length > 0) && (
             <SettingsSection id="credits" title={t.settings.aiCredits} info={t.settings.aiCreditsHelp}>
               <CreditsSettingsForm
                 status={{
                   starterRemaining: credits.starterRemaining,
                   starterLimit: credits.starterLimit,
                   paidBalance: credits.paidBalance,
-                  billingEnabled: credits.billingEnabled,
+                  billingEnabled: creditSales,
                 }}
-                packs={credits.billingEnabled ? CREDIT_PACKS.map((pack) => ({ ...pack })) : []}
+                packs={creditSales ? CREDIT_PACKS.map((pack) => ({ ...pack })) : []}
                 purchases={purchases.map((purchase) => ({
                   ...purchase,
                   createdAt: purchase.createdAt.toISOString(),

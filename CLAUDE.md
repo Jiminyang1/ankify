@@ -21,7 +21,7 @@ pnpm db:backup              # dump Production Turso into backups/ (requires .env
 pnpm db:release             # backup + migrate Production; follow docs/DEPLOYMENT.md first
 
 pnpm typecheck              # tsc --noEmit across all packages
-pnpm lint                   # eslint (7 known warnings in pre-existing code)
+pnpm lint                   # eslint (5 known warnings in pre-existing code)
 pnpm test                   # vitest from the repo root (DB tests use throwaway SQLite files)
 ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm build
                             # production build; a bare Production extension build fails closed

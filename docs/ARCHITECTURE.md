@@ -325,9 +325,10 @@ or explains them.
 
 ## Study Coach
 
-Suspended by default; see the note under Asynchronous AI generation.
+Suspended by default; see the note under Asynchronous AI generation. The web
+app no longer mounts the Coach UI. The server runtime below remains, guarded,
+until the legacy code is removed.
 
-- `AgentShell` in the authenticated layout opens Coach beside any page.
 - `POST /api/agent/turns` → `agent/store.ts:beginAgentTurn()` creates the
   session (on first message), an idempotent run with its page/problem context,
   and the user message, and spends a hosted credit, all in one transaction.
@@ -408,17 +409,28 @@ extension reuses the web session cookie, and production CORS allows only
 
 ## Web pages
 
-`/` public landing (signed-in users go to `/today`), `/today` dashboard
-(`server/dashboard.ts`: the popup's review overview, the last week's
-completed sessions, recent practice, focus areas from the profile, today's
-suggestions) and onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
-Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
-`/problems/[id]` (archive/unarchive/delete, Mistakes tab, Sessions tab with
-"handled well" improvement confirmation, History as the scheduling timeline
-of ratings and initial-review schedules, next review date), `/suggestions` (today's
-new-problem suggestions, the same items as the popup), `/analysis` (the mistake profile, then the FSRS dashboard),
-`/settings` (AI provider, AI credits, language/region, review schedule and
-first-review delay, session-analysis automation, account export/delete), plus `/privacy` and `/terms`.
+- `/`: the public landing (signed-in users go to `/today`).
+- `/today`: the dashboard and onboarding. `server/dashboard.ts` gathers the
+  popup's review overview, the last week's completed sessions, recent
+  practice, focus areas from the profile, and today's suggestions.
+- `/problems` and `/problems/[id]`:
+  - archive, unarchive, delete;
+  - the Mistakes tab;
+  - the Sessions tab, with "handled well" improvement confirmation;
+  - History as the scheduling timeline of ratings and initial-review
+    schedules;
+  - the next review date;
+  - "Practice on LeetCode".
+- `/suggestions`: today's new-problem suggestions, the same items as the
+  popup.
+- `/analysis`: the mistake profile, then the FSRS dashboard.
+- `/settings`: AI provider, AI credits, language and region, review schedule
+  and first-review delay, session-analysis automation, account export and
+  delete.
+- `/privacy` and `/terms`.
+
+The retired web review workspace (`/review`) redirects to
+`/today?retired=review`, which explains that reviews happen on LeetCode.
 
 ## Testing
 

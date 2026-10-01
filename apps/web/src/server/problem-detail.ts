@@ -2,11 +2,7 @@ import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { listProblemMistakes } from "./mistakes";
 import { listPracticeSessions } from "./practice-sessions/queries";
-import {
-  publicCardColumns,
-  publicSubmissionColumns,
-  toSubmissionDto,
-} from "./public-dto";
+import { publicSubmissionColumns, toSubmissionDto } from "./public-dto";
 
 export async function loadProblemDetail(userId: string, problemId: string) {
   const db = getDb();
@@ -17,25 +13,13 @@ export async function loadProblemDetail(userId: string, problemId: string) {
     .limit(1);
   if (!problem) return null;
 
-  const [submissions, cards, reviewHistory, mistakes] = await Promise.all([
+  const [submissions, reviewHistory, mistakes] = await Promise.all([
     db
       .select(publicSubmissionColumns)
       .from(schema.submissions)
       .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
       .orderBy(desc(schema.submissions.submittedAt))
       .limit(10),
-    db
-      .select(publicCardColumns)
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problemId),
-          eq(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(50),
     // The scheduling timeline: ratings (not undone) and initial-review schedules.
     db
       .select()
@@ -71,7 +55,6 @@ export async function loadProblemDetail(userId: string, problemId: string) {
   return {
     problem,
     submissions: submissions.map(toSubmissionDto),
-    cards,
     timeline: reviewHistory.map((event) => ({
       id: event.id,
       kind: event.eventType === "fsrs_scheduled" ? ("scheduled" as const) : ("rated" as const),

@@ -12,7 +12,6 @@ import { getUserFirstName } from "@/lib/user-identity";
 import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
 import { getAiSettings } from "@/server/settings";
-import { getStarterAiStatus } from "@/server/starter-ai";
 import { getOnboardingProgress } from "@/server/onboarding";
 import { loadDashboard, type DashboardSession } from "@/server/dashboard";
 import { OnboardingCard } from "./onboarding-card";
@@ -20,14 +19,14 @@ import { OnboardingCard } from "./onboarding-card";
 export const dynamic = "force-dynamic";
 
 /** The dashboard: the popup's daily view plus recent practice and focus areas. */
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ retired?: string | string[] }> }) {
   const user = await requirePageUser();
+  const reviewRetired = (await searchParams).retired === "review";
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
-  const [dashboard, onboarding, ai, starter] = await Promise.all([
+  const [dashboard, onboarding, ai] = await Promise.all([
     loadDashboard(user.id),
     getOnboardingProgress(user.id),
     getAiSettings(user.id),
-    getStarterAiStatus(user.id),
   ]);
   const d = t.dashboard;
   const { overview, profile, recent, week } = dashboard;
@@ -47,11 +46,16 @@ export default async function HomePage() {
         </div>
       </div>
 
+      {reviewRetired && (
+        <Surface role="status" className="p-4 text-sm">
+          {d.reviewRetired}
+        </Surface>
+      )}
+
       {!onboarding.complete && (
         <OnboardingCard
           initialProgress={onboarding}
           initialAi={{ provider: ai.provider, model: ai.model, hasApiKey: Boolean(ai.encryptedApiKey) }}
-          starter={{ enabled: starter.enabled, remaining: starter.remaining, limit: starter.limit }}
           installUrl={getExtensionInstallUrl()}
           language={language}
         />

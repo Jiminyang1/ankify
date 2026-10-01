@@ -19,7 +19,6 @@ import { ActiveIndicator, MotionPresence } from "@/components/ui/motion";
 
 const LINKS = [
   { href: "/today", key: "today" },
-  { href: "/review", key: "review" },
   { href: "/problems", key: "problems" },
   { href: "/suggestions", key: "suggestions" },
   { href: "/analysis", key: "analysis" },
@@ -116,7 +115,7 @@ export function Nav({
           <div className="order-3 col-span-2 grid w-full grid-cols-5 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
             {LINKS.map((l) => {
               const active = pathname === l.href || pathname.startsWith(l.href + "/");
-              const showBadge = l.href === "/review" && dueCount > 0;
+              const showBadge = l.href === "/today" && dueCount > 0;
               return (
                 <Link
                   key={l.href}

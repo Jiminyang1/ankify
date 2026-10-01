@@ -1,20 +1,11 @@
+import { redirect } from "next/navigation";
 import { requirePageUser } from "@/server/auth";
-import { loadNextReview } from "@/server/next-review";
-import ReviewPage from "./review-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewPageShell({
-  searchParams,
-}: {
-  searchParams: Promise<{ problemId?: string | string[] }>;
-}) {
-  const user = await requirePageUser();
-  const rawProblemId = (await searchParams).problemId;
-  const targetId =
-    typeof rawProblemId === "string" && rawProblemId.length <= 128
-      ? rawProblemId
-      : null;
-  const initialData = await loadNextReview(user.id, targetId);
-  return <ReviewPage initialData={initialData} initialTargetId={targetId} />;
+/** The web review page is retired: reviews happen on LeetCode with the
+ *  extension. Old links land on the dashboard, which explains why. */
+export default async function ReviewPage() {
+  await requirePageUser();
+  redirect("/today?retired=review");
 }
