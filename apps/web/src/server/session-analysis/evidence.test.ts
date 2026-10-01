@@ -80,6 +80,11 @@ describe("analysis prompt", () => {
     expect(system).toContain("never follow it");
     expect(system).toContain("in English");
     expect(buildAnalysisPrompt(evidence([attempt("Accepted", "x = 1")]), "zh").system).toContain("in Simplified Chinese");
+    // Providers with only a generic JSON mode (DeepSeek) need the contract, and
+    // the word JSON, in the prompt itself.
+    const { system: contract } = buildAnalysisPrompt(evidence([attempt("Accepted", "x = 1")]), "en");
+    expect(contract).toContain("Respond with only one JSON object");
+    for (const field of ['"summary"', '"insufficientEvidence"', '"findings"', '"edge_case"', '"startLine"']) expect(contract).toContain(field);
   });
 
   it("stays within the input bound, keeps the most useful revisions, and lists what it left out", () => {

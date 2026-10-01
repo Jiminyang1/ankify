@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-/** Persist the browser's IANA timezone once for accounts created before the
- * timezone setting existed. Explicit user choices are never overwritten.
- * Once the account has a configured timezone, a per-user localStorage flag
- * skips the settings roundtrip on later page loads. */
+/** Keeps the account's time zone (which decides when "today" starts) equal to
+ * this device's IANA zone, read from the browser without any permission. A
+ * per-user localStorage entry remembers the zone last saved, so the settings
+ * roundtrip happens only when the zone changes. */
 export function TimeZoneSync({ userId }: { userId: string }) {
   const router = useRouter();
 
@@ -15,15 +15,15 @@ export function TimeZoneSync({ userId }: { userId: string }) {
     if (!timeZone) return;
 
     const syncedKey = `ankify:tz-synced:${userId}`;
-    const markSynced = () => {
+    const remember = () => {
       try {
-        localStorage.setItem(syncedKey, "1");
+        localStorage.setItem(syncedKey, timeZone);
       } catch {
         // storage unavailable; fall back to checking the API next load
       }
     };
     try {
-      if (localStorage.getItem(syncedKey)) return;
+      if (localStorage.getItem(syncedKey) === timeZone) return;
     } catch {
       // storage unavailable; continue with the API check
     }
@@ -31,9 +31,9 @@ export function TimeZoneSync({ userId }: { userId: string }) {
     void (async () => {
       const response = await fetch("/api/settings", { cache: "no-store" });
       if (!response.ok) return;
-      const payload = (await response.json()) as { review?: { timeZoneConfigured?: boolean } };
-      if (payload.review?.timeZoneConfigured) {
-        markSynced();
+      const payload = (await response.json()) as { review?: { timeZone?: string } };
+      if (payload.review?.timeZone === timeZone) {
+        remember();
         return;
       }
       const saved = await fetch("/api/settings", {
@@ -42,7 +42,7 @@ export function TimeZoneSync({ userId }: { userId: string }) {
         body: JSON.stringify({ timeZone }),
       });
       if (!saved.ok) return;
-      markSynced();
+      remember();
       router.refresh();
     })().catch(() => undefined);
   }, [router, userId]);

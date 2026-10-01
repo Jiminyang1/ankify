@@ -10,7 +10,6 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Select } from "@/components/ui/field";
 import { InfoTip } from "@/components/ui/info-tip";
-import { TimeZonePicker } from "./time-zone-picker";
 
 export function AppearanceSettingsForm() {
   const { t } = useLanguage();
@@ -505,7 +504,6 @@ export function LanguageRegionSettingsForm({
   const [generationLanguage, setGenerationLanguage] = useState<Language>(
     initial.generationLanguage,
   );
-  const [timeZone, setTimeZone] = useState(initial.timeZone);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -517,7 +515,7 @@ export function LanguageRegionSettingsForm({
       const response = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ generationLanguage, timeZone }),
+        body: JSON.stringify({ generationLanguage }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (interfaceLanguage !== language) setLanguage(interfaceLanguage);
@@ -569,16 +567,10 @@ export function LanguageRegionSettingsForm({
 
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-sm">
-            <label htmlFor="review-time-zone" className="font-medium text-fg">
-              {t.settings.timeZone}
-            </label>
+            <span className="font-medium text-fg">{t.settings.timeZone}</span>
             <InfoTip label={t.settings.timeZoneHelp} align="left" />
           </div>
-          <TimeZonePicker
-            id="review-time-zone"
-            value={timeZone}
-            onChange={setTimeZone}
-          />
+          <p className="text-sm text-muted">{t.settings.timeZoneFromDevice(initial.timeZone)}</p>
         </div>
       </div>
 

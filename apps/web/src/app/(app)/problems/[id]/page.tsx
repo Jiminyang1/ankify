@@ -209,14 +209,16 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
             </p>
           )}
 
-          <div className="flex gap-2">
+          <div className="space-y-2">
             {problem.archivedAt == null && (
-              <a href={problem.url} target="_blank" rel="noreferrer" className={buttonClasses({ variant: "primary", className: "flex-1" })}>
+              <a href={problem.url} target="_blank" rel="noreferrer" className={buttonClasses({ variant: "primary", className: "w-full" })}>
                 {t.detail.practiceOnLeetcode}
               </a>
             )}
-            <ArchiveProblemButton problemId={problem.id} archived={problem.archivedAt != null} />
-            <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
+            <div className="flex flex-wrap gap-2">
+              <ArchiveProblemButton problemId={problem.id} archived={problem.archivedAt != null} />
+              <DeleteProblemButton problemId={problem.id} problemTitle={problem.title} />
+            </div>
           </div>
           </aside>
         }

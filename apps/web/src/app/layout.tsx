@@ -25,8 +25,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         {children}
-        <Analytics />
-        <SpeedInsights />
+        {/* Vercel serves these scripts from the site itself; elsewhere (local
+            dev, self-hosting) they would load from a CDN the CSP blocks. */}
+        {process.env.VERCEL && (
+          <>
+            <Analytics />
+            <SpeedInsights />
+          </>
+        )}
       </body>
     </html>
   );

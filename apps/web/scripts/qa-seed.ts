@@ -384,7 +384,7 @@ async function main() {
       {
         userId: QA_USER_ID,
         key: "generation",
-        value: { language: "zh" },
+        value: { language: "en" },
       },
       {
         userId: QA_USER_ID,

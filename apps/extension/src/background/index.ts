@@ -69,6 +69,14 @@ async function setBadge(overview: ReviewOverviewDto | null) {
   }
 }
 
+/** The account's day boundaries follow this device's time zone (read from
+ *  the browser, no permission needed), as on the web app. */
+async function followDeviceTimeZone(saved: string) {
+  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!device || device === saved) return;
+  await api.request("/api/settings", { body: { timeZone: device } }).catch(() => undefined);
+}
+
 const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase()), deliver });
 const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
 const router = createRouter({
@@ -80,7 +88,10 @@ const router = createRouter({
   tokens,
   newId,
   settings: async () => ({ language: (await getSettings()).language }),
-  onOverview: (overview) => void setBadge(overview).catch(() => undefined),
+  onOverview: (overview) => {
+    void setBadge(overview).catch(() => undefined);
+    void followDeviceTimeZone(overview.timeZone);
+  },
   tabs: {
     findProblemTab: async (slug) => {
       const [tab] = await chrome.tabs.query({ url: `https://leetcode.com/problems/${slug}/*` });
