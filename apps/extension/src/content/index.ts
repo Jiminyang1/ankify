@@ -16,12 +16,24 @@ const client = createLeetcodeClient();
 let language: Language = "en";
 let current: { slug: string; page: PageSession; panel: ReturnType<typeof mountPanel> } | null = null;
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Asks the background worker. A worker that is just starting can miss the
+ * first message, so a failed hand-off is tried once more. If the extension
+ * was reloaded or updated, this page's script is orphaned for good: that is
+ * reported as such (the page must be reloaded), never as a network problem.
+ */
 async function send<T>(message: ContentMessage): Promise<BackgroundOutcome<T>> {
-  try {
-    return (await chrome.runtime.sendMessage(message)) as BackgroundOutcome<T>;
-  } catch {
-    // The worker is restarting or the extension was reloaded; treat as offline.
-    return { ok: false, error: "offline" };
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      if (!chrome.runtime?.id) return { ok: false, error: "extension_reloaded" };
+      return (await chrome.runtime.sendMessage(message)) as BackgroundOutcome<T>;
+    } catch (error) {
+      if (/context invalidated/i.test(error instanceof Error ? error.message : String(error))) return { ok: false, error: "extension_reloaded" };
+      if (attempt >= 1) return { ok: false, error: "extension_unavailable" };
+      await wait(300);
+    }
   }
 }
 
@@ -32,8 +44,10 @@ function slugFromLocation() {
 /** Reads the latest page of submissions with details and imports them. */
 async function importHistory(slug: string) {
   const [problem, listing] = await Promise.all([client.readProblem(slug), client.listSubmissions(slug, { maxPages: 1 })]);
-  if (!problem.value) return { ok: false as const, error: problem.availability === "signed_out" ? "signed_out" : "offline" };
-  if (!listing.value) return { ok: false as const, error: listing.availability === "signed_out" ? "signed_out" : "offline" };
+  // LeetCode could not be read: say so, rather than blaming the connection to ankify.
+  const leetcodeError = (availability: string) => (availability === "signed_out" ? "leetcode_signed_out" : "leetcode_unavailable");
+  if (!problem.value) return { ok: false as const, error: leetcodeError(problem.availability) };
+  if (!listing.value) return { ok: false as const, error: leetcodeError(listing.availability) };
   const submissions: CaptureSubmissionInput[] = [];
   for (const submission of listing.value.submissions.filter((item) => !item.pending).slice(0, 20)) {
     const detail = await client.readSubmissionDetail(submission.id);

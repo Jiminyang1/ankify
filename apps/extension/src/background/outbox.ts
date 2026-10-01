@@ -225,6 +225,20 @@ export function createOutbox(deps: {
       }
     },
 
+    /** Whether anything is waiting to be sent (any account). */
+    async hasPending() {
+      return (await store.all()).some((operation) => operation.state === "pending");
+    },
+
+    /** ankify answered again: make waiting operations due now instead of at
+     *  their backoff time. Blocked parts still wait for the user. */
+    async retryNow(scope: OutboxScope) {
+      const at = now();
+      for (const operation of (await store.all()).filter(inScope(scope))) {
+        if (operation.state === "pending" && operation.nextAttemptAt > at) await store.put({ ...operation, nextAttemptAt: at });
+      }
+    },
+
     /** Observation batches of one session still waiting to be delivered. */
     async pendingObservations(sessionId: string) {
       return (await store.all()).filter((operation) => operation.sessionId === sessionId && operation.kind === "observations").length;

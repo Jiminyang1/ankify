@@ -148,6 +148,7 @@ export function mountPanel(deps: {
     if (view.kind === "loading") return { tone: "muted", status: "" };
     if (view.kind === "signed_out") return { tone: "warning", status: t.common.signIn };
     if (view.kind === "offline") return { tone: "warning", status: t.sync.offline };
+    if (view.kind === "reload_required") return { tone: "warning", status: t.panel.reloadPage };
     if (view.pendingRating || view.blockingRating) return { tone: "accent", status: t.rating.prompt };
     const session = view.session;
     if (session && !session.stale && (session.status === "active" || session.status === "interrupted")) {
@@ -196,6 +197,9 @@ export function mountPanel(deps: {
     }
     if (view.kind === "offline") {
       return [h("p", { class: "text" }, t.panel.offline), button("retry", t.common.retry, () => void deps.page.refresh(), { block: true })];
+    }
+    if (view.kind === "reload_required") {
+      return [h("p", { class: "text" }, t.errors.extension_reloaded), button("reload", t.panel.reloadPage, () => window.location.reload(), { variant: "primary", block: true })];
     }
     const blocks: Child[] = [];
     if (view.notice) blocks.push(noticeBlock(t, view.notice));
@@ -392,6 +396,7 @@ export function mountPanel(deps: {
       ),
       minutes > 0 ? h("p", { class: "text muted small" }, t.panel.activeTime(minutes)) : null,
       availability !== "available" ? h("p", { class: "notice", "data-tone": "warning" }, t.panel.tracking[availability]) : null,
+      view.kind === "ready" && !view.reachable ? h("p", { class: "notice", "data-tone": "warning", role: "status" }, t.panel.unreachable) : null,
       button("finish", t.panel.finish, () => void deps.page.finish("solved"), { variant: "primary", block: true, spinning: busyState === "finishing" }),
       accepted === 0 ? h("p", { class: "text muted small" }, t.panel.noAcceptedYet) : null,
       h(

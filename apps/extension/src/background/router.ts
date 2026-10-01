@@ -2,7 +2,7 @@ import type { CapabilitiesDto, CaptureResultDto, ReviewOverviewDto } from "@anki
 import type { ContentMessage, PageMessage, SenderContext } from "../shared/protocol";
 import type { AccountStateApi } from "./account";
 import type { AnalysisClient } from "./analysis";
-import type { ApiClient } from "./api";
+import type { ApiClient, ApiResult } from "./api";
 import type { SessionController } from "./sessions";
 import type { SuggestionsClient } from "./suggestions";
 
@@ -12,6 +12,23 @@ export type TabsApi = {
   open(slug: string): Promise<number>;
   focus(tabId: number): Promise<void>;
 };
+
+/** A failed API call as the popup and panel see it: auth, outage, overload,
+ *  and a server decision are told apart, never all called "offline". */
+export function apiFailure(result: Extract<ApiResult<unknown>, { ok: false }>) {
+  switch (result.kind) {
+    case "auth":
+      return { ok: false as const, error: "signed_out" };
+    case "network":
+      return { ok: false as const, error: "offline" };
+    case "rate_limited":
+      return { ok: false as const, error: "rate_limited" };
+    case "server":
+      return { ok: false as const, error: "server_error" };
+    case "rejected":
+      return { ok: false as const, error: result.code ?? "unexpected" };
+  }
+}
 
 type ParsedMessage =
   | { channel: "content"; message: ContentMessage }
@@ -30,8 +47,6 @@ export function createRouter(deps: {
   settings: () => Promise<{ language: "en" | "zh" }>;
   /** Called with every overview the popup loads (the toolbar badge shows its due count). */
   onOverview?: (overview: ReviewOverviewDto) => void;
-  /** Saved operations were delivered while the popup loaded. */
-  onDelivered?: () => void;
 }) {
   const { controller, tabs } = deps;
 
@@ -45,8 +60,7 @@ export function createRouter(deps: {
         // Existing problems only refresh metadata and gain submissions; the
         // legacy capture route never rewrites their schedule.
         const result = await deps.api.request<CaptureResultDto>("/api/capture", { body: { ...message.problem, submissions: message.submissions } });
-        if (result.ok) return { ok: true, response: result.data };
-        return { ok: false, error: result.kind === "auth" ? "signed_out" : result.kind === "rejected" ? (result.code ?? "unexpected") : "offline" };
+        return result.ok ? { ok: true, response: result.data } : apiFailure(result);
       }
       case "session_start":
         return controller.start(
@@ -96,15 +110,15 @@ export function createRouter(deps: {
         return { kind: state.kind };
       }
       case "overview": {
-        const report = await controller.flush().catch(() => null);
-        if (report && report.delivered > 0) deps.onDelivered?.();
+        // Opening the popup is a moment to sync: what waits is sent now.
+        await controller.resumeSync().catch(() => null);
         const result = await controller.overview();
         if (result.ok) deps.onOverview?.(result.response);
         return result;
       }
       case "capabilities": {
         const result = await deps.api.request<CapabilitiesDto>("/api/capabilities");
-        return result.ok ? { ok: true, response: result.data } : { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
+        return result.ok ? { ok: true, response: result.data } : apiFailure(result);
       }
       case "open_review": {
         // The session exists before navigation: a problem tab that is already
@@ -175,14 +189,14 @@ export function createRouter(deps: {
         );
         if (result.ok) return { ok: true, response: { problemId: result.data.problem.id, title: result.data.problem.title, notes: result.data.problem.notes ?? "" } };
         if (result.status === 404) return { ok: true, response: null };
-        return { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
+        return apiFailure(result);
       }
       case "notes_save": {
         const result = await deps.api.request(`/api/problems/${encodeURIComponent(message.problemId)}`, {
           method: "PATCH",
           body: { notes: message.notes },
         });
-        return result.ok ? { ok: true, response: null } : { ok: false, error: result.kind === "auth" ? "signed_out" : "offline" };
+        return result.ok ? { ok: true, response: null } : apiFailure(result);
       }
     }
   }

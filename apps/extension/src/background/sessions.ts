@@ -79,8 +79,35 @@ export function createSessionController(deps: {
   tokens: TokenRegistry;
   totals: ActivityTotals;
   newId: () => string;
+  /** Saved operations were delivered by a flush (not by the request that made them). */
+  onDelivered?: () => void;
 }) {
   const { api, outbox, account, tokens } = deps;
+
+  async function flushScope(target: { accountId: string; apiOrigin: string }) {
+    const report = await outbox.flush(target);
+    if (report.authRequired) account.invalidate();
+    if (report.delivered > 0) deps.onDelivered?.();
+    return report;
+  }
+
+  let resuming: ReturnType<typeof resume> | null = null;
+  async function resume() {
+    if (!(await outbox.hasPending())) return null;
+    const target = await scope();
+    if (!target) return null;
+    await outbox.retryNow(target);
+    return flushScope(target);
+  }
+
+  /** ankify answered: send what waits now rather than at its backoff time
+   *  (or Chrome's 30-second minimum alarm). */
+  function resumeSync() {
+    resuming ??= resume().finally(() => {
+      resuming = null;
+    });
+    return resuming;
+  }
 
   async function scope() {
     const accountId = await account.scopeAccountId();
@@ -124,6 +151,7 @@ export function createSessionController(deps: {
       );
       if (!result.ok && result.kind === "auth") account.invalidate();
       if (!result.ok) return failure(result);
+      void resumeSync().catch(() => undefined);
       const pendingObservations = result.data.session ? await outbox.pendingObservations(result.data.session.id) : 0;
       return { ok: true, response: { ...result.data, localSync: { pendingObservations } } };
     },
@@ -168,7 +196,9 @@ export function createSessionController(deps: {
       const result = await api.request<PracticeSessionCommandResponseDto>(sessionPath(sessionId, "commands"), {
         body: { type: "heartbeat", ownerToken, activeMs: totals.activeMs, observedMs: totals.observedMs, availability },
       });
-      return result.ok ? { ok: true, response: result.data } : failure(result);
+      if (!result.ok) return failure(result);
+      void resumeSync().catch(() => undefined);
+      return { ok: true, response: result.data };
     },
 
     observations(sessionId: string, observations: SessionObservationInput[]) {
@@ -192,14 +222,13 @@ export function createSessionController(deps: {
       return result.ok ? { ok: true, response: result.data } : failure(result);
     },
 
-    /** Delivers whatever is due; called on a timer, on startup, and when the popup opens. */
+    /** Delivers whatever is due; called on a timer and on startup. */
     async flush() {
       const target = await scope();
-      if (!target) return null;
-      const report = await outbox.flush(target);
-      if (report.authRequired) account.invalidate();
-      return report;
+      return target ? flushScope(target) : null;
     },
+
+    resumeSync,
 
     async syncStatus() {
       const target = await scope();

@@ -448,6 +448,63 @@ describe("rating after Finish", () => {
   });
 });
 
+describe("connection and sign-in changes", () => {
+  it("asks for a page reload once the extension was reloaded, and stops tracking", async () => {
+    let reloaded = false;
+    const h = harness({
+      respond: (message) => {
+        if (reloaded) return { ok: false, error: "extension_reloaded" };
+        return message.type === "page_state" ? current() : { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    reloaded = true;
+    await h.tick(TICK_MS);
+    expect(h.page.view()).toEqual({ kind: "reload_required" });
+    expect(h.pending()).toHaveLength(0);
+  });
+
+  it("says when ankify is unreachable during a session, and clears it when a heartbeat lands", async () => {
+    let down = true;
+    const h = harness({
+      respond: (message) => {
+        if (message.type === "page_state") return current();
+        if (message.type === "session_activity") return down ? { ok: false, error: "server_error" } : { ok: true, response: { ok: true, session: session() } };
+        return { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    await h.tick(TICK_MS);
+    expect(h.page.view()).toMatchObject({ kind: "ready", reachable: false, session: { id: "s1" } });
+    down = false;
+    await h.tick(TICK_MS);
+    expect(h.page.view()).toMatchObject({ reachable: true });
+  });
+
+  it("shows sign-in when the ankify session expires mid-session, and recovers when the page is visible again", async () => {
+    let signedIn = true;
+    const h = harness({
+      respond: (message) => {
+        if (!signedIn) return { ok: false, error: "signed_out" };
+        return message.type === "page_state" ? current() : { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    signedIn = false;
+    await h.tick(TICK_MS);
+    expect(h.page.view()).toEqual({ kind: "signed_out" });
+
+    signedIn = true;
+    h.advance(5_000);
+    h.page.onVisibilityChange();
+    await settleAll();
+    expect(h.page.view()).toMatchObject({ kind: "ready", session: { id: "s1" } });
+  });
+});
+
 describe("state changed elsewhere", () => {
   it("re-reads when the popup rated the session, after any action under way here", async () => {
     const pendingSession = session({ status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });

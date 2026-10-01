@@ -288,3 +288,39 @@ test("a rating in the popup clears the panel's rating, and a rating in the panel
   expect(history.sessions).toMatchObject([{ rating: { disposition: "submitted" } }]);
   expect(current.problem).toMatchObject({ scheduleRevision: 1 });
 });
+
+test("signing out of LeetCode mid-session warns, signing back in resumes tracking, and Review early still starts", async ({ context, leetcode, api, panel }) => {
+  void panel; // signs the context in
+  const slug = newProblem(leetcode, "relogin");
+  await api("/api/capture", { body: { leetcodeSlug: slug, leetcodeId: leetcode.problems[slug]!.frontendId, title: leetcode.problems[slug]!.title, difficulty: "Easy", url: problemUrl(slug) } });
+  const page = await context.newPage();
+  await page.goto(problemUrl(slug));
+  await openPanel(page);
+  await page.getByRole("button", { name: "Start review" }).click();
+  await expect(page.getByText("Review in progress")).toBeVisible();
+
+  // LeetCode signs out: its session cookie goes, and reads report signed out.
+  leetcode.signedIn = false;
+  await context.clearCookies({ name: "csrftoken" });
+  await focus(page);
+  await expect(page.getByText("Sign in to LeetCode so submissions can be tracked.")).toBeVisible({ timeout: 10_000 });
+
+  // Back in: the next check reads LeetCode again and the warning clears.
+  leetcode.signedIn = true;
+  await context.addCookies([{ name: "csrftoken", value: "fixture-csrf-2", url: "https://leetcode.com" }]);
+  submit(leetcode, slug, "Accepted");
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByText("1 submission, 1 accepted")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Sign in to LeetCode so submissions can be tracked.")).toHaveCount(0);
+  await expect(page.getByText(/Can't reach ankify/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Finish" }).click();
+  await page.getByRole("group", { name: "How did the review go?" }).getByRole("button", { name: /Good/ }).click();
+  await expect(page.getByText(/Next review/).first()).toBeVisible();
+
+  // Review early after the sign-in round trip: a review starts, no connection error.
+  await page.getByRole("button", { name: "Review early" }).click();
+  await expect(page.getByText("Review in progress")).toBeVisible();
+  const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  expect(current.session).toMatchObject({ type: "scheduled_review", reviewIntent: "early", status: "active" });
+});

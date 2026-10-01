@@ -35,7 +35,18 @@ export const LATE_VERDICT_MS = 60_000;
 
 export type BackgroundFailure = {
   ok: false;
-  error: PracticeSessionErrorCode | "signed_out" | "offline" | "rate_limited" | "server_error" | "unexpected" | "invalid_message";
+  error:
+    | PracticeSessionErrorCode
+    | "signed_out"
+    | "offline"
+    | "rate_limited"
+    | "server_error"
+    | "unexpected"
+    | "invalid_message"
+    /** The extension was reloaded or updated; this page's script is orphaned. */
+    | "extension_reloaded"
+    /** The background worker did not answer. */
+    | "extension_unavailable";
   session?: PracticeSessionDto;
   /** `session`'s problem, when it is another one (a review awaiting its rating). */
   problem?: PracticeProblemStatusDto;
@@ -76,6 +87,8 @@ export type PageView =
   | { kind: "loading" }
   | { kind: "signed_out" }
   | { kind: "offline" }
+  /** The extension was reloaded or updated: only reloading the page helps. */
+  | { kind: "reload_required" }
   | {
       kind: "ready";
       problem: PracticeProblemStatusDto | null;
@@ -87,6 +100,8 @@ export type PageView =
       availability: LeetcodeAvailability;
       /** The tracked session's submissions seen here but not (yet) in its evidence. */
       local: LocalEvidence;
+      /** Whether ankify answered the last heartbeat; work is saved locally meanwhile. */
+      reachable: boolean;
       busy: "starting" | "finishing" | "abandoning" | "rating" | "claiming" | null;
       notice: PageNotice | null;
       /** The latest session completed in the last week, which analysis refers to. */
@@ -119,6 +134,17 @@ export type PageSessionDeps = {
  */
 export function createPageSession(deps: PageSessionDeps) {
   const isVisible = deps.isVisible ?? deps.isActive;
+
+  /** Every request to the worker. An orphaned script stops for good. */
+  async function send<T>(message: ContentMessage): Promise<BackgroundOutcome<T>> {
+    const result = await deps.send<T>(message);
+    if (!result.ok && result.error === "extension_reloaded" && !disposed) {
+      stopTracking();
+      late?.cancel();
+      set({ kind: "reload_required" });
+    }
+    return result;
+  }
   let view: PageView = { kind: "loading" };
   const listeners = new Set<(view: PageView) => void>();
   let tracking: {
@@ -141,6 +167,7 @@ export function createPageSession(deps: PageSessionDeps) {
   /** Fast checks after a submit; ends at `until` or once the verdict is reported. */
   let watch: { until: number; cancel: () => void } | null = null;
   let refreshSeq = 0;
+  let lastRecoverAt = Number.NEGATIVE_INFINITY;
   /** A change from elsewhere arrived during an action; read the state after it. */
   let refreshAfterBusy = false;
 
@@ -153,7 +180,7 @@ export function createPageSession(deps: PageSessionDeps) {
     const base: Extract<PageView, { kind: "ready" }> =
       view.kind === "ready"
         ? view
-        : { kind: "ready", problem: null, session: null, pendingRating: null, blockingRating: null, availability: "available", local: NO_LOCAL_EVIDENCE, busy: null, notice: null, recentCompleted: null, analysis: null };
+        : { kind: "ready", problem: null, session: null, pendingRating: null, blockingRating: null, availability: "available", local: NO_LOCAL_EVIDENCE, reachable: true, busy: null, notice: null, recentCompleted: null, analysis: null };
     set({ ...base, ...patch });
     syncTracking();
     syncAnalysis();
@@ -198,7 +225,7 @@ export function createPageSession(deps: PageSessionDeps) {
   const jobActive = (job: PublicAiJobDto | null) => job?.status === "queued" || job?.status === "running";
 
   async function loadAnalysis(sessionId: string) {
-    const result = await deps.send<SessionAnalysisStateDto>({ type: "analysis_state", sessionId });
+    const result = await send<SessionAnalysisStateDto>({ type: "analysis_state", sessionId });
     const current = view.kind === "ready" ? view.analysis : null;
     if (disposed || current?.sessionId !== sessionId) return;
     if (!result.ok) {
@@ -220,6 +247,7 @@ export function createPageSession(deps: PageSessionDeps) {
   }
 
   function failureView(result: BackgroundFailure) {
+    if (result.error === "extension_reloaded") return;
     if (result.error === "signed_out") return set({ kind: "signed_out" });
     ready({ busy: null, notice: { kind: "error", error: result.error, ...(result.session ? { session: result.session } : {}) } });
   }
@@ -264,7 +292,7 @@ export function createPageSession(deps: PageSessionDeps) {
           : { baselineState: "unavailable", baselineSubmissionId: null, startedAt: owned.timing.startedAt };
       },
       report: async (observations) => {
-        const result = await deps.send<PracticeSessionSubmissionsResponseDto>({ type: "session_observations", sessionId, observations });
+        const result = await send<PracticeSessionSubmissionsResponseDto>({ type: "session_observations", sessionId, observations });
         // Nothing was saved (the worker was unreachable, or Ankify is signed
         // out): failing the hand-off makes the poller report these again.
         if (!result.ok) throw new Error(result.error);
@@ -394,7 +422,7 @@ export function createPageSession(deps: PageSessionDeps) {
       // A session started from the popup also gets the page's LeetCode metadata.
       const [baseline, problem] = await Promise.all([establishBaseline(), deps.client.readProblem(deps.slug)]);
       const control = { command: "set_baseline" as const, baseline, ...(problem.availability === "available" && problem.value ? { problem: problem.value } : {}) };
-      const result = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_control", sessionId: current.sessionId, control });
+      const result = await send<PracticeSessionCommandResponseDto>({ type: "session_control", sessionId: current.sessionId, control });
       if (result.ok && !result.queued) ready({ session: result.response.session });
     }
     try {
@@ -423,17 +451,23 @@ export function createPageSession(deps: PageSessionDeps) {
     if (!current || view.kind !== "ready") return;
     current.meter.sample();
     const delta = current.meter.take();
-    const result = await deps.send<PracticeSessionCommandResponseDto>({
+    const result = await send<PracticeSessionCommandResponseDto>({
       type: "session_activity",
       sessionId: current.sessionId,
       ...delta,
       availability: view.availability,
     });
     if (result.ok && !result.queued) {
-      if (tracking === current) ready({ session: result.response.session });
+      if (tracking === current) ready({ session: result.response.session, reachable: true });
     } else if (!result.ok && (result.error === "not_owner" || result.error === "session_stale" || result.error === "invalid_transition")) {
       // Another tab took over or the session ended elsewhere.
       await refresh();
+    } else if (!result.ok && result.error === "signed_out") {
+      // The ankify session expired; tracking resumes once signed in again.
+      set({ kind: "signed_out" });
+    } else if (!result.ok && tracking === current && view.kind === "ready" && view.reachable) {
+      // Outage or overload: submissions keep being saved for later sync.
+      ready({ reachable: false });
     }
   }
 
@@ -444,12 +478,15 @@ export function createPageSession(deps: PageSessionDeps) {
 
   async function refresh() {
     const seq = ++refreshSeq;
-    const result = await deps.send<PageStateResponse>({ type: "page_state", slug: deps.slug });
+    const result = await send<PageStateResponse>({ type: "page_state", slug: deps.slug });
     // A later read (or the page going away) supersedes this one.
     if (disposed || seq !== refreshSeq) return;
     if (!result.ok) {
+      if (result.error === "extension_reloaded") return;
       if (result.error === "signed_out") return set({ kind: "signed_out" });
-      if (result.error === "offline" && view.kind !== "ready") return set({ kind: "offline" });
+      if (view.kind !== "ready" && (result.error === "offline" || result.error === "server_error" || result.error === "rate_limited" || result.error === "extension_unavailable")) {
+        return set({ kind: "offline" });
+      }
       return failureView(result);
     }
     if (result.queued) return;
@@ -458,7 +495,7 @@ export function createPageSession(deps: PageSessionDeps) {
     const shown = currentSession();
     const session = result.response.session && shown?.id === result.response.session.id && shown.revision > result.response.session.revision ? shown : result.response.session;
     const local = localSync?.pendingObservations === 0 ? { ...localEvidence(), unsynced: [] } : localEvidence();
-    ready({ problem, session, pendingRating, recentCompleted, local });
+    ready({ problem, session, pendingRating, recentCompleted, local, reachable: true });
   }
 
   function claimed(result: BackgroundOutcome<PracticeSessionCommandResponseDto>) {
@@ -501,7 +538,7 @@ export function createPageSession(deps: PageSessionDeps) {
         establishBaseline(),
       ]);
       if (!problem.value) return failureView({ ok: false, error: "unexpected" });
-      const result = await deps.send<PracticeSessionStartResponseDto>({
+      const result = await send<PracticeSessionStartResponseDto>({
         type: "session_start",
         slug: deps.slug,
         mode,
@@ -536,14 +573,14 @@ export function createPageSession(deps: PageSessionDeps) {
       const session = currentSession();
       if (!session) return;
       ready({ busy: "claiming", notice: null });
-      claimed(await deps.send({ type: "session_control", sessionId: session.id, control: { command: "takeover" } }));
+      claimed(await send({ type: "session_control", sessionId: session.id, control: { command: "takeover" } }));
     },
 
     async resume() {
       const session = currentSession();
       if (!session) return;
       ready({ busy: "claiming", notice: null });
-      claimed(await deps.send({ type: "session_control", sessionId: session.id, control: { command: "resume" } }));
+      claimed(await send({ type: "session_control", sessionId: session.id, control: { command: "resume" } }));
     },
 
     /** Reports every submission LeetCode shows first, so the outcome reflects them. */
@@ -553,7 +590,7 @@ export function createPageSession(deps: PageSessionDeps) {
       ready({ busy: "finishing", notice: null });
       await pollIfDue(true);
       await reportActivity().catch(() => undefined);
-      const response = await deps.send<PracticeSessionCommandResponseDto>({
+      const response = await send<PracticeSessionCommandResponseDto>({
         type: "session_control",
         sessionId: session.id,
         control: { command: "finish", result, occurredAt: new Date(deps.now()).toISOString() },
@@ -574,7 +611,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const session = currentSession();
       if (!session) return;
       ready({ busy: "abandoning", notice: null });
-      const response = await deps.send<PracticeSessionCommandResponseDto>({
+      const response = await send<PracticeSessionCommandResponseDto>({
         type: "session_control",
         sessionId: session.id,
         control: { command: "abandon", occurredAt: new Date(deps.now()).toISOString() },
@@ -591,7 +628,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const target = ratingTarget();
       if (!target) return;
       ready({ busy: "rating", notice: null });
-      const response = await deps.send<PracticeSessionRatingResponseDto>({ type: "session_rating", sessionId: target.session.id, rating });
+      const response = await send<PracticeSessionRatingResponseDto>({ type: "session_rating", sessionId: target.session.id, rating });
       if (!response.ok) return ratingFailed(response, target);
       if (target.blocking) return ready({ busy: null, blockingRating: null, notice: response.queued ? { kind: "queued", action: "rating" } : { kind: "unblocked" } });
       if (response.queued) return ready({ busy: null, pendingRating: null, notice: { kind: "queued", action: "rating" } });
@@ -603,7 +640,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const target = ratingTarget();
       if (!target) return;
       ready({ busy: "rating", notice: null });
-      const response = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_rating_decision", sessionId: target.session.id, decision: "dismiss" });
+      const response = await send<PracticeSessionCommandResponseDto>({ type: "session_rating_decision", sessionId: target.session.id, decision: "dismiss" });
       if (!response.ok) return ratingFailed(response, target);
       if (target.blocking) return ready({ busy: null, blockingRating: null, notice: response.queued ? { kind: "queued", action: "rating_decision" } : { kind: "unblocked" } });
       ready({ busy: null, pendingRating: null, notice: response.queued ? { kind: "queued", action: "rating_decision" } : null });
@@ -614,7 +651,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const current = view.kind === "ready" ? view.analysis : null;
       if (!current || current.busy) return;
       setAnalysis({ ...current, busy: "starting", error: null });
-      const result = await deps.send<PublicAiJobDto>({ type: "analysis_start", sessionId: current.sessionId });
+      const result = await send<PublicAiJobDto>({ type: "analysis_start", sessionId: current.sessionId });
       const latest = view.kind === "ready" ? view.analysis : null;
       if (latest?.sessionId !== current.sessionId) return;
       if (!result.ok) return setAnalysis({ ...latest, busy: null, error: (result as { error: string }).error });
@@ -627,7 +664,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const current = view.kind === "ready" ? view.analysis : null;
       if (!current || current.busy) return;
       setAnalysis({ ...current, busy: "deciding", error: null });
-      const result = await deps.send({ type: "analysis_finding", mistakeId, decision, ...(category ? { category } : {}) });
+      const result = await send({ type: "analysis_finding", mistakeId, decision, ...(category ? { category } : {}) });
       const latest = view.kind === "ready" ? view.analysis : null;
       if (latest?.sessionId !== current.sessionId) return;
       if (!result.ok) return setAnalysis({ ...latest, busy: null, error: (result as { error: string }).error });
@@ -637,6 +674,12 @@ export function createPageSession(deps: PageSessionDeps) {
     /** Visibility or focus changed: close the timing interval, and when the
      *  page is active again check LeetCode right away (debounced). */
     onVisibilityChange() {
+      // Back on the page after signing in to ankify (or reconnecting): read again.
+      if ((view.kind === "signed_out" || view.kind === "offline") && isVisible() && deps.now() - lastRecoverAt >= FOCUS_POLL_DEBOUNCE_MS) {
+        lastRecoverAt = deps.now();
+        void refresh();
+        return;
+      }
       // An analysis still running after polling gave up is checked again.
       const analysis = view.kind === "ready" ? view.analysis : null;
       if (deps.isActive() && analysis && !analysisPoll && !analysis.busy && jobActive(analysis.state?.job ?? null)) {

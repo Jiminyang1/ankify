@@ -1241,3 +1241,42 @@ Gate:
 | `pnpm test` | PASS: 508 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 31 tests. The deferred-rating spec is replaced by "rating survives closing the page, rated in the popup"; a new spec covers rate-or-skip before another review |
+
+### 1c: sign-in and connection errors, offline verification
+
+Findings:
+
+- **"Can't reach ankify" covered unrelated failures.**
+  - It was shown when the content script's `sendMessage` threw (worker restarting, or the extension reloaded so the script was orphaned).
+  - `import_history` reported a LeetCode read failure as `offline`.
+  - The router mapped every non-auth failure of import, capabilities, and notes to `offline`.
+  - The live "Review early after re-signing in to LeetCode" report could not be reproduced against the fixture. The scripted flow (sign out mid-session, sign back in, rate, Review early) works. The likeliest live cause is an orphaned script or a worker that missed its first message, both now reported and retried distinctly. The owner still needs to check this live (TEST_GUIDE §1.6).
+- **Offline sync waited out its backoff.** Reconnecting did not sync at once: queued work waited its backoff, and the retry alarm runs no sooner than 30 s.
+- **DevTools' Offline on a LeetCode tab does not cut ankify sync.** All ankify traffic runs in the service worker.
+
+Changes:
+
+- **Content `send`.** It retries once after 300 ms. An orphaned script reports `extension_reloaded`, which the panel shows as "Reload page", and stops tracking. A worker that never answers reports `extension_unavailable`. The popup bridge retries the same way.
+- **Router errors.** Failures map through `apiFailure()`: `signed_out`, `offline`, `server_error`, `rate_limited`, or the server's code. LeetCode read failures in import are `leetcode_signed_out` or `leetcode_unavailable`.
+- **Panel states.**
+  - A failed heartbeat shows "Can't reach ankify right now. Submissions are saved here…" until one lands.
+  - An expired ankify session shows the sign-in view. The sign-in and offline views re-read when the tab is shown again.
+- **Immediate resync.** Any successful page read, heartbeat, or popup open makes waiting outbox work due now and flushes it. Deliveries made that way nudge the popup and tabs.
+- **Tests.**
+  - e2e: LeetCode sign-out and sign-in mid-session, then Review early; an outage before start; an outage during a session and while rating, including immediate sync.
+  - Unit: error mapping, reload and outage handling, and resync.
+  - TEST_GUIDE §1.7 explains which execution context to cut.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 513 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 34 tests |
+
+**Phase 1 passes.** It is verified against the LeetCode fixture and mocks only. The owner must still check these live:
+
+- the LeetCode Submit button locator;
+- sign-out and sign-in;
+- reloading the extension.

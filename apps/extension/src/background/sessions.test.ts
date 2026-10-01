@@ -8,7 +8,7 @@ const ORIGIN = "https://ankify.test";
 type Call = { path: string; init: ApiRequest };
 type Responder = (call: Call) => ApiResult<unknown>;
 
-function harness(respond: Responder) {
+function harness(respond: Responder, options: { onDelivered?: () => void } = {}) {
   const calls: Call[] = [];
   let online = true;
   let signedInAs = "user-1";
@@ -59,6 +59,7 @@ function harness(respond: Responder) {
       },
     },
     newId: () => `req-${++id}`,
+    ...(options.onDelivered ? { onDelivered: options.onDelivered } : {}),
   });
   return {
     controller,
@@ -91,6 +92,24 @@ describe("session controller", () => {
     setOnline(true);
     // The batch waits out its backoff; the page hears it is still unsynced.
     expect(await controller.pageState(7, "two-sum")).toMatchObject({ ok: true, response: { localSync: { pendingObservations: 1 } } });
+  });
+
+  it("sends saved work as soon as ankify answers again, without waiting out the backoff", async () => {
+    let delivered = 0;
+    const { controller, setOnline, store } = harness(
+      (call) => ok(call.path.startsWith("/api/practice-sessions/current") ? { problem: null, session: null, pendingRating: null } : { ok: true, session: { id: "s1" } }),
+      { onDelivered: () => void (delivered += 1) },
+    );
+    await controller.syncStatus(); // the account is confirmed while online
+    setOnline(false);
+    expect(await controller.control({ tabId: 7 }, "s1", { command: "abandon", occurredAt: "2026-09-29T12:00:00.000Z" })).toEqual({ ok: true, queued: true });
+    expect((await store.all())[0]!.nextAttemptAt).toBeGreaterThan(Date.now());
+    setOnline(true);
+    // A page read succeeds: the outbox goes at once.
+    await controller.pageState(7, "two-sum");
+    await expect.poll(async () => (await store.all()).length).toBe(0);
+    expect(delivered).toBe(1);
+    expect(await controller.resumeSync()).toBeNull();
   });
 
   it("requires the server to acknowledge a start", async () => {

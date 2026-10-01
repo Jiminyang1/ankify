@@ -92,7 +92,16 @@ async function broadcastSessionChange(options: { popup: boolean; exceptTabId?: n
 }
 
 const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase()), deliver });
-const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
+const controller = createSessionController({
+  api,
+  outbox,
+  account,
+  tokens,
+  totals: createActivityTotals(chrome.storage.session),
+  newId,
+  // Saved work landed later (timer, reconnect, popup): everyone re-reads.
+  onDelivered: () => void broadcastSessionChange({ popup: true }),
+});
 const router = createRouter({
   analysis: createAnalysisClient({ api, newId }),
   suggestions: createSuggestionsClient({ api, newId }),
@@ -106,8 +115,6 @@ const router = createRouter({
     void setBadge(overview).catch(() => undefined);
     void followDeviceTimeZone(overview.timeZone);
   },
-  // The popup's own flush delivered saved work; the popup reads it anyway.
-  onDelivered: () => void broadcastSessionChange({ popup: false }),
   tabs: {
     findProblemTab: async (slug) => {
       const [tab] = await chrome.tabs.query({ url: `https://leetcode.com/problems/${slug}/*` });
@@ -132,8 +139,7 @@ async function scheduleSync() {
 }
 
 async function syncNow() {
-  const report = await controller.flush().catch((error) => console.warn("ankify: sync failed", error));
-  if (report && report.delivered > 0) void broadcastSessionChange({ popup: true });
+  await controller.flush().catch((error) => console.warn("ankify: sync failed", error));
   await scheduleSync();
 }
 
