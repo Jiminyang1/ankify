@@ -99,23 +99,22 @@ database operation.
    - `AI_KEY_ENCRYPTION_SECRET`
    - `ANKIFY_DEPLOYMENT_ENV=production`
    - `ANKIFY_EXTENSION_ORIGINS=chrome-extension://<extension-id>`
-   - Optional starter AI credits: `ANKIFY_STARTER_AI_API_KEY` (server-owned
-     provider key; leave unset to disable), plus `ANKIFY_STARTER_AI_PROVIDER`
-     (default `deepseek`), `ANKIFY_STARTER_AI_MODEL` (default
-     `deepseek-v4-flash`), and `ANKIFY_STARTER_AI_CREDITS` (default `30` per
-     user). Top up the provider account with only what you're willing to spend;
-     its prepaid balance is the overall cap.
-   - Optional paid AI credit packs: `STRIPE_SECRET_KEY` (a restricted
-     `rk_live_...` key is recommended) and `STRIPE_WEBHOOK_SECRET`. Both or
-     neither; they also require the starter AI key, because purchased credits
-     run on it. Production must use a live key and Preview a test key; the
-     build-time env check enforces this. In the Stripe Dashboard, add a
-     webhook endpoint `https://<your-domain>/api/billing/webhook` for
-     `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-     and `charge.refunded`, and enable Link (plus any other methods) under
-     Payment methods. Apply migrations before deploying the billing code. See
-     [PAID_AI_CREDITS.md](PAID_AI_CREDITS.md) for packs, refunds, and the
-     manual test procedure.
+   - Optional automatic session analysis: `CRON_SECRET` and
+     `ANKIFY_AUTOMATIC_ANALYSIS=enabled`, only after the dispatch-recovery cron
+     is scheduled and verified (see [DEPLOYMENT.md](DEPLOYMENT.md)). Manual
+     session analysis needs no server key: it runs on each user's own key.
+   - Legacy, only if you re-enable Study Coach, card/quiz generation, or
+     credit sales with `ANKIFY_ENABLED_LEGACY_WORKFLOWS`:
+     - the starter AI key `ANKIFY_STARTER_AI_API_KEY`, with
+       `ANKIFY_STARTER_AI_PROVIDER`, `ANKIFY_STARTER_AI_MODEL`, and
+       `ANKIFY_STARTER_AI_CREDITS`;
+     - Stripe keys `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Production
+       must use a live key and Preview a test key.
+
+     If credit packs were ever sold, keep the Stripe keys and the webhook
+     endpoint `https://<your-domain>/api/billing/webhook` configured, so that
+     in-flight purchases and refunds still settle. See
+     [PAID_AI_CREDITS.md](PAID_AI_CREDITS.md).
    - Public Google signup is on by default. `ANKIFY_DISABLE_SIGNUP=true` is an
      emergency kill switch for new accounts; existing users can still sign in.
 3. Branch and PR preview deployments are turned off in `apps/web/vercel.json`
@@ -177,22 +176,27 @@ for the complete Preview-to-Production checklist.
 
 ```text
 apps/
-  web/          Next.js dashboard, API, review workspace, FSRS analysis
-  extension/    Chrome MV3 extension for LeetCode capture and quick review
+  web/          Next.js dashboard, API, practice history, mistake profile, suggestions
+  extension/    Chrome MV3 extension: practice sessions on LeetCode, popup, durable sync
 packages/
   db/           Drizzle schema, migrations, libSQL client, profile-aware loader
-  core/         FSRS-6 wrapper, shared Zod schemas, AI generation contracts
+  core/         FSRS-6, practice-session rules, mistake profile, suggestion planner
+  contracts/    Zod request schemas and DTOs shared by the web app and extension
+  api-client/   AI-job client
 ```
 
 ## Tables
 
-- `user`, `session`, `account`, `verification`: Better Auth.
-- `problems`: LeetCode problem metadata, notes, archived flag, FSRS state.
-- `submissions`: captured accepted and failed submissions.
-- `cards`: flashcards and AI candidates (`ai_status`: `candidate | failed | ready`).
-- `quiz_sessions`: active / completed / archived quiz JSON plus answers and score.
-- `review_events`: append-only event log feeding the analysis dashboard.
-- `settings`: per-user key/value settings (encrypted AI keys, daily review limit).
+The full table list, with what each holds, is in
+[ARCHITECTURE.md](ARCHITECTURE.md#data-and-persistence). The core of the
+extension-first workflow:
+
+- `problems`: LeetCode problem metadata, notes, archived flag, enrollment, FSRS state.
+- `practice_sessions` and `practice_session_submissions`: tracked practice on LeetCode and its observed submissions.
+- `review_events`: append-only rating and scheduling history.
+- `mistake_records` and `practice_improvements`: the mistake profile's evidence.
+- `suggestions`, `suggestion_candidates`, and `attempt_history`: new-problem suggestions.
+- `settings`: per-user key/value settings (encrypted AI keys, review and analysis settings).
 
 All user-owned business data carries `userId`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.
 

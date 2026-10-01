@@ -4,14 +4,10 @@
 
 **Remember the reasoning behind every LeetCode problem you solve.**
 
-ankify captures your problems, submissions, and failed test cases from LeetCode,<br>
-then brings each one back with spaced repetition, AI quizzes built from your own mistakes, and a Study Coach that has read your code.
+ankify works next to LeetCode. The Chrome extension records each practice session and its submissions,<br>
+FSRS brings every problem back just before you'd forget it, and your mistake profile shows which causes of failure keep coming back.
 
 [**Open the web app**](https://ankify-pi.vercel.app) · [**Add to Chrome**](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb) · [Self-host](docs/SELF_HOSTING.md)
-
-<br>
-
-![Reviewing Coin Change in ankify: answer a quiz built from a failed submission, open Study Coach, rate recall, and FSRS schedules the next review](images/hero-review-flow.gif)
 
 </div>
 
@@ -19,72 +15,40 @@ then brings each one back with spaced repetition, AI quizzes built from your own
 
 ## The problem
 
-You solve a hard problem. A week later you remember *that* you solved it, but not *how*: the trick that made it click, the edge case that broke your first attempt, the complexity argument you skipped.
+You solve a problem, move on, and three weeks later you can't remember why the greedy approach failed or which edge case broke your first submission.
 
-- **LeetCode** records what you solved, not what you still remember.
-- **Anki** handles vocabulary well, but a pile of disconnected cards is a poor way to review algorithm problems.
+- **Re-solving at random** wastes time on problems you still remember and misses the ones you're about to forget.
+- **A pile of flashcards** is a poor way to review algorithm problems: the real test is solving the problem again.
 
-ankify schedules the **whole problem**. When Coin Change is due, you get one focused session: the statement, your past submissions, your notes, a quiz generated for this session, and a coach who can explain what went wrong.
+ankify schedules the **whole problem** and reviews it the way you learned it: by solving it again on LeetCode.
 
 ## How it works
 
-| 1 · Solve | 2 · Capture | 3 · Review |
+| 1. Practice | 2. Rate | 3. Learn |
 | --- | --- | --- |
-| Work on LeetCode as usual. Accepted or not, every attempt counts. | One click in the Chrome extension saves the statement, all your submissions, and the exact failing test case with expected vs. actual output. | FSRS-6 brings the problem back just before you'd forget it. Review on the web or in the extension side panel next to LeetCode. |
-
----
+| Open a problem on LeetCode and click **Start practice** in the ankify panel. Every submission is recorded with its verdict and failing test case. | When a review is due, solve the problem again, finish the session, and rate how it went. FSRS-6 schedules the next review; a first practice comes back a day later. | Record why an attempt failed (or let session analysis suggest a cause) and watch which skills keep slipping across problems. |
 
 ## Features
 
-### A quiz for each review, built from your own mistakes
+### Practice sessions on LeetCode
 
-Every review starts with five multiple-choice questions generated from *your* context: the statement, your failed submissions, your notes, and your saved cards. Each batch covers at least four different angles (approach, invariant, edge case, implementation) and always includes a complexity question. You can't pass by memorizing trivia.
+The extension tracks the problem in your current tab: when you start, which submissions you make, their verdicts, and how long you actively worked. A due review opened from the toolbar popup starts its session before the page loads. Accepted doesn't end the session; you decide when you're done. Nothing is scheduled until you rate a review.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/review-quiz-dark.png">
-  <img alt="Review workspace: Coin Change statement on the left, an AI-generated quiz with explanation on the right, FSRS rating bar at the bottom" src="images/review-quiz-light.png">
-</picture>
+### A mistake profile, counted per session
 
-Answer with `A`–`D`, rate with `1`–`4`, submit with `Enter`. A missed question becomes a flashcard in one click. Your score suggests a rating, but you always decide. If you misclick, **Undo** restores the previous schedule.
+Confirmed causes of failure (approach, invariant, edge cases, complexity, implementation, concept) are counted once per practice session, so retrying a problem five times doesn't inflate a weakness. The profile on `/analysis` shows recurring categories, trends, and the sessions behind them. A session you confirm as handled well lowers that category's weakness.
 
-### Study Coach: an AI tutor that has read your submissions
+### New problems worth trying
 
-Study Coach sits beside any page. It uses tools to look up the problem, your submissions, notes, cards, quiz results, and your review queue, so it answers about *your* attempt instead of a generic solution.
+Each day the popup and `/suggestions` offer a problem you haven't attempted, chosen from the similar questions of problems you practiced. Once your profile has enough history, suggestions target your recurring weaknesses. Each one says why it was picked, using only what ankify actually knows; skip it, mark it already attempted, or ask for another.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/study-coach-dark.png">
-  <img alt="Study Coach panel explaining why a greedy Coin Change submission failed on coins=[1,3,4], amount=6" src="images/study-coach-light.png">
-</picture>
+### Session analysis, with your own key (optional)
 
-A real exchange from the screenshot above, lightly trimmed:
-
-> **You:** Why did my first attempt fail?
->
-> **Coach** *(reads your submissions)*: Your first attempt was the greedy one, about 6 weeks ago. You sorted coins descending and always took as many of the biggest coin as fit. That only works for "canonical" coin systems. It fails on `coins = [1,3,4], amount = 6`:
->
-> - Greedy: take `4`, then `1`, then `1` → **3 coins**
-> - Optimal: `3 + 3` → **2 coins**
->
-> Your plain recursion was correct but exponential. It hit TLE on `[1,2,5] / 100` because it re-solves the same remaining amounts, which is exactly what your accepted bottom-up `dp` fixes.
->
-> One check for you: why does `[1,2,5]` work with greedy but `[1,3,4]` doesn't?
-
-Coach can jump to another problem or suggest a new card or quiz. Anything that writes data waits for your confirmation.
-
-### Capture from the page you're already on
-
-The extension reads the LeetCode page directly: title, statement, tags, and every accepted and failed submission. No copy-paste. If you have solved a problem but haven't saved it yet, the toolbar icon shows a gold `!`. Open the side panel to quiz, flip cards, and rate recall without leaving LeetCode.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="images/extension-side-panel-dark.png">
-    <img width="640" alt="ankify Chrome side panel: today's due queue, and a Coin Change quiz question with its explanation and the rating bar" src="images/extension-side-panel-light.png">
-  </picture>
-</p>
+After a session, ankify can explain why it went wrong: it reads your attempts, code diffs, and judge output, and suggests mistakes for you to confirm. Nothing counts toward your profile until you do. Analysis runs only on your own Anthropic, OpenAI, or DeepSeek key, never on a shared one. Keys are encrypted with AES-256-GCM before they reach the database.
 
 ### See what's about to slip
 
-`/analysis` reads the same FSRS state that drives your schedule: average recall, lapse rate, a ranked list of the problems you're most likely to forget, stability buckets, and your review history.
+`/analysis` also reads the FSRS state that drives your schedule: average recall, lapse rate, a ranked list of the problems you're most likely to forget, stability buckets, and your review history.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/analysis-dark.png">
@@ -93,36 +57,30 @@ The extension reads the LeetCode page directly: title, statement, tags, and ever
 
 ### And the rest
 
-- **A daily queue with a limit.** Set how many problems you review per day. The Today page ranks what's due by urgency.
-- **Flashcards that stay simple.** Each card is just a question and an answer. AI drafts are *candidates* until you confirm them.
-- **Start on free AI credits, then bring your own model.** New accounts get free credits to try quizzes and Study Coach. After that, add your own Anthropic, OpenAI, or DeepSeek key. Keys are encrypted with AES-256-GCM before they reach the database, and your own key always takes priority.
-- **English or 简体中文.** The interface and AI output each have their own language setting.
+- **A dashboard for today.** `/today` shows what's due, overdue, and coming up, your recent practice, and your focus areas.
+- **A history for every problem.** Each problem page lists its sessions, its scheduling timeline, your notes, and your submissions.
+- **English or 简体中文.** The interface and session analyses each have their own language setting.
 - **Your data stays yours.** Export everything as NDJSON or delete your account from Settings.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/today-dark.png">
-  <img alt="Today page: six due problems, done-today counter, and the review queue ranked by urgency" src="images/today-light.png">
-</picture>
 
 ---
 
 ## Get started
 
 1. **Sign in** at [ankify-pi.vercel.app](https://ankify-pi.vercel.app) with Google.
-2. **Try the AI features on free credits.** When they run out, add your own Anthropic, OpenAI, or DeepSeek key in Settings.
-3. **Install the [Chrome extension](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb).** It reuses your web login, so there's no token to paste.
-4. **Open any LeetCode problem you've solved** and click *Capture*.
+2. **Install the [Chrome extension](https://chromewebstore.google.com/detail/ankify/gcldkcaidjnkaagngppblefddapdpaeb).** It reuses your web login, so there's no token to paste.
+3. **Open any LeetCode problem** and click **Start practice** in the ankify panel.
+4. *(Optional)* **Add your own AI key** in Settings to analyze finished sessions.
 
-A captured problem is due right away. Open **Today** and start your first session.
+Your first practice comes back for review a day after you finish it.
 
 ## Built with
 
 | Layer | Stack |
 | --- | --- |
-| Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6. Each problem is scheduled as one item. Cards and quizzes support recall. |
-| AI | Vercel AI SDK: a `ToolLoopAgent` for Study Coach, durable jobs for card and quiz generation |
+| Scheduling | [`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs) FSRS-6. Each problem is scheduled as one item, rated once per review session. |
+| AI | Vercel AI SDK: durable, user-keyed session-analysis jobs on Vercel Queues |
 | Web + API | Next.js 16 App Router, TypeScript, Tailwind |
-| Extension | Chrome MV3, Vite, React |
+| Extension | Chrome MV3, Vite, React; an IndexedDB outbox keeps work durable offline |
 | Data | Drizzle ORM on Turso / libSQL (SQLite locally). Every business table is scoped by `userId`. |
 | Auth | Better Auth + Google OAuth. The extension shares the web session. |
 
@@ -137,7 +95,7 @@ pnpm db:migrate
 pnpm dev          # http://localhost:3000
 ```
 
-Want to look around without setting up Google OAuth? Run `pnpm dev:demo` and open `http://localhost:3000/api/qa/login`. The screenshots in this README come from that demo deck.
+Want to look around without setting up Google OAuth? Run `pnpm dev:demo` and open `http://localhost:3000/api/qa/login`.
 
 ## License
 

@@ -45,9 +45,13 @@ data ownership in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
 
 In one paragraph: `apps/web` (Next.js 16 App Router, logic in `src/server/`),
 `apps/extension` (Chrome MV3), `packages/db` (Drizzle + Turso/SQLite),
-`packages/core` (FSRS, types), `packages/contracts` (Zod schemas + DTOs), and
-`packages/api-client` (AI-job client). Card and quiz generation run as durable
-`ai_jobs` through a Vercel Queue; Study Coach streams tool-using agent turns.
+`packages/core` (FSRS, session rules, profile, suggestion planner, types),
+`packages/contracts` (Zod schemas + DTOs), and `packages/api-client` (AI-job
+client). The extension tracks practice sessions on LeetCode and syncs them
+through a durable outbox; FSRS changes only when a completed review session
+is rated. Session analysis runs as durable `ai_jobs` through a Vercel Queue
+on the user's own key. Study Coach, card/quiz generation, and credit sales are
+suspended (`ANKIFY_ENABLED_LEGACY_WORKFLOWS` re-enables one deliberately).
 
 ## Rules that matter when editing
 
@@ -63,18 +67,28 @@ In one paragraph: `apps/web` (Next.js 16 App Router, logic in `src/server/`),
 - **AI work is asynchronous**: create an `ai_jobs` command (`POST /api/ai-jobs`)
   instead of calling a model inside a request. Commit results together with the
   terminal job state in one transaction.
-- **Hosted AI credits**: any new AI entry point that can run on the hosted key
-  (`source: "starter"`) must call `spendHostedCredit()` inside the same
-  transaction that creates its job/run, and refund on failure with
-  `refundHostedCredit()`. A user's own key never spends credits.
+- **Own key for session analysis**: analysis runs only on the user's own key
+  (`getOwnAiRuntimeSettings()`), checked at creation and again before
+  execution; never fall back to the hosted key or spend credits for it.
+- **Hosted AI credits** (suspended legacy workflows only): an AI entry point
+  that can run on the hosted key (`source: "starter"`) must call
+  `spendHostedCredit()` inside the same transaction that creates its job/run,
+  and refund on failure with `refundHostedCredit()`. A user's own key never
+  spends credits.
 - **Billing**: prices and pack sizes are server-side only
   (`server/billing/config.ts`); credits are granted only by
   `fulfillCheckoutSession*()` from the authoritative Stripe Session, never from a
   redirect or event payload. Never use live Stripe keys outside Production.
-- **Agent writes are user-gated**: Coach may read and navigate, but card/quiz
-  generation is a proposal that runs only after approval.
-- **FSRS is problem-level**; only manual ratings change the schedule.
-  `review_events` is append-only (undo stamps `undoneAt`).
+- **AI findings are suggestions**: analysis findings are `ai_suggested`
+  candidates that count toward the mistake profile only after the user
+  confirms them. (The suspended Coach also only proposed writes for approval.)
+- **Suggestions never target attempted problems**: problem rows, archived ones
+  included, and `attempt_history` are excluded, and explanations state only
+  what stored metadata shows.
+- **FSRS is problem-level**; only the rating of a completed review session
+  (or the legacy rating route) changes the schedule, and a first practice
+  schedules its first review without a rating. `review_events` is append-only
+  (undo stamps `undoneAt`).
 - **Tests**: DB tests use `createTestDb()` from `apps/web/src/server/test-db.ts`;
   keep deliberate-concurrency tests in their own `*.concurrency.test.ts` file.
 
@@ -116,11 +130,12 @@ Genuinely custom controls are the exception and stay raw: rating buttons, quiz a
 ## Terminology
 
 - **problem** = a LeetCode problem stored in `problems`; the unit FSRS schedules.
-- **card** = a flashcard with `question` (front) and `answer` (back).
-- **candidate** = an AI-generated card draft, not yet confirmed.
-- **quiz session** = a per-problem set of 5 multiple-choice questions plus user answers and score.
-- **AI job** = a durable card/quiz generation command in `ai_jobs`, executed by the queue worker.
-- **run** = one Study Coach turn inside an agent session.
+- **practice session** = one tracked attempt at a problem on LeetCode (`practice_sessions`): initial learning, a scheduled review, or voluntary practice.
+- **session analysis** = one AI explanation of a completed session, on the user's own key (`session_analyses`).
+- **candidate** = an AI suggestion awaiting the user's confirmation: an `ai_suggested` mistake record (or, legacy, an AI card draft).
+- **suggestion** = a new problem offered to try (`suggestions`), never one the user attempted.
+- **AI job** = a durable command in `ai_jobs` (session analysis; legacy card/quiz generation), executed by the queue worker.
+- **card**, **quiz session**, **run** = legacy content of the suspended card, quiz, and Study Coach workflows.
 - **hosted key** = the server-owned AI key (`ANKIFY_STARTER_AI_API_KEY`) used when a user has no key of their own.
 - **starter credits** = the free lifetime allowance on the hosted key; **purchased credits** = paid balance from Stripe credit packs.
 - **retrievability** = probability the user still remembers (0-1), computed by FSRS.
