@@ -63,6 +63,8 @@ function mount() {
     send,
     now: Date.now,
     isActive: () => document.visibilityState === "visible" && document.hasFocus(),
+    // LeetCode's result view can take focus from the page; visible is enough to poll.
+    isVisible: () => document.visibilityState === "visible",
     schedule: (task, ms) => {
       const timer = window.setTimeout(task, ms);
       return () => window.clearTimeout(timer);
@@ -86,13 +88,39 @@ void send<{ language: Language }>({ type: "panel_settings" }).then((result) => {
   current?.panel.rerender();
 });
 
-// The popup asks the page to show its panel (only this extension can send).
+// Only this extension can send these: the popup asks the page to show its
+// panel, and the worker says a session changed elsewhere (popup, another tab,
+// or a delayed sync), so the panel reads the current state.
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== "open_panel") return;
+  if (sender.id !== chrome.runtime.id) return;
+  const type = (message as { type?: unknown } | null)?.type;
+  if (type === "session_changed") {
+    current?.page.onExternalChange();
+    return;
+  }
+  if (type !== "open_panel") return;
   mount();
   current?.panel.expand();
   sendResponse({ ok: Boolean(current) });
 });
+
+/** LeetCode's Submit button (by its test locator, else its label). */
+function isSubmitButton(target: EventTarget | null) {
+  const button = target instanceof Element ? target.closest("button") : null;
+  if (!button) return false;
+  if (button.getAttribute("data-e2e-locator") === "console-submit-button") return true;
+  return /^(submit|提交)$/i.test(button.textContent?.trim() ?? "");
+}
+
+// A submit makes the page check LeetCode every few seconds until the verdict
+// is in, instead of waiting for the next regular check. Capture phase: the
+// editor may stop the key event from bubbling.
+document.addEventListener("click", (event) => {
+  if (isSubmitButton(event.target)) current?.page.onSubmitIntent();
+}, true);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) current?.page.onSubmitIntent();
+}, true);
 
 const onActivityChange = () => current?.page.onVisibilityChange();
 document.addEventListener("visibilitychange", onActivityChange);

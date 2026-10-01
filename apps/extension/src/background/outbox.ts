@@ -225,6 +225,11 @@ export function createOutbox(deps: {
       }
     },
 
+    /** Observation batches of one session still waiting to be delivered. */
+    async pendingObservations(sessionId: string) {
+      return (await store.all()).filter((operation) => operation.sessionId === sessionId && operation.kind === "observations").length;
+    },
+
     /** Soonest retry time across the scope, for scheduling a wake-up. */
     async nextAttemptAt(scope: OutboxScope) {
       const pending = (await store.all()).filter(inScope(scope)).filter((operation) => operation.state === "pending");

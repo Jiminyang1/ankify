@@ -374,16 +374,29 @@ export function mountPanel(deps: {
       );
     }
     const availability = view.kind === "ready" ? view.availability : "available";
+    const local = view.kind === "ready" ? view.local : { judging: 0, unsynced: [] };
+    // Saved-but-unsynced submissions count as seen; the server has the rest.
+    const submissions = session.evidence.submissions + local.unsynced.length;
+    const accepted = session.evidence.accepted + local.unsynced.filter((item) => item.accepted).length;
     const minutes = Math.round(session.timing.activeMs / 60_000);
     return h(
       "div",
       { class: "stack" },
       h("p", { class: "text" }, h("span", { class: "badge" }, t.kinds[session.type]), " ", t.panel.inProgress(t.kinds[session.type])),
-      h("p", { class: "text muted small" }, t.panel.evidence(session.evidence.submissions, session.evidence.accepted)),
+      h(
+        "div",
+        { class: "stack evidence", role: "status", "aria-live": "polite" },
+        h("p", { class: "text muted small", "data-key": "evidence" }, t.panel.evidence(submissions, accepted)),
+        local.judging > 0
+          ? h("p", { class: "text muted small status-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), t.panel.judging(local.judging))
+          : null,
+        local.unsynced.length > 0 ? h("p", { class: "text small", "data-tone": "warning" }, t.panel.unsynced(local.unsynced.length)) : null,
+        session.evidence.ambiguous > 0 ? h("p", { class: "text muted small" }, t.panel.ambiguous(session.evidence.ambiguous)) : null,
+      ),
       minutes > 0 ? h("p", { class: "text muted small" }, t.panel.activeTime(minutes)) : null,
       availability !== "available" ? h("p", { class: "notice", "data-tone": "warning" }, t.panel.tracking[availability]) : null,
       button("finish", t.panel.finish, () => void deps.page.finish("solved"), { variant: "primary", block: true, spinning: busyState === "finishing" }),
-      session.evidence.accepted === 0 ? h("p", { class: "text muted small" }, t.panel.noAcceptedYet) : null,
+      accepted === 0 ? h("p", { class: "text muted small" }, t.panel.noAcceptedYet) : null,
       h(
         "div",
         { class: "row" },
@@ -452,10 +465,11 @@ export function mountPanel(deps: {
   render();
   return {
     rerender: render,
-    /** Opens the card, as when the popup asks for it. */
+    /** Opens the card, as when the popup asks for it, with fresh state. */
     expand() {
       open = true;
       render();
+      void deps.page.refresh();
       (root.querySelector('[data-key="pill"]') as HTMLElement | null)?.focus();
     },
     unmount() {

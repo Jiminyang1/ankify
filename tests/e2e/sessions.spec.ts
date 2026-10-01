@@ -1,7 +1,7 @@
 import type { PracticeSessionCurrentDto, PracticeSessionListDto } from "../../packages/contracts/src";
 import { test, expect } from "./fixtures";
 import { focus, newProblem, openPanel } from "./helpers";
-import { problemUrl, submit } from "./leetcode-fixture";
+import { problemUrl, submit, submitJudging } from "./leetcode-fixture";
 
 test("a first practice from the panel schedules the first review a day later, without a rating", async ({ context, leetcode, api }) => {
   const slug = newProblem(leetcode, "first");
@@ -179,4 +179,62 @@ test("a review opened from the popup starts before navigation and tracks new sub
   await expect.poll(async () => (await current()).session?.evidence, { timeout: 20_000 }).toMatchObject({ submissions: 1, accepted: 1 });
   await openPanel(tab!);
   await expect(tab!.getByText("Review in progress")).toBeVisible();
+});
+
+test("a submit shows up in the panel within seconds, first as being judged, without Finish or focus", async ({ context, leetcode, panel }) => {
+  void panel; // signs the context in
+  const slug = newProblem(leetcode, "live");
+  const page = await context.newPage();
+  await page.goto(problemUrl(slug));
+  await openPanel(page);
+  await page.getByRole("button", { name: "Start practice" }).click();
+  await expect(page.getByText("No submissions yet")).toBeVisible();
+
+  const judging = submitJudging(leetcode, slug);
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByText("1 submission is being judged")).toBeVisible({ timeout: 8_000 });
+  judging.statusDisplay = "Wrong Answer";
+  await expect(page.getByText("1 submission, 0 accepted")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByText("1 submission is being judged")).toHaveCount(0);
+});
+
+test("a rating in the popup clears the panel's rating, and a rating in the panel clears the popup's", async ({ context, leetcode, api, panel }) => {
+  const capture = (slug: string) =>
+    api("/api/capture", { body: { leetcodeSlug: slug, leetcodeId: leetcode.problems[slug]!.frontendId, title: leetcode.problems[slug]!.title, difficulty: "Easy", url: problemUrl(slug) } });
+  const finishReview = async (slug: string) => {
+    const page = await context.newPage();
+    await page.goto(problemUrl(slug));
+    await openPanel(page);
+    await page.getByRole("button", { name: "Start review" }).click();
+    await expect(page.getByText("Review in progress")).toBeVisible();
+    await page.getByRole("button", { name: "End as unsuccessful" }).click();
+    await expect(page.getByRole("group", { name: "How did the review go?" })).toBeVisible();
+    return page;
+  };
+
+  // Rated in the popup: the panel leaves its rating screen and shows the schedule.
+  const first = newProblem(leetcode, "sync-popup");
+  await capture(first);
+  const firstPage = await finishReview(first);
+  await panel.reload();
+  const popupCard = panel.getByRole("group", { name: `How did the review go? ${leetcode.problems[first]!.title}` });
+  await popupCard.getByRole("button", { name: /Good/ }).click();
+  await expect(popupCard).toHaveCount(0);
+  await expect(firstPage.getByRole("group", { name: "How did the review go?" })).toHaveCount(0, { timeout: 5_000 });
+  await expect(firstPage.getByText(/Next review (tomorrow|in \d+ (hours|days))/)).toBeVisible();
+
+  // Rated in the panel: the open popup drops its card without a reload.
+  const second = newProblem(leetcode, "sync-panel");
+  await capture(second);
+  const secondPage = await finishReview(second);
+  const secondCard = panel.getByRole("group", { name: `How did the review go? ${leetcode.problems[second]!.title}` });
+  await expect(secondCard).toBeVisible({ timeout: 5_000 });
+  await secondPage.getByRole("group", { name: "How did the review go?" }).getByRole("button", { name: /Easy/ }).click();
+  await expect(secondCard).toHaveCount(0, { timeout: 5_000 });
+
+  const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${second}`);
+  const history = await api<PracticeSessionListDto>(`/api/practice-sessions?problemId=${current.problem!.id}`);
+  // One rating, one schedule change.
+  expect(history.sessions).toMatchObject([{ rating: { disposition: "submitted" } }]);
+  expect(current.problem).toMatchObject({ scheduleRevision: 1 });
 });

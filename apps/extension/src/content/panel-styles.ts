@@ -192,6 +192,8 @@ select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .analysis { border-top: 1px solid var(--border); padding-top: 10px; }
 .finding { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--subtle); }
 .status-line { display: inline-flex; align-items: center; gap: 6px; }
+.evidence { gap: 2px; }
+.text[data-tone="warning"] { color: var(--warning); }
 .spinner {
   width: 12px;
   height: 12px;

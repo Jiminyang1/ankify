@@ -107,14 +107,18 @@ export function createSessionController(deps: {
   }
 
   return {
-    async pageState(tabId: number, slug: string): Promise<Outcome<PracticeSessionCurrentDto>> {
+    /** The page's problem and session, plus how many of the session's
+     *  observations still wait in the outbox (the server cannot know those). */
+    async pageState(tabId: number, slug: string): Promise<Outcome<PracticeSessionCurrentDto & { localSync: { pendingObservations: number } }>> {
       const ownerToken = await tokens.tokenFor(tabId);
       const result = await api.request<PracticeSessionCurrentDto>(
         `/api/practice-sessions/current?slug=${encodeURIComponent(slug)}`,
         { ownerToken },
       );
       if (!result.ok && result.kind === "auth") account.invalidate();
-      return result.ok ? { ok: true, response: result.data } : failure(result);
+      if (!result.ok) return failure(result);
+      const pendingObservations = result.data.session ? await outbox.pendingObservations(result.data.session.id) : 0;
+      return { ok: true, response: { ...result.data, localSync: { pendingObservations } } };
     },
 
     /** Starting needs the server's acknowledgment; it is never queued. A

@@ -30,13 +30,21 @@ export function defaultLeetcodeState(): LeetcodeFixtureState {
   };
 }
 
-let nextSubmissionId = 20_000;
+// Playwright reloads this module in a new worker after a failure. Ids must
+// not restart then: the run's database already holds them, and a reused id
+// belongs to an earlier session. Time-based ids keep growing across reloads.
+let nextSubmissionId = Date.now();
 
 /** Records a judged submission "now", newer than any existing one. */
 export function submit(state: LeetcodeFixtureState, slug: string, statusDisplay: string, code = "return 1") {
   const submission = { id: String(nextSubmissionId++), statusDisplay, timestamp: Math.floor(Date.now() / 1000), code };
   state.problems[slug]!.submissions.unshift(submission);
   return submission;
+}
+
+/** Records a submission LeetCode is still judging; set its `statusDisplay` to judge it. */
+export function submitJudging(state: LeetcodeFixtureState, slug: string, code = "return 1") {
+  return submit(state, slug, "Pending", code);
 }
 
 // Synthetic examples matching the currently queried fields, not evidence that
@@ -49,7 +57,11 @@ export async function installLeetcodeFixture(context: BrowserContext, state: Lee
     const pageSlug = url.pathname.match(/^\/problems\/([^/]+)\//)?.[1];
     if (pageSlug && state.problems[pageSlug]) {
       const title = state.problems[pageSlug]!.title;
-      return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1></body></html>` });
+      // LeetCode's Submit button, as the content script recognizes it.
+      return route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><button type="button" data-e2e-locator="console-submit-button">Submit</button></body></html>`,
+      });
     }
     if (url.pathname !== "/graphql/") return route.abort();
     const { query, variables } = route.request().postDataJSON() as { query: string; variables: Record<string, unknown> };

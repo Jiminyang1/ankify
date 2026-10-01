@@ -81,6 +81,18 @@ describe("session controller", () => {
     expect(bodyOf(calls.at(-1)!)).toMatchObject({ ownerToken: "token-tab-7", requestId: "req-1", mode: "due_review", target: { kind: "problem", problemId: "p1" } });
   });
 
+  it("tells a page how many of its session's observations still wait to sync", async () => {
+    const { controller, setOnline } = harness((call) =>
+      ok(call.path.startsWith("/api/practice-sessions/current") ? { problem: null, session: { id: "s1" }, pendingRating: null } : { ok: true }));
+    expect(await controller.pageState(7, "two-sum")).toMatchObject({ ok: true, response: { session: { id: "s1" }, localSync: { pendingObservations: 0 } } });
+    await controller.syncStatus(); // the account is confirmed while online
+    setOnline(false);
+    expect(await controller.observations("s1", [{ leetcodeSubmissionId: "1001", verdict: "Accepted" }])).toEqual({ ok: true, queued: true });
+    setOnline(true);
+    // The batch waits out its backoff; the page hears it is still unsynced.
+    expect(await controller.pageState(7, "two-sum")).toMatchObject({ ok: true, response: { localSync: { pendingObservations: 1 } } });
+  });
+
   it("requires the server to acknowledge a start", async () => {
     const { controller, setOnline, store } = harness(() => ok({}));
     setOnline(false);

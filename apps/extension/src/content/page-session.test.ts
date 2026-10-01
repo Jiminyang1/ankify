@@ -2,7 +2,7 @@ import type { PracticeSessionDto, PublicAiJobDto, SessionAnalysisStateDto } from
 import { describe, expect, it, vi } from "vitest";
 import type { ContentMessage } from "../shared/protocol";
 import type { LeetcodeClient, ListedSubmission, Read } from "./leetcode-client";
-import { ANALYSIS_POLL_MS, createPageSession, TICK_MS } from "./page-session";
+import { ANALYSIS_POLL_MS, createPageSession, SUBMIT_POLL_MS, SUBMIT_WATCH_MS, TICK_MS } from "./page-session";
 
 const START = "2026-09-29T12:00:00.000Z";
 
@@ -28,6 +28,8 @@ function harness(options: {
 } = {}) {
   let now = Date.parse(START);
   let active = true;
+  /** Visible without focus when set; follows `active` otherwise. */
+  let visible: boolean | null = null;
   const tasks: { run: () => void; ms: number; cancelled: boolean }[] = [];
   const sent: ContentMessage[] = [];
   const listing = options.listing ?? (() => ({ availability: "available" as const, value: { complete: true, submissions: [] } }));
@@ -45,6 +47,7 @@ function harness(options: {
     client,
     now: () => now,
     isActive: () => active,
+    isVisible: () => visible ?? active,
     schedule: (run, ms) => {
       const task = { run, ms, cancelled: false };
       tasks.push(task);
@@ -65,9 +68,10 @@ function harness(options: {
     pending,
     advance: (ms: number) => void (now += ms),
     setActive: (value: boolean) => void (active = value),
-    /** Runs the next scheduled tick and waits for it to settle. */
-    async tick() {
-      const [task] = pending();
+    setVisible: (value: boolean | null) => void (visible = value),
+    /** Runs the next scheduled task (of that delay, when given) and waits for it to settle. */
+    async tick(ms?: number) {
+      const task = pending().find((candidate) => ms == null || candidate.ms === ms);
       task!.cancelled = true;
       now += task!.ms;
       task!.run();
@@ -239,6 +243,154 @@ describe("page session", () => {
     await h.page.rate(3);
     expect(h.sent.at(-1)).toEqual({ type: "session_rating", sessionId: "s1", rating: 3 });
     expect(h.page.view()).toMatchObject({ pendingRating: null, notice: { kind: "rated", nextDue: "2026-10-02T12:00:00.000Z" } });
+  });
+});
+
+const settleAll = async () => {
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+const listed = (id: string, verdict: ListedSubmission["verdict"], pending = false): ListedSubmission =>
+  ({ id, verdict, pending, submittedAt: START, language: "python3" });
+
+describe("live submission tracking", () => {
+  it("polls a visible page even when LeetCode's result view has focus", async () => {
+    const h = harness({ respond: (message) => (message.type === "page_state" ? current() : { ok: true, response: { ok: true, session: session() } }) });
+    await h.page.refresh();
+    await settleAll();
+    h.setActive(false);
+    h.setVisible(true);
+    await h.tick(TICK_MS);
+    // The start check, then the tick: polling only needs the page visible.
+    expect(h.client.listSubmissions).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks every few seconds after a submit, shows a submission being judged, and stops once its verdict is in", async () => {
+    let submissions: ListedSubmission[] = [];
+    const judged = session({ evidence: { submissions: 1, accepted: 0, failed: 1, pendingDetails: 0, ambiguous: 0, firstAcceptedAt: null } });
+    const h = harness({
+      listing: () => ({ availability: "available", value: { complete: true, submissions } }),
+      respond: (message) =>
+        message.type === "page_state"
+          ? current()
+          : message.type === "session_observations"
+            ? { ok: true, queued: false, response: { ok: true, session: judged, results: [] } }
+            : { ok: true, response: { ok: true, session: session() } },
+    });
+    await h.page.refresh();
+    await settleAll();
+    h.page.onSubmitIntent();
+    expect(h.pending().map((task) => task.ms)).toEqual([TICK_MS, SUBMIT_POLL_MS]);
+
+    submissions = [listed("1001", "Other", true)];
+    await h.tick(SUBMIT_POLL_MS);
+    expect(h.page.view()).toMatchObject({ local: { judging: 1, unsynced: [] }, session: { evidence: { submissions: 0 } } });
+    expect(h.sent.some((message) => message.type === "session_observations")).toBe(false);
+
+    submissions = [listed("1001", "Wrong Answer")];
+    await h.tick(SUBMIT_POLL_MS);
+    expect(h.page.view()).toMatchObject({ local: { judging: 0 }, session: { evidence: { submissions: 1, failed: 1 } } });
+    expect(h.sent.filter((message) => message.type === "session_observations")).toHaveLength(1);
+    // The verdict is in: back to the regular tick.
+    expect(h.pending().map((task) => task.ms)).toEqual([TICK_MS]);
+  });
+
+  it("stops watching a submit after a while when nothing new appears", async () => {
+    const h = harness({ respond: (message) => (message.type === "page_state" ? current() : { ok: true, response: { ok: true, session: session() } }) });
+    await h.page.refresh();
+    await settleAll();
+    h.page.onSubmitIntent();
+    for (let elapsed = 0; elapsed < SUBMIT_WATCH_MS; elapsed += SUBMIT_POLL_MS) await h.tick(SUBMIT_POLL_MS);
+    expect(h.pending().map((task) => task.ms)).toEqual([TICK_MS]);
+  });
+
+  it("shows submissions saved for later sync instead of none, until the outbox has delivered them", async () => {
+    let delivered = false;
+    const synced = session({ evidence: { submissions: 1, accepted: 1, failed: 0, pendingDetails: 0, ambiguous: 0, firstAcceptedAt: START } });
+    const h = harness({
+      listing: () => ({ availability: "available", value: { complete: true, submissions: [listed("1001", "Accepted")] } }),
+      respond: (message) => {
+        if (message.type === "page_state") {
+          return delivered
+            ? { ok: true, response: { problem, session: synced, pendingRating: null, localSync: { pendingObservations: 0 } } }
+            : { ok: true, response: { problem, session: session(), pendingRating: null, localSync: { pendingObservations: 1 } } };
+        }
+        if (message.type === "session_observations") return { ok: true, queued: true };
+        return { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    expect(h.page.view()).toMatchObject({ session: { evidence: { submissions: 0 } }, local: { unsynced: [{ id: "1001", accepted: true }] } });
+
+    // Still waiting: a read keeps showing it.
+    await h.page.refresh();
+    expect(h.page.view()).toMatchObject({ local: { unsynced: [{ id: "1001" }] } });
+
+    delivered = true;
+    h.page.onExternalChange();
+    await settleAll();
+    expect(h.page.view()).toMatchObject({ session: { evidence: { submissions: 1, accepted: 1 } }, local: { unsynced: [] } });
+  });
+
+  it("reports a submission again when the worker could not take it", async () => {
+    let unreachable = true;
+    const h = harness({
+      listing: () => ({ availability: "available", value: { complete: true, submissions: [listed("1001", "Wrong Answer")] } }),
+      respond: (message) => {
+        if (message.type === "page_state") return current();
+        if (message.type === "session_observations") return unreachable ? { ok: false, error: "offline" } : { ok: true, queued: true };
+        return { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    unreachable = false;
+    h.page.onSubmitIntent();
+    await h.tick(SUBMIT_POLL_MS);
+    expect(h.sent.filter((message) => message.type === "session_observations")).toHaveLength(2);
+    expect(h.page.view()).toMatchObject({ local: { unsynced: [{ id: "1001", accepted: false }] } });
+  });
+});
+
+describe("state changed elsewhere", () => {
+  it("re-reads when the popup rated the session, after any action under way here", async () => {
+    const pendingSession = session({ status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
+    let rated = false;
+    let finishRating: (value: unknown) => void = () => undefined;
+    const h = harness({
+      respond: (message) => {
+        if (message.type === "page_state") return { ok: true, response: { problem, session: null, pendingRating: rated ? null : pendingSession } };
+        if (message.type === "session_rating_decision") return new Promise((resolve) => (finishRating = resolve));
+        return { ok: true, response: {} };
+      },
+    });
+    await h.page.refresh();
+    expect(h.page.view()).toMatchObject({ pendingRating: { id: "s1" } });
+
+    // Busy here: the nudge waits for the action to end.
+    const deciding = h.page.decideRating("dismiss");
+    h.page.onExternalChange();
+    expect(h.sent.filter((message) => message.type === "page_state")).toHaveLength(1);
+    rated = true;
+    finishRating({ ok: false, error: "rating_not_pending" });
+    await deciding;
+    await settleAll();
+    expect(h.sent.filter((message) => message.type === "page_state").length).toBeGreaterThanOrEqual(2);
+    expect(h.page.view()).toMatchObject({ pendingRating: null });
+  });
+
+  it("ignores a read that a later one overtook", async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    const h = harness({ respond: (message) => (message.type === "page_state" ? new Promise((resolve) => answers.push(resolve)) : { ok: true, response: {} }) });
+    const first = h.page.refresh();
+    const second = h.page.refresh();
+    answers[1]!(current({ revision: 5 }));
+    await second;
+    answers[0]!(current({ revision: 2 }));
+    await first;
+    expect(h.page.view()).toMatchObject({ session: { revision: 5 } });
   });
 });
 

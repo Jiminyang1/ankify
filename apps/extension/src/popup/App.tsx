@@ -145,12 +145,16 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [message, setMessage] = useState<ItemMessage>(null);
 
+  const refreshSeq = useRef(0);
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     const [result, status, caps] = await Promise.all([
       ask<BridgeOutcome<ReviewOverviewDto>>({ type: "overview" }),
       ask<OutboxStatus | null>({ type: "sync_status" }),
       ask<BridgeOutcome<CapabilitiesDto>>({ type: "capabilities" }),
     ]);
+    // A later read supersedes this one.
+    if (seq !== refreshSeq.current) return;
     if (result.ok && !result.queued) {
       setOverview(result.response);
       setError(null);
@@ -163,6 +167,16 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  // A rating, finish, or sync on a problem page (or a delayed sync) shows up
+  // here without reopening the popup.
+  useEffect(() => {
+    const listener = (message: unknown, sender: chrome.runtime.MessageSender) => {
+      if (sender.id === chrome.runtime.id && (message as { type?: unknown } | null)?.type === "session_changed") void refresh();
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
   }, [refresh]);
 
   async function run(key: string, action: () => Promise<BridgeOutcome<unknown>>, onError?: (error: string) => ItemMessage) {

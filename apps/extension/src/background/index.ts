@@ -6,6 +6,7 @@ import { createAnalysisClient } from "./analysis";
 import { createApiClient } from "./api";
 import { chromeKeyValueStore, createActivityTotals, createTokenRegistry } from "./chrome-adapters";
 import { createIdbOutboxStore, openSyncDatabase } from "./idb-store";
+import { changesSessionState, SESSION_CHANGED } from "./notify";
 import { createOutbox, type DeliveryOutcome, type OutboxOperation } from "./outbox";
 import { createRouter } from "./router";
 import { createSessionController } from "./sessions";
@@ -77,6 +78,19 @@ async function followDeviceTimeZone(saved: string) {
   await api.request("/api/settings", { body: { timeZone: device } }).catch(() => undefined);
 }
 
+/**
+ * Tells the other surfaces to re-read session state: the popup (when open)
+ * over the runtime, problem pages over their tabs. The server stays the only
+ * source of truth; this is just a nudge, and nobody listening is fine.
+ */
+async function broadcastSessionChange(options: { popup: boolean; exceptTabId?: number }) {
+  if (options.popup) void chrome.runtime.sendMessage(SESSION_CHANGED).catch(() => undefined);
+  const tabs = await chrome.tabs.query({ url: "https://leetcode.com/problems/*" }).catch(() => []);
+  for (const tab of tabs) {
+    if (tab.id != null && tab.id !== options.exceptTabId) void chrome.tabs.sendMessage(tab.id, SESSION_CHANGED).catch(() => undefined);
+  }
+}
+
 const outbox = createOutbox({ store: createIdbOutboxStore(() => openSyncDatabase()), deliver });
 const controller = createSessionController({ api, outbox, account, tokens, totals: createActivityTotals(chrome.storage.session), newId });
 const router = createRouter({
@@ -92,6 +106,8 @@ const router = createRouter({
     void setBadge(overview).catch(() => undefined);
     void followDeviceTimeZone(overview.timeZone);
   },
+  // The popup's own flush delivered saved work; the popup reads it anyway.
+  onDelivered: () => void broadcastSessionChange({ popup: false }),
   tabs: {
     findProblemTab: async (slug) => {
       const [tab] = await chrome.tabs.query({ url: `https://leetcode.com/problems/${slug}/*` });
@@ -116,7 +132,8 @@ async function scheduleSync() {
 }
 
 async function syncNow() {
-  await controller.flush().catch((error) => console.warn("ankify: sync failed", error));
+  const report = await controller.flush().catch((error) => console.warn("ankify: sync failed", error));
+  if (report && report.delivered > 0) void broadcastSessionChange({ popup: true });
   await scheduleSync();
 }
 
@@ -146,6 +163,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .handle(parsed, context)
     .then((response) => {
       sendResponse(response);
+      // The sender already has the answer; everyone else re-reads.
+      if (changesSessionState(parsed, response)) {
+        void broadcastSessionChange({ popup: context.kind !== "page", ...(context.kind === "content" ? { exceptTabId: context.tabId } : {}) });
+      }
       void scheduleSync();
     })
     .catch((error: unknown) => {

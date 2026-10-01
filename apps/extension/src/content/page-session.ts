@@ -25,6 +25,11 @@ export const ANALYSIS_POLL_MS = 4_000;
 const ANALYSIS_POLL_LIMIT_MS = 5 * 60_000;
 const MAX_POLL_BACKOFF_MS = 5 * 60_000;
 const FOCUS_POLL_DEBOUNCE_MS = 3_000;
+/** After a submit (or while LeetCode is judging), LeetCode is checked this often. */
+export const SUBMIT_POLL_MS = 2_000;
+/** How long a submit is watched for before the regular tick takes over. */
+export const SUBMIT_WATCH_MS = 45_000;
+const JUDGING_WATCH_MS = 20_000;
 
 export type BackgroundFailure = {
   ok: false;
@@ -38,6 +43,19 @@ export type PageNotice =
   | { kind: "error"; error: BackgroundFailure["error"]; session?: PracticeSessionDto }
   | { kind: "queued"; action: "finish" | "abandon" | "rating" | "rating_decision" }
   | { kind: "rated"; nextDue: string | null };
+
+/** Submissions this page has seen that the server's evidence may not show yet. */
+export type LocalEvidence = {
+  /** New submissions LeetCode is still judging. */
+  judging: number;
+  /** Judged submissions saved in the outbox, not yet confirmed by the server. */
+  unsynced: { id: string; accepted: boolean }[];
+};
+
+const NO_LOCAL_EVIDENCE: LocalEvidence = { judging: 0, unsynced: [] };
+
+/** The page-state answer, plus how many of the session's observations wait in the outbox. */
+export type PageStateResponse = PracticeSessionCurrentDto & { localSync?: { pendingObservations: number } };
 
 /** The analysis of the page's latest finished session. */
 export type AnalysisView = {
@@ -59,6 +77,8 @@ export type PageView =
       pendingRating: PracticeSessionDto | null;
       /** What LeetCode tracking could read last; anything but `available` is shown. */
       availability: LeetcodeAvailability;
+      /** The tracked session's submissions seen here but not (yet) in its evidence. */
+      local: LocalEvidence;
       busy: "starting" | "finishing" | "abandoning" | "rating" | "claiming" | null;
       notice: PageNotice | null;
       /** The latest session completed in the last week, which analysis refers to. */
@@ -73,7 +93,10 @@ export type PageSessionDeps = {
   client: LeetcodeClient;
   send: <T>(message: ContentMessage) => Promise<BackgroundOutcome<T>>;
   now: () => number;
+  /** Visible and focused: counts as active practice time. */
   isActive: () => boolean;
+  /** Visible: LeetCode is polled (defaults to `isActive`). */
+  isVisible?: () => boolean;
   schedule: Scheduler;
 };
 
@@ -81,10 +104,13 @@ export type PageSessionDeps = {
  * Session state for one LeetCode problem page. The page tracks a session only
  * while this tab controls it: every tick it samples activity, polls LeetCode
  * for new submissions (while visible, backing off when unavailable), and
- * renews the lease. Starting establishes the submission baseline first; a
- * session opened from the popup gets its baseline once the page loads.
+ * renews the lease. A submit on the page (or a submission still being
+ * judged) makes it check every few seconds until the verdict is in. Starting
+ * establishes the submission baseline first; a session opened from the popup
+ * gets its baseline once the page loads.
  */
 export function createPageSession(deps: PageSessionDeps) {
+  const isVisible = deps.isVisible ?? deps.isActive;
   let view: PageView = { kind: "loading" };
   const listeners = new Set<(view: PageView) => void>();
   let tracking: {
@@ -98,6 +124,11 @@ export function createPageSession(deps: PageSessionDeps) {
   } | null = null;
   let disposed = false;
   let lastFocusPollAt = Number.NEGATIVE_INFINITY;
+  /** Fast checks after a submit; ends at `until` or once the verdict is reported. */
+  let watch: { until: number; cancel: () => void } | null = null;
+  let refreshSeq = 0;
+  /** A change from elsewhere arrived during an action; read the state after it. */
+  let refreshAfterBusy = false;
 
   function set(next: PageView) {
     view = next;
@@ -108,11 +139,17 @@ export function createPageSession(deps: PageSessionDeps) {
     const base: Extract<PageView, { kind: "ready" }> =
       view.kind === "ready"
         ? view
-        : { kind: "ready", problem: null, session: null, pendingRating: null, availability: "available", busy: null, notice: null, recentCompleted: null, analysis: null };
+        : { kind: "ready", problem: null, session: null, pendingRating: null, availability: "available", local: NO_LOCAL_EVIDENCE, busy: null, notice: null, recentCompleted: null, analysis: null };
     set({ ...base, ...patch });
     syncTracking();
     syncAnalysis();
+    if (patch.busy === null && refreshAfterBusy) {
+      refreshAfterBusy = false;
+      void refresh();
+    }
   }
+
+  const localEvidence = () => (view.kind === "ready" ? view.local : NO_LOCAL_EVIDENCE);
 
   let analysisPoll: { cancel: () => void; until: number } | null = null;
 
@@ -193,16 +230,31 @@ export function createPageSession(deps: PageSessionDeps) {
       },
       report: async (observations) => {
         const result = await deps.send<PracticeSessionSubmissionsResponseDto>({ type: "session_observations", sessionId, observations });
-        if (!result.ok && result.error !== "offline") throw new Error(result.error);
-        // Show the new evidence at once rather than at the next heartbeat. Only
-        // evidence is taken: observations carry no owner token, so the
-        // response cannot say who controls the session.
+        // Nothing was saved (the worker was unreachable, or Ankify is signed
+        // out): failing the hand-off makes the poller report these again.
+        if (!result.ok) throw new Error(result.error);
         const latest = currentSession();
-        if (result.ok && !result.queued && latest?.id === sessionId) {
-          ready({ session: { ...latest, evidence: result.response.session.evidence, capture: result.response.session.capture } });
+        if (latest?.id !== sessionId) return;
+        if (result.ok && !result.queued) {
+          // Show the new evidence at once rather than at the next heartbeat.
+          // Only evidence is taken: observations carry no owner token, so the
+          // response cannot say who controls the session. The outbox keeps a
+          // session's operations in order, so earlier saved ones landed too.
+          ready({ session: { ...latest, evidence: result.response.session.evidence, capture: result.response.session.capture }, local: { ...localEvidence(), unsynced: [] } });
+          return;
         }
+        // Saved in the outbox for later: show them as waiting to sync rather
+        // than as missing.
+        const unsynced = [...localEvidence().unsynced];
+        for (const observation of observations) {
+          const id = observation.leetcodeSubmissionId ?? observation.clientObservationId ?? "";
+          if (unsynced.some((item) => item.id === id)) continue;
+          unsynced.push({ id, accepted: observation.verdict === "Accepted" });
+        }
+        ready({ local: { ...localEvidence(), unsynced } });
       },
     });
+    if (view.kind === "ready") set({ ...view, local: NO_LOCAL_EVIDENCE });
     tracking = {
       sessionId,
       poller,
@@ -221,6 +273,35 @@ export function createPageSession(deps: PageSessionDeps) {
   function stopTracking() {
     tracking?.cancel();
     tracking = null;
+    stopWatch();
+  }
+
+  /** Checks LeetCode every `SUBMIT_POLL_MS` for at least `ms` more. */
+  function watchSubmissions(ms: number) {
+    if (!tracking || disposed) return;
+    const until = deps.now() + ms;
+    if (watch) {
+      watch.until = Math.max(watch.until, until);
+      return;
+    }
+    const current = { until, cancel: () => undefined };
+    watch = current;
+    scheduleWatch(current);
+  }
+
+  function scheduleWatch(current: NonNullable<typeof watch>) {
+    current.cancel = deps.schedule(() => {
+      void pollIfDue(true).finally(() => {
+        if (watch !== current) return;
+        if (deps.now() >= current.until) watch = null;
+        else scheduleWatch(current);
+      });
+    }, SUBMIT_POLL_MS);
+  }
+
+  function stopWatch() {
+    watch?.cancel();
+    watch = null;
   }
 
   function loop() {
@@ -244,7 +325,7 @@ export function createPageSession(deps: PageSessionDeps) {
   async function pollIfDue(force = false) {
     const current = tracking;
     if (!current || view.kind !== "ready") return;
-    if (!force && (!deps.isActive() || deps.now() < current.nextPollAt)) return;
+    if (!force && (!isVisible() || deps.now() < current.nextPollAt)) return;
     const session = currentSession();
     if (session?.capture.baselineState === "pending" && !current.baselineRequested) {
       current.baselineRequested = true;
@@ -255,11 +336,19 @@ export function createPageSession(deps: PageSessionDeps) {
       if (result.ok && !result.queued) ready({ session: result.response.session });
     }
     try {
-      const { availability } = await current.poller.poll();
+      const { availability, reported, judging } = await current.poller.poll();
       const failed = availability === "signed_out" || availability === "unavailable";
       current.failures = failed ? current.failures + 1 : 0;
       current.nextPollAt = deps.now() + (failed ? Math.min(MAX_POLL_BACKOFF_MS, TICK_MS * 2 ** current.failures) : 0);
-      if (view.kind === "ready" && view.availability !== availability) ready({ availability });
+      if (tracking !== current) return;
+      if (view.kind === "ready" && (view.availability !== availability || view.local.judging !== judging)) {
+        ready({ availability, local: { ...view.local, judging } });
+      }
+      // Keep checking while LeetCode judges; a submit is watched until its
+      // verdict is reported, and not at all while LeetCode is signed out.
+      if (availability === "signed_out") stopWatch();
+      else if (judging > 0) watchSubmissions(JUDGING_WATCH_MS);
+      else if (reported > 0) stopWatch();
     } catch {
       current.failures += 1;
       current.nextPollAt = deps.now() + Math.min(MAX_POLL_BACKOFF_MS, TICK_MS * 2 ** current.failures);
@@ -291,16 +380,22 @@ export function createPageSession(deps: PageSessionDeps) {
   }
 
   async function refresh() {
-    const result = await deps.send<PracticeSessionCurrentDto>({ type: "page_state", slug: deps.slug });
-    if (disposed) return;
+    const seq = ++refreshSeq;
+    const result = await deps.send<PageStateResponse>({ type: "page_state", slug: deps.slug });
+    // A later read (or the page going away) supersedes this one.
+    if (disposed || seq !== refreshSeq) return;
     if (!result.ok) {
       if (result.error === "signed_out") return set({ kind: "signed_out" });
       if (result.error === "offline" && view.kind !== "ready") return set({ kind: "offline" });
       return failureView(result);
     }
     if (result.queued) return;
-    const { problem, session, pendingRating, recentCompleted } = result.response;
-    ready({ problem, session, pendingRating, recentCompleted });
+    const { problem, pendingRating, recentCompleted, localSync } = result.response;
+    // An action's answer may be newer than a read that was already under way.
+    const shown = currentSession();
+    const session = result.response.session && shown?.id === result.response.session.id && shown.revision > result.response.session.revision ? shown : result.response.session;
+    const local = localSync?.pendingObservations === 0 ? { ...localEvidence(), unsynced: [] } : localEvidence();
+    ready({ problem, session, pendingRating, recentCompleted, local });
   }
 
   function claimed(result: BackgroundOutcome<PracticeSessionCommandResponseDto>) {
@@ -317,6 +412,22 @@ export function createPageSession(deps: PageSessionDeps) {
       return () => listeners.delete(listener);
     },
     refresh,
+
+    /** The session changed elsewhere (the popup, another tab, a delayed sync):
+     *  read the authoritative state, after any action under way here. */
+    onExternalChange() {
+      if (disposed) return;
+      if (view.kind === "ready" && view.busy != null) {
+        refreshAfterBusy = true;
+        return;
+      }
+      void refresh();
+    },
+
+    /** The user pressed LeetCode's Submit: watch for the new submission. */
+    onSubmitIntent() {
+      watchSubmissions(SUBMIT_WATCH_MS);
+    },
 
     /** Reads the problem, LeetCode account, and baseline, then starts on the server. */
     async start(mode: PracticeModeId, options: { supersedePendingRating?: boolean } = {}) {
@@ -458,7 +569,7 @@ export function createPageSession(deps: PageSessionDeps) {
       const current = tracking;
       if (!current) return;
       current.meter.sample();
-      if (!deps.isActive() || deps.now() - lastFocusPollAt < FOCUS_POLL_DEBOUNCE_MS) return;
+      if (!isVisible() || deps.now() - lastFocusPollAt < FOCUS_POLL_DEBOUNCE_MS) return;
       lastFocusPollAt = deps.now();
       current.nextPollAt = 0;
       void pollIfDue();

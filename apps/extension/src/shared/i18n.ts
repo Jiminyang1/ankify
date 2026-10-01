@@ -58,6 +58,10 @@ const en = {
     activeTime: (minutes: number) => `About ${minutes} min active (estimate)`,
     evidence: (submissions: number, accepted: number) =>
       submissions === 0 ? "No submissions yet" : `${submissions} submission${submissions === 1 ? "" : "s"}, ${accepted} accepted`,
+    judging: (count: number) => (count === 1 ? "1 submission is being judged" : `${count} submissions are being judged`),
+    unsynced: (count: number) => (count === 1 ? "1 submission saved here, waiting to sync" : `${count} submissions saved here, waiting to sync`),
+    ambiguous: (count: number) =>
+      count === 1 ? "1 submission couldn't be matched to this session" : `${count} submissions couldn't be matched to this session`,
     noAcceptedYet: "No Accepted submission seen yet. Finishing records the outcome as unconfirmed.",
     finish: "Finish",
     endUnsuccessful: "End as unsuccessful",
@@ -289,6 +293,9 @@ const zh: Strings = {
     activeTime: (minutes: number) => `约 ${minutes} 分钟活跃时间（估计）`,
     evidence: (submissions: number, accepted: number) =>
       submissions === 0 ? "还没有提交" : `${submissions} 次提交，${accepted} 次通过`,
+    judging: (count: number) => `${count} 次提交正在判题`,
+    unsynced: (count: number) => `${count} 次提交已在本地保存，等待同步`,
+    ambiguous: (count: number) => `${count} 次提交无法确定是否属于这次练习`,
     noAcceptedYet: "还没看到通过的提交。现在结束会将结果记为未确认。",
     finish: "完成",
     endUnsuccessful: "以未解出结束",

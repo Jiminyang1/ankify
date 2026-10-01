@@ -1,5 +1,6 @@
 import type { CaptureProblemInput } from "../../packages/contracts/src";
 import { test, expect } from "./fixtures";
+import { openPanel } from "./helpers";
 import { fixtureSlug, fixtureUrl } from "./leetcode-fixture";
 
 test("shows the sign-in state without a QA session", async ({ context, extensionId }) => {
@@ -21,7 +22,8 @@ test("imports past submissions of a problem already in the deck", async ({ conte
   await api("/api/capture", { body: { leetcodeSlug: fixtureSlug, leetcodeId: 20, title: "Valid Parentheses", difficulty: "Easy", url: fixtureUrl } satisfies Partial<CaptureProblemInput> });
   const page = await context.newPage();
   await page.goto(fixtureUrl);
-  await page.locator('[data-ankify-panel] [data-key="pill"]').click();
+  // A due problem opens the panel by itself; a blind click could close it.
+  await openPanel(page);
   await page.getByRole("button", { name: "Import past submissions" }).click();
   // 9001 withholds its details on LeetCode and is skipped.
   await expect(page.getByRole("status")).toHaveText("Imported 2 submissions.");

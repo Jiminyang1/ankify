@@ -1186,3 +1186,31 @@ Still open in Phase 7:
   `ThemeToggle`);
 - the live LeetCode probe report;
 - a real-provider analysis run with Gemini.
+
+## Next phase: post-refactor QA fixes (`docs/NEXT_PHASE_PLAN.md`)
+
+### 1a: live submission tracking and popup/panel sync
+
+Root causes, from the code:
+
+- **"No submissions yet" until Finish.**
+  - The page polled LeetCode only while the tab was visible *and focused*; LeetCode's result view often takes focus. Finish forced a poll, which is why the submission appeared then.
+  - Submissions still being judged were skipped silently.
+  - A report saved in the outbox (not yet delivered) never updated the panel.
+  - Also: a report the worker never received (it was restarting) was not retried, because the page treated "offline" as handed off.
+- **A popup rating left the panel on its rating screen.** The worker never told other surfaces about changes. The content script only handled `open_panel`, and the popup had no listener.
+
+Changes:
+
+- **Polling.** The page polls while visible; focus still decides active time. A Submit click (LeetCode's `console-submit-button`, or a Submit/提交 label) or Ctrl/Cmd+Enter starts a 2 s watch for up to 45 s. A submission still being judged extends the watch. The watch ends once the verdict is reported.
+- **Panel display.** The panel shows "N being judged", "N saved here, waiting to sync", and unplaced (ambiguous) submissions. Page state now carries `localSync.pendingObservations` from the outbox, which clears the "waiting" line once delivered. A hand-off the worker did not take is reported again.
+- **Sync.** After a session-changing message or an outbox delivery, the worker sends `session_changed`: to the popup over the runtime, and to LeetCode problem tabs except the sender. Both re-read the server, with sequence guards against out-of-order reads. A panel busy with an action re-reads after it. `expand()` also re-reads.
+- **E2E fixture.** The LeetCode fixture's submission ids restarted at 20000 whenever Playwright reloaded its worker after a failure. They then collided with ids already stored for the QA user, so every later tracking spec failed. This was the cause of the "6 timeouts" flake recorded for `c68769d`. Ids are now time-based. The import spec clicked the pill of a panel that auto-opens for a due problem, closing it; it now uses `openPanel`.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 503 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 30 tests in one run, including the new live-count and popup/panel rating specs |

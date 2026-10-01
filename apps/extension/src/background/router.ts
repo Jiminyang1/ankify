@@ -30,6 +30,8 @@ export function createRouter(deps: {
   settings: () => Promise<{ language: "en" | "zh" }>;
   /** Called with every overview the popup loads (the toolbar badge shows its due count). */
   onOverview?: (overview: ReviewOverviewDto) => void;
+  /** Saved operations were delivered while the popup loaded. */
+  onDelivered?: () => void;
 }) {
   const { controller, tabs } = deps;
 
@@ -94,7 +96,8 @@ export function createRouter(deps: {
         return { kind: state.kind };
       }
       case "overview": {
-        await controller.flush().catch(() => null);
+        const report = await controller.flush().catch(() => null);
+        if (report && report.delivered > 0) deps.onDelivered?.();
         const result = await controller.overview();
         if (result.ok) deps.onOverview?.(result.response);
         return result;
