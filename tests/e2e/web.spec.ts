@@ -2,6 +2,7 @@ import type { BrowserContext, Page } from "@playwright/test";
 import type { SessionAnalysisStateDto, SuggestionListDto } from "../../packages/contracts/src";
 import { API_ORIGIN, test, expect } from "./fixtures";
 import { newProblem } from "./helpers";
+import type { LeetcodeFixtureState } from "./leetcode-fixture";
 
 // Web surfaces of the extension-first workflow, signed in as the QA user
 // (the `panel` fixture signs in through /api/qa/login).
@@ -12,6 +13,33 @@ async function openWeb(context: BrowserContext, path: string, language: "en" | "
   const page = await context.newPage();
   await page.goto(`${API_ORIGIN}${path}`);
   return page;
+}
+
+type Api = <T>(path: string, init?: { body?: unknown; method?: string }) => Promise<T>;
+let nextSubmissionId = 70_000;
+
+/** A first practice finished through the API: two failures, then Accepted. */
+async function finishedSession(api: Api, leetcode: LeetcodeFixtureState, name: string) {
+  const slug = newProblem(leetcode, name);
+  const title = leetcode.problems[slug]!.title;
+  const ownerToken = crypto.randomUUID();
+  const started = await api<{ session: { id: string } }>("/api/practice-sessions", {
+    body: {
+      requestId: crypto.randomUUID(), ownerToken, mode: "practice", baseline: { state: "none" }, supersedePendingRating: false,
+      target: { kind: "leetcode", problem: { leetcodeSlug: slug, title, difficulty: "Easy", url: `https://leetcode.com/problems/${slug}/`, topicTags: ["E2E Web"], similarSlugs: [] } },
+    },
+  });
+  const sessionId = started.session.id;
+  const now = Date.now();
+  await api(`/api/practice-sessions/${sessionId}/submissions`, {
+    body: {
+      observations: [["Wrong Answer", "return 0"], ["Wrong Answer", "return -1"], ["Accepted", "return 1"]].map(([verdict, code], index) => ({
+        leetcodeSubmissionId: String(nextSubmissionId++), verdict, submittedAt: new Date(now + index * 1_000).toISOString(), detail: { language: "python3", code },
+      })),
+    },
+  });
+  await api(`/api/practice-sessions/${sessionId}/commands`, { body: { type: "finish", requestId: crypto.randomUUID(), ownerToken, result: "solved", occurredAt: new Date(now + 5_000).toISOString() } });
+  return { sessionId, slug, title };
 }
 
 test.afterEach(async ({ api, context }) => {
@@ -91,25 +119,7 @@ test("the mistake profile lists analysis suggestions apart and counts one only o
   // A finished session with three attempts, analyzed with the user's own key
   // (the harness answers from its fake provider).
   await api("/api/settings", { body: { provider: "deepseek", model: "deepseek-chat", apiKey: "e2e-own-key" } });
-  const slug = newProblem(leetcode, "web-profile");
-  const title = leetcode.problems[slug]!.title;
-  const ownerToken = crypto.randomUUID();
-  const started = await api<{ session: { id: string } }>("/api/practice-sessions", {
-    body: {
-      requestId: crypto.randomUUID(), ownerToken, mode: "practice", baseline: { state: "none" }, supersedePendingRating: false,
-      target: { kind: "leetcode", problem: { leetcodeSlug: slug, title, difficulty: "Easy", url: `https://leetcode.com/problems/${slug}/`, topicTags: ["E2E Profile"], similarSlugs: [] } },
-    },
-  });
-  const sessionId = started.session.id;
-  const now = Date.now();
-  await api(`/api/practice-sessions/${sessionId}/submissions`, {
-    body: {
-      observations: [["Wrong Answer", "return 0"], ["Wrong Answer", "return -1"], ["Accepted", "return 1"]].map(([verdict, code], index) => ({
-        leetcodeSubmissionId: String(70_000 + index), verdict, submittedAt: new Date(now + index * 1_000).toISOString(), detail: { language: "python3", code },
-      })),
-    },
-  });
-  await api(`/api/practice-sessions/${sessionId}/commands`, { body: { type: "finish", requestId: crypto.randomUUID(), ownerToken, result: "solved", occurredAt: new Date(now + 5_000).toISOString() } });
+  const { sessionId, title } = await finishedSession(api, leetcode, "web-profile");
   await api("/api/ai-jobs", { body: { action: "session_analyze", practiceSessionId: sessionId, requestId: crypto.randomUUID() } });
   await expect.poll(async () => (await api<SessionAnalysisStateDto>(`/api/practice-sessions/${sessionId}/analysis`)).job?.status, { timeout: 30_000 }).toBe("succeeded");
 
@@ -131,5 +141,21 @@ test("the mistake profile reads in Chinese", async ({ context, panel }) => {
   await expect(panel).toHaveURL(/popup/);
   const page = await openWeb(context, "/analysis", "zh");
   await expect(page.getByRole("region", { name: "错误画像" })).toBeVisible({ timeout: 30_000 });
+  await page.close();
+});
+
+test("the dashboard shows today's counts, recent practice, and focus areas", async ({ context, api, leetcode }) => {
+  const { title } = await finishedSession(api, leetcode, "web-dashboard");
+  const page = await openWeb(context, "/today");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Reviews happen on LeetCode: open a problem and the extension tracks the session.")).toBeVisible();
+  const recent = page.getByRole("region", { name: "Recent practice" });
+  await expect(recent.getByRole("listitem").filter({ has: page.getByRole("link", { name: title }) }).getByText("Accepted")).toBeVisible();
+  await expect(recent.getByText(/^Last 7 days: \d+ sessions? completed/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Focus areas" }).getByRole("link", { name: "View mistake profile" })).toHaveAttribute("href", "/analysis");
+
+  await context.addCookies([{ name: "ankify-language", value: "zh", url: API_ORIGIN }]);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "最近练习" })).toBeVisible({ timeout: 30_000 });
   await page.close();
 });

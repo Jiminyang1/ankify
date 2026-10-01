@@ -395,8 +395,10 @@ extension reuses the web session cookie, and production CORS allows only
 
 ## Web pages
 
-`/` public landing (signed-in users go to `/today`), `/today` due queue and
-onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
+`/` public landing (signed-in users go to `/today`), `/today` dashboard
+(`server/dashboard.ts`: the popup's review overview, the last week's
+completed sessions, recent practice, focus areas from the profile, today's
+suggestions) and onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
 Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
 `/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/suggestions` (today's
 new-problem suggestions, the same items as the popup), `/analysis` (the mistake profile, then the FSRS dashboard),

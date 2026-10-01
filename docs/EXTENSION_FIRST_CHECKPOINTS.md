@@ -905,3 +905,41 @@ Browser tests:
   suggestions, and not under recorded mistakes.
 - Confirming one moves it to recorded mistakes under its category.
 - The page reads in Chinese.
+
+## Checkpoint 6A.4: the dashboard
+
+Status: **PASS**. No schema or API change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 483 tests in 77 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 25 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+`/today` is now the dashboard of the extension-first workflow
+(`server/dashboard.ts`, user-scoped):
+
+- The hero shows due problems from the same review overview the popup uses.
+  Its action opens the next due review on LeetCode, or the suggestions page
+  when nothing is due, instead of the legacy `/review` page.
+- Today's counts: reviews, first practices, overdue, and the next seven days.
+- Notices for finished reviews awaiting a rating, and for open sessions.
+- The due list, linking each problem's page and its LeetCode page.
+- Recent practice: the last eight sessions with kind and result, and the last
+  week's completed sessions by outcome.
+- Focus areas: the top weak, confirmed categories from the profile (or why
+  there are none), today's pending suggestions, and links to `/analysis` and
+  `/suggestions`.
+- English and Chinese strings.
+
+`server/today.ts` (the legacy queue loader, card counts included) was used
+only by the old page and is removed.
+
+Tests:
+
+- DB: last week's completed sessions by outcome (an older session and an
+  abandoned one excluded from the counts), recent practice newest first with
+  titles, and user isolation.
+- Browser: a finished session appears under recent practice as Accepted with
+  the weekly line; the focus area links the profile; the page in Chinese.
