@@ -43,7 +43,13 @@ describe("legacy review cutover guard", () => {
 
     const advertised = capabilitiesSchema.parse(await (await capabilities(new Request("http://localhost/api/capabilities"))).json());
     expect(advertised.supportedWorkflows).not.toContain("legacy_review");
-    expect(advertised.deprecations).toEqual([expect.objectContaining({ workflow: "legacy_review", code: "upgrade_required" })]);
+    expect(advertised.deprecations.map(({ workflow, code }) => [workflow, code])).toEqual([
+      ["legacy_review", "upgrade_required"],
+      ["coach", "workflow_suspended"],
+      ["card_generation", "workflow_suspended"],
+      ["quiz_generation", "workflow_suspended"],
+      ["credit_checkout", "workflow_suspended"],
+    ]);
   });
 
   it("still requires authentication before anything else", async () => {

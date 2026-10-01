@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@ankify/db";
 import { setAiSettings } from "../settings";
@@ -72,7 +72,11 @@ beforeEach(async () => {
   vi.mocked(dispatchAiJob).mockReset().mockResolvedValue(undefined);
   vi.mocked(generateAiCardDraft).mockReset().mockResolvedValue(draft);
   await testDb.exec("DROP TRIGGER IF EXISTS fail_refund_insert");
+  // Card generation is suspended by default (Phase 6B); these tests cover its
+  // still-present accounting, so they re-enable it as an operator would.
+  vi.stubEnv("ANKIFY_ENABLED_LEGACY_WORKFLOWS", "card_generation,quiz_generation");
 });
+afterEach(() => vi.unstubAllEnvs());
 
 afterAll(() => testDb.cleanup());
 
@@ -283,5 +287,26 @@ describe("AI job terminal transitions", () => {
         OR (j.status = 'cancelled' AND j.started_at IS NULL)
         OR (a.status = 'failed' AND a.error_code <> 'agent_interrupted'))`);
     expect(unrefunded.map((row) => row.ref_id)).toEqual([job.id]);
+  });
+});
+
+describe("suspended card and quiz generation", () => {
+  it("refuses new jobs without spending anything", async () => {
+    vi.unstubAllEnvs();
+    await expect(startAiJobForUser(USER_ID, cardJobInput())).rejects.toMatchObject({ code: "workflow_suspended", status: 410 });
+    expect(await getDb().select().from(schema.aiJobs)).toEqual([]);
+    expect(await ledger("spend")).toEqual([]);
+  });
+
+  it("fails a job queued before the suspension without a provider call, refunding it once", async () => {
+    const job = await createAiJob(USER_ID, cardJobInput());
+    expect(await ledger("spend")).toHaveLength(1);
+    vi.unstubAllEnvs();
+    expect(await processAiJob(job.id, "worker-1")).toEqual({ state: "done" });
+    expect(await processAiJob(job.id, "worker-2")).toEqual({ state: "done" });
+    const [row] = await getDb().select().from(schema.aiJobs).where(eq(schema.aiJobs.id, job.id));
+    expect(row).toMatchObject({ status: "failed", errorCode: "workflow_suspended" });
+    expect(generateAiCardDraft).not.toHaveBeenCalled();
+    expect(await ledger("refund")).toHaveLength(1);
   });
 });

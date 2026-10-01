@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { creditCheckoutRequestSchema } from "@ankify/contracts";
 import { getSiteUrl } from "@/lib/site-url";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
+import { isWorkflowEnabled, legacyWorkflowResponse } from "@/server/features";
 import { findCreditPack } from "@/server/billing/config";
 import { createCreditCheckoutSession } from "@/server/billing/credits";
 import { getBilling } from "@/server/billing/stripe";
@@ -13,6 +14,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const user = await getRequestSessionUser(req);
   if (!user) return unauthorizedResponse();
+  if (!isWorkflowEnabled("credit_checkout")) return legacyWorkflowResponse("credit_checkout");
 
   const billing = getBilling();
   if (!billing) {

@@ -1,5 +1,6 @@
 import type { AiJobCreateRequestInput } from "@ankify/contracts";
 import type { AiJob } from "@ankify/db";
+import { isWorkflowEnabled, LEGACY_WORKFLOWS, workflowForAiAction } from "@/server/features";
 import { RATE_LIMITS, checkRateLimit } from "@/server/rate-limit";
 import { createSessionAnalysisJob } from "@/server/session-analysis/jobs";
 import { dispatchAiJob } from "./dispatch";
@@ -21,6 +22,10 @@ export async function startAiJobForUser(
     if (existing.status === "queued" && !existing.dispatchedAt) await publishQueuedJob(existing.id);
     return existing;
   }
+  // Card and quiz generation are suspended unless an operator re-enabled them.
+  const workflow = workflowForAiAction(input.action);
+  const retired = LEGACY_WORKFLOWS[workflow];
+  if (retired && !isWorkflowEnabled(workflow)) throw new AiJobRequestError(retired.code, retired.message, 410);
 
   const limit = await checkRateLimit(userId, "ai", RATE_LIMITS.ai);
   if (!limit.ok) {

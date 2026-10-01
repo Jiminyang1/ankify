@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { isWorkflowEnabled, legacyWorkflowResponse } from "@/server/features";
 import {
   AiJobRequestError,
   getOwnedAiJob,
@@ -15,6 +16,7 @@ import {
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
+  if (!isWorkflowEnabled("coach")) return legacyWorkflowResponse("coach");
   const { id } = await ctx.params;
   const step = await getOwnedAgentStep(user.id, id);
   if (!step || step.kind !== "proposal" || !step.proposalJson) {

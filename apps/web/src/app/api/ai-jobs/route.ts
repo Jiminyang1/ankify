@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiJobCreateRequestSchema } from "@ankify/contracts";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { isWorkflowEnabled, LEGACY_WORKFLOWS, legacyWorkflowResponse, workflowForAiAction } from "@/server/features";
 import {
   AiJobRequestError,
   listOwnedAiJobs,
@@ -17,6 +18,9 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
+
+  const workflow = workflowForAiAction(parsed.data.action);
+  if (LEGACY_WORKFLOWS[workflow] && !isWorkflowEnabled(workflow)) return legacyWorkflowResponse(workflow);
 
   try {
     const job = await startAiJobForUser(user.id, parsed.data);

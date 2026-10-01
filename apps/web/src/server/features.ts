@@ -24,22 +24,33 @@ const IMPLEMENTED_WORKFLOWS: readonly WorkflowId[] = [
  * turns implemented workflows off without a code change (the plan's rollback
  * lever). Unknown names are ignored.
  */
-function disabledWorkflows(): Set<string> {
+function envList(name: string): Set<string> {
   return new Set(
-    (process.env.ANKIFY_DISABLED_WORKFLOWS ?? "")
+    (process.env[name] ?? "")
       .split(",")
-      .map((name) => name.trim())
+      .map((value) => value.trim())
       .filter(Boolean),
   );
 }
 
+/**
+ * Legacy AI workflows suspended by the extension-first release: Study Coach,
+ * card and quiz generation, and credit sales. Each stays off unless an
+ * operator re-enables it explicitly with
+ * `ANKIFY_ENABLED_LEGACY_WORKFLOWS=coach,...`; no rollback turns one back on.
+ */
+const SUSPENDED_WORKFLOWS: readonly WorkflowId[] = ["coach", "card_generation", "quiz_generation", "credit_checkout"];
+
 export function isWorkflowEnabled(workflow: WorkflowId) {
-  return IMPLEMENTED_WORKFLOWS.includes(workflow) && !disabledWorkflows().has(workflow);
+  return (
+    IMPLEMENTED_WORKFLOWS.includes(workflow) &&
+    !envList("ANKIFY_DISABLED_WORKFLOWS").has(workflow) &&
+    (!SUSPENDED_WORKFLOWS.includes(workflow) || envList("ANKIFY_ENABLED_LEGACY_WORKFLOWS").has(workflow))
+  );
 }
 
 export function enabledWorkflows(): WorkflowId[] {
-  const disabled = disabledWorkflows();
-  return IMPLEMENTED_WORKFLOWS.filter((workflow) => !disabled.has(workflow));
+  return IMPLEMENTED_WORKFLOWS.filter(isWorkflowEnabled);
 }
 
 /**
@@ -78,4 +89,11 @@ export function workflowDisabledResponse() {
     { error: "workflow_disabled", message: "This feature is temporarily unavailable." },
     { status: 503 },
   );
+}
+
+/** The workflow an AI job action belongs to. */
+export function workflowForAiAction(action: string): WorkflowId {
+  if (action.startsWith("card_")) return "card_generation";
+  if (action.startsWith("quiz_")) return "quiz_generation";
+  return "session_analysis";
 }

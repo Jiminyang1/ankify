@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { AiJobCreateRequestInput, CardDraft, QuizItem } from "@ankify/contracts";
 import { getDb, schema, type AiJob } from "@ankify/db";
 import { MAX_CARDS_PER_PROBLEM, MAX_QUIZ_SESSIONS_PER_PROBLEM } from "@/server/resource-limits";
-import { classifyAiJobError, logAiJobError } from "./errors";
+import { isWorkflowEnabled, LEGACY_WORKFLOWS } from "@/server/features";
+import { classifyAiJobError, logAiJobError, nonRetryableJobError } from "./errors";
 import { generateAiCardDraft } from "./card";
 import {
   assertJobConfiguration,
@@ -37,12 +38,14 @@ export async function processAiJob(jobId: string, workerId: string): Promise<AiJ
     switch (input.action) {
       case "card_generate":
       case "card_followup":
+        assertLegacyWorkflow("card_generation");
         await assertJobConfiguration(job);
         await runCardJob(job, input);
         break;
       case "quiz_generate":
       case "quiz_regenerate":
       case "quiz_next_batch":
+        assertLegacyWorkflow("quiz_generation");
         await assertJobConfiguration(job);
         await runQuizJob(job, input);
         break;
@@ -265,4 +268,11 @@ async function commitQuiz(
     });
     await markSucceeded(tx, job, { resultQuizSessionId: sessionId }, now);
   });
+}
+
+/** A suspended workflow's queued work fails before any provider call; the
+ *  failure refunds its hosted credit. */
+function assertLegacyWorkflow(workflow: "card_generation" | "quiz_generation") {
+  if (isWorkflowEnabled(workflow)) return;
+  throw nonRetryableJobError("workflow_suspended", LEGACY_WORKFLOWS[workflow]!.message);
 }

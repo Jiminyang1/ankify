@@ -1015,3 +1015,49 @@ on the same backend items as the extension. Browser tests cover each surface
 in English, and every surface except History in Chinese.
 
 Deferred from 6A: profile filters and the quiz-accuracy tier (6A.3).
+
+## Checkpoint 6B.1: legacy AI workflows suspended on the server
+
+Status: **PASS**. No schema change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 491 tests in 79 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 26 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+- `coach`, `card_generation`, `quiz_generation`, and `credit_checkout` are
+  off by default. Capabilities no longer advertise them, and their
+  deprecations (`workflow_suspended`) are listed.
+- Their routes answer `410` with the structured deprecation before any work:
+  - `POST /api/ai-jobs` for card and quiz actions (replays by request id
+    still return their job);
+  - Study Coach turns;
+  - proposal approvals;
+  - credit checkout.
+- `startAiJobForUser()` refuses them too.
+- The runner fails a card or quiz job that was queued before the suspension,
+  before any provider call. The failure refunds its hosted credit exactly
+  once, even on redelivery.
+- The Stripe webhook, balances, the ledger, and refunds are unchanged.
+- An operator can re-enable one deliberately with
+  `ANKIFY_ENABLED_LEGACY_WORKFLOWS` (no rollback does). The kill switch
+  still wins.
+- The existing card/quiz accounting and checkout suites opt in the same way,
+  so the still-present code stays tested until it is removed.
+
+Tests:
+
+- Routes and provider spies: card and quiz generation, Coach turns, and stale
+  proposal approvals answer `410` without starting a job, a Coach run, or any
+  store access.
+- Checkout answers `410` before Stripe.
+- A queued card job fails with `workflow_suspended`, with no provider call
+  and one refund across two deliveries.
+- Capabilities: the default lists, the explicit re-enable, and the kill
+  switch overriding it.
+- Mutation check: dropping the runner guard fails the queued-job test.
+
+Rollback: an operator may re-enable a workflow explicitly. The web pages that
+still call these routes are retired in 6B.2.

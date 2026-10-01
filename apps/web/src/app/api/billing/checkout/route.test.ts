@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb, schema } from "@ankify/db";
 import { getRequestSessionUser } from "@/server/auth";
 import { createCreditCheckoutSession } from "@/server/billing/credits";
@@ -40,11 +40,23 @@ beforeEach(async () => {
   vi.mocked(getRequestSessionUser).mockReset().mockResolvedValue(user as never);
   vi.mocked(getBilling).mockReset().mockReturnValue(billing as never);
   vi.mocked(createCreditCheckoutSession).mockReset().mockResolvedValue("https://checkout.stripe.test/c");
+  // Credit sales are suspended by default (Phase 6B); these tests cover the
+  // still-present checkout, re-enabled as an operator would.
+  vi.stubEnv("ANKIFY_ENABLED_LEGACY_WORKFLOWS", "credit_checkout");
 });
+afterEach(() => vi.unstubAllEnvs());
 
 afterAll(() => testDb.cleanup());
 
 describe("POST /api/billing/checkout", () => {
+  it("answers that credit sales are suspended, before touching Stripe", async () => {
+    vi.unstubAllEnvs();
+    const res = await post({ packId: "credits_100" });
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "workflow_suspended", workflow: "credit_checkout" });
+    expect(createCreditCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("requires a signed-in session", async () => {
     vi.mocked(getRequestSessionUser).mockResolvedValue(null);
     expect((await post({ packId: "credits_100" })).status).toBe(401);

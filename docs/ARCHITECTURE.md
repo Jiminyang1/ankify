@@ -195,6 +195,14 @@ Providers: Anthropic, OpenAI, and OpenAI-compatible presets (DeepSeek) built in
 
 ## Asynchronous AI generation (cards and quizzes)
 
+> **Suspended (extension-first Phase 6B):** Study Coach, card and quiz
+> generation, and credit sales are off by default. Their routes answer `410
+> workflow_suspended` (`legacyWorkflowResponse()`), and capabilities list them
+> as deprecations. Card and quiz jobs queued before the suspension fail in the
+> runner before any provider call, which refunds their hosted credit once. The
+> Stripe webhook and credit accounting keep working. An operator can re-enable
+> one explicitly with `ANKIFY_ENABLED_LEGACY_WORKFLOWS`; no rollback does.
+
 Card and quiz generation never run inside the request:
 
 1. `POST /api/ai-jobs` (via `packages/api-client`) → `ai-generation/start.ts` →
@@ -317,6 +325,8 @@ or explains them.
 
 ## Study Coach
 
+Suspended by default; see the note under Asynchronous AI generation.
+
 - `AgentShell` in the authenticated layout opens Coach beside any page.
 - `POST /api/agent/turns` → `agent/store.ts:beginAgentTurn()` creates the
   session (on first message), an idempotent run with its page/problem context,
@@ -333,6 +343,9 @@ or explains them.
   sessions are compacted into summaries (`compaction.ts`).
 
 ## Paid AI credits (summary)
+
+New purchases are suspended by default; see the note under Asynchronous AI
+generation. Balances, the ledger, refunds, and the webhook still work.
 
 Optional Stripe Checkout credit packs, off unless Stripe keys and the hosted AI
 key are configured. Routes: `POST /api/billing/checkout` (session-only) and

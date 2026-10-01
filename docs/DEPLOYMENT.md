@@ -236,6 +236,20 @@ Allocation, actions, and history merges then answer `503`. Stored suggestions,
 attempt history, exclusions, and any practice sessions started from
 suggestions stay.
 
+### Legacy suspension (Phase 6B)
+
+Study Coach, AI card and quiz generation, and credit checkout are suspended
+by default in this code; there is no schema change.
+
+- Their routes answer `410 workflow_suspended`, and `/api/capabilities` lists
+  them as deprecations.
+- Card and quiz jobs still queued fail on delivery, before any provider call,
+  and refund their hosted credit once.
+- The Stripe webhook stays configured: it settles purchases and refunds
+  already in flight.
+- To re-enable one deliberately (never as a rollback side effect), set
+  `ANKIFY_ENABLED_LEGACY_WORKFLOWS` (for example `coach`) and redeploy.
+
 ## Rollback boundaries
 
 - Application code can be rolled back independently through Vercel.

@@ -5,6 +5,13 @@ ankify's hosted AI key. Every account gets a free allowance (starter credits);
 users can buy more as one-time **credit packs** through Stripe Checkout.
 Architecture context: [ARCHITECTURE.md](ARCHITECTURE.md).
 
+> **Suspended (extension-first Phase 6B):** new purchases, AI cards, quizzes,
+> and Study Coach are off by default. `POST /api/billing/checkout` answers `410
+> workflow_suspended`. The webhook, existing balances, the ledger, and refunds
+> keep working, so purchases that are completing or refunded settle normally.
+> An operator can re-enable checkout explicitly with
+> `ANKIFY_ENABLED_LEGACY_WORKFLOWS=credit_checkout`.
+
 ## Policy
 
 | Rule | Value |

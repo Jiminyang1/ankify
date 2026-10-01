@@ -9,6 +9,7 @@ import {
   failAgentRun,
 } from "@/server/agent/store";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { isWorkflowEnabled, legacyWorkflowResponse } from "@/server/features";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -17,6 +18,7 @@ export const maxDuration = 240;
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
+  if (!isWorkflowEnabled("coach")) return legacyWorkflowResponse("coach");
 
   const body = await readJsonBody(req, 20_000);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
