@@ -36,7 +36,7 @@ test.afterEach(async ({ api }) => {
 });
 
 test("a finished session is analyzed on request, and its findings are confirmed or dismissed", async ({ context, leetcode, api }) => {
-  await api("/api/settings", { body: OWN_KEY });
+  await api("/api/settings", { body: { ...OWN_KEY, analysisAutomatic: false } });
   const { page, slug, analysis } = await finishQualifyingSession(context, leetcode, "analysis-manual");
   await expect(analysis.getByText("Uses your own AI key.")).toBeVisible();
   await analysis.getByRole("button", { name: "Analyze session" }).click();
@@ -76,7 +76,9 @@ test("with automatic analysis on, a qualifying session is analyzed when it finis
 
   await api("/api/settings", { body: { analysisAutomatic: true } });
   const on = await finishQualifyingSession(context, leetcode, "analysis-on");
-  await expect(on.analysis.getByText(SUMMARY)).toBeVisible({ timeout: 30_000 });
+  // Finishing never waits for the analysis: it is queued, then runs on its own.
+  await expect(on.analysis.getByText(/Analysis queued|Analyzing this session/)).toBeVisible();
+  await expect(on.analysis.getByText(SUMMARY)).toBeVisible({ timeout: 45_000 });
   const onState = await api<SessionAnalysisStateDto>(`/api/practice-sessions/${await sessionIdOf(api, on.slug)}/analysis`);
   expect(onState.job).toMatchObject({ trigger: "automatic", status: "succeeded" });
   expect(onState.findings).toHaveLength(2);
@@ -94,7 +96,7 @@ test("without the user's own key, the panel explains and starts nothing", async 
 
 
 test("on the web, a session is analyzed from its problem page; findings are corrected, confirmed, or dismissed, and manual entry is secondary", async ({ context, leetcode, api }) => {
-  await api("/api/settings", { body: OWN_KEY });
+  await api("/api/settings", { body: { ...OWN_KEY, analysisAutomatic: false } });
   const { page: panelPage, slug } = await finishQualifyingSession(context, leetcode, "analysis-web");
   // The finish has landed once the first review is scheduled.
   await expect(panelPage.getByText(/Next review/).first()).toBeVisible();

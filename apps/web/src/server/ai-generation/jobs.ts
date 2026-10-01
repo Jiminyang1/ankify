@@ -503,10 +503,11 @@ export async function claimAiJob(jobId: string, workerId: string): Promise<Claim
     }
   }
 
-  export async function requeueAiJob(job: AiJob, code: string, message: string) {
+  export async function requeueAiJob(job: AiJob, code: string, message: string, minDelaySeconds: number | null = null) {
     const db = getDb();
     const now = new Date();
-    const delaySeconds = Math.min(120, job.attempt <= 1 ? 30 : 120);
+    // Backoff, but never sooner than the provider asked (Retry-After).
+    const delaySeconds = Math.max(Math.min(120, job.attempt <= 1 ? 30 : 120), minDelaySeconds ?? 0);
     await db
       .update(schema.aiJobs)
       .set({

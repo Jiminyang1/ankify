@@ -25,7 +25,6 @@ const settingsSchema = z
     timeZone: z.string().max(128).refine(isValidTimeZone, "Invalid IANA time zone.").optional(),
     generationLanguage: z.enum(["en", "zh"]).optional(),
     analysisAutomatic: z.boolean().optional(),
-    analysisDailyAutomaticLimit: z.number().int().min(0).max(5).optional(),
   })
   .refine(
     (value) =>
@@ -34,7 +33,6 @@ const settingsSchema = z
       value.timeZone != null ||
       value.generationLanguage != null ||
       value.analysisAutomatic != null ||
-      value.analysisDailyAutomaticLimit != null ||
       Boolean(value.provider && value.model),
     {
       message: "Provide AI provider/model, review settings, or generation settings.",
@@ -92,11 +90,8 @@ export async function POST(req: Request) {
   if (parsed.data.generationLanguage != null) {
     await setGenerationSettings(user.id, { language: parsed.data.generationLanguage });
   }
-  if (parsed.data.analysisAutomatic != null || parsed.data.analysisDailyAutomaticLimit != null) {
-    await setAnalysisSettings(user.id, {
-      automatic: parsed.data.analysisAutomatic,
-      dailyAutomaticLimit: parsed.data.analysisDailyAutomaticLimit,
-    });
+  if (parsed.data.analysisAutomatic != null) {
+    await setAnalysisSettings(user.id, { automatic: parsed.data.analysisAutomatic });
   }
   return NextResponse.json({ ok: true });
 }

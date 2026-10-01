@@ -15,11 +15,12 @@ describe("automatic analysis triggers", () => {
     expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), wa("b"), ac()] }))).toBe("repeated_failures");
   });
 
-  it("ignores resubmitting the same code, failures without code, failures after Accepted, and no Accepted", () => {
-    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), wa("a"), ac()] }))).toBeNull();
-    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), wa(null), ac()] }))).toBeNull();
-    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), ac(), wa("b")] }))).toBeNull();
-    expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa("a"), wa("b")] }))).toBeNull();
+  it("fires for any other failure with code, with or without Accepted", () => {
+    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), wa("a"), ac()] }))).toBe("failed_attempt");
+    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), wa(null), ac()] }))).toBe("failed_attempt");
+    expect(automaticAnalysisTrigger(input({ attempts: [wa("a"), ac(), wa("b")] }))).toBe("failed_attempt");
+    expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa("a"), wa("b")] }))).toBe("failed_attempt");
+    expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [{ verdict: "Compile Error", codeHash: "x" }] }))).toBe("failed_attempt");
   });
 
   it("fires for a failure matching a confirmed pattern elsewhere, only with failed code", () => {
@@ -27,9 +28,10 @@ describe("automatic analysis triggers", () => {
     expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa(null)], matchesConfirmedPattern: true }))).toBeNull();
   });
 
-  it("never fires for ordinary sessions", () => {
+  it("never fires without a failure that has code", () => {
     expect(automaticAnalysisTrigger(input({ attempts: [ac()] }))).toBeNull();
-    expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa("a")] }))).toBeNull();
+    expect(automaticAnalysisTrigger(input({ attempts: [ac(), ac("other")] }))).toBeNull();
+    expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa(null)] }))).toBeNull();
     expect(automaticAnalysisTrigger(input({ outcome: null, attempts: [] }))).toBeNull();
   });
 

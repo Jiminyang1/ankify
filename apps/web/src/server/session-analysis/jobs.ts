@@ -22,6 +22,9 @@ type Db = ReturnType<typeof getDb> | DbTransaction;
 type AnalyzeInput = Extract<AiJobCreateRequestInput, { action: "session_analyze" }>;
 
 const dedupKey = (sessionId: string) => `session-analyze:${sessionId}`;
+/** An automatic analysis waits this long, so verdicts LeetCode was still
+ *  judging at Finish are part of what it reads. */
+export const AUTOMATIC_ANALYSIS_DELAY_MS = 15_000;
 
 /**
  * Jobs of one trigger that count against a local day's budget: active ones
@@ -73,6 +76,7 @@ function jobValues(
   idempotencyKey: string,
   requestId: string,
   now: Date,
+  runAfter = now,
 ) {
   return {
     id: nanoid(16),
@@ -89,7 +93,7 @@ function jobValues(
     practiceSessionId: evidence.session.id,
     evidenceDigest: evidence.digest,
     trigger,
-    runAfter: now,
+    runAfter,
     queuedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -174,30 +178,31 @@ export async function createSessionAnalysisJob(userId: string, input: AnalyzeInp
 export type AutomaticAnalysisContext = {
   ai: AiRuntimeSettings;
   language: "en" | "zh";
-  dailyLimit: number;
-  dayStart: Date;
 };
 
 /**
  * Read before a session transaction: null unless automatic analysis is
- * available on this deployment, switched on by the user, has budget, and the
- * user has their own key.
+ * available on this deployment, not switched off by the user, and the user
+ * has their own key. There is no daily cap: eligibility (a failure with code)
+ * and one job per evidence state bound the calls.
  */
-export async function loadAutomaticAnalysisContext(userId: string, now = new Date()): Promise<AutomaticAnalysisContext | null> {
+export async function loadAutomaticAnalysisContext(userId: string): Promise<AutomaticAnalysisContext | null> {
   if (!isAutomaticAnalysisEnabled()) return null;
   const settings = await getAnalysisSettings(userId);
-  if (!settings.automatic || settings.dailyAutomaticLimit === 0) return null;
+  if (!settings.automatic) return null;
   const ai = await getOwnAiRuntimeSettings(userId);
   if (!ai) return null;
-  const [generation, review] = await Promise.all([getGenerationSettings(userId), getReviewSettings(userId)]);
-  return { ai, language: generation.language, dailyLimit: settings.dailyAutomaticLimit, dayStart: getZonedDayBounds(review.timeZone, now).start };
+  const generation = await getGenerationSettings(userId);
+  return { ai, language: generation.language };
 }
 
 /**
- * Inside the transaction that completed a session: persists an automatic analysis job when the session qualifies,
- * so the intent commits with the session. Returns the job id to publish after
- * commit; a failed publish leaves it for `redispatchStrandedJobs()`. At most
- * one automatic job per session, ever.
+ * Inside the transaction that completed a session: persists an automatic
+ * analysis job when the session qualifies, so the intent commits with the
+ * session. Returns the job id to publish after commit; a failed publish leaves
+ * it for `redispatchStrandedJobs()`. One automatic job per session and
+ * evidence state: an active job, a job for the same evidence, or a cached
+ * analysis of it means nothing new is planned.
  */
 export async function planAutomaticAnalysis(
   tx: DbTransaction,
@@ -223,16 +228,16 @@ export async function planAutomaticAnalysis(
       and(
         eq(j.userId, userId),
         eq(j.practiceSessionId, sessionId),
-        or(eq(j.trigger, "automatic"), inArray(j.status, [...ACTIVE])),
+        or(and(eq(j.trigger, "automatic"), eq(j.evidenceDigest, evidence.digest)), inArray(j.status, [...ACTIVE])),
       ),
     )
     .limit(1);
   if (existing) return null;
   if (await findCachedAnalysis(tx, userId, evidence, context.ai)) return null;
-  if ((await analysesUsedToday(tx, userId, "automatic", context.dayStart)) >= context.dailyLimit) return null;
 
   const requestId = crypto.randomUUID();
-  const values = jobValues(userId, evidence, context.ai, context.language, "automatic", `auto:${sessionId}`, requestId, now);
+  const runAfter = new Date(now.getTime() + AUTOMATIC_ANALYSIS_DELAY_MS);
+  const values = jobValues(userId, evidence, context.ai, context.language, "automatic", `auto:${sessionId}:${evidence.digest}`, requestId, now, runAfter);
   const inserted = await tx
     .insert(j)
     .values({ ...values, status: "queued", activeDedupKey: dedupKey(sessionId) })

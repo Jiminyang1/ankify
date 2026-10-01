@@ -55,9 +55,9 @@ const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
   language: DEFAULT_LANGUAGE,
 };
 
+/** Automatic analysis is on unless the user turns it off; it needs the user's own key. */
 const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
-  automatic: false,
-  dailyAutomaticLimit: 2,
+  automatic: true,
 };
 
 const KEY_AI = "ai";
@@ -243,19 +243,14 @@ export async function getAnalysisSettings(userId: string): Promise<AnalysisSetti
     .select()
     .from(schema.settings)
     .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, KEY_ANALYSIS)));
+  // A stored `dailyAutomaticLimit` from before the limit was retired is ignored.
   const value = (row?.value ?? {}) as Partial<AnalysisSettings>;
-  return {
-    automatic: value.automatic === true,
-    dailyAutomaticLimit: clampAutomaticLimit(value.dailyAutomaticLimit),
-  };
+  return { automatic: typeof value.automatic === "boolean" ? value.automatic : DEFAULT_ANALYSIS_SETTINGS.automatic };
 }
 
 export async function setAnalysisSettings(userId: string, value: Partial<AnalysisSettings>) {
   const existing = await getAnalysisSettings(userId);
-  const next: AnalysisSettings = {
-    automatic: value.automatic ?? existing.automatic,
-    dailyAutomaticLimit: clampAutomaticLimit(value.dailyAutomaticLimit ?? existing.dailyAutomaticLimit),
-  };
+  const next: AnalysisSettings = { automatic: value.automatic ?? existing.automatic };
   await getDb()
     .insert(schema.settings)
     .values({ userId, key: KEY_ANALYSIS, value: next })
@@ -266,7 +261,3 @@ export async function setAnalysisSettings(userId: string, value: Partial<Analysi
   return next;
 }
 
-function clampAutomaticLimit(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_ANALYSIS_SETTINGS.dailyAutomaticLimit;
-  return Math.max(0, Math.min(5, Math.trunc(value)));
-}

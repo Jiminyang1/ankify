@@ -300,7 +300,7 @@ export async function runSessionCommand(
   if (input.type === "heartbeat") return heartbeat(userId, sessionId, input, now);
   // Read outside the write transaction; only finishing uses them.
   const initialReviewDelayHours = input.type === "finish" ? (await getReviewSettings(userId)).initialReviewDelayHours : 0;
-  const automaticAnalysis = input.type === "finish" ? await loadAutomaticAnalysisContext(userId, now) : null;
+  const automaticAnalysis = input.type === "finish" ? await loadAutomaticAnalysisContext(userId) : null;
   let plannedAnalysis: string | null = null;
   const { requestId, ...payload } = input;
   const digest = payloadDigest({ sessionId, ...payload });

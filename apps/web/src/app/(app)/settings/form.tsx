@@ -676,16 +676,14 @@ export function AnalysisSettingsForm({
   initial,
   availability,
 }: {
-  initial: { automatic: boolean; dailyAutomaticLimit: number };
+  initial: { automatic: boolean };
   availability: AnalysisAvailability;
 }) {
   const router = useRouter();
   const { t } = useLanguage();
   const [automatic, setAutomatic] = useState(initial.automatic);
-  const [dailyAutomaticLimit, setDailyAutomaticLimit] = useState(initial.dailyAutomaticLimit);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const limitId = useId();
 
   if (availability !== "automatic") {
     const text =
@@ -703,7 +701,7 @@ export function AnalysisSettingsForm({
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ analysisAutomatic: automatic, analysisDailyAutomaticLimit: dailyAutomaticLimit }),
+        body: JSON.stringify({ analysisAutomatic: automatic }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setMsg(t.common.saved);
@@ -729,21 +727,6 @@ export function AnalysisSettingsForm({
           <span className="mt-1 block text-muted">{t.settings.analysisAutomaticHelp}</span>
         </span>
       </label>
-      <div className="max-w-sm space-y-1">
-        <label htmlFor={limitId} className="text-sm">
-          {t.settings.analysisDailyLimit}
-        </label>
-        <Input
-          id={limitId}
-          type="number"
-          min={0}
-          max={5}
-          value={dailyAutomaticLimit}
-          disabled={!automatic}
-          onChange={(e) => setDailyAutomaticLimit(Number(e.target.value))}
-          className="tabular-nums"
-        />
-      </div>
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
         {msg && (
           <span className="mr-auto text-sm text-muted" role="status" aria-live="polite">

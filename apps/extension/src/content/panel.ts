@@ -229,7 +229,8 @@ export function mountPanel(deps: {
     const running = state.job?.status === "queued" || state.job?.status === "running";
     const children: Child[] = [h("p", { class: "text" }, h("strong", {}, t.analysis.title)), errorNotice];
     if (running) {
-      children.push(h("p", { class: "text muted status-line", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }), t.analysis.running));
+      const text = state.job?.status === "queued" ? t.analysis.queued : t.analysis.running;
+      children.push(h("p", { class: "text muted status-line", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }), text));
     } else if (state.analysis) {
       const { result, stale } = state.analysis;
       if (stale) children.push(h("p", { class: "notice", "data-tone": "warning" }, t.analysis.stale));

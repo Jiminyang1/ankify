@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "qa:provider-smoke": "pnpm --filter ./apps/web provider:smoke",
     "test:e2e:install": "playwright install chromium",
     "typecheck": "pnpm -r typecheck && tsc -p tests/e2e/tsconfig.json",
     "release:check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e && pnpm build && pnpm extension:check-manifest && pnpm audit --prod --audit-level=high --ignore-registry-errors",

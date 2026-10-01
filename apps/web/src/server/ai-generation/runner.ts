@@ -63,7 +63,7 @@ export async function processAiJob(jobId: string, workerId: string): Promise<AiJ
     const classified = classifyAiJobError(error);
     logAiJobError(job.id, error);
     if (classified.retryable && job.attempt < job.maxAttempts) {
-      const delaySeconds = await requeueAiJob(job, classified.code, classified.message);
+      const delaySeconds = await requeueAiJob(job, classified.code, classified.message, classified.retryAfterSeconds);
       return { state: "retry", delaySeconds };
     }
     await failAiJob(job, classified.code, classified.message);

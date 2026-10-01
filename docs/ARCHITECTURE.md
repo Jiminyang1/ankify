@@ -242,9 +242,12 @@ One model call explains one completed practice session (`server/session-analysis
 
 - **Start**: `POST /api/ai-jobs` with `session_analyze` (manual), or planned inside
   the finish transaction when automatic analysis is on for the
-  deployment (`ANKIFY_AUTOMATIC_ANALYSIS=enabled`), for the user (settings
-  `analysis.automatic`), and the session qualifies (`automaticAnalysisTrigger()`
-  in core). Only the user's own key is accepted, at creation and again before
+  deployment (default; `ANKIFY_AUTOMATIC_ANALYSIS=disabled` switches it off),
+  for the user (settings `analysis.automatic`, default on), and the session
+  qualifies: a failed submission with captured code
+  (`automaticAnalysisTrigger()` in core). Automatic jobs run ~15 s after Finish
+  (`runAfter`), so late verdicts are read; one job per session and evidence
+  digest (`auto:<session>:<digest>`); no daily cap. Only the user's own key is accepted, at creation and again before
   execution; there is no hosted fallback and no credit spend.
 - **Evidence**: the whole verdict sequence plus representative code revisions
   (diffs where shorter) and judge output, bounded to 32,000 characters; what was
@@ -264,9 +267,13 @@ One model call explains one completed practice session (`server/session-analysis
   (`status` + `primaryCategory`). The suggested category stays readable as
   `MistakeRecordDto.suggestedCategory` (from the candidate's request id), so
   "corrected from" is shown without a schema change.
-- **Budgets**: manual 10 per local day; automatic 0-5 (default 2). Active jobs
-  and jobs that reached a provider attempt count; cache hits and jobs that ended
-  before any attempt do not.
+- **Budgets**: manual 10 per local day; automatic has no cap (bounded by
+  eligibility, one job per evidence state, and `MAX_ACTIVE_JOBS_PER_USER`).
+  Active jobs and jobs that reached a provider attempt count toward the manual
+  budget; cache hits and jobs that ended before any attempt do not.
+- **Provider errors**: 401/403, or an auth failure reported without a status
+  (invalid key, `LoadAPIKeyError`), fail the job at once (`ai_request_rejected`);
+  429 and 5xx retry, never sooner than the provider's `Retry-After`.
 - **Dispatch recovery**: `ai_jobs.dispatched_at` marks queue acceptance. Queued
   jobs without it are re-sent by `redispatchStrandedJobs()`, from the popup's
   overview request, the analysis state request, and

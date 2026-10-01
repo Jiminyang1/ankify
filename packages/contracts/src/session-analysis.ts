@@ -108,10 +108,9 @@ export type SessionAnalysisStateDto = {
 
 export const analysisSettingsSchema = z
   .object({
-    /** Automatic analysis of qualifying sessions; off by default. */
+    /** Automatic analysis of finished sessions with a failed submission. On
+     *  by default; it only ever runs on the user's own key. */
     automatic: z.boolean(),
-    /** Automatic jobs per local day (0-5). */
-    dailyAutomaticLimit: z.number().int().min(0).max(5),
   })
   .strict();
 export type AnalysisSettings = z.infer<typeof analysisSettingsSchema>;

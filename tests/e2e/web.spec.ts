@@ -6,7 +6,7 @@ import type { LeetcodeFixtureState } from "./leetcode-fixture";
 
 // Web surfaces of the extension-first workflow, signed in as the QA user
 // (the `panel` fixture signs in through /api/qa/login).
-type Settings = { review: { dailyReviewLimit: number; initialReviewDelayHours: number }; analysis: { automatic: boolean; dailyAutomaticLimit: number } };
+type Settings = { review: { dailyReviewLimit: number; initialReviewDelayHours: number }; analysis: { automatic: boolean } };
 
 async function openWeb(context: BrowserContext, path: string, language: "en" | "zh" = "en"): Promise<Page> {
   await context.addCookies([{ name: "ankify-language", value: language, url: API_ORIGIN }]);
@@ -53,7 +53,7 @@ test("settings save the first-review delay and, with the user's own key, automat
   await api("/api/settings", { body: { provider: "deepseek", model: "deepseek-chat", apiKey: "" } });
   const page = await openWeb(context, "/settings");
   const analysis = page.getByRole("region", { name: "Session analysis" });
-  await expect(analysis.getByText("Add your own AI provider key above to analyze sessions from the extension.")).toBeVisible({ timeout: 30_000 });
+  await expect(analysis.getByText("Add your own AI provider key above. Finished sessions with a failed submission are then analyzed automatically.")).toBeVisible({ timeout: 30_000 });
 
   await page.getByLabel("First review after (hours)").fill("48");
   await page.getByRole("button", { name: "Save review settings" }).click();
@@ -63,10 +63,12 @@ test("settings save the first-review delay and, with the user's own key, automat
   await api("/api/settings", { body: { provider: "deepseek", model: "deepseek-chat", apiKey: "e2e-own-key" } });
   await page.reload();
   await expect(page.getByLabel("First review after (hours)")).toHaveValue("48");
-  await analysis.getByRole("checkbox", { name: /Analyze qualifying sessions automatically/ }).check();
-  await analysis.getByLabel("Automatic analyses per day").fill("3");
+  // This spec's setup switched it off; it is on by default (unit-tested). There is no daily cap to set.
+  const automatic = analysis.getByRole("checkbox", { name: /Analyze finished sessions automatically/ });
+  await expect(analysis.getByLabel(/per day/)).toHaveCount(0);
+  await automatic.check();
   await analysis.getByRole("button", { name: "Save analysis settings" }).click();
-  await expect.poll(async () => (await api<Settings>("/api/settings")).analysis).toEqual({ automatic: true, dailyAutomaticLimit: 3 });
+  await expect.poll(async () => (await api<Settings>("/api/settings")).analysis).toEqual({ automatic: true });
   await page.close();
 });
 

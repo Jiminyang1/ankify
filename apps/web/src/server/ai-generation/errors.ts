@@ -5,10 +5,24 @@ class AiJobExecutionError extends Error {
     readonly code: string,
     message: string,
     readonly retryable: boolean,
+    /** The provider's Retry-After, when it sent one. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = "AiJobExecutionError";
   }
+}
+
+/** Provider errors that mean the key itself is wrong, whatever the transport reported. */
+const AUTH_ERROR = /invalid[ _-]?api[ _-]?key|incorrect api key|unauthori[sz]ed|authentication|api key not valid|permission denied|LoadAPIKeyError/i;
+
+/** A 429 that is an empty account (no credit or quota), not a rate limit: waiting does not help. */
+const QUOTA_EXHAUSTED = /insufficient_quota|credit_balance|billing_hard_limit|exceeded your current quota/i;
+
+function retryAfterSeconds(error: unknown) {
+  const headers = (error as { responseHeaders?: Record<string, string> } | null)?.responseHeaders;
+  const value = Number(headers?.["retry-after"] ?? headers?.["Retry-After"]);
+  return Number.isFinite(value) && value > 0 ? Math.min(600, Math.ceil(value)) : null;
 }
 
 /** A failure that retrying the same job cannot fix (the job fails at once). */
@@ -62,8 +76,15 @@ export function classifyAiJobError(error: unknown): AiJobExecutionError {
     : typeof details.statusCode === "number"
       ? details.statusCode
       : null;
+  if (status === 401 || status === 403 || (status === null && AUTH_ERROR.test(`${(error as Error | null)?.name ?? ""} ${message}`))) {
+    // A wrong or revoked key never fixes itself: fail at once, never retry.
+    return new AiJobExecutionError("ai_request_rejected", "AI provider rejected the key. Check it in Settings.", false);
+  }
+  if (status === 429 && QUOTA_EXHAUSTED.test(`${message} ${(error as { responseBody?: unknown } | null)?.responseBody ?? ""}`)) {
+    return new AiJobExecutionError("ai_quota_exceeded", "Your AI provider account has no credit or quota left.", false);
+  }
   if (status === 429 || (status !== null && status >= 500)) {
-    return new AiJobExecutionError("ai_provider_unavailable", "AI provider is temporarily unavailable.", true);
+    return new AiJobExecutionError("ai_provider_unavailable", "AI provider is temporarily unavailable.", true, retryAfterSeconds(error));
   }
   if (status !== null && status >= 400) {
     return new AiJobExecutionError(

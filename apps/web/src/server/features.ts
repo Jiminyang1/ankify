@@ -54,13 +54,15 @@ export function enabledWorkflows(): WorkflowId[] {
 }
 
 /**
- * Automatic session analysis additionally needs dispatch recovery on the
- * deployment: a job whose queue message was never sent would otherwise wait
- * for the user's next visit. Operators set `ANKIFY_AUTOMATIC_ANALYSIS=enabled`
- * only after the recovery cron is verified (see DEPLOYMENT.md).
+ * Automatic session analysis is on unless an operator switches it off with
+ * `ANKIFY_AUTOMATIC_ANALYSIS=disabled` (or switches all analysis off). It
+ * does not depend on the recovery cron: a job is queued and sent after its
+ * session commits, and one whose send failed is re-sent on the user's next
+ * contact (the popup, a problem page, an analysis read), or by
+ * `/api/cron/ai-dispatch` where that is scheduled (see DEPLOYMENT.md).
  */
 export function isAutomaticAnalysisEnabled() {
-  return isWorkflowEnabled("session_analysis") && process.env.ANKIFY_AUTOMATIC_ANALYSIS === "enabled";
+  return isWorkflowEnabled("session_analysis") && process.env.ANKIFY_AUTOMATIC_ANALYSIS !== "disabled";
 }
 
 /** Retired workflows old clients may still call, and how each is retired. */

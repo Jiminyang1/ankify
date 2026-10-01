@@ -10,11 +10,11 @@ import { AiJobRequestError, cancelOwnedAiJob, claimAiJob, decryptJobInput } from
 import { processAiJob } from "../ai-generation/runner";
 import { startAiJobForUser } from "../ai-generation/start";
 import { loadMistakeProfile } from "../mistake-profile";
-import { createMistake, updateMistake } from "../mistakes";
+import { updateMistake } from "../mistakes";
 import { ingestSessionObservations, runSessionCommand, startPracticeSession } from "../practice-sessions/commands";
 import { setAiSettings, setAnalysisSettings } from "../settings";
 import { createTestDb } from "../test-db";
-import { analysesUsedToday, redispatchStrandedJobs } from "./jobs";
+import { analysesUsedToday, AUTOMATIC_ANALYSIS_DELAY_MS, loadAutomaticAnalysisContext, planAutomaticAnalysis, redispatchStrandedJobs } from "./jobs";
 import { getSessionAnalysisState } from "./queries";
 import { runSessionAnalysisJob } from "./run";
 
@@ -175,6 +175,8 @@ beforeEach(async () => {
     { id: OTHER, name: "Other", email: "analysis-other@example.test" },
   ]);
   await setAiSettings(USER, { provider: "openai", model: "gpt-test", apiKey: "sk-user" });
+  // Automatic analysis is on by default; only its own tests turn it on here.
+  vi.stubEnv("ANKIFY_AUTOMATIC_ANALYSIS", "disabled");
   vi.mocked(dispatchAiJob).mockReset().mockResolvedValue(undefined);
   vi.mocked(buildModel).mockReset();
   useModel(FINDINGS);
@@ -408,14 +410,15 @@ describe("manual analysis", () => {
 
 describe("automatic analysis", () => {
   const qualifying = ["Wrong Answer", "Wrong Answer", "Accepted"];
-  const enable = async (limit = 2) => {
-    vi.stubEnv("ANKIFY_AUTOMATIC_ANALYSIS", "enabled");
-    await setAnalysisSettings(USER, { automatic: true, dailyAutomaticLimit: limit });
-  };
+  // The deployment default: on unless switched off.
+  const enable = () => vi.unstubAllEnvs();
 
-  it("runs only when the deployment enables it and the user opts in", async () => {
+  it("runs by default once the user has their own key, unless the deployment or the user switches it off", async () => {
     await session(qualifying);
-    vi.stubEnv("ANKIFY_AUTOMATIC_ANALYSIS", "enabled");
+    expect(await jobsOf()).toEqual([]);
+
+    enable();
+    await setAnalysisSettings(USER, { automatic: false });
     await session(qualifying);
     expect(await jobsOf()).toEqual([]);
 
@@ -423,12 +426,19 @@ describe("automatic analysis", () => {
     const { sessionId } = await session(qualifying);
     const [automatic] = await jobsOf();
     expect(automatic).toMatchObject({ trigger: "automatic", status: "queued", practiceSessionId: sessionId });
+    // It waits briefly, so verdicts still being judged at Finish are included.
+    expect(automatic!.runAfter!.getTime() - automatic!.createdAt.getTime()).toBe(AUTOMATIC_ANALYSIS_DELAY_MS);
     expect(automatic!.dispatchedAt).not.toBeNull();
     expect(dispatchAiJob).toHaveBeenCalledWith(automatic!.id);
+
+    // Without the user's own key nothing is planned (never the hosted key).
+    await setAiSettings(USER, { provider: "openai", model: "gpt-test", apiKey: "" });
+    await session(qualifying);
+    expect(await jobsOf()).toHaveLength(1);
   });
 
   it("keeps the intent when the queue is down, and recovery sends it later", async () => {
-    await enable();
+    enable();
     vi.mocked(dispatchAiJob).mockRejectedValueOnce(new Error("queue down"));
     await session(qualifying);
     const [stranded] = await jobsOf();
@@ -442,34 +452,45 @@ describe("automatic analysis", () => {
     expect(await redispatchStrandedJobs({ now: new Date(createdAt + 2 * MIN) })).toEqual({ stranded: 0, dispatched: 0 });
   });
 
-  it("respects the daily automatic limit", async () => {
-    await enable(1);
-    await session(qualifying);
-    await session(qualifying);
+  it("has no daily cap: every qualifying session is analyzed once", async () => {
+    enable();
+    for (let index = 0; index < 4; index += 1) await session(qualifying);
+    expect(await jobsOf()).toHaveLength(4);
+  });
+
+  it("plans one job per session and evidence, however often it is asked", async () => {
+    enable();
+    const { sessionId } = await session(qualifying);
+    const context = (await loadAutomaticAnalysisContext(USER))!;
+    const planned = await getDb().transaction((tx) => planAutomaticAnalysis(tx, USER, sessionId, context, new Date()));
+    expect(planned).toBeNull();
+    // Even after the first job ended, the same evidence is not analyzed again.
+    await getDb().update(schema.aiJobs).set({ status: "succeeded", activeDedupKey: null });
+    expect(await getDb().transaction((tx) => planAutomaticAnalysis(tx, USER, sessionId, context, new Date()))).toBeNull();
     expect(await jobsOf()).toHaveLength(1);
   });
 
-  it("never fires for ordinary practice; visits and submissions create no AI work", async () => {
-    await enable();
+  it("fires for any failure with code, never for a clean Accepted, an unfinished session, or failures without code", async () => {
+    enable();
     await session(["Accepted"]);
-    await session(["Wrong Answer", "Wrong Answer"]);
-    await session(["Wrong Answer", "Wrong Answer", "Accepted"], { codes: ["same", "same", "done"] });
     await session(["Wrong Answer", "Accepted"], { finish: false });
+    await session(["Wrong Answer"], { codes: [null] });
     expect(await jobsOf()).toEqual([]);
+    const failedOnly = await session(["Wrong Answer"]);
+    const sameCode = await session(["Wrong Answer", "Wrong Answer", "Accepted"], { codes: ["same", "same", "done"] });
+    expect((await jobsOf()).map((row) => row.practiceSessionId).sort()).toEqual([failedOnly.sessionId, sameCode.sessionId].sort());
     expect(provider.doGenerateCalls).toHaveLength(0);
   });
 
-  it("fires for a failure resembling a confirmed pattern on another problem", async () => {
-    await enable();
-    const earlier = await session(["Wrong Answer", "Accepted"], { topics: ["Graph"] });
-    await getDb().update(schema.aiJobs).set({ status: "succeeded", activeDedupKey: null });
-    const [submission] = await getDb().select().from(schema.submissions).where(and(eq(schema.submissions.problemId, earlier.problemId), eq(schema.submissions.status, "Wrong Answer")));
-    await createMistake(USER, { sourceType: "submission", submissionId: submission!.id, requestId: uuid(), problemId: earlier.problemId, primaryCategory: "edge_case" });
-
-    const unrelated = await session(["Wrong Answer"], { topics: ["String"] });
-    const related = await session(["Wrong Answer"], { topics: ["Graph", "BFS"] });
-    const sessions = (await jobsOf()).map((row) => row.practiceSessionId);
-    expect(sessions).toContain(related.sessionId);
-    expect(sessions).not.toContain(unrelated.sessionId);
+  it("does not retry a rejected key: the job fails at once", async () => {
+    enable();
+    const { sessionId } = await session(qualifying);
+    useModel(new APICallError({ message: "Incorrect API key provided", url: "https://api.openai.com/v1/chat/completions", requestBodyValues: {}, statusCode: 401 }));
+    const [planned] = await jobsOf();
+    await getDb().update(schema.aiJobs).set({ runAfter: new Date() }).where(eq(schema.aiJobs.id, planned!.id));
+    await processAiJob(planned!.id, "worker-auth");
+    expect(await job(planned!.id)).toMatchObject({ status: "failed", errorCode: "ai_request_rejected", attempt: 1 });
+    expect(provider.doGenerateCalls).toHaveLength(1);
+    expect((await getSessionAnalysisState(USER, sessionId))!.job).toMatchObject({ status: "failed", errorCode: "ai_request_rejected" });
   });
 });

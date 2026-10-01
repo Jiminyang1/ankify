@@ -178,20 +178,23 @@ on the user's own saved key, never on the hosted key, and spends no credits.
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `CRON_SECRET` | Vercel (Production; Preview when testing) | Bearer secret for `GET /api/cron/ai-dispatch`, 32+ random characters. The route answers `404` while it is unset. |
-| `ANKIFY_AUTOMATIC_ANALYSIS` | Vercel | `enabled` makes automatic analysis available to users who opt in. Leave unset until the recovery cron is verified (below). |
+| `ANKIFY_AUTOMATIC_ANALYSIS` | Vercel | Automatic analysis is **on by default** for users with their own key (each can switch it off in Settings). Set `disabled` to switch it off for everyone. |
 | `ANKIFY_DISABLED_WORKFLOWS` | Vercel | Add `session_analysis` to switch analysis off. |
 | `ANKIFY_QA_AI_BASE_URL` | QA only | Fake-provider URL for browser tests; ignored outside the QA profile. Never set it on Vercel. |
 
-Manual analysis works without the cron. When a queue publish fails, the job is
-marked failed and the user gets a `503` to retry. An automatic job is instead
-committed with the session and published after commit; if that publish fails,
-the job waits with `dispatched_at` unset. Stranded jobs are re-sent when the
-same user next opens the popup or reads an analysis, and by the recovery cron
-for everyone. Enable automatic analysis only once the cron runs:
+Neither manual nor automatic analysis depends on the cron.
+
+- **Manual:** when a queue publish fails, the job is marked failed and the user gets a `503` to retry.
+- **Automatic:** the job is committed with the finished session, set to run about 15 seconds later so late verdicts are included, and published after commit. If that publish fails, the job waits with `dispatched_at` unset.
+- **Recovery:** stranded jobs are re-sent when the same user next opens the popup, loads a problem page, or reads an analysis. The optional cron re-sends them for everyone on a timer.
+
+**Before deploying this code to Production, decide:** automatic analysis becomes active for every user who has saved their own key, with no daily cap. Each call is bounded by eligibility (a failed submission with code) and one job per session and evidence state. To keep it off for now, set `ANKIFY_AUTOMATIC_ANALYSIS=disabled` first.
+
+To add the timer-based recovery:
 
 1. Check the Vercel plan's cron limits. Hobby projects can only schedule daily
-   cron jobs, and a more frequent schedule fails the deployment. Recovery needs
-   a frequent schedule, so keep automatic analysis off on Hobby.
+   cron jobs, and a more frequent schedule fails the deployment. On Hobby, rely
+   on request-time recovery.
 2. Set `CRON_SECRET` in Vercel and add the schedule to `apps/web/vercel.json`:
 
    ```json
@@ -203,15 +206,13 @@ for everyone. Enable automatic analysis only once the cron runs:
    returns `{"stranded":0,"dispatched":0}`, that the same request without the
    header returns `401`, and that the project's Cron Jobs page shows successful
    runs.
-4. Set `ANKIFY_AUTOMATIC_ANALYSIS=enabled` and redeploy. `GET /api/capabilities`
-   then reports `sessionAnalysis.automaticAvailable: true`.
 
 Smoke test: with a user whose own key is saved, finish a session with a failed
 submission and then an Accepted one. Click **Analyze session** in the panel.
 The job should go `queued -> running -> succeeded`, and the findings should
 appear as suggestions to confirm or dismiss.
 
-Rollback: to stop only automatic analysis, unset `ANKIFY_AUTOMATIC_ANALYSIS`.
+Rollback: to stop only automatic analysis, set `ANKIFY_AUTOMATIC_ANALYSIS=disabled`.
 To stop all analysis, add `session_analysis` to `ANKIFY_DISABLED_WORKFLOWS`;
 new jobs are then refused and queued jobs fail before any provider call. Either
 way, redeploy. Stored analyses, candidates, confirmed mistakes, and the

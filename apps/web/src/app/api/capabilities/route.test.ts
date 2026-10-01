@@ -14,19 +14,26 @@ describe("capabilities handshake", () => {
     getRequestUser.mockResolvedValue(null);
     expect((await GET(new Request("http://localhost/api/capabilities"))).status).toBe(401);
   });
-  it("reports only implemented workflows, lists the suspended legacy ones, and waits for the operator on automatic analysis", async () => {
+  it("reports only implemented workflows, lists the suspended legacy ones, and has automatic analysis on unless the operator switches it off", async () => {
     getRequestUser.mockResolvedValue({ id: "user-1" });
     const response = await GET(new Request("http://localhost/api/capabilities"));
     const payload = capabilitiesSchema.parse(await response.json());
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(payload.supportedWorkflows).toEqual(["capture", "legacy_review", "practice_sessions", "session_rating", "session_analysis", "suggestions"]);
-    expect(payload.sessionAnalysis).toEqual({ available: true, automaticAvailable: false, requiresOwnKey: true });
+    expect(payload.sessionAnalysis).toEqual({ available: true, automaticAvailable: true, requiresOwnKey: true });
     expect(payload.deprecations.map(({ workflow, code }) => [workflow, code])).toEqual([
       ["coach", "workflow_suspended"],
       ["card_generation", "workflow_suspended"],
       ["quiz_generation", "workflow_suspended"],
       ["credit_checkout", "workflow_suspended"],
     ]);
+    vi.stubEnv("ANKIFY_AUTOMATIC_ANALYSIS", "disabled");
+    try {
+      const off = capabilitiesSchema.parse(await (await GET(new Request("http://localhost/api/capabilities"))).json());
+      expect(off.sessionAnalysis).toEqual({ available: true, automaticAvailable: false, requiresOwnKey: true });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
   it("re-enables a suspended legacy workflow only when the operator names it", async () => {
     getRequestUser.mockResolvedValue({ id: "user-1" });

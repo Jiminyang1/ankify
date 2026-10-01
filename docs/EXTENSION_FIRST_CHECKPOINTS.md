@@ -1329,3 +1329,43 @@ Gate:
 | `pnpm test` | PASS: 509 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 37 tests |
+
+### 4: automatic analysis that works in development; real providers
+
+Why automatic analysis was tied to the cron:
+
+- A job commits with the finished session, and the queue send happens after the commit and can fail.
+- A manual job is recovered by the user's own polling; an automatic one had nobody polling, so it was gated behind `ANKIFY_AUTOMATIC_ANALYSIS=enabled` until a cron existed.
+- Locally, the QA worker reads the database directly and dispatch is a no-op, so only the flag blocked it.
+
+Changes (the owner's decisions of 2026-10-01: on by default with the user's own key, no daily limit):
+
+- **Deployment flag.** `ANKIFY_AUTOMATIC_ANALYSIS` is now a kill switch: automatic analysis is on unless it is `disabled`. Recovery is request-time (the popup, problem pages, analysis reads), with the cron as an optional backstop. DEPLOYMENT.md asks the owner to decide before deploying to Production.
+- **User setting.** `analysis.automatic` defaults to true. `dailyAutomaticLimit` is removed from contracts, the API, the UI, and planning, and a stored value is ignored. The manual limit (10 a day) stays.
+- **Eligibility.** A completed session with any failed submission that has code qualifies. The reason is recorded as `repeated_failures`, `pattern_recurrence`, or `failed_attempt`. A clean Accepted, an unfinished session, or a failure without code never qualifies.
+- **Planning.** There is one job per session and evidence digest (`auto:<session>:<digest>`). A job starts about 15 s after Finish (`runAfter`), so late verdicts are read; the runner always reads the evidence current at run time. The panel shows "Analysis queued …" right away.
+- **Errors.**
+  - 401/403, or an auth failure without a status (`LoadAPIKeyError`, "invalid api key"), fails at once as `ai_request_rejected`.
+  - A 429 for an empty account (`insufficient_quota` or `credit_balance`) fails at once as `ai_quota_exceeded`, with its own message in the web and extension.
+  - Other 429 and 5xx responses retry, never sooner than `Retry-After`.
+- **`pnpm qa:provider-smoke`.** For each `SMOKE_<PROVIDER>_API_KEY` in the git-ignored `.env.smoke.local`, it runs one fixture session through the real job pipeline on a throwaway database, then checks an invalid key. It prints provider, model, outcome, and timing only, with logging silenced.
+
+Real-provider results (2026-10-01), all on the owner's keys:
+
+| Provider | Model | Result |
+| --- | --- | --- |
+| DeepSeek | `deepseek-v4-flash` | PASS: 2 findings |
+| Anthropic | `claude-haiku-4-5-20251001` | PASS: 1 finding |
+| Google | `gemini-3.5-flash` | PASS: 1 finding, about 35 s |
+| OpenAI | `gpt-4o-mini` | BLOCKED: the account has no credit (`insufficient_quota`) |
+
+- The OpenAI run found the quota misclassification, now fixed: the first run retried it 3 times.
+- The invalid-key check passed for all four providers.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 509 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 37 tests |
