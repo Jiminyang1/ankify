@@ -161,4 +161,17 @@ describe("analysis result mapping", () => {
       ],
     });
   });
+
+  it("drops a finding that cites no attempt, and every finding when the evidence shows no cause", () => {
+    const uncited = toAnalysisResult(
+      { summary: "Failed.", insufficientEvidence: false, findings: [{ ...base, evidence: [{ attempt: "S9", startLine: null, endLine: null }] }, { ...base, evidence: [] }] },
+      attempts,
+    );
+    expect(uncited.findings).toEqual([]);
+    const insufficient = toAnalysisResult(
+      { summary: "Only verdicts were captured.", insufficientEvidence: true, findings: [{ ...base, evidence: [{ attempt: "S1", startLine: null, endLine: null }] }] },
+      attempts,
+    );
+    expect(insufficient).toEqual({ summary: "Only verdicts were captured.", insufficientEvidence: true, findings: [] });
+  });
 });

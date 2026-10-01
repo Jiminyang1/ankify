@@ -105,7 +105,6 @@ export function toAnalysisResult(output: SessionAnalysisOutput, attempts: readon
   const findings: SessionAnalysisFinding[] = [];
   for (const finding of output.findings) {
     if (seen.has(finding.category)) continue;
-    seen.add(finding.category);
     const evidence: SessionAnalysisFinding["evidence"] = [];
     const keys = new Set<string>();
     for (const ref of finding.evidence) {
@@ -122,6 +121,9 @@ export function toAnalysisResult(output: SessionAnalysisOutput, attempts: readon
       keys.add(key);
       evidence.push(item);
     }
+    // A cause must cite the attempts that show it; an uncited one is a guess.
+    if (evidence.length === 0) continue;
+    seen.add(finding.category);
     findings.push({
       mistakeId: null,
       category: finding.category,
@@ -131,7 +133,8 @@ export function toAnalysisResult(output: SessionAnalysisOutput, attempts: readon
       evidence,
     });
   }
-  return { summary: output.summary.trim(), insufficientEvidence: output.insufficientEvidence, findings };
+  // "The evidence does not show a cause" overrides any finding offered anyway.
+  return { summary: output.summary.trim(), insufficientEvidence: output.insufficientEvidence, findings: output.insufficientEvidence ? [] : findings };
 }
 
 async function commitExisting(job: AiJob, analysisId: string) {
@@ -158,10 +161,16 @@ async function commitAnalysis(
       return;
     }
     const analysisId = `sa_${job.id}`;
-    // Findings become candidates the user confirms, edits, or dismisses. A
-    // category already recorded for this session (by the user or an earlier
-    // analysis) gets no second record; the finding stays in the analysis.
     const m = schema.mistakeRecords;
+    // A newer analysis replaces the earlier ones' open suggestions for this
+    // session; what the user confirmed or dismissed stays.
+    await tx
+      .delete(m)
+      .where(and(eq(m.userId, job.userId), eq(m.practiceSessionId, evidence.session.id), eq(m.origin, "ai_suggested"), eq(m.status, "candidate")));
+    // Findings become candidates the user confirms, corrects, or dismisses. A
+    // category already recorded for this session (by the user, or confirmed
+    // or dismissed from an earlier analysis) gets no second record; the
+    // finding stays in the analysis.
     const recorded = await tx
       .select({ category: m.primaryCategory })
       .from(m)

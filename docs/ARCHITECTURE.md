@@ -256,7 +256,14 @@ One model call explains one completed practice session (`server/session-analysis
   computed on read against the current digest.
 - **Commit**: the analysis, its `ai_suggested` candidate mistakes (one per new
   category, linked by `finding.mistakeId`), and the terminal job state commit in
-  one transaction.
+  one transaction. A newer analysis replaces the session's earlier *open*
+  candidates (confirmed and dismissed ones stay; a category already confirmed
+  gets no new candidate). Findings that cite no attempt, and all findings when
+  the model reports `insufficientEvidence`, are dropped server-side.
+- **Corrections**: confirming with another category is one PATCH
+  (`status` + `primaryCategory`). The suggested category stays readable as
+  `MistakeRecordDto.suggestedCategory` (from the candidate's request id), so
+  "corrected from" is shown without a schema change.
 - **Budgets**: manual 10 per local day; automatic 0-5 (default 2). Active jobs
   and jobs that reached a provider attempt count; cache hits and jobs that ended
   before any attempt do not.
@@ -264,8 +271,10 @@ One model call explains one completed practice session (`server/session-analysis
   jobs without it are re-sent by `redispatchStrandedJobs()`, from the popup's
   overview request, the analysis state request, and
   `GET /api/cron/ai-dispatch` (Bearer `CRON_SECRET`; not yet scheduled).
-- **Read**: `GET /api/practice-sessions/:id/analysis`; the extension panel shows
-  status and confirm/recategorize/dismiss controls.
+- **Read**: `GET /api/practice-sessions/:id/analysis`; the extension panel and
+  the web problem page (Sessions tab, loaded when visible) show status and
+  confirm/correct/dismiss controls. The Mistakes tab lists open suggestions
+  first; manual entry is a secondary link.
 - **Kill switch**: `ANKIFY_DISABLED_WORKFLOWS=session_analysis` refuses new jobs
   (`503 workflow_disabled`) and fails queued ones before any provider call.
   Stored analyses, candidates, and confirmed mistakes stay.

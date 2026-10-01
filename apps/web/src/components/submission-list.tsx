@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useLanguage } from "@/components/LanguageProvider";
-import { LogMistakeButton } from "@/components/mistakes/log-mistake-button";
 
 function formatMemory(memoryKb: number) {
   return `${(memoryKb / 1024).toFixed(1)} MB`;
@@ -21,11 +20,6 @@ function formatDate(value: SubmissionDto["submittedAt"], missingLabel: string) {
   return new Date(value).toLocaleString();
 }
 
-const COST_STATUSES: ReadonlySet<SubmissionDto["status"]> = new Set([
-  "Time Limit Exceeded",
-  "Memory Limit Exceeded",
-]);
-
 function hasFailureDetail(s: SubmissionDto) {
   return Boolean(s.errorMessage || s.failedTestcase || s.expectedOutput || s.actualOutput);
 }
@@ -35,15 +29,8 @@ function hasFailureDetail(s: SubmissionDto) {
  * collapsible card; the most recent one is expanded by default. Code blocks
  * expand to a fullscreen overlay for focused reading. Shared by the problem
  * detail page and the review workspace so both render submissions identically.
- * With `problemId`, failed submissions offer "Log mistake".
  */
-export function SubmissionList({
-  submissions,
-  problemId,
-}: {
-  submissions: SubmissionDto[];
-  problemId?: string;
-}) {
+export function SubmissionList({ submissions }: { submissions: SubmissionDto[] }) {
   return (
     <ul className="space-y-3">
       {submissions.map((s, i) => (
@@ -52,7 +39,6 @@ export function SubmissionList({
           submission={s}
           index={submissions.length - i}
           defaultOpen={i === 0}
-          problemId={problemId}
         />
       ))}
     </ul>
@@ -63,12 +49,10 @@ function SubmissionCard({
   submission,
   index,
   defaultOpen,
-  problemId,
 }: {
   submission: SubmissionDto;
   index: number;
   defaultOpen: boolean;
-  problemId?: string;
 }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(defaultOpen);
@@ -111,17 +95,6 @@ function SubmissionCard({
               <FailureDetail label={t.detail.failedTestcase} value={submission.failedTestcase} />
               <FailureDetail label={t.detail.expected} value={submission.expectedOutput} />
               <FailureDetail label={t.detail.actual} value={submission.actualOutput} />
-            </div>
-          )}
-          {problemId && !passed && (
-            <div className="flex justify-end border-t border-border px-4 py-2">
-              <LogMistakeButton
-                size="xs"
-                problemId={problemId}
-                source={{ sourceType: "submission", submissionId: submission.id }}
-                // A status is a symptom, not a cause: list complexity first, never preselect it.
-                suggestedFirst={COST_STATUSES.has(submission.status) ? "complexity" : null}
-              />
             </div>
           )}
           <div className="relative border-t border-border">

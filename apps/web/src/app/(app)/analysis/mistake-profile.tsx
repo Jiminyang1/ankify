@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import type { Translation } from "@/lib/i18n";
-import { CandidateActions } from "./candidate-actions";
+import { CandidateActions } from "@/components/mistakes/candidate-actions";
 
 /**
  * The mistake profile (GET /api/mistakes/profile, computed on read): confirmed
@@ -79,7 +79,7 @@ export function MistakeProfileSection({ profile, t }: { profile: MistakeProfileD
                   </Link>
                   {candidate.summary && <p className="text-muted">{candidate.summary}</p>}
                 </div>
-                <CandidateActions mistakeId={candidate.mistakeId} />
+                <CandidateActions mistakeId={candidate.mistakeId} category={candidate.category} />
               </li>
             ))}
           </ul>

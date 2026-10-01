@@ -14,6 +14,7 @@ import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
 import { MistakeList } from "./mistake-list";
+import { SessionAnalysis } from "./session-analysis";
 import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -58,7 +59,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
     submissions.length === 0 ? (
       <EmptyState title={t.detail.noSubmissions} description={t.detail.submissionsHelp} />
     ) : (
-      <SubmissionList submissions={submissions} problemId={problem.id} />
+      <SubmissionList submissions={submissions} />
     );
 
   const historyPanel =
@@ -105,6 +106,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               <p className="text-xs text-muted">
                 {t.sessions.evidence(session.evidence.submissions, session.evidence.accepted)} · {t.sessions.activeMinutes(Math.round(session.timing.activeMs / 60_000))}
               </p>
+              {session.status === "completed" && <SessionAnalysis sessionId={session.id} />}
             </li>
           );
         })}

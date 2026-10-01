@@ -92,3 +92,41 @@ test("without the user's own key, the panel explains and starts nothing", async 
   expect(state).toMatchObject({ job: null, manual: { available: false, reason: "own_key_required" } });
 });
 
+
+test("on the web, a session is analyzed from its problem page; findings are corrected, confirmed, or dismissed, and manual entry is secondary", async ({ context, leetcode, api }) => {
+  await api("/api/settings", { body: OWN_KEY });
+  const { page: panelPage, slug } = await finishQualifyingSession(context, leetcode, "analysis-web");
+  // The finish has landed once the first review is scheduled.
+  await expect(panelPage.getByText(/Next review/).first()).toBeVisible();
+  await panelPage.close();
+  const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  const page = await context.newPage();
+  await page.goto(`http://localhost:4317/problems/${current.problem!.id}`);
+
+  await page.getByRole("tab", { name: /Sessions/ }).click();
+  const analysis = page.getByRole("tabpanel").getByRole("group", { name: "Session analysis" });
+  await analysis.getByRole("button", { name: "Analyze session" }).click();
+  await expect(analysis.getByText(SUMMARY)).toBeVisible({ timeout: 30_000 });
+
+  const edge = analysis.getByRole("listitem").filter({ hasText: "An empty input returned the wrong value." });
+  await expect(edge.getByText("Next time: Test the empty input first.")).toBeVisible();
+  await edge.getByRole("combobox", { name: "Category of this mistake" }).click();
+  await page.getByRole("option", { name: "Implementation" }).click();
+  await edge.getByRole("button", { name: "Confirm" }).click();
+  await expect(edge.getByText("Corrected from Edge cases")).toBeVisible();
+  await expect(edge.getByText("Confirmed")).toBeVisible();
+  const complexity = analysis.getByRole("listitem").filter({ hasText: "The first version rescanned the string." });
+  await complexity.getByRole("button", { name: "Dismiss" }).click();
+  await expect(complexity.getByText("Dismissed")).toBeVisible();
+
+  await page.getByRole("tab", { name: /Mistakes/ }).click();
+  const mistakes = page.getByRole("tabpanel");
+  await expect(mistakes.getByRole("region", { name: "Suggested by analysis" })).toHaveCount(0);
+  const record = mistakes.getByRole("listitem").filter({ hasText: "An empty input returned the wrong value." });
+  await expect(record.getByText("From analysis")).toBeVisible();
+  await expect(record.getByText("Corrected from Edge cases")).toBeVisible();
+  // Manual entry stays available, as a plain link rather than the main action.
+  await expect(mistakes.getByRole("button", { name: "Add a mistake manually" })).toBeVisible();
+  await expect(mistakes.getByRole("button", { name: "Record mistake" })).toHaveCount(0);
+  await page.close();
+});

@@ -301,6 +301,9 @@ export type MistakeRecordDto = {
   evidence: MistakeEvidence[];
   /** The session analysis an AI candidate came from. */
   analysisId: string | null;
+  /** The category the analysis suggested; differs from `primaryCategory`
+   *  when the user corrected it. Null for the user's own records. */
+  suggestedCategory: SkillDimensionId | null;
   status: MistakeStatus;
   origin: "user" | "ai_suggested";
   resolvedAt: string | null;

@@ -1304,3 +1304,28 @@ Gate:
 | `pnpm test` | PASS: 508 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 36 tests |
+
+### 3: AI-first mistakes
+
+- **Problem page.**
+  - The Sessions tab shows each completed session's analysis: queued or analyzing with a spinner, the result, failed with its reason, or unavailable (needs own key, no code). It loads when it first scrolls into view and polls while a job runs.
+  - Findings offer confirm, correct (category menu), and dismiss, plus Analyze, Analyze again, and Retry.
+  - The Mistakes tab lists open suggestions first. Confirmed records are labeled "From analysis" or "Recorded by you", with "Corrected from X".
+  - Manual entry is a plain "Add a mistake manually" link. The per-submission "Log mistake" button (and `log-mistake-button.tsx`) is removed.
+- **Shared `CandidateActions`.** One component in `components/mistakes/` serves `/analysis` and the problem page, and now offers category correction on the web; before, only the extension could correct.
+- **Corrections.** Confirm-with-category is one PATCH. `MistakeRecordDto.suggestedCategory` comes from the candidate's request id (`analysis:<id>:<category>`), so no migration is needed. The profile counts only the final category.
+- **Integrity.**
+  - A newer analysis deletes the session's earlier *open* AI candidates in its commit transaction. Confirmed and dismissed ones stay, and a confirmed category is never re-suggested.
+  - `toAnalysisResult()` drops findings that cite no attempt, and every finding when the model reports `insufficientEvidence`.
+  - The existing prompt already forbids treating a verdict as a cause.
+- **Tests.**
+  - Unit: the uncited and insufficient guards; re-analysis replacing open candidates without duplicating a confirmed one; correction keeping `suggestedCategory` and counting only the new category.
+  - e2e: analyze from the web Sessions tab, correct, confirm and dismiss, then the Mistakes tab labels and the manual link.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 509 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 37 tests |

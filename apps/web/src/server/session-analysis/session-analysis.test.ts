@@ -226,10 +226,14 @@ describe("manual analysis", () => {
     let profile = await loadMistakeProfile(USER);
     expect(profile.candidates).toMatchObject([{ category: "edge_case", practiceSessionId: sessionId }]);
     expect(profile.categories).toEqual([]);
-    await updateMistake(USER, state.findings[0]!.id, { status: "confirmed", primaryCategory: "implementation" });
+    expect(state.findings[0]).toMatchObject({ status: "candidate", origin: "ai_suggested", suggestedCategory: "edge_case" });
+    const corrected = await updateMistake(USER, state.findings[0]!.id, { status: "confirmed", primaryCategory: "implementation" });
+    // The correction is kept apart from the suggestion: confirmed as implementation, suggested as edge case.
+    expect(corrected).toMatchObject({ ok: true, mistake: { status: "confirmed", primaryCategory: "implementation", suggestedCategory: "edge_case" } });
     profile = await loadMistakeProfile(USER);
     expect(profile.candidates).toEqual([]);
     expect(profile.categories).toMatchObject([{ category: "implementation", contexts: 1 }]);
+    expect(profile.categories.find((item) => item.category === "edge_case")).toBeUndefined();
   });
 
   it("replays a request id, rejects it for another session, and runs one analysis per session at a time", async () => {
@@ -254,22 +258,33 @@ describe("manual analysis", () => {
     expect(await analysesUsedToday(getDb(), USER, "manual", todayStart())).toBe(1);
   });
 
-  it("marks an analysis stale when evidence arrives later; a new analysis adds no duplicate candidate", async () => {
+  it("marks an analysis stale when evidence arrives later; a new analysis replaces open suggestions and never duplicates a confirmed one", async () => {
     const { sessionId } = await session(["Wrong Answer", "Accepted"]);
     const first = await analyze(sessionId);
     await processAiJob(first.id, "worker-1");
-    await ingestSessionObservations(USER, sessionId, {
-      observations: [{ leetcodeSubmissionId: String(900_000 + problemCounter * 100 + 50), verdict: "Accepted", submittedAt: new Date(Date.now() - 70 * MIN).toISOString(), detail: { language: "python3", code: "def solve(nums):\n    return sum(nums)\n" } }],
-    });
+    const more = (offset: number) =>
+      ingestSessionObservations(USER, sessionId, {
+        observations: [{ leetcodeSubmissionId: String(900_000 + problemCounter * 100 + offset), verdict: "Accepted", submittedAt: new Date(Date.now() - 70 * MIN).toISOString(), detail: { language: "python3", code: `def solve(nums):\n    return sum(nums) + ${offset}\n` } }],
+      });
+    await more(50);
     expect((await getSessionAnalysisState(USER, sessionId))!.analysis!.stale).toBe(true);
 
+    // The open suggestion from the first analysis is replaced, not kept beside the new one.
     const second = await analyze(sessionId);
     expect(second.status).toBe("queued");
     await processAiJob(second.id, "worker-2");
     const state = (await getSessionAnalysisState(USER, sessionId))!;
-    expect(state.analysis).toMatchObject({ id: `sa_${second.id}`, stale: false, result: { findings: [{ category: "edge_case", mistakeId: null }] } });
+    expect(state.analysis).toMatchObject({ id: `sa_${second.id}`, stale: false, result: { findings: [{ category: "edge_case", mistakeId: `ai_${second.id}_edge_case` }] } });
     expect(await analyses()).toHaveLength(2);
-    expect(await candidates(sessionId)).toHaveLength(1);
+    expect((await candidates(sessionId)).map((row) => row.id)).toEqual([`ai_${second.id}_edge_case`]);
+
+    // Once confirmed, a later analysis finding the same cause adds nothing.
+    await updateMistake(USER, `ai_${second.id}_edge_case`, { status: "confirmed" });
+    await more(51);
+    const third = await analyze(sessionId);
+    await processAiJob(third.id, "worker-3");
+    expect((await getSessionAnalysisState(USER, sessionId))!.analysis).toMatchObject({ result: { findings: [{ category: "edge_case", mistakeId: null }] } });
+    expect((await candidates(sessionId)).map((row) => [row.id, row.status])).toEqual([[`ai_${second.id}_edge_case`, "confirmed"]]);
   });
 
   it("ignores repeated deliveries after the commit", async () => {

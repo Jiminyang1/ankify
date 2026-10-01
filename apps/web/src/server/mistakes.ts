@@ -7,6 +7,7 @@ import type {
   MistakePatchInput,
   MistakeRecordDto,
 } from "@ankify/contracts";
+import { skillDimensionEnum } from "@ankify/contracts";
 import { getDb, schema, type MistakeRecord } from "@ankify/db";
 import { and, desc, eq, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -40,6 +41,13 @@ const NO_SOURCE: MistakeSource = {
 
 export class InvalidMistakesCursorError extends Error {}
 
+/** An analysis candidate's request id ends with the category it suggested. */
+function suggestedCategory(row: MistakeRecord): MistakeRecordDto["suggestedCategory"] {
+  if (row.origin !== "ai_suggested" || !row.requestId?.startsWith("analysis:")) return null;
+  const parsed = skillDimensionEnum.safeParse(row.requestId.slice(row.requestId.lastIndexOf(":") + 1));
+  return parsed.success ? parsed.data : null;
+}
+
 export function toMistakeDto(row: MistakeRecord): MistakeRecordDto {
   return {
     id: row.id,
@@ -56,6 +64,7 @@ export function toMistakeDto(row: MistakeRecord): MistakeRecordDto {
     practiceSessionId: row.practiceSessionId,
     evidence: row.evidence,
     analysisId: row.analysisId,
+    suggestedCategory: suggestedCategory(row),
     status: row.status,
     origin: row.origin,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -427,13 +436,14 @@ export async function deleteMistake(userId: string, id: string): Promise<boolean
   return deleted.length > 0;
 }
 
-/** Confirmed records of one problem, newest first, for the problem page. */
+/** Confirmed records and open AI suggestions of one problem, newest first,
+ *  for the problem page. */
 export async function listProblemMistakes(userId: string, problemId: string) {
   const r = schema.mistakeRecords;
   const rows = await getDb()
     .select()
     .from(r)
-    .where(and(eq(r.userId, userId), eq(r.problemId, problemId), eq(r.status, "confirmed")))
+    .where(and(eq(r.userId, userId), eq(r.problemId, problemId), inArray(r.status, ["confirmed", "candidate"])))
     .orderBy(desc(r.createdAt), desc(r.id))
     .limit(50);
   return rows.map(toMistakeDto);
