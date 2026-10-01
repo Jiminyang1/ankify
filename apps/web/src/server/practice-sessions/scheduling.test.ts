@@ -264,7 +264,8 @@ describe("session ratings", () => {
   });
 
   it("counts session ratings, not initial learning, toward today's reviews", async () => {
-    const today = new Date(Date.now() - 30 * MIN);
+    // Within today (UTC, the default time zone) even just after midnight.
+    const today = new Date(Math.max(new Date().setUTCHours(0, 0, 0, 0), Date.now() - 30 * MIN));
     await insertDueProblem("p1", "one");
     const { session } = await start({ target: { kind: "problem", problemId: "p1" }, mode: "due_review" }, today);
     await finish(session.id, new Date(today.getTime() + 10 * MIN));

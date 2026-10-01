@@ -39,6 +39,8 @@ Thumbs.db
 # Local DB
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 

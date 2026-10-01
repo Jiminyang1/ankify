@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import type { SessionAnalysisStateDto, SuggestionListDto } from "../../packages/contracts/src";
+import type { PracticeSessionCurrentDto, SessionAnalysisStateDto, SuggestionListDto } from "../../packages/contracts/src";
 import { API_ORIGIN, test, expect } from "./fixtures";
 import { newProblem } from "./helpers";
 import type { LeetcodeFixtureState } from "./leetcode-fixture";
@@ -157,5 +157,26 @@ test("the dashboard shows today's counts, recent practice, and focus areas", asy
   await context.addCookies([{ name: "ankify-language", value: "zh", url: API_ORIGIN }]);
   await page.reload();
   await expect(page.getByRole("region", { name: "最近练习" })).toBeVisible({ timeout: 30_000 });
+  await page.close();
+});
+
+test("a problem's page lists its sessions and scheduling timeline, and records what a session handled well", async ({ context, api, leetcode }) => {
+  const { slug, title } = await finishedSession(api, leetcode, "web-history");
+  const { problem } = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  const page = await openWeb(context, `/problems/${problem!.id}`);
+  await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("tab", { name: /Sessions/ }).click();
+  const sessions = page.getByRole("tabpanel");
+  await expect(sessions.getByText("First practice")).toBeVisible();
+  await expect(sessions.getByText("3 submissions, 1 accepted", { exact: false })).toBeVisible();
+  await sessions.getByRole("button", { name: "Confirm" }).click();
+  await expect(sessions.getByText("Handled well:")).toBeVisible();
+  await expect(sessions.getByText("Approach")).toBeVisible();
+
+  await page.getByRole("tab", { name: /History/ }).click();
+  const history = page.getByRole("tabpanel");
+  await expect(history.getByText("First review scheduled")).toBeVisible();
+  await expect(history.getByText(/^Next review /)).toBeVisible();
   await page.close();
 });

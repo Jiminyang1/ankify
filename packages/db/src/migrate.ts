@@ -10,6 +10,10 @@ async function main() {
   const migrationsFolder = resolve(here, "../drizzle");
   const db = getDb();
   await migrate(db, { migrationsFolder });
+  // A local database is shared by separate processes (the dev server and the
+  // QA AI worker). In WAL mode their readers and writers no longer block each
+  // other into SQLITE_BUSY; the mode persists in the file. Turso is untouched.
+  if (!process.env.TURSO_DATABASE_URL) await db.$client.execute("PRAGMA journal_mode = WAL");
   console.log("✓ migrations applied");
 }
 

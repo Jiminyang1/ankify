@@ -943,3 +943,75 @@ Tests:
   titles, and user isolation.
 - Browser: a finished session appears under recent practice as Accepted with
   the weekly line; the focus area links the profile; the page in Chinese.
+
+## Checkpoint 6A.5: problem history
+
+Status: **PASS**. **Phase 6A gate: PASS** (6A.1 to 6A.5). No schema or API
+change.
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 484 tests in 78 files |
+| `pnpm typecheck`, `pnpm lint` (seven warnings), `pnpm build` | PASS |
+| `pnpm test:e2e` | PASS: 26 tests |
+| `pnpm extension:check-manifest` | PASS: 0.3.0 |
+
+`/problems/[id]` (History) gains:
+
+- **Sessions tab:** each practice session with its kind, result, start time,
+  submissions and Accepted count, active minutes, and its rating when one was
+  given.
+  - Skills confirmed as handled well are shown per session.
+  - A completed session offers "Handled well" (`POST
+    /api/mistakes/improvements`), the user-facing path to the improvement
+    evidence of 4A.
+- **History tab** becomes the scheduling timeline: ratings that were not
+  undone, and initial-review schedules. Each entry shows its method (LeetCode
+  solve or legacy self-recall), the next review date it set, and the FSRS
+  snapshot.
+- The rail shows the next review date.
+- English and Chinese strings.
+
+Found and fixed while testing and gating:
+
+- **Stale improvement choice.** After a confirmation, the improvement
+  control kept the confirmed skill as its selected value, though that skill
+  was no longer offered, so it could be submitted again. The selection is now
+  derived from the remaining skills.
+- **Midnight flake in a Phase 2 test.** "counts session ratings, not initial
+  learning, toward today's reviews" anchored on `now - 30 min` and failed
+  within 30 minutes after midnight UTC. It now stays within the current UTC
+  day.
+- **Fixture id cascade in the browser harness.** One transient
+  `SQLITE_BUSY` in the dev server failed one test. Playwright restarted its
+  worker, which reloaded `tests/e2e/helpers.ts` and reset the fixture
+  problems' LeetCode ids. "New" problems then resolved by id to existing
+  ones and started as voluntary practice, failing thirteen tests. Fixture ids
+  now start at a per-load offset.
+- **The underlying lock flake.** The QA database used SQLite's rollback
+  journal with a 0 ms busy timeout. Reads from one process (the QA worker
+  polls every 250 ms) could make the other process's commits fail at once
+  with `SQLITE_BUSY`, which surfaced repeatedly just after midnight UTC.
+  `migrate.ts` now sets `journal_mode = WAL` on local file databases (local
+  and QA; the mode persists in the file; Turso is untouched), so readers and
+  writers no longer block each other. The rerun logged no lock errors.
+  `*.db-wal` and `*.db-shm` are gitignored.
+
+Tests:
+
+- DB:
+  - the timeline holds the initial schedule and a kept rating with its next
+    due date, and excludes an undone rating;
+  - sessions newest first, with per-session improvements;
+  - user isolation.
+- Mutation check: including undone ratings fails the test.
+- Browser: a finished session's problem page lists it in Sessions; "Handled
+  well" records a skill; History shows the first-review schedule with its
+  date.
+
+Phase 6A acceptance: Dashboard (`/today`), History (`/problems/[id]`),
+Mistake Profile (`/analysis`), Suggestions (`/suggestions`), and Settings work
+on the same backend items as the extension. Browser tests cover each surface
+in English, and every surface except History in Chinese.
+
+Deferred from 6A: profile filters and the quiz-accuracy tier (6A.3).

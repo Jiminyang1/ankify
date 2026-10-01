@@ -2,7 +2,11 @@ import type { Page } from "@playwright/test";
 import { expect } from "./fixtures";
 import type { LeetcodeFixtureState } from "./leetcode-fixture";
 
-let nextFrontendId = 3000;
+// Playwright restarts its worker after a failure, which reloads this module.
+// A fixed start would then reuse ids of problems already in the run's
+// database, and a "new" problem would resolve to an existing one by its
+// LeetCode id, so each load starts at its own offset.
+let nextFrontendId = 10_000 + (Date.now() % 1_000_000) * 100;
 
 /** A problem the QA deck has never seen, served by the LeetCode fixture. */
 export function newProblem(state: LeetcodeFixtureState, name: string) {

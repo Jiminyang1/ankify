@@ -400,7 +400,9 @@ extension reuses the web session cookie, and production CORS allows only
 completed sessions, recent practice, focus areas from the profile, today's
 suggestions) and onboarding, `/review` resizable workspace (question, Quiz/Cards/Submissions/
 Notes, optional Coach) with keyboard shortcuts and Undo, `/problems` and
-`/problems/[id]` (archive/unarchive/delete, Mistakes tab), `/suggestions` (today's
+`/problems/[id]` (archive/unarchive/delete, Mistakes tab, Sessions tab with
+"handled well" improvement confirmation, History as the scheduling timeline
+of ratings and initial-review schedules, next review date), `/suggestions` (today's
 new-problem suggestions, the same items as the popup), `/analysis` (the mistake profile, then the FSRS dashboard),
 `/settings` (AI provider, AI credits, language/region, review schedule and
 first-review delay, session-analysis automation, account export/delete), plus `/privacy` and `/terms`.

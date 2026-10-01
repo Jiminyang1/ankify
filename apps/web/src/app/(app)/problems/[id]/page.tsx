@@ -17,6 +17,7 @@ import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
 import { MistakeList } from "./mistake-list";
+import { SessionImprovement } from "./session-improvement";
 import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -41,7 +42,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
-  const { problem, submissions, cards, reviewHistory, mistakes } = detail;
+  const { problem, submissions, cards, timeline, sessions, improvements, mistakes } = detail;
+  const dateFormat = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const ratingBySession = new Map(timeline.flatMap((event) => (event.kind === "rated" && event.practiceSessionId ? [[event.practiceSessionId, event.rating] as const] : [])));
 
   const awaitingInitial = problem.enrollment === "awaiting_initial";
   const isDue = !awaitingInitial && (!problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs());
@@ -92,21 +95,64 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
     );
 
   const historyPanel =
-    reviewHistory.length === 0 ? (
+    timeline.length === 0 ? (
       <EmptyState title={t.detail.noReviews} description={t.detail.reviewsHelp} />
     ) : (
       <ul className="divide-y divide-border">
-        {reviewHistory.map((ev) => (
-          <li key={ev.id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
-            <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{ratingLabel(ev.fsrsRating, t)}</Pill>
-            <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
-            {ev.fsrsStabilitySnap != null && (
-              <span className="text-xs text-muted tabular-nums">
-                s{ev.fsrsStabilitySnap.toFixed(1)} d{(ev.fsrsDifficultySnap ?? 0).toFixed(1)}
+        {timeline.map((event) => (
+          <li key={event.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
+            {event.kind === "rated" ? (
+              <Pill tone={RATING_TONES[event.rating!] ?? "neutral"}>{ratingLabel(event.rating, t)}</Pill>
+            ) : (
+              <Pill tone="accent">{t.sessions.scheduled}</Pill>
+            )}
+            <span className="text-muted">{formatRelative(event.occurredAt)}</span>
+            {event.method && <span className="text-xs text-muted">{t.sessions.methods[event.method] ?? event.method}</span>}
+            {event.nextDue && <span className="text-xs text-muted">{t.sessions.nextDue(dateFormat.format(new Date(event.nextDue)))}</span>}
+            {event.stability != null && (
+              <span className="ml-auto text-xs text-muted tabular-nums">
+                s{event.stability.toFixed(1)} d{(event.difficulty ?? 0).toFixed(1)}
               </span>
             )}
           </li>
         ))}
+      </ul>
+    );
+
+  const sessionsPanel =
+    sessions.length === 0 ? (
+      <EmptyState title={t.sessions.none} description={t.sessions.noneHelp} />
+    ) : (
+      <ul className="divide-y divide-border">
+        {sessions.map((session) => {
+          const state = session.status === "completed" ? (session.outcome ?? "unknown") : session.status;
+          const rating = ratingBySession.get(session.id);
+          const confirmed = improvements.filter((item) => item.practiceSessionId === session.id).map((item) => item.category);
+          return (
+            <li key={session.id} className="space-y-2 py-3 text-sm first:pt-0 last:pb-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{t.dashboard.kinds[session.type] ?? session.type}</span>
+                <Pill tone={state === "accepted" ? "success" : state === "failed" ? "danger" : "neutral"}>{t.dashboard.states[state] ?? state}</Pill>
+                {rating != null && <Pill tone={RATING_TONES[rating] ?? "neutral"}>{t.sessions.ratedAs(String(ratingLabel(rating, t)))}</Pill>}
+                <span className="ml-auto text-xs text-muted">{formatRelative(session.timing.startedAt)}</span>
+              </div>
+              <p className="text-xs text-muted">
+                {t.sessions.evidence(session.evidence.submissions, session.evidence.accepted)} · {t.sessions.activeMinutes(Math.round(session.timing.activeMs / 60_000))}
+              </p>
+              {confirmed.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="text-muted">{t.sessions.handledWell}:</span>
+                  {confirmed.map((category) => (
+                    <Pill key={category} tone="success">
+                      {t.mistakes.categories[category]}
+                    </Pill>
+                  ))}
+                </div>
+              )}
+              {session.status === "completed" && <SessionImprovement sessionId={session.id} confirmed={confirmed} />}
+            </li>
+          );
+        })}
       </ul>
     );
 
@@ -119,7 +165,8 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
     { id: "cards", label: t.review.cards, count: cards.length, node: cardsPanel },
     { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
     { id: "mistakes", label: t.mistakes.tab, count: mistakes.length, node: mistakesPanel },
-    { id: "history", label: t.detail.history, count: reviewHistory.length, node: historyPanel },
+    { id: "sessions", label: t.sessions.tab, count: sessions.length, node: sessionsPanel },
+    { id: "history", label: t.detail.history, count: timeline.length, node: historyPanel },
     { id: "notes", label: t.review.notes, node: notesPanel },
   ];
 
@@ -180,6 +227,10 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                     )}
                   </>
                 }
+              />
+              <MetaRow
+                label={t.sessions.nextReview}
+                value={!awaitingInitial && problem.fsrsDue ? dateFormat.format(new Date(problem.fsrsDue)) : "—"}
               />
               <MetaRow label={t.detail.lastReviewed} value={formatRelative(problem.fsrsLastReview)} />
               <MetaRow label={t.review.cards} value={cards.length} />
