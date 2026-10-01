@@ -16,7 +16,9 @@ async function openWeb(context: BrowserContext, path: string, language: "en" | "
 }
 
 type Api = <T>(path: string, init?: { body?: unknown; method?: string }) => Promise<T>;
-let nextSubmissionId = 70_000;
+// Time-based (a worker reload must not reuse ids), in a range apart from the
+// LeetCode fixture's.
+let nextSubmissionId = Date.now() * 10;
 
 /** A first practice finished through the API: two failures, then Accepted. */
 async function finishedSession(api: Api, leetcode: LeetcodeFixtureState, name: string) {
@@ -160,7 +162,7 @@ test("the dashboard shows today's counts, recent practice, and focus areas", asy
   await page.close();
 });
 
-test("a problem's page lists its sessions and scheduling timeline, and records what a session handled well", async ({ context, api, leetcode }) => {
+test("a problem's page lists its sessions and scheduling timeline, with no retired \"handled well\" control", async ({ context, api, leetcode }) => {
   const { slug, title } = await finishedSession(api, leetcode, "web-history");
   const { problem } = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
   const page = await openWeb(context, `/problems/${problem!.id}`);
@@ -170,9 +172,8 @@ test("a problem's page lists its sessions and scheduling timeline, and records w
   const sessions = page.getByRole("tabpanel");
   await expect(sessions.getByText("First practice")).toBeVisible();
   await expect(sessions.getByText("3 submissions, 1 accepted", { exact: false })).toBeVisible();
-  await sessions.getByRole("button", { name: "Confirm" }).click();
-  await expect(sessions.getByText("Handled well:")).toBeVisible();
-  await expect(sessions.getByText("Approach")).toBeVisible();
+  await expect(sessions.getByText(/handled well/i)).toHaveCount(0);
+  await expect(sessions.getByRole("combobox")).toHaveCount(0);
 
   await page.getByRole("tab", { name: /History/ }).click();
   const history = page.getByRole("tabpanel");
@@ -196,5 +197,45 @@ test("legacy review, Study Coach, and card controls are retired from the web", a
   await expect(page.getByRole("tab", { name: /Sessions/ })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("tab", { name: /Cards/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Practice on LeetCode" })).toHaveAttribute("href", `https://leetcode.com/problems/${slug}/`);
+  await page.close();
+});
+
+test("a long problem statement uses the page's own scrolling, at desktop and phone widths", async ({ context, api }) => {
+  const slug = `e2e-long-${Date.now()}`;
+  const paragraphs = Array.from({ length: 80 }, (_, index) => `<p>Line ${index + 1} of a long statement.</p>`).join("");
+  const captured = await api<{ problemId: string }>("/api/capture", {
+    body: { leetcodeSlug: slug, title: "E2E long statement", difficulty: "Easy", url: `https://leetcode.com/problems/${slug}/`, descriptionMd: paragraphs },
+  });
+  const page = await openWeb(context, `/problems/${captured.problemId}`);
+  for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const statement = page.getByRole("tabpanel");
+    await expect(statement.getByText("Line 80 of a long statement.")).toBeAttached();
+    const layout = await statement.evaluate((panel) => {
+      // No element between the statement and the page scrolls on its own.
+      const nested: string[] = [];
+      for (let node = panel.parentElement; node && node !== document.body; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) nested.push(node.className);
+      }
+      const root = document.documentElement;
+      return { nested, pageScrolls: root.scrollHeight > window.innerHeight, horizontalOverflow: root.scrollWidth > window.innerWidth };
+    });
+    expect(layout, `at ${viewport.width}x${viewport.height}`).toEqual({ nested: [], pageScrolls: true, horizontalOverflow: false });
+  }
+  // The last line is reached with the page's scrollbar.
+  await page.getByText("Line 80 of a long statement.").scrollIntoViewIfNeeded();
+  await expect(page.getByText("Line 80 of a long statement.")).toBeInViewport();
+  await page.close();
+});
+
+test("the problems table names its columns in full", async ({ context, panel }) => {
+  void panel; // signs the context in
+  const page = await openWeb(context, "/problems");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const headers = page.getByRole("columnheader");
+  await expect(headers).toHaveText(["Problem", "Difficulty", "Next review", "Reviews", "Times forgotten", "Memory state"]);
+  await page.getByRole("button", { name: "Times forgotten" }).click();
+  await expect(page.getByRole("columnheader", { name: "Times forgotten" })).toHaveAttribute("aria-sort", "ascending");
   await page.close();
 });

@@ -12,10 +12,11 @@ export type WorkspacePanel = {
 };
 
 /**
- * Tabbed "management console" body for the problem detail page. All panels are
- * rendered up front and toggled with `hidden` so client state inside a panel
- * (e.g. card selection) survives tab switches. Server-rendered nodes (Markdown,
- * highlighted code) are passed in as `node`.
+ * Tabbed body of the problem detail page. All panels are rendered up front
+ * and toggled with `hidden` so client state inside a panel survives tab
+ * switches. Server-rendered nodes (Markdown, highlighted code) are passed in
+ * as `node`. Panels grow with their content and the page scrolls: a long
+ * statement is read with the browser's own scrollbar, never in a nested box.
  */
 export function ProblemWorkspace({
   panels,
@@ -48,7 +49,7 @@ export function ProblemWorkspace({
   };
 
   return (
-    <section className="flex h-[42rem] max-h-[calc(100vh-3rem)] min-h-[28rem] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+    <section className="flex min-h-[28rem] min-w-0 flex-col rounded-xl border border-border bg-surface shadow-card">
       <div
         role="tablist"
         aria-label={t.detail.problemContent}
@@ -93,7 +94,7 @@ export function ProblemWorkspace({
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-w-0 flex-1">
         {panels.map((p) => (
           <div
             key={p.id}

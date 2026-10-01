@@ -14,7 +14,6 @@ import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { NotesEditor } from "./notes-editor";
 import { MistakeList } from "./mistake-list";
-import { SessionImprovement } from "./session-improvement";
 import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -39,7 +38,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
-  const { problem, submissions, timeline, sessions, improvements, mistakes } = detail;
+  const { problem, submissions, timeline, sessions, mistakes } = detail;
   const dateFormat = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const ratingBySession = new Map(timeline.flatMap((event) => (event.kind === "rated" && event.practiceSessionId ? [[event.practiceSessionId, event.rating] as const] : [])));
 
@@ -95,7 +94,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
         {sessions.map((session) => {
           const state = session.status === "completed" ? (session.outcome ?? "unknown") : session.status;
           const rating = ratingBySession.get(session.id);
-          const confirmed = improvements.filter((item) => item.practiceSessionId === session.id).map((item) => item.category);
           return (
             <li key={session.id} className="space-y-2 py-3 text-sm first:pt-0 last:pb-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -107,17 +105,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
               <p className="text-xs text-muted">
                 {t.sessions.evidence(session.evidence.submissions, session.evidence.accepted)} · {t.sessions.activeMinutes(Math.round(session.timing.activeMs / 60_000))}
               </p>
-              {confirmed.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-muted">{t.sessions.handledWell}:</span>
-                  {confirmed.map((category) => (
-                    <Pill key={category} tone="success">
-                      {t.mistakes.categories[category]}
-                    </Pill>
-                  ))}
-                </div>
-              )}
-              {session.status === "completed" && <SessionImprovement sessionId={session.id} confirmed={confirmed} />}
             </li>
           );
         })}

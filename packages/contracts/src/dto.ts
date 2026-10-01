@@ -168,7 +168,6 @@ export type ProblemListItemDto = {
   enrollment: "enrolled" | "awaiting_initial";
   archivedAt: string | null;
   createdAt: string;
-  cardTotal: number;
 };
 
 export type ProblemsListPayloadDto = {
@@ -325,14 +324,6 @@ export type MistakeListPayloadDto = {
   nextCursor: string | null;
 };
 
-export type PracticeImprovementDto = {
-  id: string;
-  problemId: string;
-  practiceSessionId: string;
-  category: SkillDimensionId;
-  createdAt: string;
-};
-
 export type MistakeProfileCategoryDto = {
   category: SkillDimensionId;
   /** 0-1: smoothed failure rate times confidence; `weak` from 0.25. */
@@ -344,7 +335,8 @@ export type MistakeProfileCategoryDto = {
   problems: number;
   unresolved: number;
   resolved: number;
-  improvements: number;
+  /** Later accepted sessions on its problems without this mistake again. */
+  cleanReviews: number;
   lastSeenAt: string | null;
   trend: { current: number; previous: number; periodDays: number };
   examples: { mistakeId: string; problemId: string; problemTitle: string; summary: string | null; createdAt: string; practiceSessionId: string | null }[];

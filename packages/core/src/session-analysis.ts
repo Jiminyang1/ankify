@@ -10,7 +10,7 @@ export type AnalysisAttempt = {
   codeHash: string | null;
 };
 
-export type AutomaticAnalysisTrigger = "repeated_failures" | "pattern_recurrence" | "improvement_test";
+export type AutomaticAnalysisTrigger = "repeated_failures" | "pattern_recurrence";
 
 export type AutomaticAnalysisInput = {
   outcome: "accepted" | "failed" | "unknown" | null;
@@ -19,8 +19,6 @@ export type AutomaticAnalysisInput = {
   /** A confirmed pattern on a different problem shares a topic and a failing
    *  verdict with this session. */
   matchesConfirmedPattern: boolean;
-  /** The user confirmed this accepted session as handling an established pattern. */
-  testsImprovement: boolean;
 };
 
 const distinct = (hashes: (string | null)[]) => new Set(hashes.filter((hash): hash is string => hash != null)).size;
@@ -28,7 +26,6 @@ const distinct = (hashes: (string | null)[]) => new Set(hashes.filter((hash): ha
 /**
  * - Two or more failed submissions with distinct code, then Accepted.
  * - A failure resembling an existing confirmed pattern on another problem.
- * - An accepted session the user marked as testing an established pattern.
  * Each also needs code: an analysis without code can only restate verdicts.
  */
 export function automaticAnalysisTrigger(input: AutomaticAnalysisInput): AutomaticAnalysisTrigger | null {
@@ -39,8 +36,6 @@ export function automaticAnalysisTrigger(input: AutomaticAnalysisInput): Automat
   if (firstAccepted !== -1 && distinct(failedWithCode) >= 2) return "repeated_failures";
   const anyFailedCode = input.attempts.some((attempt) => attempt.verdict !== "Accepted" && attempt.codeHash != null);
   if (input.matchesConfirmedPattern && anyFailedCode) return "pattern_recurrence";
-  const acceptedCode = input.attempts.some((attempt) => attempt.verdict === "Accepted" && attempt.codeHash != null);
-  if (input.testsImprovement && input.outcome === "accepted" && acceptedCode) return "improvement_test";
   return null;
 }
 

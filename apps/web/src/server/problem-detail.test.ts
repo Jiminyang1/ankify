@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { getDb, schema } from "@ankify/db";
-import { createImprovement } from "./mistakes";
 import { runSessionCommand, startPracticeSession } from "./practice-sessions/commands";
 import { ratePracticeSession } from "./practice-sessions/scheduling";
 import { loadProblemDetail } from "./problem-detail";
@@ -26,7 +25,7 @@ beforeAll(async () => {
 });
 afterAll(() => testDb.cleanup());
 
-it("shows the problem's sessions, improvements, and scheduling timeline, without undone ratings", async () => {
+it("shows the problem's sessions and scheduling timeline, without undone ratings", async () => {
   // First practice, scheduled for its first review a day later.
   const first = await startPracticeSession(USER, {
     requestId: uuid(), ownerToken: TAB, mode: "practice", baseline: { state: "none" }, supersedePendingRating: false,
@@ -35,8 +34,6 @@ it("shows the problem's sessions, improvements, and scheduling timeline, without
   if (!first.ok) throw new Error(first.error);
   const problemId = first.response.problem.id;
   await runSessionCommand(USER, first.response.session.id, { type: "finish", requestId: uuid(), ownerToken: TAB, result: "solved", occurredAt: at(MIN).toISOString() }, at(MIN));
-  const improved = await createImprovement(USER, { requestId: uuid(), practiceSessionId: first.response.session.id, category: "edge_case" }, at(2 * MIN));
-  expect(improved.ok).toBe(true);
 
   // Two reviews: the first rating stays, the second is undone.
   const review = async (startAt: Date, rating: 1 | 3) => {
@@ -61,6 +58,5 @@ it("shows the problem's sessions, improvements, and scheduling timeline, without
   expect(detail.timeline[0]!.nextDue).toBe(kept.nextDue);
   expect(detail.timeline[0]!.practiceSessionId).toBe(kept.sessionId);
   expect(detail.sessions.map((session) => session.type)).toEqual(["scheduled_review", "scheduled_review", "initial_learning"]);
-  expect(detail.improvements).toEqual([{ id: expect.any(String), practiceSessionId: first.response.session.id, category: "edge_case" }]);
   expect(await loadProblemDetail(OTHER, problemId)).toBeNull();
 });

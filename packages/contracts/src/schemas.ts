@@ -422,17 +422,6 @@ export type MistakeCreateInput = z.infer<typeof mistakeCreateSchema>;
 /** What a client sends: defaulted fields (tags, evidence) may be omitted. */
 export type MistakeCreateRequest = z.input<typeof mistakeCreateSchema>;
 
-/** POST /api/mistakes/improvements — the user confirms a session handled a
- *  dimension well; the only evidence that lowers a dimension's weakness. */
-export const practiceImprovementCreateSchema = z
-  .object({
-    requestId: z.string().uuid(),
-    practiceSessionId: z.string().min(1).max(64),
-    category: skillDimensionEnum,
-  })
-  .strict();
-export type PracticeImprovementCreateInput = z.infer<typeof practiceImprovementCreateSchema>;
-
 /** PATCH /api/mistakes/:id — edit, resolve, or confirm/dismiss a record. */
 export const mistakePatchSchema = z
   .object({

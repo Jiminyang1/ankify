@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   computeMistakeProfile,
   summarizeSession,
-  type ProfileImprovementInput,
   type ProfileInput,
   type ProfileMistakeInput,
   type ProfileSessionInput,
@@ -47,7 +46,7 @@ function session(overrides: Partial<ProfileSessionInput> = {}): ProfileSessionIn
 }
 
 const profile = (input: Partial<ProfileInput>) =>
-  computeMistakeProfile({ now, sessions: [], mistakes: [], improvements: [], legacyRatings: [], ...input });
+  computeMistakeProfile({ now, sessions: [], mistakes: [], legacyRatings: [], ...input });
 const category = (result: ReturnType<typeof profile>, name: string) => result.categories.find((item) => item.category === name);
 
 describe("mistake profile", () => {
@@ -94,21 +93,35 @@ describe("mistake profile", () => {
     expect(category(twoProblems, "edge_case")).toMatchObject({ ready: true, weak: true });
   });
 
-  it("treats Accepted and Good ratings as topic success, never as mastery of a dimension", () => {
+  it("treats Accepted and Good ratings on other problems as topic success, never as mastery of a dimension", () => {
     const mistakes = [mistake({ practiceSessionId: "a" })];
-    const withSuccess = profile({ mistakes, sessions: [session({ rating: 4 }), session({ rating: 3 }), session()] });
+    const withSuccess = profile({ mistakes, sessions: [session({ rating: 4, problemId: "p2" }), session({ rating: 3, problemId: "p2" }), session({ problemId: "p3" })] });
     expect(category(withSuccess, "edge_case")!.weakness).toBeCloseTo(category(profile({ mistakes }), "edge_case")!.weakness, 10);
     const topic = withSuccess.topics.find((item) => item.topic === "Array")!;
     expect(topic).toMatchObject({ sessions: 3, accepted: 3 });
     expect(profile({ sessions: [session({ outcome: "failed" }), session({ outcome: "failed" })] }).topics[0]!.weakness).toBeGreaterThan(topic.weakness);
   });
 
-  it("lowers a dimension only through the user's confirmed improvements", () => {
-    const mistakes = [mistake({ practiceSessionId: "a" }), mistake({ practiceSessionId: "b", problemId: "p2" })];
-    const before = category(profile({ mistakes }), "edge_case")!;
-    const improvement = (sessionId: string): ProfileImprovementInput => ({ practiceSessionId: sessionId, problemId: "p3", category: "edge_case", at: daysAgo(0) });
-    const after = category(profile({ mistakes, improvements: [improvement("c"), improvement("c"), improvement("d")] }), "edge_case")!;
-    expect(after).toMatchObject({ improvements: 2 });
+  it("lowers a dimension through clean reviews: later accepted sessions on its problems without the mistake again", () => {
+    const failed = session({ id: "a", outcome: "failed", completedAt: daysAgo(5) });
+    const mistakes = [
+      mistake({ practiceSessionId: "a", createdAt: daysAgo(4) }),
+      mistake({ practiceSessionId: "b", problemId: "p2" }),
+      // Still only suggested for session "d": not clean, not counted against.
+      mistake({ practiceSessionId: "d", status: "candidate", origin: "ai_suggested" }),
+    ];
+    const before = category(profile({ mistakes, sessions: [failed] }), "edge_case")!;
+    const sessions = [
+      failed,
+      session({ id: "c", completedAt: daysAgo(1) }), // clean review
+      session({ id: "d", completedAt: daysAgo(1) }), // the mistake was suggested again
+      session({ id: "e", problemId: "p3", completedAt: daysAgo(1) }), // no mistake on that problem
+      session({ id: "f", completedAt: daysAgo(1), rating: 1 }), // rated Again
+      session({ id: "g", completedAt: daysAgo(6) }), // before the mistake
+      session({ id: "h", completedAt: daysAgo(1), outcome: "failed" }),
+    ];
+    const after = category(profile({ mistakes, sessions }), "edge_case")!;
+    expect(after).toMatchObject({ cleanReviews: 1, contexts: 2 });
     expect(after.weakness).toBeLessThan(before.weakness);
   });
 

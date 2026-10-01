@@ -58,7 +58,7 @@ Tables (all in `packages/db/src/schema.ts`):
 | `quiz_sessions` | 5-item quizzes (`active | completed | archived`), answers, score |
 | `review_events` | Append-only history with FSRS snapshots; ratings are undone by stamping `undoneAt`; newer events record session, policy, method, and schedule-revision provenance |
 | `mistake_records` | Causes of failure, confirmed by the user (or AI candidates awaiting confirmation), linked to a submission, quiz answer, rating, or practice session, with structured evidence references; partial unique indexes dedupe per source and category (see MISTAKE_PROFILE_PLAN.md) |
-| `practice_improvements` | The user's confirmation that a completed session handled a skill dimension well; the only evidence that lowers a dimension's weakness |
+| `practice_improvements` | Retired "Skill handled well" confirmations. Kept for history and export; no longer written or counted (improvement is derived from clean reviews) |
 | `ai_jobs` | Durable async card, quiz, and session-analysis commands (see below) |
 | `session_analyses` | Immutable session-analysis results, cached per evidence version, analyzer version, provider, and model (see Session analysis) |
 | `suggestion_candidates` | Verified LeetCode metadata (title, difficulty, paid flag, topics, source, `verified_at`) of problems that may be suggested |
@@ -102,11 +102,17 @@ Tables (all in `packages/db/src/schema.ts`):
     minute-scale learning steps), kept for old clients until cutover. It
     refuses problems still awaiting initial learning.
 - `POST /api/practice-sessions/:id/rating` is the exactly-once session rating:
-  a completed review (due, or explicitly early) whose rating is pending or
-  deferred and whose problem schedule is unchanged since the session started.
-  One rating event per session is enforced by a unique index; the response is
-  stored for replay. Voluntary practice, capture, and dashboard visits never
-  change the schedule. Deferred ratings expire 24 hours after completion.
+  a completed review (due, or explicitly early) whose rating is pending (or
+  `deferred`, from the retired "Rate later") and whose problem schedule is
+  unchanged since the session started. One rating event per session is
+  enforced by a unique index; the response is stored for replay. Voluntary
+  practice, capture, and dashboard visits never change the schedule.
+- The rating is due right after Finish: rate, or skip (`dismiss_rating`).
+  `defer_rating` answers `rating_defer_retired`. An unresolved rating
+  expires 24 hours after completion (computed on read) without touching
+  FSRS. A due or early review does not start while another problem's
+  finished review awaits its rating (`rating_pending` names that session and
+  problem).
 - Undo (`undo_rating` session command, or `POST /api/review/undo`) restores the
   event's `metadata.undo` snapshot. It is allowed only while the event still
   accounts for the current revision: the revision must equal the event's plus
@@ -174,8 +180,11 @@ Details: [MISTAKE_PROFILE_PLAN.md](MISTAKE_PROFILE_PLAN.md).
   legacy source, category) counts once, only confirmed records weigh, AI
   candidates are listed apart, and nothing derived is stored, so Undo,
   dismissal, and resolution take effect immediately.
-- Accepted verdicts and Good/Easy ratings are topic success, never mastery of
-  a dimension; only `practice_improvements` lower a dimension's weakness.
+- Accepted verdicts and Good/Easy ratings are topic success, not mastery of
+  a dimension. A dimension's weakness is lowered by *clean reviews*, derived
+  on read: a later completed, accepted session (not rated Again) on a problem
+  with a confirmed mistake of that dimension, where the session has no
+  record (confirmed or suggested) of it.
 
 ## AI configuration and hosted keys
 
@@ -232,7 +241,7 @@ Card and quiz generation never run inside the request:
 One model call explains one completed practice session (`server/session-analysis/`).
 
 - **Start**: `POST /api/ai-jobs` with `session_analyze` (manual), or planned inside
-  the finish (or improvement) transaction when automatic analysis is on for the
+  the finish transaction when automatic analysis is on for the
   deployment (`ANKIFY_AUTOMATIC_ANALYSIS=enabled`), for the user (settings
   `analysis.automatic`), and the session qualifies (`automaticAnalysisTrigger()`
   in core). Only the user's own key is accepted, at creation and again before
@@ -418,7 +427,7 @@ extension reuses the web session cookie, and production CORS allows only
 - `/problems` and `/problems/[id]`:
   - archive, unarchive, delete;
   - the Mistakes tab;
-  - the Sessions tab, with "handled well" improvement confirmation;
+  - the Sessions tab (evidence, active time, rating);
   - History as the scheduling timeline of ratings and initial-review
     schedules;
   - the next review date;

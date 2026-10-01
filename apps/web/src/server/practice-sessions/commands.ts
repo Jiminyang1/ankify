@@ -380,7 +380,7 @@ export async function runSessionCommand(
           problem = (await initializeProblemSchedule(tx, userId, next, completed.at, initialReviewDelayHours, now)) ?? problem;
         }
         // The automatic analysis intent commits with the completion.
-        if (automaticAnalysis) plannedAnalysis = await planAutomaticAnalysis(tx, userId, next.id, automaticAnalysis, {}, now);
+        if (automaticAnalysis) plannedAnalysis = await planAutomaticAnalysis(tx, userId, next.id, automaticAnalysis, now);
         break;
       }
       case "abandon": {

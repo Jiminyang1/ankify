@@ -6,14 +6,11 @@ import type {
   MistakeListQuery,
   MistakePatchInput,
   MistakeRecordDto,
-  PracticeImprovementCreateInput,
-  PracticeImprovementDto,
 } from "@ankify/contracts";
-import { getDb, schema, type MistakeRecord, type PracticeImprovement } from "@ankify/db";
+import { getDb, schema, type MistakeRecord } from "@ankify/db";
 import { and, desc, eq, inArray, lt, ne, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { canonicalJson } from "./practice-sessions/digest";
-import { isEstablishedPattern, loadAutomaticAnalysisContext, planAutomaticAnalysis, publishPlannedJob } from "./session-analysis/jobs";
 
 type MistakeSource = {
   submissionId: string | null;
@@ -440,94 +437,4 @@ export async function listProblemMistakes(userId: string, problemId: string) {
     .orderBy(desc(r.createdAt), desc(r.id))
     .limit(50);
   return rows.map(toMistakeDto);
-}
-
-function toImprovementDto(row: PracticeImprovement): PracticeImprovementDto {
-  return {
-    id: row.id,
-    problemId: row.problemId,
-    practiceSessionId: row.practiceSessionId,
-    category: row.category,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
-
-type CreateImprovementResult =
-  | { ok: true; improvement: PracticeImprovementDto; idempotentReplay: boolean; deduplicated: boolean }
-  | { ok: false; error: "session_not_found" | "session_not_completed" | "improvement_request_conflict" };
-
-/** Records that a completed session handled a dimension well. Idempotent per
- *  request id; a second confirmation for the same session and dimension
- *  returns the first. */
-export async function createImprovement(
-  userId: string,
-  input: PracticeImprovementCreateInput,
-  now = new Date(),
-): Promise<CreateImprovementResult> {
-  const i = schema.practiceImprovements;
-  const automaticAnalysis = await loadAutomaticAnalysisContext(userId, now);
-  let plannedAnalysis: string | null = null;
-  const result = await getDb().transaction(async (tx): Promise<CreateImprovementResult> => {
-    const s = schema.practiceSessions;
-    const [session] = await tx
-      .select({ id: s.id, problemId: s.problemId, status: s.status, outcome: s.outcome })
-      .from(s)
-      .where(and(eq(s.id, input.practiceSessionId), eq(s.userId, userId)))
-      .limit(1);
-    if (!session) return { ok: false, error: "session_not_found" };
-
-    const [replay] = await tx.select().from(i).where(and(eq(i.userId, userId), eq(i.requestId, input.requestId))).limit(1);
-    if (replay) {
-      if (replay.practiceSessionId !== input.practiceSessionId || replay.category !== input.category) {
-        return { ok: false, error: "improvement_request_conflict" };
-      }
-      return { ok: true, improvement: toImprovementDto(replay), idempotentReplay: true, deduplicated: false };
-    }
-    if (session.status !== "completed") return { ok: false, error: "session_not_completed" };
-    const [existing] = await tx
-      .select()
-      .from(i)
-      .where(and(eq(i.userId, userId), eq(i.practiceSessionId, session.id), eq(i.category, input.category)))
-      .limit(1);
-    if (existing) return { ok: true, improvement: toImprovementDto(existing), idempotentReplay: false, deduplicated: true };
-    const [created] = await tx
-      .insert(i)
-      .values({
-        id: nanoid(12),
-        userId,
-        problemId: session.problemId,
-        practiceSessionId: session.id,
-        category: input.category,
-        requestId: input.requestId,
-        createdAt: now,
-      })
-      .returning();
-    // An accepted session confirmed as handling an established pattern may
-    // qualify for automatic analysis, planned with the confirmation.
-    if (automaticAnalysis && session.outcome === "accepted" && (await isEstablishedPattern(tx, userId, input.category, now))) {
-      plannedAnalysis = await planAutomaticAnalysis(tx, userId, session.id, automaticAnalysis, { testsImprovement: true }, now);
-    }
-    return { ok: true, improvement: toImprovementDto(created!), idempotentReplay: false, deduplicated: false };
-  });
-  if (result.ok) await publishPlannedJob(plannedAnalysis);
-  return result;
-}
-
-export async function deleteImprovement(userId: string, id: string): Promise<boolean> {
-  const i = schema.practiceImprovements;
-  const deleted = await getDb()
-    .delete(i)
-    .where(and(eq(i.id, id), eq(i.userId, userId)))
-    .returning({ id: i.id });
-  return deleted.length > 0;
-}
-
-export async function listSessionImprovements(userId: string, practiceSessionId: string) {
-  const i = schema.practiceImprovements;
-  const rows = await getDb()
-    .select()
-    .from(i)
-    .where(and(eq(i.userId, userId), eq(i.practiceSessionId, practiceSessionId)))
-    .orderBy(desc(i.createdAt));
-  return rows.map(toImprovementDto);
 }

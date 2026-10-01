@@ -4,7 +4,6 @@ import {
   and,
   desc,
   eq,
-  inArray,
   isNotNull,
   isNull,
   like,
@@ -113,27 +112,7 @@ export async function loadProblemsList(
 
   const hasMore = problemRows.length > limit;
   const problems = hasMore ? problemRows.slice(0, limit) : problemRows;
-  const problemIds = problems.map((problem) => problem.id);
 
-  const cardStats =
-    problemIds.length === 0
-      ? []
-      : await db
-          .select({
-            problemId: schema.cards.problemId,
-            total: sql<number>`count(*)`,
-          })
-          .from(schema.cards)
-          .where(
-            and(
-              eq(schema.cards.userId, userId),
-              eq(schema.cards.aiStatus, "ready"),
-              inArray(schema.cards.problemId, problemIds),
-            ),
-          )
-          .groupBy(schema.cards.problemId);
-
-  const cardByProblem = new Map(cardStats.map((row) => [row.problemId, row.total]));
   const lastProblem = problems.at(-1);
 
   return {
@@ -142,7 +121,6 @@ export async function loadProblemsList(
       fsrsDue: problem.fsrsDue?.toISOString() ?? null,
       archivedAt: problem.archivedAt?.toISOString() ?? null,
       createdAt: problem.createdAt.toISOString(),
-      cardTotal: cardByProblem.get(problem.id) ?? 0,
     })),
     dueCount: dueRow?.count ?? 0,
     serverNow: now.toISOString(),

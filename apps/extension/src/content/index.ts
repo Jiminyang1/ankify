@@ -4,7 +4,6 @@ import type { ContentMessage } from "../shared/protocol";
 import { createLeetcodeClient } from "./leetcode-client";
 import { createPageSession, type BackgroundOutcome, type PageSession } from "./page-session";
 import { mountPanel } from "./panel";
-import { resetEditorToDefault } from "./reset-code";
 
 /**
  * Content script for LeetCode problem pages: tracks the practice session of
@@ -90,7 +89,7 @@ function mount() {
     strings: () => strings(language),
     language: () => language,
     apiOrigin: __ANKIFY_DEFAULT_API_ORIGIN__,
-    actions: { resetEditor: resetEditorToDefault, importHistory: () => importHistory(slug) },
+    actions: { importHistory: () => importHistory(slug) },
   });
   current = { slug, page, panel };
   void page.refresh();

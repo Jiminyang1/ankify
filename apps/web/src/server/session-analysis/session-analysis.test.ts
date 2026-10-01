@@ -10,7 +10,7 @@ import { AiJobRequestError, cancelOwnedAiJob, claimAiJob, decryptJobInput } from
 import { processAiJob } from "../ai-generation/runner";
 import { startAiJobForUser } from "../ai-generation/start";
 import { loadMistakeProfile } from "../mistake-profile";
-import { createImprovement, createMistake, updateMistake } from "../mistakes";
+import { createMistake, updateMistake } from "../mistakes";
 import { ingestSessionObservations, runSessionCommand, startPracticeSession } from "../practice-sessions/commands";
 import { setAiSettings, setAnalysisSettings } from "../settings";
 import { createTestDb } from "../test-db";
@@ -427,15 +427,10 @@ describe("automatic analysis", () => {
     expect(await redispatchStrandedJobs({ now: new Date(createdAt + 2 * MIN) })).toEqual({ stranded: 0, dispatched: 0 });
   });
 
-  it("respects the daily automatic limit and never repeats a session", async () => {
+  it("respects the daily automatic limit", async () => {
     await enable(1);
-    const first = await session(qualifying);
     await session(qualifying);
-    expect(await jobsOf()).toHaveLength(1);
-    // Confirming an improvement later does not bring a second automatic job.
-    await getDb().update(schema.aiJobs).set({ status: "succeeded", activeDedupKey: null });
-    await setAnalysisSettings(USER, { dailyAutomaticLimit: 5 });
-    await createImprovement(USER, { requestId: uuid(), practiceSessionId: first.sessionId, category: "edge_case" });
+    await session(qualifying);
     expect(await jobsOf()).toHaveLength(1);
   });
 
@@ -461,19 +456,5 @@ describe("automatic analysis", () => {
     const sessions = (await jobsOf()).map((row) => row.practiceSessionId);
     expect(sessions).toContain(related.sessionId);
     expect(sessions).not.toContain(unrelated.sessionId);
-  });
-
-  it("fires when an accepted session is confirmed as handling an established pattern", async () => {
-    const contexts = [await session(["Wrong Answer"]), await session(["Wrong Answer"])];
-    for (const context of contexts) {
-      await createMistake(USER, { sourceType: "practice_session", practiceSessionId: context.sessionId, requestId: uuid(), problemId: context.problemId, primaryCategory: "invariant" });
-    }
-    await enable();
-    const accepted = await session(["Accepted"]);
-    expect(await jobsOf()).toEqual([]);
-    await createImprovement(USER, { requestId: uuid(), practiceSessionId: accepted.sessionId, category: "complexity" });
-    expect(await jobsOf()).toEqual([]);
-    await createImprovement(USER, { requestId: uuid(), practiceSessionId: accepted.sessionId, category: "invariant" });
-    expect(await jobsOf()).toMatchObject([{ trigger: "automatic", practiceSessionId: accepted.sessionId }]);
   });
 });

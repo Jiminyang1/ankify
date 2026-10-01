@@ -13,8 +13,9 @@ import type { FsrsRating } from "./types";
  * - Only confirmed records make a dimension weak; unconfirmed AI candidates
  *   are reported apart and weigh nothing.
  * - Accepted outcomes and Good/Easy ratings are success evidence for the
- *   problem's topics, not mastery of every dimension; a dimension improves
- *   only through the user's explicit confirmation.
+ *   problem's topics, not mastery of every dimension. A dimension improves
+ *   through a clean review: a later accepted session on a problem where that
+ *   dimension was a confirmed mistake, with no record of it this time.
  * - Interrupted or abandoned sessions and missing evidence are not failures.
  * Decay and smoothing are the daily feed's (21-day half-life, 90-day window).
  */
@@ -47,13 +48,6 @@ export type ProfileMistakeInput = {
   legacySourceKey: string;
 };
 
-export type ProfileImprovementInput = {
-  practiceSessionId: string;
-  problemId: string;
-  category: SkillDimension;
-  at: Date;
-};
-
 /** Ratings from before practice sessions (the legacy review route). */
 export type ProfileLegacyRatingInput = { problemId: string; topics: readonly string[]; rating: FsrsRating; at: Date };
 
@@ -61,7 +55,6 @@ export type ProfileInput = {
   now: Date;
   sessions: readonly ProfileSessionInput[];
   mistakes: readonly ProfileMistakeInput[];
-  improvements: readonly ProfileImprovementInput[];
   legacyRatings: readonly ProfileLegacyRatingInput[];
   /** Length of the trend periods compared (current vs previous). */
   trendDays?: number;
@@ -76,7 +69,8 @@ export const PROFILE_READINESS = {
   categoryProblems: 2,
 } as const;
 
-const IMPROVEMENT_WEIGHT = 2;
+/** A clean review counts as this much success evidence for its dimension. */
+const CLEAN_REVIEW_WEIGHT = 2;
 const OUTCOME_FAILED_WEIGHT = 1;
 
 export type SessionSummary = {
@@ -119,7 +113,8 @@ export type CategoryProfile = {
   problems: number;
   unresolved: number;
   resolved: number;
-  improvements: number;
+  /** Later accepted sessions on its problems without this mistake again. */
+  cleanReviews: number;
   lastSeenAt: Date | null;
   /** Confirmed contexts in the current and the previous trend period. */
   trend: { current: number; previous: number };
@@ -167,6 +162,43 @@ export function contextKey(mistake: Pick<ProfileMistakeInput, "practiceSessionId
   return mistake.practiceSessionId ? `session:${mistake.practiceSessionId}` : `legacy:${mistake.legacySourceKey}`;
 }
 
+/**
+ * Clean reviews per dimension: a completed, accepted session (not rated
+ * Again) on a problem that had a confirmed mistake of that dimension in an
+ * earlier context, where this session has no record of it (confirmed or
+ * still suggested). Each (session, dimension) counts once. Derived on read,
+ * so nothing needs confirming and nothing stored can go stale.
+ */
+function cleanReviews(input: ProfileInput, inWindow: (at: Date) => boolean, weight: (at: Date) => number) {
+  const completedAt = new Map(input.sessions.flatMap((session) => (session.completedAt ? [[session.id, session.completedAt] as const] : [])));
+  /** When each confirmed mistake happened: its session's end, else when it was recorded. */
+  const earlier = new Map<string, Map<SkillDimension, Date>>();
+  const recordedIn = new Set<string>();
+  for (const mistake of input.mistakes) {
+    if (mistake.status === "dismissed") continue;
+    if (mistake.practiceSessionId) recordedIn.add(`${mistake.practiceSessionId}:${mistake.category}`);
+    if (mistake.status !== "confirmed") continue;
+    const at = (mistake.practiceSessionId && completedAt.get(mistake.practiceSessionId)) || mistake.createdAt;
+    const byDimension = earlier.get(mistake.problemId) ?? new Map<SkillDimension, Date>();
+    const first = byDimension.get(mistake.category);
+    if (!first || at < first) byDimension.set(mistake.category, at);
+    earlier.set(mistake.problemId, byDimension);
+  }
+  const result = new Map<SkillDimension, { weight: number; count: number }>();
+  for (const session of input.sessions) {
+    if (session.status !== "completed" || session.outcome !== "accepted" || session.rating === 1 || !session.completedAt) continue;
+    if (!inWindow(session.completedAt)) continue;
+    for (const [dimension, at] of earlier.get(session.problemId) ?? []) {
+      if (session.completedAt <= at || recordedIn.has(`${session.id}:${dimension}`)) continue;
+      const entry = result.get(dimension) ?? { weight: 0, count: 0 };
+      entry.weight += CLEAN_REVIEW_WEIGHT * weight(session.completedAt);
+      entry.count += 1;
+      result.set(dimension, entry);
+    }
+  }
+  return result;
+}
+
 export function computeMistakeProfile(input: ProfileInput, params = FEED_PARAMS): MistakeProfile {
   const { now } = input;
   const trendDays = input.trendDays ?? 30;
@@ -206,18 +238,7 @@ export function computeMistakeProfile(input: ProfileInput, params = FEED_PARAMS)
     }
   }
 
-  const improvements = new Map<SkillDimension, { weight: number; count: number }>();
-  const seenImprovement = new Set<string>();
-  for (const improvement of input.improvements) {
-    if (!inWindow(improvement.at)) continue;
-    const key = `${improvement.practiceSessionId}:${improvement.category}`;
-    if (seenImprovement.has(key)) continue;
-    seenImprovement.add(key);
-    const entry = improvements.get(improvement.category) ?? { weight: 0, count: 0 };
-    entry.weight += IMPROVEMENT_WEIGHT * weight(improvement.at);
-    entry.count += 1;
-    improvements.set(improvement.category, entry);
-  }
+  const improvements = cleanReviews(input, inWindow, weight);
 
   let allFail = 0;
   let allPass = 0;
@@ -253,7 +274,7 @@ export function computeMistakeProfile(input: ProfileInput, params = FEED_PARAMS)
       problems,
       unresolved: contexts.reduce((sum, context) => sum + context.unresolved, 0),
       resolved: contexts.reduce((sum, context) => sum + context.resolved, 0),
-      improvements: improvements.get(dimension)?.count ?? 0,
+      cleanReviews: improvements.get(dimension)?.count ?? 0,
       lastSeenAt: newest[0]?.at ?? null,
       trend: {
         current: contexts.filter((context) => context.at.getTime() >= trendStart).length,

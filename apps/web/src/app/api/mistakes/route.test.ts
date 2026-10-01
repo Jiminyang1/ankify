@@ -4,12 +4,10 @@ import { eq } from "drizzle-orm";
 import { getRequestUser } from "@/server/auth";
 import { ingestSessionObservations, runSessionCommand, startPracticeSession } from "@/server/practice-sessions/commands";
 import { createTestDb } from "@/server/test-db";
-import { DELETE as deleteImprovement } from "./improvements/[id]/route";
-import { GET as listImprovements, POST as postImprovement } from "./improvements/route";
 import { GET as getProfile } from "./profile/route";
 import { POST as postMistake } from "./route";
 
-// Route-level checks for session-sourced mistakes, improvements, and the
+// Route-level checks for session-sourced mistakes and the
 // profile: authentication, validation, and status mapping. Scoring rules are
 // covered in server/mistake-profile.test.ts and core/profile.test.ts.
 vi.mock("@/server/auth", () => ({
@@ -86,39 +84,6 @@ describe("session-sourced mistakes", () => {
   });
 });
 
-describe("improvements", () => {
-  it("confirms, replays, lists, and deletes an improvement for a completed session", async () => {
-    const done = await session(user.id, true);
-    const body = { requestId: crypto.randomUUID(), practiceSessionId: done.sessionId, category: "invariant" };
-
-    const created = await postImprovement(request("/api/mistakes/improvements", body));
-    expect(created.status).toBe(201);
-    const { improvement } = await created.json() as { improvement: { id: string } };
-    expect((await postImprovement(request("/api/mistakes/improvements", body))).status).toBe(200);
-    const listed = await listImprovements(request(`/api/mistakes/improvements?practiceSessionId=${done.sessionId}`));
-    expect(await listed.json()).toMatchObject({ improvements: [{ id: improvement.id, category: "invariant", practiceSessionId: done.sessionId }] });
-
-    const params = { params: Promise.resolve({ id: improvement.id }) };
-    vi.mocked(getRequestUser).mockResolvedValue(other as never);
-    expect((await deleteImprovement(request(`/api/mistakes/improvements/${improvement.id}`, undefined, "DELETE"), params)).status).toBe(404);
-    vi.mocked(getRequestUser).mockResolvedValue(user as never);
-    expect((await deleteImprovement(request(`/api/mistakes/improvements/${improvement.id}`, undefined, "DELETE"), params)).status).toBe(200);
-    expect((await deleteImprovement(request(`/api/mistakes/improvements/${improvement.id}`, undefined, "DELETE"), params)).status).toBe(404);
-  });
-
-  it("maps unknown, open, conflicting, and malformed requests", async () => {
-    const open = await session(user.id, false);
-    const unknown = await postImprovement(request("/api/mistakes/improvements", { requestId: crypto.randomUUID(), practiceSessionId: "missing", category: "approach" }));
-    expect([unknown.status, await unknown.json()]).toEqual([404, { error: "session_not_found" }]);
-    const notDone = await postImprovement(request("/api/mistakes/improvements", { requestId: crypto.randomUUID(), practiceSessionId: open.sessionId, category: "approach" }));
-    expect([notDone.status, await notDone.json()]).toEqual([409, { error: "session_not_completed" }]);
-    expect((await postImprovement(request("/api/mistakes/improvements", { requestId: "nope", practiceSessionId: open.sessionId, category: "approach" }))).status).toBe(400);
-    expect((await postImprovement(request("/api/mistakes/improvements", { requestId: crypto.randomUUID(), practiceSessionId: open.sessionId, category: "approach", extra: 1 }))).status).toBe(400);
-    expect((await postImprovement(request("/api/mistakes/improvements", "{"))).status).toBe(400);
-    expect((await listImprovements(request("/api/mistakes/improvements"))).status).toBe(400);
-  });
-});
-
 describe("profile", () => {
   it("returns the caller's profile, uncached, and requires a session", async () => {
     const done = await session(user.id, true);
@@ -135,6 +100,5 @@ describe("profile", () => {
 
     vi.mocked(getRequestUser).mockResolvedValue(null as never);
     expect((await getProfile(request("/api/mistakes/profile"))).status).toBe(401);
-    expect((await postImprovement(request("/api/mistakes/improvements", {}))).status).toBe(401);
   });
 });

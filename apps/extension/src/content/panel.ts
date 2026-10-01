@@ -34,7 +34,6 @@ const svg = (path: string) => {
 const chevron = (up: boolean) => svg(up ? "M4 10l4-4 4 4" : "M4 6l4 4 4-4");
 
 export type PanelActions = {
-  resetEditor(): Promise<boolean>;
   importHistory(): Promise<{ ok: true; imported: number } | { ok: false; error: string }>;
 };
 
@@ -68,7 +67,7 @@ export function mountPanel(deps: {
   let view: PageView = { kind: "loading" };
   let open = false;
   let local: Local = null;
-  let localBusy: "reset" | "import" | null = null;
+  let localBusy: "import" | null = null;
   let lastStartMode: PracticeModeId = "practice";
   const autoOpened = new Set<string>();
 
@@ -346,12 +345,7 @@ export function mountPanel(deps: {
       h("p", { class: "text" }, status),
       primary,
       secondary,
-      h(
-        "div",
-        { class: "row" },
-        button("reset", t.panel.resetEditor, () => void runLocal("reset"), { variant: "ghost", spinning: localBusy === "reset" }),
-        problem ? button("import", t.panel.importHistory, () => void runLocal("import"), { variant: "ghost", spinning: localBusy === "import" }) : null,
-      ),
+      problem ? h("div", { class: "row" }, button("import", t.panel.importHistory, () => void runLocal("import"), { variant: "ghost", spinning: localBusy === "import" })) : null,
     );
   }
 
@@ -439,22 +433,16 @@ export function mountPanel(deps: {
     );
   }
 
-  async function runLocal(action: "reset" | "import") {
+  async function runLocal(action: "import") {
     const t = deps.strings();
     localBusy = action;
     local = null;
     render();
     try {
-      if (action === "reset") {
-        local = (await deps.actions.resetEditor())
-          ? { tone: "neutral", text: t.panel.resetEditorDone }
-          : { tone: "warning", text: t.panel.resetEditorMissing };
-      } else {
-        const result = await deps.actions.importHistory();
-        local = result.ok
-          ? { tone: "neutral", text: result.imported > 0 ? t.panel.importHistoryDone(result.imported) : t.panel.importHistoryNone }
-          : { tone: "danger", text: t.errors[result.error] ?? t.common.unknownError };
-      }
+      const result = await deps.actions.importHistory();
+      local = result.ok
+        ? { tone: "neutral", text: result.imported > 0 ? t.panel.importHistoryDone(result.imported) : t.panel.importHistoryNone }
+        : { tone: "danger", text: t.errors[result.error] ?? t.common.unknownError };
     } finally {
       localBusy = null;
       render();

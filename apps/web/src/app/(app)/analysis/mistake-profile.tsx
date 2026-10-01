@@ -45,7 +45,7 @@ export function MistakeProfileSection({ profile, t }: { profile: MistakeProfileD
                   <span className="ml-auto text-sm tabular-nums text-muted">{p.contexts(item.contexts, item.problems)}</span>
                 </div>
                 <p className="text-sm text-muted">
-                  {p.detail(item.unresolved, item.resolved, item.improvements)} · {p.trend(item.trend.current, item.trend.previous, item.trend.periodDays)}
+                  {p.detail(item.unresolved, item.resolved, item.cleanReviews)} · {p.trend(item.trend.current, item.trend.previous, item.trend.periodDays)}
                 </p>
                 {item.examples.length > 0 && (
                   <ul className="space-y-1 text-sm">

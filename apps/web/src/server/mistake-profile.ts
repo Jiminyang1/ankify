@@ -41,12 +41,11 @@ export async function loadMistakeProfile(userId: string, now = new Date()): Prom
   const p = schema.problems;
   const m = schema.mistakeRecords;
   const e = schema.reviewEvents;
-  const i = schema.practiceImprovements;
   const o = schema.practiceSessionSubmissions;
   // Joins, not id lists: a long history must not hit the host-parameter limit.
   const sessionInWindow = and(eq(ps.userId, userId), or(gte(ps.completedAt, since), and(isNull(ps.completedAt), gte(ps.startedAt, since))));
 
-  const [sessionRows, mistakeRows, improvementRows, legacyRatingRows, observationRows, sessionRatingRows] = await Promise.all([
+  const [sessionRows, mistakeRows, legacyRatingRows, observationRows, sessionRatingRows] = await Promise.all([
     db
       .select({ session: ps, title: p.title, topicTags: p.topicTags })
       .from(ps)
@@ -57,7 +56,6 @@ export async function loadMistakeProfile(userId: string, now = new Date()): Prom
       .from(m)
       .innerJoin(p, and(eq(p.id, m.problemId), eq(p.userId, m.userId)))
       .where(and(eq(m.userId, userId), gte(m.createdAt, since), ne(m.status, "dismissed"))),
-    db.select().from(i).where(and(eq(i.userId, userId), gte(i.createdAt, since))),
     db
       .select({ problemId: e.problemId, topicTags: p.topicTags, rating: e.fsrsRating, occurredAt: e.occurredAt })
       .from(e)
@@ -132,7 +130,6 @@ export async function loadMistakeProfile(userId: string, now = new Date()): Prom
     trendDays: TREND_DAYS,
     sessions,
     mistakes,
-    improvements: improvementRows.map((row) => ({ practiceSessionId: row.practiceSessionId, problemId: row.problemId, category: row.category, at: row.createdAt })),
     legacyRatings: legacyRatingRows.map((row) => ({ problemId: row.problemId, topics: row.topicTags, rating: row.rating as FsrsRating, at: row.occurredAt })),
   });
 
@@ -163,7 +160,7 @@ export async function loadMistakeProfile(userId: string, now = new Date()): Prom
       problems: category.problems,
       unresolved: category.unresolved,
       resolved: category.resolved,
-      improvements: category.improvements,
+      cleanReviews: category.cleanReviews,
       lastSeenAt: category.lastSeenAt?.toISOString() ?? null,
       trend: { ...category.trend, periodDays: TREND_DAYS },
       examples: category.exampleIds.slice(0, MAX_EXAMPLES).map(describe),

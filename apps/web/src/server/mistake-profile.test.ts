@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { iterateAccountExport } from "./account-export";
 import { captureProblem } from "./capture";
 import { loadMistakeProfile } from "./mistake-profile";
-import { createImprovement, createMistake, deleteImprovement, updateMistake } from "./mistakes";
+import { createMistake, updateMistake } from "./mistakes";
 import { ingestSessionObservations, runSessionCommand, startPracticeSession } from "./practice-sessions/commands";
 import { ratePracticeSession } from "./practice-sessions/scheduling";
 import { undoLatestProblemReview } from "./review-commands";
@@ -202,43 +202,34 @@ describe("mistake profile", () => {
     expect(profile.signals.sessions).toMatchObject({ completed: 3, accepted: 2, failed: 1 });
   });
 
-  it("confirms improvements only for completed sessions, idempotently, and lets them lower a weakness", async () => {
+  it("lowers a weakness through a later clean review of the same problem; retired improvement rows stay exported but count for nothing", async () => {
     const a = await practiced(["Wrong Answer"]);
     const b = await practiced(["Wrong Answer"]);
-    const c = await practiced(["Accepted"]);
     for (const context of [a, b]) {
       await record({ sourceType: "practice_session", practiceSessionId: context.sessionId, requestId: uuid(), problemId: context.problemId, primaryCategory: "edge_case" });
     }
-    const before = (await category("edge_case"))!.weakness;
-    const request = { requestId: uuid(), practiceSessionId: c.sessionId, category: "edge_case" as const };
-    const created = await createImprovement(USER, request);
-    expect(created).toMatchObject({ ok: true, idempotentReplay: false, deduplicated: false });
-    expect(await createImprovement(USER, request)).toMatchObject({ ok: true, idempotentReplay: true });
-    expect(await createImprovement(USER, { ...request, requestId: uuid() })).toMatchObject({ ok: true, deduplicated: true });
-    expect(await createImprovement(USER, { ...request, category: "approach" })).toEqual({ ok: false, error: "improvement_request_conflict" });
-    expect(await createImprovement(OTHER, { ...request, requestId: uuid() })).toEqual({ ok: false, error: "session_not_found" });
-    expect(await category("edge_case")).toMatchObject({ improvements: 1 });
-    expect((await category("edge_case"))!.weakness).toBeLessThan(before);
+    // A "Skill handled well" row from before the feature was retired.
+    await getDb().insert(schema.practiceImprovements).values({ id: "legacy-improvement", userId: USER, problemId: b.problemId, practiceSessionId: b.sessionId, category: "edge_case", requestId: uuid(), createdAt: at(30 * MIN) });
+    const before = (await category("edge_case"))!;
+    expect(before).toMatchObject({ cleanReviews: 0 });
 
-    if (!created.ok) return;
+    // Practicing problem a again, accepted, with no edge-case mistake this time.
+    // After both earlier sessions (their start times grow with the problem counter).
+    const startAt = at((problemCounter + 1) * 10 * MIN);
+    const again = await startPracticeSession(USER, { requestId: uuid(), target: { kind: "problem", problemId: a.problemId }, mode: "practice", ownerToken: TAB, baseline: { state: "none" }, supersedePendingRating: false }, startAt);
+    if (!again.ok) throw new Error(again.error);
+    await ingestSessionObservations(USER, again.response.session.id, {
+      observations: [{ leetcodeSubmissionId: "77001", verdict: "Accepted", submittedAt: new Date(startAt.getTime() + MIN).toISOString(), detail: { language: "python3", code: "fixed" } }],
+    }, new Date(startAt.getTime() + 2 * MIN));
+    await runSessionCommand(USER, again.response.session.id, { type: "finish", requestId: uuid(), ownerToken: TAB, result: "solved", occurredAt: new Date(startAt.getTime() + 3 * MIN).toISOString() }, new Date(startAt.getTime() + 3 * MIN));
+
+    const after = (await category("edge_case"))!;
+    expect(after).toMatchObject({ cleanReviews: 1, contexts: 2 });
+    expect(after.weakness).toBeLessThan(before.weakness);
+
     const exported: { type: string; data: unknown }[] = [];
     for await (const row of iterateAccountExport({ id: USER, name: "Owner", email: "profile@example.test", image: null })) exported.push(row);
-    expect(exported.filter((row) => row.type === "practice_improvement")).toMatchObject([{ data: { id: created.improvement.id, practiceSessionId: c.sessionId, category: "edge_case" } }]);
-    expect(exported.filter((row) => row.type === "mistake_record").map((row) => row.data)).toMatchObject([
-      { practiceSessionId: expect.any(String), evidence: [] },
-      { practiceSessionId: expect.any(String), evidence: [] },
-    ]);
-
-    expect(await deleteImprovement(OTHER, created.improvement.id)).toBe(false);
-    expect(await deleteImprovement(USER, created.improvement.id)).toBe(true);
-    expect((await category("edge_case"))!.weakness).toBeCloseTo(before, 6);
-  });
-
-  it("refuses to confirm an improvement for a session that is not completed", async () => {
-    const started = await startPracticeSession(USER, { requestId: uuid(), target: { kind: "leetcode", problem: meta("open", 7777) }, mode: "practice", ownerToken: TAB, baseline: { state: "none" }, supersedePendingRating: false }, at(0));
-    if (!started.ok) throw new Error(started.error);
-    expect(await createImprovement(USER, { requestId: uuid(), practiceSessionId: started.response.session.id, category: "approach" }))
-      .toEqual({ ok: false, error: "session_not_completed" });
+    expect(exported.filter((row) => row.type === "practice_improvement")).toMatchObject([{ data: { id: "legacy-improvement", category: "edge_case" } }]);
   });
 
   it("shows nothing of another user's practice", async () => {

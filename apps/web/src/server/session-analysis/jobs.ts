@@ -1,5 +1,5 @@
-import type { AiJobCreateRequestInput, AnalysisTrigger, SkillDimensionId } from "@ankify/contracts";
-import { automaticAnalysisTrigger, hasAnalyzableCode, PROFILE_READINESS } from "@ankify/core";
+import type { AiJobCreateRequestInput, AnalysisTrigger } from "@ankify/contracts";
+import { automaticAnalysisTrigger, hasAnalyzableCode } from "@ankify/core";
 import { getDb, schema, type AiJob } from "@ankify/db";
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -194,8 +194,7 @@ export async function loadAutomaticAnalysisContext(userId: string, now = new Dat
 }
 
 /**
- * Inside the transaction that completed a session (or confirmed an
- * improvement): persists an automatic analysis job when the session qualifies,
+ * Inside the transaction that completed a session: persists an automatic analysis job when the session qualifies,
  * so the intent commits with the session. Returns the job id to publish after
  * commit; a failed publish leaves it for `redispatchStrandedJobs()`. At most
  * one automatic job per session, ever.
@@ -205,7 +204,6 @@ export async function planAutomaticAnalysis(
   userId: string,
   sessionId: string,
   context: AutomaticAnalysisContext,
-  options: { testsImprovement?: boolean },
   now: Date,
 ): Promise<string | null> {
   const evidence = await loadAnalysisEvidence(tx, userId, sessionId);
@@ -213,8 +211,7 @@ export async function planAutomaticAnalysis(
   const trigger = automaticAnalysisTrigger({
     outcome: evidence.session.outcome,
     attempts: evidence.attempts,
-    matchesConfirmedPattern: options.testsImprovement ? false : await matchesConfirmedPattern(tx, userId, evidence, now),
-    testsImprovement: options.testsImprovement ?? false,
+    matchesConfirmedPattern: await matchesConfirmedPattern(tx, userId, evidence, now),
   });
   if (!trigger) return null;
 
@@ -289,33 +286,6 @@ async function matchesConfirmedPattern(tx: DbTransaction, userId: string, eviden
   return linked.some(
     (row) => row.topicTags.some((topic) => topics.has(topic)) && [...(verdicts.get(row.id) ?? [])].some((verdict) => failing.has(verdict)),
   );
-}
-
-/**
- * A category with confirmed evidence from two contexts across two problems in
- * the last 90 days (the profile's readiness rule; contexts as in the profile).
- */
-export async function isEstablishedPattern(tx: DbTransaction, userId: string, category: SkillDimensionId, now: Date) {
-  const m = schema.mistakeRecords;
-  const rows = await tx
-    .select({ id: m.id, problemId: m.problemId, practiceSessionId: m.practiceSessionId, submissionId: m.submissionId, quizSessionId: m.quizSessionId, quizItemId: m.quizItemId, reviewEventId: m.reviewEventId })
-    .from(m)
-    .where(and(eq(m.userId, userId), eq(m.status, "confirmed"), eq(m.primaryCategory, category), gte(m.createdAt, new Date(now.getTime() - PATTERN_WINDOW_MS))));
-  const contexts = new Set(
-    rows.map((row) =>
-      row.practiceSessionId
-        ? `session:${row.practiceSessionId}`
-        : row.submissionId
-          ? `submission:${row.submissionId}`
-          : row.quizSessionId && row.quizItemId
-            ? `quiz:${row.quizSessionId}:${row.quizItemId}`
-            : row.reviewEventId
-              ? `review:${row.reviewEventId}`
-              : `record:${row.id}`,
-    ),
-  );
-  const problems = new Set(rows.map((row) => row.problemId));
-  return contexts.size >= PROFILE_READINESS.categoryContexts && problems.size >= PROFILE_READINESS.categoryProblems;
 }
 
 /** Publishes jobs planned inside a committed transaction; failures wait for recovery. */

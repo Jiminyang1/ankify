@@ -1,5 +1,5 @@
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { listProblemMistakes } from "./mistakes";
 import { listPracticeSessions } from "./practice-sessions/queries";
 import { publicSubmissionColumns, toSubmissionDto } from "./public-dto";
@@ -39,18 +39,6 @@ export async function loadProblemDetail(userId: string, problemId: string) {
     listProblemMistakes(userId, problemId),
   ]);
   const { sessions } = await listPracticeSessions(userId, { problemId, limit: 20 });
-  const improvements = sessions.length
-    ? await db
-        .select({ id: schema.practiceImprovements.id, practiceSessionId: schema.practiceImprovements.practiceSessionId, category: schema.practiceImprovements.category })
-        .from(schema.practiceImprovements)
-        .where(
-          and(
-            eq(schema.practiceImprovements.userId, userId),
-            eq(schema.practiceImprovements.problemId, problemId),
-            inArray(schema.practiceImprovements.practiceSessionId, sessions.map((session) => session.id)),
-          ),
-        )
-    : [];
 
   return {
     problem,
@@ -67,7 +55,6 @@ export async function loadProblemDetail(userId: string, problemId: string) {
       difficulty: event.fsrsDifficultySnap,
     })),
     sessions,
-    improvements,
     mistakes,
   };
 }

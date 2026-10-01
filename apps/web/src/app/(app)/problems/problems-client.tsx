@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import type { LeetCodeDifficulty } from "@ankify/core";
 import type {
   ProblemListItemDto,
@@ -24,7 +25,7 @@ type FilterState = {
   search: string;
 };
 
-type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
+type SortKey = "title" | "due" | "difficulty" | "reps" | "lapses";
 
 /** Due for review: initial learning finished and scheduled at or before now
  *  (legacy captures without a schedule count as due). */
@@ -210,8 +211,8 @@ export default function ProblemsPage({
           return asc * ((diffOrder[a.difficulty] ?? 2) - (diffOrder[b.difficulty] ?? 2));
         case "reps":
           return asc * (a.fsrsReps - b.fsrsReps);
-        case "drills":
-          return asc * (a.cardTotal - b.cardTotal);
+        case "lapses":
+          return asc * (a.fsrsLapses - b.fsrsLapses);
         default:
           return 0;
       }
@@ -368,11 +369,11 @@ export default function ProblemsPage({
                 {([
                   { key: "title", label: t.problems.titleCol, className: "" },
                   { key: "difficulty", label: t.problems.diffCol, className: "hidden sm:table-cell" },
-                  { key: "due", label: t.problems.due, className: "" },
-                  { key: "reps", label: t.problems.repsCol, className: "hidden md:table-cell" },
-                  { key: "drills", label: t.problems.drillsCol, className: "hidden md:table-cell" },
-                  { key: "state", label: t.problems.stateCol, className: "hidden sm:table-cell" },
-                ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => {
+                  { key: "due", label: t.problems.nextReviewCol, className: "" },
+                  { key: "reps", label: t.problems.reviewsCol, help: t.problems.reviewsHelp, className: "hidden md:table-cell" },
+                  { key: "lapses", label: t.problems.lapsesCol, help: t.problems.lapsesHelp, className: "hidden md:table-cell" },
+                  { key: "state", label: t.problems.stateCol, help: t.problems.stateHelp, className: "hidden sm:table-cell" },
+                ] as { key: SortKey | "state"; label: string; help?: string; className: string }[]).map((col) => {
                   const sortable = col.key !== "state";
                   const isSorted = sort.key === col.key;
                   return (
@@ -380,6 +381,7 @@ export default function ProblemsPage({
                       key={col.key}
                       className={cn("px-4 py-2.5 font-medium", col.className)}
                       aria-sort={isSorted ? (sort.asc ? "ascending" : "descending") : undefined}
+                      title={col.help}
                     >
                       {sortable ? (
                         <button
@@ -388,7 +390,7 @@ export default function ProblemsPage({
                           className="inline-flex select-none items-center gap-1 font-medium uppercase tracking-wide transition hover:text-fg"
                         >
                           {col.label}
-                          {isSorted && <span className="text-[9px]">{sort.asc ? "▲" : "▼"}</span>}
+                          {isSorted && <ChevronDown aria-hidden className={cn("h-3 w-3", sort.asc && "rotate-180")} />}
                         </button>
                       ) : (
                         <span className="inline-flex items-center gap-1">{col.label}</span>
@@ -441,14 +443,9 @@ export default function ProblemsPage({
                             : formatRelative(p.fsrsDue)}
                       </span>
                     </td>
-                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
-                      {p.fsrsReps}
-                      {p.fsrsLapses > 0 && <span className="text-danger ml-0.5">↓{p.fsrsLapses}</span>}
-                    </td>
-                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
-                      <span className={p.cardTotal > 0 ? "text-accent" : "text-muted"}>
-                        {p.cardTotal}
-                      </span>
+                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">{p.fsrsReps}</td>
+                    <td className={cn("hidden md:table-cell px-4 py-2.5 text-xs tabular-nums", p.fsrsLapses > 0 ? "text-danger" : "text-muted")}>
+                      {p.fsrsLapses}
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5">
                       <FsrsStatePill state={p.fsrsState} language={language} />

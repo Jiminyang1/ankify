@@ -1280,3 +1280,27 @@ Gate:
 - the LeetCode Submit button locator;
 - sign-out and sign-in;
 - reloading the extension.
+
+### 2: remove and simplify
+
+- **Editor reset removed.** `content/reset-code.ts`, its panel button, and its strings are gone; no shared helper depended on them. LeetCode's own reset remains.
+- **"Skill handled well" retired.**
+  - The UI, the `/api/mistakes/improvements` routes, `createImprovement` and related functions, the contract schema and DTO, and the `improvement_test` automatic-analysis trigger are all removed.
+  - `practice_improvements` rows stay in the database and the account export, but count for nothing. No migration.
+  - The profile now derives *clean reviews* in `computeMistakeProfile()`: a later accepted session (not rated Again) on a problem with a confirmed mistake of that dimension, with no record of it this time. They use the old weight and decay. The DTO field `improvements` became `cleanReviews`, and the detail line reads "N clean reviews since". This was the owner's decision of 2026-10-01.
+- **`/problems` columns renamed:** Problem, Difficulty, Next review, Reviews (`fsrsReps`), Times forgotten (`fsrsLapses`, now its own sortable column), Memory state, with hover explanations.
+  - The legacy "Drills" column (ready card count) and its query are removed.
+  - The sort indicator is an SVG chevron instead of a ▲/▼ glyph, per the UI conventions.
+- **Problem page layout.** The workspace lost `h-[42rem] max-h-[calc(100vh-3rem)] overflow-hidden` and the inner `overflow-y-auto`. Panels grow and the page scrolls. The tab bar is not sticky, because the app nav already is.
+- **Tests.**
+  - e2e at 1920, 1280, and 390 widths: no nested scroll container around the statement, the page scrolls, and nothing overflows horizontally.
+  - e2e: the table header names.
+  - `web.spec.ts` submission ids are now time-based, the same worker-reload fix as 1a.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 508 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 36 tests |

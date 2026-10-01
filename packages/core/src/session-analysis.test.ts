@@ -5,7 +5,6 @@ const input = (overrides: Partial<AutomaticAnalysisInput>): AutomaticAnalysisInp
   outcome: "accepted",
   attempts: [],
   matchesConfirmedPattern: false,
-  testsImprovement: false,
   ...overrides,
 });
 const wa = (codeHash: string | null) => ({ verdict: "Wrong Answer", codeHash });
@@ -26,12 +25,6 @@ describe("automatic analysis triggers", () => {
   it("fires for a failure matching a confirmed pattern elsewhere, only with failed code", () => {
     expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa("a")], matchesConfirmedPattern: true }))).toBe("pattern_recurrence");
     expect(automaticAnalysisTrigger(input({ outcome: "failed", attempts: [wa(null)], matchesConfirmedPattern: true }))).toBeNull();
-  });
-
-  it("fires for an accepted session marked as testing an improvement", () => {
-    expect(automaticAnalysisTrigger(input({ attempts: [ac()], testsImprovement: true }))).toBe("improvement_test");
-    expect(automaticAnalysisTrigger(input({ outcome: "unknown", attempts: [ac()], testsImprovement: true }))).toBeNull();
-    expect(automaticAnalysisTrigger(input({ attempts: [ac(null)], testsImprovement: true }))).toBeNull();
   });
 
   it("never fires for ordinary sessions", () => {
