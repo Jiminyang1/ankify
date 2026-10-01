@@ -307,6 +307,18 @@ or explains them.
     records its slug first, so it can never look new.
 - **Coverage**: history counts as complete only for a coverage scope read to
   its last page. Nothing infers completeness from a partial list.
+- **Prerequisites** (no scheduled import or background job is involved):
+  - A first suggestion needs at least one verified, free, never-attempted
+    candidate. A fresh account has none until it practices (or captures) a
+    problem whose LeetCode page lists similar questions, or until the catalog
+    is generated.
+  - Personalized picks also need a personalized profile (3 completed sessions
+    across 2 problems) and a weak dimension confirmed in 2+ sessions across
+    2+ problems.
+  - The QA seed provides both: `apps/web/scripts/suggestion-fixture.ts`
+    (practice history, confirmed edge-case mistakes, similar-question
+    candidates, and deliberate exclusions), checked by
+    `server/suggestions/qa-fixture.test.ts`.
 - **Planner**: `planSuggestion()` (`packages/core/src/suggestions/`) is pure
   and deterministic. Its seed is the user, local date, ordinal, and planner
   version.

@@ -1369,3 +1369,35 @@ Gate:
 | `pnpm test` | PASS: 509 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 37 tests |
+
+### 5: testable suggestions
+
+Findings:
+
+- **No background process.** Suggestions need no scheduled import or background process. Candidates are similar questions recorded when a problem is captured or started from its LeetCode page, plus the committed catalog.
+- **Empty pools.** The catalog is empty because `scripts/leetcode-catalog.js` was never run. The QA and demo seeds wrote only `similarSlugs` (no `suggestion_candidates`), so every QA account showed "No new problem to suggest yet".
+- **Personalization.** Personalized picks also need a personalized profile and a weak, ready dimension, which the seed did not have.
+
+Changes:
+
+- **Seed fixture.** `apps/web/scripts/suggestion-fixture.ts`, called by `qa:seed`, gives the main QA account:
+  - 3 completed voluntary-practice sessions on its 3 problems, each with a confirmed edge-case mistake, plus one implementation mistake;
+  - similar-question candidates: five eligible, plus one paid-only, one already accepted (`attempt_history`), and one already in the deck.
+  - The second QA account stays empty.
+  - The seeded sessions are voluntary practice, so no schedule or rating changes. The demo seed is unchanged.
+- **Server test.** `server/suggestions/qa-fixture.test.ts` checks against the fixture:
+  - the profile is personalized, with edge cases weak and ready;
+  - the day's suggestion is personalized (edge cases, "similar to");
+  - extras yield exactly the five eligible problems, then `no_candidates`;
+  - "already attempted" records history;
+  - the second account gets nothing.
+- **E2E.** `suggestions.spec.ts` acts on whatever is suggested: skip, another, already attempted, start practice through to Solved. It checks that excluded slugs never appear, and adds the second account's empty state. The old spec assumed that every candidate came from its own captured problem.
+- **No QA catalog file.** This deviates from the plan: the fixture covers basic and personalized behavior without one, and the real catalog stays an owner task, documented in TEST_GUIDE §3.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 513 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 38 tests |

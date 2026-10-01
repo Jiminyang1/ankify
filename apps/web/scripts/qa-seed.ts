@@ -3,6 +3,7 @@ import { getDb, schema } from "@ankify/db";
 import { loadDbEnv } from "@ankify/db/client";
 import { and, eq } from "drizzle-orm";
 import { encryptSecret } from "../src/server/secret-box";
+import { seedSuggestionFixture, SUGGESTION_SIMILAR_SLUGS } from "./suggestion-fixture";
 import {
   isQaProfile,
   QA_SECOND_SESSION_ID,
@@ -185,7 +186,7 @@ async function main() {
         descriptionMd:
           "Given an array of integers `nums` and an integer `target`, return indices of the two numbers that add up to `target`.",
         topicTags: ["Array", "Hash Table"],
-        similarSlugs: ["three-sum", "two-sum-ii-input-array-is-sorted"],
+        similarSlugs: SUGGESTION_SIMILAR_SLUGS["two-sum"],
         notes: "一遍扫描。先查 `target - nums[i]`，再记录当前值，避免同一下标重复使用。",
         fsrsDue: ago(1),
         fsrsStability: 8.5,
@@ -211,7 +212,7 @@ async function main() {
         descriptionMd:
           "Design a data structure that follows the constraints of a Least Recently Used cache with `O(1)` get and put operations.",
         topicTags: ["Hash Table", "Linked List", "Design"],
-        similarSlugs: ["lfu-cache"],
+        similarSlugs: SUGGESTION_SIMILAR_SLUGS["lru-cache"],
         notes: "哈希表负责定位节点，双向链表维护最近使用顺序。",
         fsrsDue: null,
         fsrsState: "new",
@@ -228,7 +229,7 @@ async function main() {
         url: "https://leetcode.com/problems/binary-search/",
         descriptionMd: "Given a sorted array and a target, return its index or `-1`.",
         topicTags: ["Array", "Binary Search"],
-        similarSlugs: ["search-insert-position"],
+        similarSlugs: SUGGESTION_SIMILAR_SLUGS["binary-search"],
         notes: "闭区间模板：循环条件 `left <= right`。",
         fsrsDue: fromNow(3),
         fsrsStability: 18,
@@ -360,6 +361,9 @@ async function main() {
         occurredAt: ago(4),
       },
     ]);
+
+    // Practice history and candidates that make new-problem suggestions testable.
+    await seedSuggestionFixture(tx, QA_USER_ID, now);
 
     await tx.insert(schema.quizSessions).values({
       id: "qa-quiz-two-sum-archived",
