@@ -34,7 +34,8 @@ export type SessionControl = z.infer<typeof sessionControl>;
 
 const ratingMessages = [
   z.object({ type: z.literal("session_rating"), sessionId: sessionIdSchema, rating: fsrsRatingSchema }).strict(),
-  z.object({ type: z.literal("session_rating_decision"), sessionId: sessionIdSchema, decision: z.enum(["defer", "dismiss"]) }).strict(),
+  /** Skip the rating ("Rate later" is retired). */
+  z.object({ type: z.literal("session_rating_decision"), sessionId: sessionIdSchema, decision: z.literal("dismiss") }).strict(),
 ] as const;
 
 export const contentMessageSchema = z.discriminatedUnion("type", [

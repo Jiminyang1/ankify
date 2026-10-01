@@ -1,4 +1,4 @@
-import type { PracticeSessionDto, PracticeSessionErrorCode } from "@ankify/contracts";
+import type { PracticeProblemStatusDto, PracticeSessionDto, PracticeSessionErrorCode } from "@ankify/contracts";
 import {
   getDb,
   schema,
@@ -19,6 +19,8 @@ export type SessionFailure = {
   error: PracticeSessionErrorCode;
   message?: string;
   session?: PracticeSessionDto;
+  /** The problem of `session`, when it is not the one asked about. */
+  problem?: PracticeProblemStatusDto;
 };
 
 export type SessionPatch = Partial<Omit<NewPracticeSession, "id" | "userId" | "problemId" | "requestId">>;

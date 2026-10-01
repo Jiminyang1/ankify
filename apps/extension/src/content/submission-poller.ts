@@ -22,6 +22,7 @@ export type PollResult = {
   reported: number;
   /** New submissions LeetCode is still judging; reported once judged. */
   judging: number;
+  judgingIds: string[];
 };
 
 /**
@@ -38,11 +39,15 @@ export function createSubmissionPoller(deps: {
   slug: string;
   session: () => PollerSession;
   report: (observations: SessionObservationInput[]) => Promise<void>;
+  /** When set, only these submissions are considered (late verdicts after Finish). */
+  only?: () => ReadonlySet<string> | null;
 }) {
   const known = new Map<string, Known>();
   let inFlight: Promise<PollResult> | null = null;
 
   function isCandidate(submission: ListedSubmission, session: PollerSession) {
+    const only = deps.only?.();
+    if (only && !only.has(submission.id)) return false;
     if (session.baselineState === "established" && session.baselineSubmissionId) {
       return (compareSubmissionIds(submission.id, session.baselineSubmissionId) ?? 1) > 0;
     }
@@ -56,9 +61,9 @@ export function createSubmissionPoller(deps: {
     const session = deps.session();
     const stopAtId = session.baselineState === "established" ? session.baselineSubmissionId : null;
     const listing = await deps.client.listSubmissions(deps.slug, { stopAtId, maxPages: 3 });
-    if (!listing.value) return { availability: listing.availability, reported: 0, judging: 0 };
+    if (!listing.value) return { availability: listing.availability, reported: 0, judging: 0, judgingIds: [] };
     let availability = listing.availability;
-    let judging = 0;
+    const judgingIds: string[] = [];
 
     const observations: SessionObservationInput[] = [];
     // Recorded only after the report is handed off, so a failed hand-off
@@ -68,7 +73,7 @@ export function createSubmissionPoller(deps: {
     for (const submission of [...listing.value.submissions].reverse()) {
       if (!isCandidate(submission, session)) continue;
       if (submission.pending) {
-        judging += 1;
+        judgingIds.push(submission.id);
         continue;
       }
       const entry = known.get(submission.id);
@@ -97,7 +102,7 @@ export function createSubmissionPoller(deps: {
       await deps.report(observations.slice(index, index + 20));
     }
     for (const [id, entry] of updates) known.set(id, entry);
-    return { availability, reported: observations.length, judging };
+    return { availability, reported: observations.length, judging: judgingIds.length, judgingIds };
   }
 
   return {

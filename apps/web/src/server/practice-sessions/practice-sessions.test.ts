@@ -314,29 +314,56 @@ describe("session commands", () => {
       .toMatchObject({ ok: false, error: "invalid_transition" });
   });
 
-  it("defers and dismisses a pending rating, and reports expiry or supersession instead", async () => {
+  it("retires Rate later, skips a pending (or legacy deferred) rating, and reports expiry or supersession instead", async () => {
     await insertProblem("p1", "one", at(-HOUR));
     await insertProblem("p2", "two", at(-HOUR));
     await insertProblem("p3", "three", at(-HOUR));
-    const reviewed = async (problemId: string) => {
-      const { session } = await start({ target: { kind: "problem", problemId }, mode: "due_review" });
-      await finish(session.id, at(MIN));
+    const reviewed = async (problemId: string, now = T0) => {
+      const { session } = await start({ target: { kind: "problem", problemId }, mode: "due_review" }, now);
+      await finish(session.id, new Date(now.getTime() + MIN));
       return session.id;
     };
     const decide = (id: string, type: "defer_rating" | "dismiss_rating", now: Date) => command(id, { type, requestId: uuid() }, now);
 
     const s1 = await reviewed("p1");
-    expect(await decide(s1, "defer_rating", at(2 * MIN))).toMatchObject({ ok: true, response: { session: { rating: { disposition: "deferred" } } } });
-    expect(await decide(s1, "defer_rating", at(3 * MIN))).toMatchObject({ ok: false, error: "rating_not_pending" });
+    expect(await decide(s1, "defer_rating", at(2 * MIN))).toMatchObject({ ok: false, error: "rating_defer_retired", session: { rating: { disposition: "pending" } } });
+    // A rating deferred before "Rate later" was retired is still pending.
+    await getDb().update(schema.practiceSessions).set({ ratingDisposition: "deferred" }).where(eq(schema.practiceSessions.id, s1));
     expect(await decide(s1, "dismiss_rating", at(3 * MIN))).toMatchObject({ ok: true, response: { session: { rating: { disposition: "dismissed" } } } });
 
-    const s2 = await reviewed("p2");
+    const s2 = await reviewed("p2", at(4 * MIN));
     expect(await decide(s2, "dismiss_rating", at(25 * HOUR))).toMatchObject({ ok: false, error: "rating_not_pending", session: { rating: { disposition: "expired" } } });
     expect((await sessionRow(s2)).ratingDisposition).toBe("expired");
 
-    const s3 = await reviewed("p3");
+    const s3 = await reviewed("p3", at(26 * HOUR));
     await getDb().update(schema.problems).set({ scheduleRevision: 1 }).where(eq(schema.problems.id, "p3"));
-    expect(await decide(s3, "defer_rating", at(2 * MIN))).toMatchObject({ ok: false, error: "rating_not_pending", session: { rating: { disposition: "superseded" } } });
+    expect(await decide(s3, "dismiss_rating", at(26 * HOUR + 2 * MIN))).toMatchObject({ ok: false, error: "rating_not_pending", session: { rating: { disposition: "superseded" } } });
+  });
+
+  it("starts no formal review while another finished review awaits its rating, until it is rated, skipped, or lapses", async () => {
+    await insertProblem("p1", "one", at(-HOUR));
+    await insertProblem("p2", "two", at(-HOUR));
+    await insertProblem("p3", "three", at(-HOUR));
+    const first = await start({ target: { kind: "problem", problemId: "p1" }, mode: "due_review" });
+    await finish(first.session.id, at(MIN));
+
+    const blocked = await startPracticeSession(USER, startInput({ target: { kind: "problem", problemId: "p2" }, mode: "due_review" }), at(2 * MIN));
+    expect(blocked).toMatchObject({ ok: false, error: "rating_pending", session: { id: first.session.id, rating: { disposition: "pending" } }, problem: { id: "p1", title: "one" } });
+    // Superseding is only for the same problem; another one's rating must be given.
+    expect(await startPracticeSession(USER, startInput({ target: { kind: "problem", problemId: "p2" }, mode: "due_review", supersedePendingRating: true }), at(2 * MIN)))
+      .toMatchObject({ ok: false, error: "rating_pending" });
+    expect(await getDb().select().from(schema.practiceSessions).where(eq(schema.practiceSessions.problemId, "p2"))).toEqual([]);
+    // Practice that is not a review is never held up.
+    const practice = await start({ target: { kind: "leetcode", problem: meta("fresh", 77) }, mode: "practice" }, at(2 * MIN));
+    expect(practice.session.type).toBe("initial_learning");
+
+    await command(first.session.id, { type: "dismiss_rating", requestId: uuid() }, at(3 * MIN));
+    const second = await start({ target: { kind: "problem", problemId: "p2" }, mode: "due_review" }, at(4 * MIN));
+    await finish(second.session.id, at(5 * MIN));
+    // Lapsed after the rating window: no longer blocks, and the schedule never moved.
+    const third = await start({ target: { kind: "problem", problemId: "p3" }, mode: "due_review" }, at(5 * MIN + 24 * HOUR + 1));
+    expect(third.session.type).toBe("scheduled_review");
+    expect(await problemRow("p2")).toMatchObject({ scheduleRevision: 0, fsrsDue: at(-HOUR) });
   });
 
   it("reports the latest session completed in the last week, never an abandoned one", async () => {

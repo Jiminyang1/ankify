@@ -105,6 +105,8 @@ export const practiceSessionCommandSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ type: z.literal("abandon"), ...ownedCommand, occurredAt: occurredAtSchema }).strict(),
+  /** Retired ("Rate later"): rating is due right after Finish. Still parsed so
+   *  an older extension's queued request gets `rating_defer_retired`. */
   z.object({ type: z.literal("defer_rating"), requestId: z.string().uuid() }).strict(),
   z.object({ type: z.literal("dismiss_rating"), requestId: z.string().uuid() }).strict(),
   /** Reverts this session's rating if no later scheduling change happened.
@@ -332,6 +334,8 @@ export type PracticeSessionErrorCode =
   | "invalid_transition"
   | "baseline_already_set"
   | "rating_not_pending"
+  /** "Rate later" is retired: rate or skip right after Finish. */
+  | "rating_defer_retired"
   /** A later scheduling change happened; Undo would overwrite it. */
   | "undo_conflict"
   | "nothing_to_undo"
@@ -345,4 +349,6 @@ export type PracticeSessionErrorDto = {
   message?: string;
   /** The session the conflict is about, when there is one. */
   session?: PracticeSessionDto;
+  /** That session's problem, when it is another problem (`rating_pending`). */
+  problem?: PracticeProblemStatusDto;
 };

@@ -30,11 +30,15 @@ export const SUBMIT_POLL_MS = 2_000;
 /** How long a submit is watched for before the regular tick takes over. */
 export const SUBMIT_WATCH_MS = 45_000;
 const JUDGING_WATCH_MS = 20_000;
+/** After Finish, verdicts of submissions LeetCode was still judging are awaited this long. */
+export const LATE_VERDICT_MS = 60_000;
 
 export type BackgroundFailure = {
   ok: false;
   error: PracticeSessionErrorCode | "signed_out" | "offline" | "rate_limited" | "server_error" | "unexpected" | "invalid_message";
   session?: PracticeSessionDto;
+  /** `session`'s problem, when it is another one (a review awaiting its rating). */
+  problem?: PracticeProblemStatusDto;
 };
 export type BackgroundOutcome<T> = { ok: true; response: T; queued?: false } | { ok: true; queued: true } | BackgroundFailure;
 
@@ -42,7 +46,9 @@ export type BackgroundOutcome<T> = { ok: true; response: T; queued?: false } | {
 export type PageNotice =
   | { kind: "error"; error: BackgroundFailure["error"]; session?: PracticeSessionDto }
   | { kind: "queued"; action: "finish" | "abandon" | "rating" | "rating_decision" }
-  | { kind: "rated"; nextDue: string | null };
+  | { kind: "rated"; nextDue: string | null }
+  /** Another problem's review was rated or skipped; this one can start now. */
+  | { kind: "unblocked" };
 
 /** Submissions this page has seen that the server's evidence may not show yet. */
 export type LocalEvidence = {
@@ -75,6 +81,8 @@ export type PageView =
       problem: PracticeProblemStatusDto | null;
       session: PracticeSessionDto | null;
       pendingRating: PracticeSessionDto | null;
+      /** Another problem's finished review that must be rated or skipped before a review starts here. */
+      blockingRating: { session: PracticeSessionDto; problem: PracticeProblemStatusDto } | null;
       /** What LeetCode tracking could read last; anything but `available` is shown. */
       availability: LeetcodeAvailability;
       /** The tracked session's submissions seen here but not (yet) in its evidence. */
@@ -117,11 +125,17 @@ export function createPageSession(deps: PageSessionDeps) {
     sessionId: string;
     cancel: () => void;
     poller: ReturnType<typeof createSubmissionPoller>;
+    /** Narrows the poller to late verdicts once the session is finished. */
+    filter: { ids: ReadonlySet<string> | null };
     meter: ReturnType<typeof createActivityMeter>;
     failures: number;
     nextPollAt: number;
     baselineRequested: boolean;
+    /** Submissions LeetCode was judging at the last check. */
+    judgingIds: string[];
   } | null = null;
+  /** Polls for late verdicts after Finish. */
+  let late: { cancel: () => void } | null = null;
   let disposed = false;
   let lastFocusPollAt = Number.NEGATIVE_INFINITY;
   /** Fast checks after a submit; ends at `until` or once the verdict is reported. */
@@ -139,7 +153,7 @@ export function createPageSession(deps: PageSessionDeps) {
     const base: Extract<PageView, { kind: "ready" }> =
       view.kind === "ready"
         ? view
-        : { kind: "ready", problem: null, session: null, pendingRating: null, availability: "available", local: NO_LOCAL_EVIDENCE, busy: null, notice: null, recentCompleted: null, analysis: null };
+        : { kind: "ready", problem: null, session: null, pendingRating: null, blockingRating: null, availability: "available", local: NO_LOCAL_EVIDENCE, busy: null, notice: null, recentCompleted: null, analysis: null };
     set({ ...base, ...patch });
     syncTracking();
     syncAnalysis();
@@ -212,6 +226,25 @@ export function createPageSession(deps: PageSessionDeps) {
 
   const currentSession = () => (view.kind === "ready" ? view.session : null);
 
+  /** The rating the panel shows: this problem's, else the one blocking a start. */
+  function ratingTarget() {
+    if (view.kind !== "ready") return null;
+    if (view.pendingRating) return { session: view.pendingRating, blocking: false };
+    if (view.blockingRating) return { session: view.blockingRating.session, blocking: true };
+    return null;
+  }
+
+  /** Rated or skipped elsewhere already (popup, another tab): show the
+   *  current state instead of an error. Duplicates never reschedule. */
+  async function ratingFailed(response: BackgroundFailure, target: { blocking: boolean }) {
+    if (response.error === "rating_not_pending") {
+      ready({ busy: null, notice: null, ...(target.blocking ? { blockingRating: null } : {}) });
+      return refresh();
+    }
+    failureView(response);
+    return refresh();
+  }
+
   function syncTracking() {
     const session = currentSession();
     const owned = session && session.status === "active" && session.ownership === "you" ? session : null;
@@ -219,9 +252,11 @@ export function createPageSession(deps: PageSessionDeps) {
     if (tracking?.sessionId === owned.id) return;
     stopTracking();
     const sessionId = owned.id;
+    const filter: { ids: ReadonlySet<string> | null } = { ids: null };
     const poller = createSubmissionPoller({
       client: deps.client,
       slug: deps.slug,
+      only: () => filter.ids,
       session: () => {
         const latest = currentSession();
         return latest?.id === sessionId
@@ -258,10 +293,12 @@ export function createPageSession(deps: PageSessionDeps) {
     tracking = {
       sessionId,
       poller,
+      filter,
       meter: createActivityMeter({ now: deps.now, isActive: deps.isActive }),
       failures: 0,
       nextPollAt: 0,
       baselineRequested: false,
+      judgingIds: [],
       cancel: () => undefined,
     };
     // Check at once: a session opened from the popup needs its baseline, and
@@ -304,6 +341,31 @@ export function createPageSession(deps: PageSessionDeps) {
     watch = null;
   }
 
+  /**
+   * Finish freezes the session: no later submission joins it. Submissions
+   * LeetCode was still judging at Finish were made before it, so their
+   * verdicts are still reported, and only theirs, for a short while.
+   */
+  function awaitLateVerdicts(finished: NonNullable<typeof tracking>) {
+    late?.cancel();
+    late = null;
+    if (finished.judgingIds.length === 0) return;
+    finished.filter.ids = new Set(finished.judgingIds);
+    const until = deps.now() + LATE_VERDICT_MS;
+    const next = () => {
+      late = {
+        cancel: deps.schedule(() => {
+          const again = (judging: number) => {
+            if (disposed || judging === 0 || deps.now() >= until) late = null;
+            else next();
+          };
+          finished.poller.poll().then((result) => again(result.judging), () => again(1));
+        }, SUBMIT_POLL_MS),
+      };
+    };
+    next();
+  }
+
   function loop() {
     if (!tracking || disposed) return;
     const current = tracking;
@@ -336,7 +398,8 @@ export function createPageSession(deps: PageSessionDeps) {
       if (result.ok && !result.queued) ready({ session: result.response.session });
     }
     try {
-      const { availability, reported, judging } = await current.poller.poll();
+      const { availability, reported, judging, judgingIds } = await current.poller.poll();
+      current.judgingIds = judgingIds;
       const failed = availability === "signed_out" || availability === "unavailable";
       current.failures = failed ? current.failures + 1 : 0;
       current.nextPollAt = deps.now() + (failed ? Math.min(MAX_POLL_BACKOFF_MS, TICK_MS * 2 ** current.failures) : 0);
@@ -430,7 +493,7 @@ export function createPageSession(deps: PageSessionDeps) {
     },
 
     /** Reads the problem, LeetCode account, and baseline, then starts on the server. */
-    async start(mode: PracticeModeId, options: { supersedePendingRating?: boolean } = {}) {
+    async start(mode: PracticeModeId) {
       ready({ busy: "starting", notice: null });
       const [problem, accountRead, baseline] = await Promise.all([
         deps.client.readProblem(deps.slug),
@@ -445,14 +508,24 @@ export function createPageSession(deps: PageSessionDeps) {
         problem: problem.value,
         baseline,
         ...(accountRead.value ? { sourceAccount: accountRead.value.username } : {}),
-        supersedePendingRating: options.supersedePendingRating ?? false,
+        // A pending rating is rated or skipped first, never discarded by a start.
+        supersedePendingRating: false,
       });
-      if (!result.ok) return failureView(result);
+      if (!result.ok) {
+        if (result.error === "rating_pending" && result.session && result.problem) {
+          // Another problem's review needs its rating first; offer it here.
+          return ready({ busy: null, notice: null, blockingRating: { session: result.session, problem: result.problem } });
+        }
+        // This problem's own pending rating: show it.
+        if (result.error === "rating_pending") return refresh().then(() => ready({ busy: null }));
+        return failureView(result);
+      }
       if (result.queued) return;
       ready({
         problem: result.response.problem,
         session: result.response.session,
         pendingRating: null,
+        blockingRating: null,
         availability: baseline.state === "unavailable" ? accountRead.availability === "signed_out" ? "signed_out" : "unavailable" : "available",
         busy: null,
         notice: null,
@@ -485,11 +558,13 @@ export function createPageSession(deps: PageSessionDeps) {
         sessionId: session.id,
         control: { command: "finish", result, occurredAt: new Date(deps.now()).toISOString() },
       });
+      const finished = tracking;
       stopTracking();
+      if (finished && response.ok) awaitLateVerdicts(finished);
       if (!response.ok) return failureView(response);
       if (response.queued) return ready({ busy: null, session: { ...session, status: "completed" }, notice: { kind: "queued", action: "finish" } });
-      const finished = response.response.session;
-      ready({ session: finished, pendingRating: finished.rating.disposition === "pending" ? finished : null });
+      const completed = response.response.session;
+      ready({ session: completed, pendingRating: completed.rating.disposition === "pending" ? completed : null });
       // Finishing can schedule the problem (initial learning); read it back.
       await refresh();
       ready({ busy: null, notice: null });
@@ -511,25 +586,26 @@ export function createPageSession(deps: PageSessionDeps) {
       ready({ busy: null, notice: null });
     },
 
+    /** Rates this problem's finished review, or the other review blocking a start here. */
     async rate(rating: 1 | 2 | 3 | 4) {
-      const pending = view.kind === "ready" ? view.pendingRating : null;
-      if (!pending) return;
+      const target = ratingTarget();
+      if (!target) return;
       ready({ busy: "rating", notice: null });
-      const response = await deps.send<PracticeSessionRatingResponseDto>({ type: "session_rating", sessionId: pending.id, rating });
-      if (!response.ok) {
-        failureView(response);
-        return refresh();
-      }
+      const response = await deps.send<PracticeSessionRatingResponseDto>({ type: "session_rating", sessionId: target.session.id, rating });
+      if (!response.ok) return ratingFailed(response, target);
+      if (target.blocking) return ready({ busy: null, blockingRating: null, notice: response.queued ? { kind: "queued", action: "rating" } : { kind: "unblocked" } });
       if (response.queued) return ready({ busy: null, pendingRating: null, notice: { kind: "queued", action: "rating" } });
       ready({ busy: null, pendingRating: null, problem: response.response.problem, notice: { kind: "rated", nextDue: response.response.nextDue } });
     },
 
-    async decideRating(decision: "defer" | "dismiss") {
-      const pending = view.kind === "ready" ? view.pendingRating : null;
-      if (!pending) return;
+    /** Skips the rating: the review stays in history and the schedule is unchanged. */
+    async skipRating() {
+      const target = ratingTarget();
+      if (!target) return;
       ready({ busy: "rating", notice: null });
-      const response = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_rating_decision", sessionId: pending.id, decision });
-      if (!response.ok) return failureView(response);
+      const response = await deps.send<PracticeSessionCommandResponseDto>({ type: "session_rating_decision", sessionId: target.session.id, decision: "dismiss" });
+      if (!response.ok) return ratingFailed(response, target);
+      if (target.blocking) return ready({ busy: null, blockingRating: null, notice: response.queued ? { kind: "queued", action: "rating_decision" } : { kind: "unblocked" } });
       ready({ busy: null, pendingRating: null, notice: response.queued ? { kind: "queued", action: "rating_decision" } : null });
     },
 
@@ -577,6 +653,7 @@ export function createPageSession(deps: PageSessionDeps) {
 
     dispose() {
       disposed = true;
+      late?.cancel();
       stopTracking();
       stopAnalysisPoll();
       listeners.clear();

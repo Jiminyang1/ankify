@@ -75,6 +75,7 @@ export function mountPanel(deps: {
   function attentionKey(next: PageView) {
     if (next.kind !== "ready") return null;
     if (next.pendingRating) return `rating:${next.pendingRating.id}`;
+    if (next.blockingRating) return `rating:${next.blockingRating.session.id}`;
     if (next.notice) return `notice:${JSON.stringify(next.notice)}`;
     const session = next.session;
     if (session && session.ownership !== "you" && (session.status === "active" || session.status === "interrupted")) return `session:${session.id}:${session.status}`;
@@ -147,7 +148,7 @@ export function mountPanel(deps: {
     if (view.kind === "loading") return { tone: "muted", status: "" };
     if (view.kind === "signed_out") return { tone: "warning", status: t.common.signIn };
     if (view.kind === "offline") return { tone: "warning", status: t.sync.offline };
-    if (view.pendingRating) return { tone: "accent", status: t.rating.prompt };
+    if (view.pendingRating || view.blockingRating) return { tone: "accent", status: t.rating.prompt };
     const session = view.session;
     if (session && !session.stale && (session.status === "active" || session.status === "interrupted")) {
       if (session.status === "interrupted") return { tone: "warning", status: t.popup.interrupted };
@@ -200,9 +201,11 @@ export function mountPanel(deps: {
     if (view.notice) blocks.push(noticeBlock(t, view.notice));
     if (local) blocks.push(h("p", { class: "notice", "data-tone": local.tone, role: "status" }, local.text));
     if (view.pendingRating) blocks.push(ratingBlock(t, view.pendingRating));
+    else if (view.blockingRating) blocks.push(ratingBlock(t, view.blockingRating.session, view.blockingRating.problem.title));
     const session = view.session;
     if (session && !session.stale && (session.status === "active" || session.status === "interrupted")) blocks.push(sessionBlock(t, session));
-    else if (!view.pendingRating) blocks.push(startBlock(t));
+    // A finished review is rated or skipped before anything else starts here.
+    else if (!view.pendingRating && !view.blockingRating) blocks.push(startBlock(t));
     if (view.analysis) blocks.push(analysisBlock(t, view.analysis));
     return blocks;
   }
@@ -299,19 +302,13 @@ export function mountPanel(deps: {
     if (notice.kind === "rated") {
       return h("p", { class: "notice", role: "status" }, t.rating.nextReview(relativeDay(notice.nextDue, deps.language())));
     }
+    if (notice.kind === "unblocked") return h("p", { class: "notice", role: "status" }, t.rating.unblocked);
     if (notice.kind === "queued") {
       const text = { finish: t.panel.finishedQueued, abandon: t.panel.abandonedQueued, rating: t.panel.ratingQueued, rating_decision: t.panel.decisionQueued }[notice.action];
       return h("p", { class: "notice", "data-tone": "warning", role: "status" }, text);
     }
     const message = t.errors[notice.error] ?? t.common.unknownError;
-    return h(
-      "div",
-      { class: "stack" },
-      h("p", { class: "notice", "data-tone": "danger", role: "alert" }, message),
-      notice.error === "rating_pending"
-        ? button("start-anyway", t.panel.startAnyway, () => void deps.page.start(lastStartMode, { supersedePendingRating: true }), { variant: "danger" })
-        : null,
-    );
+    return h("p", { class: "notice", "data-tone": "danger", role: "alert" }, message);
   }
 
   function startBlock(t: ExtensionStrings) {
@@ -406,7 +403,9 @@ export function mountPanel(deps: {
     );
   }
 
-  function ratingBlock(t: ExtensionStrings, session: PracticeSessionDto) {
+  /** The four grades plus Skip. `otherTitle`: the review belongs to another
+   *  problem and must be resolved before a review starts here. */
+  function ratingBlock(t: ExtensionStrings, session: PracticeSessionDto, otherTitle?: string) {
     const grades = [
       { grade: 1 as const, label: t.rating.again, hint: t.rating.hints.again },
       { grade: 2 as const, label: t.rating.hard, hint: t.rating.hints.hard },
@@ -415,9 +414,9 @@ export function mountPanel(deps: {
     ];
     return h(
       "div",
-      { class: "stack", role: "group", "aria-label": t.rating.prompt },
-      h("p", { class: "text" }, h("strong", {}, t.rating.prompt)),
-      h("p", { class: "text muted small" }, t.rating.promptHint),
+      { class: "stack", role: "group", "aria-label": otherTitle ? `${t.rating.prompt} ${otherTitle}` : t.rating.prompt },
+      h("p", { class: "text" }, h("strong", {}, otherTitle ? t.rating.otherPrompt(otherTitle) : t.rating.prompt)),
+      h("p", { class: "text muted small" }, otherTitle ? t.rating.otherHint : t.rating.promptHint),
       h(
         "div",
         { class: "ratings" },
@@ -430,12 +429,7 @@ export function mountPanel(deps: {
           ),
         ),
       ),
-      h(
-        "div",
-        { class: "row" },
-        session.rating.disposition === "pending" ? button("rate-later", t.rating.later, () => void deps.page.decideRating("defer"), { variant: "ghost" }) : null,
-        button("rate-skip", t.rating.skip, () => void deps.page.decideRating("dismiss"), { variant: "ghost" }),
-      ),
+      h("div", { class: "row" }, button("rate-skip", t.rating.skip, () => void deps.page.skipRating(), { variant: "ghost" })),
       session.rating.expiresAt ? h("p", { class: "text muted small" }, t.rating.expires(relativeDay(session.rating.expiresAt, deps.language()))) : null,
     );
   }

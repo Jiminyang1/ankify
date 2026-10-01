@@ -68,7 +68,7 @@ export function createRouter(deps: {
       case "session_rating":
         return controller.rate(message.sessionId, message.rating);
       case "session_rating_decision":
-        return controller.ratingDecision(message.sessionId, message.decision);
+        return controller.skipRating(message.sessionId);
       case "analysis_state":
         return deps.analysis.state(message.sessionId);
       case "analysis_start":
@@ -162,7 +162,7 @@ export function createRouter(deps: {
       case "session_rating":
         return controller.rate(message.sessionId, message.rating);
       case "session_rating_decision":
-        return controller.ratingDecision(message.sessionId, message.decision);
+        return controller.skipRating(message.sessionId);
       case "sync_status":
         return controller.syncStatus();
       case "sync_retry":

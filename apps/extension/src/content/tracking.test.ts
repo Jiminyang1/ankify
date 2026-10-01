@@ -57,13 +57,13 @@ describe("submission poller", () => {
     );
     const report = reportMock();
     const poller = createSubmissionPoller({ client, slug: "two-sum", session: () => established, report });
-    expect(await poller.poll()).toEqual({ availability: "available", reported: 2, judging: 1 });
+    expect(await poller.poll()).toEqual({ availability: "available", reported: 2, judging: 1, judgingIds: ["1003"] });
     expect(report).toHaveBeenCalledWith([
       { leetcodeSubmissionId: "1001", verdict: "Wrong Answer", submittedAt: at(30), detail: { language: "Python3", code: "code 1001" } },
       { leetcodeSubmissionId: "1002", verdict: "Accepted", submittedAt: at(60), detail: { language: "Python3", code: "code 1002" } },
     ]);
     expect(client.listSubmissions).toHaveBeenCalledWith("two-sum", { stopAtId: "1000", maxPages: 3 });
-    expect(await poller.poll()).toEqual({ availability: "available", reported: 0, judging: 1 });
+    expect(await poller.poll()).toEqual({ availability: "available", reported: 0, judging: 1, judgingIds: ["1003"] });
     expect(client.readSubmissionDetail).toHaveBeenCalledTimes(2);
   });
 
@@ -90,7 +90,7 @@ describe("submission poller", () => {
   it("reports nothing when LeetCode cannot be read, and lets the server place submissions without a baseline", async () => {
     const report = reportMock();
     const unavailable = createSubmissionPoller({ client: fakeClient(() => ({ availability: "signed_out", value: null }), () => detail("x")), slug: "x", session: () => established, report });
-    expect(await unavailable.poll()).toEqual({ availability: "signed_out", reported: 0, judging: 0 });
+    expect(await unavailable.poll()).toEqual({ availability: "signed_out", reported: 0, judging: 0, judgingIds: [] });
 
     const noBaseline = createSubmissionPoller({
       client: fakeClient(() => ({ availability: "available", value: { complete: false, submissions: [submission("7", 10), submission("6", -20), submission("5", -3600)] } }), () => detail("x")),

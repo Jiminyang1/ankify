@@ -1214,3 +1214,30 @@ Gate:
 | `pnpm test` | PASS: 503 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 30 tests in one run, including the new live-count and popup/panel rating specs |
+
+### 1b: mandatory rating and Finish freeze
+
+Findings:
+
+- **"Rate later" came back.** A deferred rating was still returned as `pendingRating` by the page and overview reads, so the panel's local dismissal did not last.
+- **Expiry already existed.** The 24-hour expiry was already implemented: `effectiveRatingDisposition` reports `expired` on read, and expired ratings never touch FSRS. No new lifecycle state or migration was needed.
+- **No late submissions reached a finished session.** The extension stops tracking at Finish, and only the observation route writes session submissions.
+
+Changes:
+
+- **"Rate later" is retired.**
+  - The panel and popup buttons are gone. The `session_rating_decision` message only skips.
+  - The server answers `defer_rating` (from an older extension's outbox) with `rating_defer_retired`.
+  - Legacy `deferred` rows still read as pending and can be rated or skipped.
+- **Rate or skip first.** A due or early review does not start while another problem's finished review awaits its rating. The 409 `rating_pending` names that session and its problem, and the panel offers that rating inline with Skip. Practice is never blocked. The UI no longer offers "Start anyway" / "Start new review"; same-problem supersede stays API-only.
+- **Duplicate ratings.** A rating that finds `rating_not_pending` (rated elsewhere first) refreshes both surfaces instead of showing an error. The server's existing guards keep it to one FSRS update.
+- **Finish freeze, by submission id.** After Finish the page reports only verdicts of submissions LeetCode was still judging at Finish, for up to 60 s. Nothing made after Finish is reported.
+  - **Deviation from the plan:** `END_GRACE_MS` stays at 60 s instead of shrinking to 5 s. Finish carries the device's clock while submissions carry LeetCode's, so a tight server window would drop real late verdicts on a slow device clock.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 508 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 31 tests. The deferred-rating spec is replaced by "rating survives closing the page, rated in the popup"; a new spec covers rate-or-skip before another review |

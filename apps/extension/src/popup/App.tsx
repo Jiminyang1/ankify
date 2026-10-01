@@ -185,6 +185,11 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
     const result = await action();
     setBusyKey(null);
     if (!result.ok) {
+      // Already rated or skipped elsewhere: show where things stand, no error.
+      if (result.error === "rating_not_pending") {
+        await refresh();
+        return false;
+      }
       setMessage(onError?.(result.error) ?? { key, text: t.errors[result.error] ?? t.common.unknownError });
       return false;
     }
@@ -192,15 +197,13 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
     return true;
   }
 
-  async function openReview(item: ReviewOverviewProblemDto, supersedePendingRating = false) {
+  async function openReview(item: ReviewOverviewProblemDto) {
     const key = `due:${item.id}`;
     const opened = await run(
       key,
-      () => ask({ type: "open_review", problemId: item.id, slug: item.leetcodeSlug, supersedePendingRating }),
-      (code) =>
-        code === "rating_pending"
-          ? { key, text: t.popup.supersedeConfirm, confirm: { label: t.popup.startNewReview, run: () => void openReview(item, true) } }
-          : { key, text: t.errors[code] ?? t.common.unknownError },
+      () => ask({ type: "open_review", problemId: item.id, slug: item.leetcodeSlug, supersedePendingRating: false }),
+      // The finished review is listed under "Rate your reviews"; it is rated or skipped first.
+      (code) => ({ key, text: code === "rating_pending" ? t.popup.rateFirst : (t.errors[code] ?? t.common.unknownError) }),
     );
     if (opened) void closePopup();
   }
@@ -282,8 +285,8 @@ function MainView({ t, language, onOpenSettings }: { t: ExtensionStrings; langua
                     busy={busyKey === `rating:${item.session.id}`}
                     notice={noticeFor(`rating:${item.session.id}`)}
                     onRate={(rating) => void run(`rating:${item.session.id}`, () => ask({ type: "session_rating", sessionId: item.session.id, rating }))}
-                    onDecide={(decision) =>
-                      void run(`rating:${item.session.id}`, () => ask({ type: "session_rating_decision", sessionId: item.session.id, decision }))
+                    onSkip={() =>
+                      void run(`rating:${item.session.id}`, () => ask({ type: "session_rating_decision", sessionId: item.session.id, decision: "dismiss" }))
                     }
                   />
                 ))}
@@ -402,7 +405,7 @@ function RatingCard({
   busy,
   notice,
   onRate,
-  onDecide,
+  onSkip,
 }: {
   t: ExtensionStrings;
   language: Language;
@@ -410,7 +413,7 @@ function RatingCard({
   busy: boolean;
   notice: React.ReactNode;
   onRate: (rating: 1 | 2 | 3 | 4) => void;
-  onDecide: (decision: "defer" | "dismiss") => void;
+  onSkip: () => void;
 }) {
   const grades = [
     { grade: 1 as const, label: t.rating.again, hint: t.rating.hints.again },
@@ -431,12 +434,7 @@ function RatingCard({
         ))}
       </div>
       <div className="row">
-        {item.session.rating.disposition === "pending" && (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide("defer")}>
-            {t.rating.later}
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide("dismiss")}>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onSkip}>
           {t.rating.skip}
         </Button>
         {busy && <Spinner />}

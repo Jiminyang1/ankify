@@ -8,7 +8,7 @@ import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-li
 import { readJsonBody } from "@/server/request-body";
 
 /** POST /api/practice-sessions/:id/commands — heartbeat, resume, takeover,
- *  set_baseline, finish, abandon, defer_rating, dismiss_rating. */
+ *  set_baseline, finish, abandon, dismiss_rating (defer_rating is retired). */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();

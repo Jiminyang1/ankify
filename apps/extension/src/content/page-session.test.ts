@@ -2,7 +2,7 @@ import type { PracticeSessionDto, PublicAiJobDto, SessionAnalysisStateDto } from
 import { describe, expect, it, vi } from "vitest";
 import type { ContentMessage } from "../shared/protocol";
 import type { LeetcodeClient, ListedSubmission, Read } from "./leetcode-client";
-import { ANALYSIS_POLL_MS, createPageSession, SUBMIT_POLL_MS, SUBMIT_WATCH_MS, TICK_MS } from "./page-session";
+import { ANALYSIS_POLL_MS, createPageSession, LATE_VERDICT_MS, SUBMIT_POLL_MS, SUBMIT_WATCH_MS, TICK_MS } from "./page-session";
 
 const START = "2026-09-29T12:00:00.000Z";
 
@@ -354,6 +354,100 @@ describe("live submission tracking", () => {
   });
 });
 
+describe("rating after Finish", () => {
+  const pendingSession = session({ status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
+
+  it("offers another problem's unrated review instead of starting, and starts nothing until it is rated", async () => {
+    const other = session({ id: "s-other", problemId: "p-other", status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
+    const otherProblem = { ...problem, id: "p-other", leetcodeSlug: "add-two", title: "Add Two Numbers" };
+    const h = harness({
+      respond: (message) => {
+        if (message.type === "page_state") return { ok: true, response: { problem, session: null, pendingRating: null } };
+        if (message.type === "session_start") return { ok: false, error: "rating_pending", session: other, problem: otherProblem };
+        if (message.type === "session_rating") return { ok: true, queued: false, response: { ok: true, session: other, problem: otherProblem, nextDue: START, idempotentReplay: false } };
+        return { ok: true, response: {} };
+      },
+    });
+    await h.page.refresh();
+    await h.page.start("due_review");
+    expect(h.sent.find((message) => message.type === "session_start")).toMatchObject({ supersedePendingRating: false });
+    expect(h.page.view()).toMatchObject({ session: null, busy: null, notice: null, blockingRating: { session: { id: "s-other" }, problem: { title: "Add Two Numbers" } } });
+
+    await h.page.rate(4);
+    expect(h.sent.at(-1)).toEqual({ type: "session_rating", sessionId: "s-other", rating: 4 });
+    expect(h.page.view()).toMatchObject({ blockingRating: null, notice: { kind: "unblocked" } });
+  });
+
+  it("treats a rating already given elsewhere as done, not as an error", async () => {
+    let rated = false;
+    const h = harness({
+      respond: (message) => {
+        if (message.type === "page_state") return { ok: true, response: { problem, session: null, pendingRating: rated ? null : pendingSession } };
+        if (message.type === "session_rating") {
+          rated = true;
+          return { ok: false, error: "rating_not_pending" };
+        }
+        return { ok: true, response: {} };
+      },
+    });
+    await h.page.refresh();
+    await h.page.rate(3);
+    expect(h.page.view()).toMatchObject({ pendingRating: null, notice: null, busy: null });
+  });
+
+  it("reports late verdicts of submissions judged at Finish, and no submission made after it", async () => {
+    let submissions: ListedSubmission[] = [listed("1001", "Other", true)];
+    const finished = session({ status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
+    let done = false;
+    const h = harness({
+      listing: () => ({ availability: "available", value: { complete: true, submissions } }),
+      respond: (message) => {
+        if (message.type === "page_state") return done ? { ok: true, response: { problem, session: null, pendingRating: finished } } : current();
+        if (message.type === "session_control") {
+          done = true;
+          return { ok: true, queued: false, response: { ok: true, session: finished } };
+        }
+        if (message.type === "session_observations") return { ok: true, queued: false, response: { ok: true, session: finished, results: [] } };
+        return { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    await h.page.finish("solved");
+    // The judged verdict arrives, and a new submission is made after Finish.
+    submissions = [listed("1002", "Accepted"), listed("1001", "Wrong Answer")];
+    await h.tick(SUBMIT_POLL_MS);
+    const reported = h.sent.filter((message) => message.type === "session_observations");
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toMatchObject({ sessionId: "s1", observations: [{ leetcodeSubmissionId: "1001", verdict: "Wrong Answer" }] });
+    expect(h.pending()).toHaveLength(0);
+  });
+
+  it("stops waiting for late verdicts after a minute", async () => {
+    const finished = session({ status: "completed", ownership: "none" });
+    let done = false;
+    const h = harness({
+      listing: () => ({ availability: "available", value: { complete: true, submissions: [listed("1001", "Other", true)] } }),
+      respond: (message) => {
+        if (message.type === "page_state") return done ? { ok: true, response: { problem, session: null, pendingRating: null } } : current();
+        if (message.type === "session_control") {
+          done = true;
+          return { ok: true, queued: false, response: { ok: true, session: finished } };
+        }
+        return { ok: true, response: { ok: true, session: session() } };
+      },
+    });
+    await h.page.refresh();
+    await settleAll();
+    await h.page.finish("solved");
+    for (let elapsed = 0; elapsed <= LATE_VERDICT_MS; elapsed += SUBMIT_POLL_MS) {
+      if (!h.pending().some((task) => task.ms === SUBMIT_POLL_MS)) break;
+      await h.tick(SUBMIT_POLL_MS);
+    }
+    expect(h.pending().filter((task) => task.ms === SUBMIT_POLL_MS)).toHaveLength(0);
+  });
+});
+
 describe("state changed elsewhere", () => {
   it("re-reads when the popup rated the session, after any action under way here", async () => {
     const pendingSession = session({ status: "completed", ownership: "none", rating: { disposition: "pending", expiresAt: START } });
@@ -370,7 +464,7 @@ describe("state changed elsewhere", () => {
     expect(h.page.view()).toMatchObject({ pendingRating: { id: "s1" } });
 
     // Busy here: the nudge waits for the action to end.
-    const deciding = h.page.decideRating("dismiss");
+    const deciding = h.page.skipRating();
     h.page.onExternalChange();
     expect(h.sent.filter((message) => message.type === "page_state")).toHaveLength(1);
     rated = true;

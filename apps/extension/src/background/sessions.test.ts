@@ -143,8 +143,8 @@ describe("session controller", () => {
     expect(bodyOf(calls.at(-1)!)).toMatchObject({ ownerToken: "token-popup" });
     await controller.rate("s2", 3);
     expect(calls.at(-1)).toMatchObject({ path: "/api/practice-sessions/s2/rating", init: { body: { requestId: "req-2", rating: 3 } } });
-    await controller.ratingDecision("s3", "defer");
-    expect(calls.at(-1)).toMatchObject({ path: "/api/practice-sessions/s3/commands", init: { body: { type: "defer_rating", requestId: "req-3" } } });
+    await controller.skipRating("s3");
+    expect(calls.at(-1)).toMatchObject({ path: "/api/practice-sessions/s3/commands", init: { body: { type: "dismiss_rating", requestId: "req-3" } } });
   });
 
   it("never sends one account's queued work while another account is signed in", async () => {

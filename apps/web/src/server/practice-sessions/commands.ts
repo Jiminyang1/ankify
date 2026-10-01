@@ -22,7 +22,7 @@ import {
   sessionKindFor,
 } from "@ankify/core";
 import { getDb, schema, type PracticeSession, type PracticeSessionSubmission, type Problem } from "@ankify/db";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { markFirstCapture } from "@/server/onboarding";
 import { getReviewSettings } from "@/server/settings";
@@ -137,6 +137,17 @@ export async function startSessionInTransaction(
     existing ? { enrollment: existing.enrollment, due: isProblemDue({ ...existing, archivedAt: null }, now) } : null,
   );
   if ("error" in kind) return fail(kind.error);
+
+  // A formal review waits until every other finished review is rated or
+  // skipped (the same problem's pending rating is handled below). The answer
+  // names that review, so the client can offer its rating right there.
+  if (kind.type === "scheduled_review") {
+    const unrated = await firstUnratedReview(tx, userId, existing?.id ?? null, now);
+    if (unrated) {
+      const failure = fail("rating_pending", await sessionDto(tx, userId, unrated.session, unrated.problem, now, input.ownerToken));
+      return { ...failure, problem: toProblemStatusDto(unrated.problem, now) };
+    }
+  }
 
   let problem: Problem;
   let problemCreated = false;
@@ -256,6 +267,29 @@ export async function startSessionInTransaction(
   return { ok: true, response };
 }
 
+/** The oldest finished review, on another problem, whose rating is still due. */
+async function firstUnratedReview(tx: DbTransaction, userId: string, exceptProblemId: string | null, now: Date) {
+  const p = schema.problems;
+  const rows = await tx
+    .select({ session: ps, problem: p })
+    .from(ps)
+    .innerJoin(p, and(eq(p.id, ps.problemId), eq(p.userId, userId)))
+    .where(
+      and(
+        eq(ps.userId, userId),
+        inArray(ps.ratingDisposition, ["pending", "deferred"]),
+        exceptProblemId ? ne(ps.problemId, exceptProblemId) : undefined,
+      ),
+    )
+    .orderBy(asc(ps.completedAt));
+  return (
+    rows.find(({ session, problem }) => {
+      const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
+      return disposition === "pending" || disposition === "deferred";
+    }) ?? null
+  );
+}
+
 /** Heartbeats, lifecycle transitions, and rating decisions for one session. */
 export async function runSessionCommand(
   userId: string,
@@ -373,9 +407,13 @@ export async function runSessionCommand(
         break;
       }
       case "defer_rating":
+        // Rating is due right after Finish; an unresolved one lapses after
+        // the rating window without touching the schedule.
+        return fail("rating_defer_retired", await dtoOf(session));
       case "dismiss_rating": {
         const disposition = effectiveRatingDisposition(session, problem.scheduleRevision, now);
-        const allowed = input.type === "defer_rating" ? disposition === "pending" : disposition === "pending" || disposition === "deferred";
+        // `deferred` comes only from the retired "Rate later"; it is still pending.
+        const allowed = disposition === "pending" || disposition === "deferred";
         if (!allowed) {
           // Persist an expiry or supersession the read side already reports.
           const current =
@@ -384,13 +422,7 @@ export async function runSessionCommand(
               : await updateSession(tx, userId, session, { ratingDisposition: disposition }, now);
           return fail("rating_not_pending", await dtoOf(current));
         }
-        next = await updateSession(
-          tx,
-          userId,
-          session,
-          { ratingDisposition: input.type === "defer_rating" ? "deferred" : "dismissed" },
-          now,
-        );
+        next = await updateSession(tx, userId, session, { ratingDisposition: "dismissed" }, now);
         break;
       }
       case "undo_rating": {

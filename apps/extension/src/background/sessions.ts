@@ -2,6 +2,7 @@ import type {
   LeetcodeAvailability,
   PracticeModeId,
   PracticeProblemInput,
+  PracticeProblemStatusDto,
   PracticeSessionCommandResponseDto,
   PracticeSessionCurrentDto,
   PracticeSessionDto,
@@ -34,6 +35,7 @@ export type Failure = {
   ok: false;
   error: PracticeSessionErrorCode | "signed_out" | "offline" | "rate_limited" | "server_error" | "unexpected";
   session?: PracticeSessionDto;
+  problem?: PracticeProblemStatusDto;
 };
 
 export type Outcome<T> = { ok: true; response: T } | Failure;
@@ -41,7 +43,7 @@ export type Outcome<T> = { ok: true; response: T } | Failure;
 export type DurableOutcome<T> = { ok: true; response: T; queued: false } | { ok: true; queued: true } | Failure;
 
 function failure<T>(result: Extract<ApiResult<T>, { ok: false }>): Failure {
-  const body = result.body as { session?: PracticeSessionDto } | undefined;
+  const body = result.body as { session?: PracticeSessionDto; problem?: PracticeProblemStatusDto } | undefined;
   switch (result.kind) {
     case "auth":
       return { ok: false, error: "signed_out" };
@@ -52,7 +54,12 @@ function failure<T>(result: Extract<ApiResult<T>, { ok: false }>): Failure {
     case "server":
       return { ok: false, error: "server_error" };
     case "rejected":
-      return { ok: false, error: (result.code as PracticeSessionErrorCode | undefined) ?? "unexpected", ...(body?.session ? { session: body.session } : {}) };
+      return {
+        ok: false,
+        error: (result.code as PracticeSessionErrorCode | undefined) ?? "unexpected",
+        ...(body?.session ? { session: body.session } : {}),
+        ...(body?.problem ? { problem: body.problem } : {}),
+      };
   }
 }
 
@@ -173,10 +180,10 @@ export function createSessionController(deps: {
       return durable<PracticeSessionRatingResponseDto>(sessionId, "rating", requestId, sessionPath(sessionId, "rating"), { requestId, rating });
     },
 
-    ratingDecision(sessionId: string, decision: "defer" | "dismiss") {
+    /** Skips the rating; the schedule stays as it is. */
+    skipRating(sessionId: string) {
       const requestId = deps.newId();
-      const type = decision === "defer" ? "defer_rating" : "dismiss_rating";
-      return durable<PracticeSessionCommandResponseDto>(sessionId, "command", requestId, sessionPath(sessionId, "commands"), { type, requestId });
+      return durable<PracticeSessionCommandResponseDto>(sessionId, "command", requestId, sessionPath(sessionId, "commands"), { type: "dismiss_rating", requestId });
     },
 
     async overview(): Promise<Outcome<ReviewOverviewDto>> {

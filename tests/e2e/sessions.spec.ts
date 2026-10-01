@@ -54,8 +54,8 @@ test("a due review ended unsuccessfully is rated Again from the panel", async ({
   expect(history.sessions[0]).toMatchObject({ type: "scheduled_review", outcome: "failed", rating: { disposition: "submitted" } });
 });
 
-test("work continues after Accepted, and a deferred rating is given later in the popup", async ({ context, leetcode, api, panel }) => {
-  const slug = newProblem(leetcode, "deferred");
+test("work continues after Accepted; the rating is asked at once, survives closing the page, and is given in the popup", async ({ context, leetcode, api, panel }) => {
+  const slug = newProblem(leetcode, "rate-now");
   await api("/api/capture", { body: { leetcodeSlug: slug, leetcodeId: leetcode.problems[slug]!.frontendId, title: leetcode.problems[slug]!.title, difficulty: "Easy", url: problemUrl(slug) } });
   const page = await context.newPage();
   await page.goto(problemUrl(slug));
@@ -68,17 +68,67 @@ test("work continues after Accepted, and a deferred rating is given later in the
   await expect(page.getByRole("button", { name: "Finish" })).toBeVisible();
   submit(leetcode, slug, "Accepted", "return 2");
   await page.getByRole("button", { name: "Finish" }).click();
-  await page.getByRole("group", { name: "How did the review go?" }).getByRole("button", { name: "Later" }).click();
+  const rating = page.getByRole("group", { name: "How did the review go?" });
+  await expect(rating).toBeVisible();
+  // No "Rate later": rate or skip.
+  await expect(rating.getByRole("button", { name: "Later" })).toHaveCount(0);
+  await expect(rating.getByRole("button", { name: "Skip rating" })).toBeVisible();
+
+  // Closing the page does not skip: the rating is back when it reopens.
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto(problemUrl(slug));
+  await openPanel(reopened);
+  await expect(reopened.getByRole("group", { name: "How did the review go?" })).toBeVisible();
 
   await panel.reload();
   const card = panel.getByRole("group", { name: `How did the review go? ${leetcode.problems[slug]!.title}` });
   await expect(card).toBeVisible();
+  await expect(card.getByRole("button", { name: "Later" })).toHaveCount(0);
   await card.getByRole("button", { name: /Good/ }).click();
   await expect(card).toHaveCount(0);
+  await expect(reopened.getByRole("group", { name: "How did the review go?" })).toHaveCount(0, { timeout: 5_000 });
 
   const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
   const history = await api<PracticeSessionListDto>(`/api/practice-sessions?problemId=${current.problem!.id}`);
   expect(history.sessions[0]).toMatchObject({ outcome: "accepted", evidence: { submissions: 2, accepted: 2 }, rating: { disposition: "submitted" } });
+});
+
+test("another review starts only after the finished one is rated or skipped, and skipping keeps its schedule", async ({ context, leetcode, api, panel }) => {
+  void panel; // signs the context in
+  const capture = (slug: string) =>
+    api<{ problemId: string }>("/api/capture", { body: { leetcodeSlug: slug, leetcodeId: leetcode.problems[slug]!.frontendId, title: leetcode.problems[slug]!.title, difficulty: "Easy", url: problemUrl(slug) } });
+  const first = newProblem(leetcode, "unrated");
+  const second = newProblem(leetcode, "blocked");
+  await capture(first);
+  await capture(second);
+
+  const firstPage = await context.newPage();
+  await firstPage.goto(problemUrl(first));
+  await openPanel(firstPage);
+  await firstPage.getByRole("button", { name: "Start review" }).click();
+  await firstPage.getByRole("button", { name: "End as unsuccessful" }).click();
+  await expect(firstPage.getByRole("group", { name: "How did the review go?" })).toBeVisible();
+  await firstPage.close();
+  const before = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${first}`);
+
+  const page = await context.newPage();
+  await page.goto(problemUrl(second));
+  await openPanel(page);
+  await page.getByRole("button", { name: "Start review" }).click();
+  const blocking = page.getByRole("group", { name: `How did the review go? ${leetcode.problems[first]!.title}` });
+  await expect(blocking).toBeVisible();
+  await expect(blocking.getByText(`Rate your review of ${leetcode.problems[first]!.title} first`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start review" })).toHaveCount(0);
+  await blocking.getByRole("button", { name: "Skip rating" }).click();
+  await expect(page.getByText("Done. You can start this review now.")).toBeVisible();
+  await page.getByRole("button", { name: "Start review" }).click();
+  await expect(page.getByText("Review in progress")).toBeVisible();
+
+  const after = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${first}`);
+  expect(after.problem).toMatchObject({ scheduleRevision: before.problem!.scheduleRevision, fsrsDue: before.problem!.fsrsDue });
+  const history = await api<PracticeSessionListDto>(`/api/practice-sessions?problemId=${after.problem!.id}`);
+  expect(history.sessions[0]).toMatchObject({ outcome: "failed", rating: { disposition: "dismissed" } });
 });
 
 test("a reloaded page keeps its session, and another tab takes over only when asked", async ({ context, leetcode, api }) => {

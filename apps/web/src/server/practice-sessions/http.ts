@@ -21,7 +21,12 @@ export function sessionErrorResponse(failure: SessionFailure) {
           ? 503
           : 409;
   return NextResponse.json(
-    { error: failure.error, ...(failure.message ? { message: failure.message } : {}), ...(failure.session ? { session: failure.session } : {}) },
+    {
+      error: failure.error,
+      ...(failure.message ? { message: failure.message } : {}),
+      ...(failure.session ? { session: failure.session } : {}),
+      ...(failure.problem ? { problem: failure.problem } : {}),
+    },
     { status },
   );
 }
