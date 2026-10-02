@@ -535,6 +535,10 @@ export const translations = {
       nextProblem: "Next problem",
       openOnLeetcode: "Open on LeetCode",
       planComplete: "You've solved every problem in this plan.",
+      askCoach: {
+        label: "Ask Coach what's next",
+        prompt: "Based on my study plan, what should I work on next?",
+      },
       nodeDue: (count: number) => `${count} due`,
       nextUp: "Next up",
       openGroup: (name: string) => `Open ${name}`,
@@ -542,6 +546,10 @@ export const translations = {
         close: "Close",
         addSolved: (count: number) => `Add ${count} solved to review`,
         addFailed: "Couldn't add some problems. Try again in a minute.",
+        deepDive: (plan: string, total: number) =>
+          `Want to go deeper? LeetCode's ${plan} plan has ${total} problems on this pattern. You can switch back from the plan picker.`,
+        switchPlan: "Switch to this plan",
+        switchFailed: "Couldn't switch plans. Try again.",
         item: {
           due: "Due now",
           remembered: (relative: string) => `Next review ${relative}`,
@@ -1158,6 +1166,10 @@ export const translations = {
       nextProblem: "下一题",
       openOnLeetcode: "去 LeetCode 做",
       planComplete: "这个计划的题你都做过了。",
+      askCoach: {
+        label: "问学习教练下一步做什么",
+        prompt: "根据我的学习计划，我接下来该做什么？",
+      },
       nodeDue: (count: number) => `${count} 该复习`,
       nextUp: "下一步",
       openGroup: (name: string) => `打开 ${name}`,
@@ -1165,6 +1177,10 @@ export const translations = {
         close: "关闭",
         addSolved: (count: number) => `把 ${count} 道做过的题加入复习`,
         addFailed: "部分题目没加进去，请稍后再试。",
+        deepDive: (plan: string, total: number) =>
+          `想练得更深？LeetCode 的「${plan}」计划有 ${total} 道这类题。之后可以在学习计划里切回来。`,
+        switchPlan: "切换到这个计划",
+        switchFailed: "切换失败，请重试。",
         item: {
           due: "到期了",
           remembered: (relative: string) => `下次复习 ${relative}`,

@@ -46,6 +46,9 @@ type AgentSidebarProps = {
   onClose: () => void;
   pageContext: AgentClientContext;
   embedded?: boolean;
+  /** A question to send as soon as the session is ready (see AgentShell.ask). */
+  queuedPrompt?: string | null;
+  onQueuedPromptSent?: () => void;
 };
 
 const ACTIVE_SESSION_KEY = "ankify:agent-session-id";
@@ -57,6 +60,8 @@ export function AgentSidebar({
   onClose,
   pageContext,
   embedded = false,
+  queuedPrompt = null,
+  onQueuedPromptSent,
 }: AgentSidebarProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -349,6 +354,12 @@ export function AgentSidebar({
       setActiveRunId(null);
     }
   }, [activeSessionId, handleStreamEvent, pageContext, persistedRunActive, streaming, t.agent.sendFailed]);
+
+  useEffect(() => {
+    if (!queuedPrompt || !open || !sessionsLoaded || loading || streaming || persistedRunActive) return;
+    onQueuedPromptSent?.();
+    queueMicrotask(() => void sendMessage(queuedPrompt));
+  }, [loading, onQueuedPromptSent, open, persistedRunActive, queuedPrompt, sendMessage, sessionsLoaded, streaming]);
 
   const createSession = useCallback(() => {
     if (streaming || persistedRunActive || !activeSessionId) return;

@@ -29,6 +29,7 @@ const AgentShellContext = createContext<{
   setPageContext: React.Dispatch<React.SetStateAction<AgentClientContext | null>>;
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  ask: (message: string) => void;
   embeddedPanel: boolean;
   setEmbeddedPanel: React.Dispatch<React.SetStateAction<boolean>>;
 } | null>(null);
@@ -38,6 +39,9 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [registeredContext, setPageContext] = useState<AgentClientContext | null>(null);
   const [open, setOpen] = useState(false);
+  // A question a page button asked on the user's behalf; the sidebar sends it
+  // once its session is loaded.
+  const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   const [embeddedPanel, setEmbeddedPanel] = useState(false);
   const [panelWidth, setPanelWidth] = useState(380);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -54,6 +58,9 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/analysis")) {
       return { page: "analysis", activePanel: "overview", problemId: null, contextLabel: t.nav.analysis };
     }
+    if (pathname.startsWith("/profile")) {
+      return { page: "profile", activePanel: "overview", problemId: null, contextLabel: t.nav.profile };
+    }
     if (pathname.startsWith("/settings")) {
       return { page: "settings", activePanel: "overview", problemId: null, contextLabel: t.nav.settings };
     }
@@ -63,9 +70,13 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
     return { page: "today", activePanel: "overview", problemId: null, contextLabel: t.nav.today };
   }, [pathname, t.nav]);
   const pageContext = registeredContext ?? globalContext;
+  const ask = useCallback((message: string) => {
+    setQueuedPrompt(message);
+    setOpen(true);
+  }, []);
   const value = useMemo(
-    () => ({ pageContext, setPageContext, open, setOpen, embeddedPanel, setEmbeddedPanel }),
-    [embeddedPanel, open, pageContext],
+    () => ({ pageContext, setPageContext, open, setOpen, ask, embeddedPanel, setEmbeddedPanel }),
+    [ask, embeddedPanel, open, pageContext],
   );
   const outerPanelOpen = open && !embeddedPanel;
 
@@ -152,6 +163,8 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
             open={open}
             onClose={() => setOpen(false)}
             pageContext={pageContext}
+            queuedPrompt={queuedPrompt}
+            onQueuedPromptSent={() => setQueuedPrompt(null)}
           />
         )}
       </div>
@@ -198,7 +211,7 @@ export function useAgentPageContext(context: AgentClientContext | null) {
 export function useAgentShellControls() {
   const shell = useContext(AgentShellContext);
   if (!shell) throw new Error("useAgentShellControls must be used inside AgentShell");
-  return { open: shell.open, setOpen: shell.setOpen };
+  return { open: shell.open, setOpen: shell.setOpen, ask: shell.ask };
 }
 
 export function useEmbeddedAgentPanel(enabled: boolean) {

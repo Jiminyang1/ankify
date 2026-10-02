@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STUDY_PLAN,
   OFFICIAL_STUDY_PLANS,
+  deepDivePlanFor,
   findOfficialStudyPlan,
   groupByPattern,
   planProblemStatus,
@@ -83,5 +84,34 @@ describe("groupByPattern", () => {
       ["Dynamic Programming", ["coin-change"]],
       ["Other", ["mystery"]],
     ]);
+  });
+});
+
+describe("deepDivePlanFor", () => {
+  const dive = (group: string, plan = DEFAULT_STUDY_PLAN) => deepDivePlanFor(group, plan)?.slug ?? null;
+
+  it("maps every plan's naming to the matching topic plan", () => {
+    expect(["1D DP", "Multidimensional DP", "DP - 1D", "Dynamic Programming"].map((name) => dive(name))).toEqual(
+      Array(4).fill("dynamic-programming"),
+    );
+    expect(["Graph General", "Graph BFS", "Graphs - DFS", "Graph", "Graphs"].map((name) => dive(name))).toEqual(
+      Array(5).fill("graph-theory"),
+    );
+    expect(dive("Binary Search")).toBe("binary-search");
+  });
+
+  it("skips groups without a topic plan, and the plan you're already in", () => {
+    expect(dive("Binary Search Tree")).toBeNull();
+    expect(dive("Sliding Window")).toBeNull();
+    expect(dive("Kadane's Algorithm")).toBeNull();
+    expect(dive("Matrix Graphs", "graph-theory")).toBeNull();
+  });
+
+  it("links some group of every general official plan", () => {
+    for (const slug of ["top-interview-150", "leetcode-75", "top-100-liked"]) {
+      const plan = findOfficialStudyPlan(slug)!;
+      const targets = new Set(plan.groups.map((group) => dive(group.name, slug)).filter(Boolean));
+      expect(targets.size, slug).toBe(3);
+    }
   });
 });

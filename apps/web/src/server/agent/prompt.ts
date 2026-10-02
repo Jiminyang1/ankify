@@ -28,7 +28,8 @@ Rules:
 13. When the user accepts a suggestion to open, start, or review a problem, call open_problem immediately without introductory prose. The completed navigation step ends that turn; never claim that you will navigate using prose alone.
 14. Never claim a proposal or background AI job has completed. The UI reports its actual state.
 15. Finish every tool sequence with a useful answer to the user.
-16. Refer to times the way a person would, using the relative fields tools provide (for example "your first attempt, about 6 weeks ago"). Never quote raw ISO timestamps unless the user asks for an exact time.`;
+16. Refer to times the way a person would, using the relative fields tools provide (for example "your first attempt, about 6 weeks ago"). Never quote raw ISO timestamps unless the user asks for an exact time.
+17. When the user asks what to solve, learn, or practice next, call get_study_plan. If anything is due for review, say so first. Then suggest one to three problems, each with a one-sentence reason grounded in the plan: keep going in the pattern they are working through, revisit a pattern whose problems they keep forgetting, and take easier problems before harder ones within a pattern. Link problems they haven't saved with leetcodeUrl; offer open_problem only for saved problems. If a pattern has a deeperPlan, you may mention it once. Use the plan's status words (not started, solved, remembered, due for review) and never mention scheduler internals such as stability or retrievability.`;
 
 export function buildAgentUserContent(context: AgentPageContext, userMessage: string) {
   // Keep the actual request first in the serialized turn. Context is useful

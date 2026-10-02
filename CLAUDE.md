@@ -106,7 +106,7 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
   - `ai-jobs/` - POST starts a card or quiz generation job (`card_generate` from auto or rawText, `card_followup` with an instruction and `expectedCardVersion`, `quiz_generate`, `quiz_regenerate`, `quiz_next_batch`). Idempotent by client `requestId`, rate-limited, returns 202 while queued/running. GET `?problemId=&kind=&active=true` lists a problem's jobs. `quiz_next_batch` requires the current session to be completed, archives it, and puts recent completed quiz history into the prompt.
   - `ai-jobs/[id]/` - GET polls one job; DELETE cancels it.
   - `queues/ai-generation/` - Vercel Queues consumer (topic `ankify-ai-generation`). Runs `processAiJob()` under a lease; transient provider failures retry with backoff up to `maxAttempts`.
-  - `agent/turns/` - POST one Study Coach turn; streams NDJSON events (`run_started`, `text_delta`, `step`, `done`, `error`). Rate-limited and spends one starter credit per turn. Tools (`server/agent/tools.ts`) read the review queue, problems, submissions, cards, and quiz state, open a problem, and *propose* a card draft or quiz generation.
+  - `agent/turns/` - POST one Study Coach turn; streams NDJSON events (`run_started`, `text_delta`, `step`, `done`, `error`). Rate-limited and spends one starter credit per turn. Tools (`server/agent/tools.ts`) read the review queue, the profile's study plan (`get_study_plan`: per-pattern status counts, next not-started problems, problems forgotten before), problems, submissions, cards, and quiz state, open a problem, and *propose* a card draft or quiz generation.
   - `agent/sessions/`, `agent/sessions/[id]/` - list and load Coach conversations.
   - `agent/steps/[id]/approve|dismiss/` - approving a proposal starts its AI job (idempotent once accepted); dismissing drops it.
   - `onboarding/` - session-only GET progress; POST `{ action: "extension_connected" | "skip_ai" }`.
@@ -153,10 +153,10 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
   - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
   - `/profile` - study-plan roadmap. Includes:
     - a plan picker: LeetCode's plans, your imported lists, and "Import a LeetCode list";
-    - summary: solved count, four-state bar, "Review N due", next problem;
+    - summary: solved count, four-state bar, "Review N due", next problem, and "Ask Coach what's next" (opens the Study Coach with that question via `useAgentShellControls().ask()`; the Coach answers from its `get_study_plan` tool);
     - a first-step card (`profile/roadmap-start.tsx`), shown only while nothing from the plan is in review. Once LeetCode history is synced it offers "Add N to review" for the first pattern with solved problems, capped at 10 so day one fits the daily limit; otherwise it shows an install-the-extension prompt;
     - a first-visit guide to the three concepts (solved / remembered / due), dismissible and stored in localStorage;
-    - the roadmap itself: Top Interview 150 is hand-drawn in `profile/roadmap-layout.ts`, other plans follow a three-per-row snake path in plan order, and everything is a plain list below `lg`; each node opens a dialog with Review / Open / Add to review / LeetCode per problem;
+    - the roadmap itself: Top Interview 150 is hand-drawn in `profile/roadmap-layout.ts`, other plans follow a three-per-row snake path in plan order, and everything is a plain list below `lg`; each node opens a dialog with Review / Open / Add to review / LeetCode per problem, plus "Switch to this plan" when an official topic plan goes deeper on that pattern (`deepDivePlanFor()` in core: DP, Graph Theory, Binary Search);
     - the LeetCode account link.
   - `/settings` - AI provider configuration, generation language, daily review limit, data export, account deletion
 

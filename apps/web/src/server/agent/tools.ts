@@ -6,6 +6,7 @@ import { leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
+import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
 import { toAgentSafeQuizState } from "./quiz-context";
@@ -102,6 +103,60 @@ export function createStudyCoachTools(context: AgentToolContext) {
             tags: problem.tags.map(leetcodeTagName),
             fsrsDue: problem.fsrsDue?.toISOString() ?? null,
             fsrsDueRelative: problem.fsrsDue ? relativeTimeLabel(problem.fsrsDue, now) : null,
+          })),
+        };
+      },
+    }),
+
+    get_study_plan: tool({
+      description:
+        "Load the user's current study plan from their profile roadmap: every pattern group in learning order with its status counts, the next not-started problems in each group, problems in the user's reviews they have forgotten before, and the LeetCode topic plan that goes deeper on a pattern. Use this when the user asks what to solve, learn, or practice next, or how their plan is going.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const profile = await loadProfile(context.userId);
+        const label: Record<PlanItem["status"], string> = {
+          todo: "not started",
+          solved: "solved, not reviewing",
+          remembered: "remembered",
+          due: "due for review",
+        };
+        const counts = (value: Record<PlanItem["status"], number>) =>
+          Object.fromEntries(Object.entries(value).map(([status, count]) => [label[status as PlanItem["status"]], count]));
+        const newProblem = (item: PlanItem) => ({
+          title: item.title,
+          difficulty: item.difficulty,
+          leetcodeUrl: `https://leetcode.com/problems/${item.slug}/`,
+        });
+        await record({
+          kind: "read",
+          toolName: "get_study_plan",
+          status: "completed",
+          summary: `Loaded the ${profile.plan.name} plan`,
+        });
+        return {
+          plan: profile.plan.name,
+          totalProblems: profile.total,
+          counts: counts(profile.counts),
+          statusMeaning:
+            "not started = never solved on LeetCode; solved, not reviewing = solved on LeetCode but not in ankify reviews; remembered = in reviews and not due yet; due for review = in reviews and due now. Use these words with the user.",
+          leetcodeHistorySynced: profile.solvedSync != null,
+          nextInPlanOrder: profile.next ? newProblem(profile.next) : null,
+          groups: profile.groups.map((group, index) => ({
+            order: index + 1,
+            name: group.name,
+            counts: counts(group.counts),
+            nextNotStarted: group.items.filter((item) => item.status === "todo").slice(0, 5).map(newProblem),
+            forgottenBefore: group.items
+              .filter((item) => item.problemId && item.lapses > 0)
+              .sort((a, b) => b.lapses - a.lapses)
+              .slice(0, 3)
+              .map((item) => ({
+                problemId: item.problemId,
+                title: item.title,
+                timesForgotten: item.lapses,
+                status: label[item.status],
+              })),
+            deeperPlan: group.deepDive ? `${group.deepDive.name} (${group.deepDive.total} problems)` : null,
           })),
         };
       },

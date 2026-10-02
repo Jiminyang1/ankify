@@ -50,6 +50,7 @@ export const agentPageEnum = z.enum([
   "analysis",
   "settings",
   "extension",
+  "profile",
 ]);
 export const agentPanelEnum = z.enum(["quiz", "cards", "submissions", "notes", "overview"]);
 export const agentRunStatusEnum = z.enum(["running", "succeeded", "failed"]);
