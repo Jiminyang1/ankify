@@ -1480,3 +1480,9 @@ Gate:
 | `pnpm test:visual` | PASS: 7 tests, 29 screenshots |
 
 **The next phase (`docs/NEXT_PHASE_PLAN.md`) is complete.**
+
+### OpenAI rerun (after credit was added)
+
+- **Smoke test.** `pnpm qa:provider-smoke` passes for all four providers: DeepSeek `deepseek-v4-flash`, OpenAI `gpt-5.4-mini`, Anthropic `claude-haiku-4-5-20251001`, and Gemini `gemini-3.5-flash`. The invalid-key check passes for each.
+- **OpenAI models.** `gpt-5.4-mini`, `gpt-5.5`, and `gpt-4o-mini` analyze correctly. `gpt-5` and `gpt-5-mini`, listed by `/v1/models`, answer `404 model_not_found` for this key. The pipeline already fails them once as `ai_request_rejected`.
+- **Presets.** Settings and onboarding no longer suggest `gpt-5`; they offer `gpt-5.5`, `gpt-5.4-mini`, and `gpt-4o-mini`. The smoke default is `gpt-5.4-mini`.

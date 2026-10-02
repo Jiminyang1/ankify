@@ -39,7 +39,9 @@ export function AppearanceSettingsForm() {
 const MODEL_PRESETS: Record<AiProvider, string[]> = {
   "": [],
   anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  openai: ["gpt-5", "gpt-4o", "gpt-4o-mini"],
+  // Verified with session analysis on 2026-10-01; the original gpt-5 and
+  // gpt-5-mini answered model_not_found for a current key.
+  openai: ["gpt-5.5", "gpt-5.4-mini", "gpt-4o-mini"],
   // DeepSeek V4 (April 2026). `deepseek-v4-pro` = 1.6T MoE for hard reasoning;
   // `deepseek-v4-flash` = 284B MoE, ~10x cheaper, fine for card generation.
   // Legacy `deepseek-chat` / `deepseek-reasoner` retire after 2026-07-24.

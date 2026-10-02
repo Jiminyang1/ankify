@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 const MODEL_PRESETS: Record<Exclude<AiProvider, "">, string[]> = {
   anthropic: ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  openai: ["gpt-5", "gpt-4o-mini"],
+  openai: ["gpt-5.4-mini", "gpt-5.5"],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro"],
   google: ["gemini-3.8-flash", "gemini-3.5-flash"],
 };

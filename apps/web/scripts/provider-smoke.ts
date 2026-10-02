@@ -11,14 +11,14 @@
  * calls run (provider error messages can echo parts of a key).
  *
  *   pnpm qa:provider-smoke
- *   SMOKE_OPENAI_MODEL=gpt-5 pnpm qa:provider-smoke   # another model
+ *   SMOKE_OPENAI_MODEL=gpt-5.5 pnpm qa:provider-smoke   # another model
  */
 import { randomBytes } from "node:crypto";
 
 type Provider = "deepseek" | "openai" | "anthropic" | "google";
 const PROVIDERS: { provider: Provider; defaultModel: string }[] = [
   { provider: "deepseek", defaultModel: "deepseek-v4-flash" },
-  { provider: "openai", defaultModel: "gpt-4o-mini" },
+  { provider: "openai", defaultModel: "gpt-5.4-mini" },
   { provider: "anthropic", defaultModel: "claude-haiku-4-5-20251001" },
   { provider: "google", defaultModel: "gemini-3.5-flash" },
 ];
