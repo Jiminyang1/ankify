@@ -1486,3 +1486,56 @@ Gate:
 - **Smoke test.** `pnpm qa:provider-smoke` passes for all four providers: DeepSeek `deepseek-v4-flash`, OpenAI `gpt-5.4-mini`, Anthropic `claude-haiku-4-5-20251001`, and Gemini `gemini-3.5-flash`. The invalid-key check passes for each.
 - **OpenAI models.** `gpt-5.4-mini`, `gpt-5.5`, and `gpt-4o-mini` analyze correctly. `gpt-5` and `gpt-5-mini`, listed by `/v1/models`, answer `404 model_not_found` for this key. The pipeline already fails them once as `ai_request_rejected`.
 - **Presets.** Settings and onboarding no longer suggest `gpt-5`; they offer `gpt-5.5`, `gpt-5.4-mini`, and `gpt-4o-mini`. The smoke default is `gpt-5.4-mini`.
+
+### Second QA round fixes (2026-10-01)
+
+The owner reported four things after testing on the demo deck. The QA database had been reseeded before this work began, so the analysis finding below comes from the code; the run itself could not be inspected.
+
+- **A rated review was not analyzed automatically; a new problem was.**
+  - Cause: automatic analysis needed a failed submission with code (`automaticAnalysisTrigger()`), whatever the session kind. A review solved on the first try therefore never qualified, while a first practice with a Wrong Answer did. The planner already ran for reviews.
+  - Fix, per the owner's request (automatic by default for practice and review alike, switchable to manual in Settings, where the switch already existed):
+    - Automatic analysis now uses the manual rule: any finished session with captured code (`hasAnalyzableCode()`).
+    - `automaticAnalysisTrigger()`, its reasons, and the confirmed-pattern query (`matchesConfirmedPattern`) are removed. The reason was never stored or shown.
+    - The Settings copy (EN/ZH) says so.
+  - Cost: one call on the user's own key per finished session with code, plus one more only if the evidence changes.
+- **Closing the tab mid-session and reopening it showed "Continue here", not "Interrupted" / "Resume".**
+  - Cause: the closed tab's 60 s lease was still live, so the new tab saw a session owned elsewhere.
+  - Fix: a `release` session command (owner token only, no request id, like a heartbeat). It clears the lease and token and folds the owner's timing.
+    - The extension worker records the sessions each tab controls (from page reads, starts, claims, and heartbeats, in `storage.session`). On `tabs.onRemoved` it releases them, then nudges the popup and the other problem tabs.
+    - A heartbeat still in flight from the closed tab is refused (`not_owner`), so it cannot renew the lease.
+    - After a browser crash nothing is released, and the lease runs out as before.
+- **Signing out of LeetCode did not change the panel.**
+  - Likely cause; live LeetCode is unverified, since the probe never read signed out: leetcode.com keeps `csrftoken` after sign-out. The client only reported signed out on a missing cookie, a 401/403, or a null list, so an empty or error answer read as "no submissions" or "unavailable".
+  - Fix: when the first submissions page fails, is null, or is empty, the client asks `userStatus { isSignedIn }`. Only an explicit `false` (or a 401/403) counts as signed out.
+  - The e2e fixture now signs out the way the live site likely does: it keeps the cookie and returns an empty list. The e2e test no longer deletes the cookie.
+- **Could not sign back in to the demo after signing out.**
+  - Cause: `/login` offered only Google, which QA and demo do not configure. Signing out on the web also deletes the seeded QA session row that `/api/qa/login` reused, so even that route stayed signed out until a reseed. A reseed wipes the deck.
+  - Fix:
+    - `/api/qa/login` upserts the account's session row (409 with instructions if the QA user is missing) and honors a safe `next` (`lib/safe-next.ts`, shared with `/login`).
+    - In the QA profile, `/login` shows **Sign in as the QA user** and **Sign in as the second QA account** instead of Google.
+    - The panel's and popup's Sign in (`/login?next=/extension-connected`) therefore work on QA and demo.
+
+Tests:
+
+- Unit:
+  - review sessions and clean sessions plan automatic analysis;
+  - `release` (owner only, refuses a late heartbeat, resume within the old lease, finished sessions);
+  - the worker releases a closed tab's sessions;
+  - signed-out listings in every shape (null, empty, error) confirmed by `userStatus`;
+  - QA login recreates its session, follows only safe `next` paths, and returns 404 outside QA.
+- e2e:
+  - a clean review analyzed automatically while its rating is asked;
+  - closing the tab gives Interrupted and Resume within the old lease;
+  - LeetCode sign-out with the cookie kept;
+  - ankify sign-out mid-session, then sign-in from the panel through the QA `/login`.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 519 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 47 tests in one run. The run before it had 46: the new ankify sign-out spec's `Sign in` locator also matched the collapsed pill, and it was made exact. |
+| `pnpm test:visual` | PASS: 7 tests, baselines unchanged |
+
+**Still owner-only:** confirm on live leetcode.com that signing out (in this tab or another) shows the LeetCode warning. If not, run `scripts/leetcode-live-probe.js` while signed out and share the report.

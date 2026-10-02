@@ -147,6 +147,10 @@ Pure rules live in `packages/core/src/practice-session.ts`, services in
 - **Ownership**: the controlling tab holds a 60 s lease renewed by heartbeats.
   Another tab takes over explicitly; afterwards the old tab can neither
   heartbeat, finish, nor rate. Without a live lease any tab may resume.
+  Closing the controlling tab sends `release` (from the extension worker's
+  `tabs.onRemoved`, for the sessions that tab controlled): the lease and token
+  are cleared, so the session reads as `interrupted` with Resume at once
+  instead of "open in another tab" until the lease runs out.
 - **Observations**: submission verdicts are stored per session even without
   code details; details go through `storeSubmissions()` (capture's identity
   rules). LeetCode's submission time (and the baseline id seen at start)
@@ -244,8 +248,9 @@ One model call explains one completed practice session (`server/session-analysis
   the finish transaction when automatic analysis is on for the
   deployment (default; `ANKIFY_AUTOMATIC_ANALYSIS=disabled` switches it off),
   for the user (settings `analysis.automatic`, default on), and the session
-  qualifies: a failed submission with captured code
-  (`automaticAnalysisTrigger()` in core). Automatic jobs run ~15 s after Finish
+  has captured code (`hasAnalyzableCode()` in core, the same rule as a manual
+  analysis). Every session kind qualifies alike, accepted or not, so a review
+  is analyzed exactly like a first practice. Automatic jobs run ~15 s after Finish
   (`runAfter`), so late verdicts are read; one job per session and evidence
   digest (`auto:<session>:<digest>`); no daily cap. Only the user's own key is accepted, at creation and again before
   execution; there is no hosted fallback and no credit spend.

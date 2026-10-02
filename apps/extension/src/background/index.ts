@@ -153,7 +153,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BADGE_ALARM) void refreshBadge();
 });
 void chrome.alarms.create(BADGE_ALARM, { periodInMinutes: 30 });
-chrome.tabs.onRemoved.addListener((tabId) => void tokens.forget(tabId));
+// A closed tab releases the sessions it controlled; the popup and the other
+// problem tabs re-read, so they offer Resume at once.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void controller
+    .releaseTab(tabId)
+    .then((released) => {
+      if (released > 0) void broadcastSessionChange({ popup: true });
+    })
+    .catch(() => undefined);
+});
 void syncNow();
 void refreshBadge();
 

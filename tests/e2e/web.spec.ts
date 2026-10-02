@@ -53,7 +53,7 @@ test("settings save the first-review delay and, with the user's own key, automat
   await api("/api/settings", { body: { provider: "deepseek", model: "deepseek-chat", apiKey: "" } });
   const page = await openWeb(context, "/settings");
   const analysis = page.getByRole("region", { name: "Session analysis" });
-  await expect(analysis.getByText("Add your own AI provider key above. Finished sessions with a failed submission are then analyzed automatically.")).toBeVisible({ timeout: 30_000 });
+  await expect(analysis.getByText("Add your own AI provider key above. Every finished session, first practice or review, is then analyzed automatically.")).toBeVisible({ timeout: 30_000 });
 
   await page.getByLabel("First review after (hours)").fill("48");
   await page.getByRole("button", { name: "Save review settings" }).click();

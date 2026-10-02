@@ -84,6 +84,30 @@ test("with automatic analysis on, a qualifying session is analyzed when it finis
   expect(onState.findings).toHaveLength(2);
 });
 
+test("a review is analyzed automatically like a first practice, even when accepted at once, while its rating is asked", async ({ context, leetcode, api }) => {
+  await api("/api/settings", { body: { ...OWN_KEY, analysisAutomatic: true } });
+  const slug = newProblem(leetcode, "analysis-review");
+  await api("/api/capture", { body: { leetcodeSlug: slug, leetcodeId: leetcode.problems[slug]!.frontendId, title: leetcode.problems[slug]!.title, difficulty: "Easy", url: problemUrl(slug) } });
+  const page = await context.newPage();
+  await page.goto(problemUrl(slug));
+  await openPanel(page);
+  await page.getByRole("button", { name: "Start review" }).click();
+  await expect(page.getByText("Review in progress")).toBeVisible();
+  submit(leetcode, slug, "Accepted", "return len(s) % 2 == 0");
+  await focus(page);
+  await expect(page.getByText("1 submission, 1 accepted")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Finish" }).click();
+
+  const analysis = page.getByRole("group", { name: "Session analysis" });
+  await expect(page.getByRole("group", { name: "How did the review go?" })).toBeVisible();
+  await expect(analysis.getByText(/Analysis queued|Analyzing this session/)).toBeVisible();
+  await page.getByRole("group", { name: "How did the review go?" }).getByRole("button", { name: /Good/ }).click();
+  await expect(analysis.getByText(SUMMARY)).toBeVisible({ timeout: 45_000 });
+  const state = await api<SessionAnalysisStateDto>(`/api/practice-sessions/${await sessionIdOf(api, slug)}/analysis`);
+  expect(state.job).toMatchObject({ trigger: "automatic", status: "succeeded" });
+  await page.close();
+});
+
 test("without the user's own key, the panel explains and starts nothing", async ({ context, leetcode, api }) => {
   await api("/api/settings", { body: { ...OWN_KEY, apiKey: "" } });
   const { analysis, slug } = await finishQualifyingSession(context, leetcode, "analysis-no-key");

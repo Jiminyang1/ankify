@@ -89,6 +89,10 @@ export const practiceSessionCommandSchema = z.discriminatedUnion("type", [
       availability: leetcodeAvailabilityEnum.optional(),
     })
     .strict(),
+  /** The owning tab closed: the session reads as interrupted at once rather
+   *  than when its lease runs out. Only the owner releases; repeating it
+   *  changes nothing. */
+  z.object({ type: z.literal("release"), ownerToken: ownerTokenSchema }).strict(),
   z.object({ type: z.literal("resume"), ...ownedCommand }).strict(),
   /** "Continue here": move control to this tab. */
   z.object({ type: z.literal("takeover"), ...ownedCommand }).strict(),

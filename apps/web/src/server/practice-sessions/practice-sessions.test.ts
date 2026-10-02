@@ -258,6 +258,27 @@ describe("session commands", () => {
       .toMatchObject({ ok: true, response: { session: { status: "active", ownership: "you" } } });
   });
 
+  it("reads as interrupted as soon as its tab closes, and the closed tab can no longer renew it", async () => {
+    const { session } = await start();
+    await command(session.id, { type: "heartbeat", ownerToken: TAB_A, activeMs: 20_000, observedMs: 30_000 }, at(30_000));
+    const release = (token: string, now: Date) => command(session.id, { type: "release", ownerToken: token }, now);
+
+    // Only the owner releases.
+    expect(await release(TAB_B, at(31_000))).toMatchObject({ ok: false, error: "not_owner" });
+    expect(await release(TAB_A, at(32_000))).toMatchObject({ ok: true, response: { session: { status: "interrupted", ownership: "none" } } });
+    // Within what would have been the old lease, another tab sees an interrupted session it may resume.
+    const current = await getCurrentPracticeSession(USER, { slug: "two-sum" }, TAB_B, at(40_000));
+    expect(current.session).toMatchObject({ status: "interrupted", ownership: "none" });
+    expect(await command(session.id, { type: "heartbeat", ownerToken: TAB_A, activeMs: 25_000, observedMs: 36_000 }, at(41_000)))
+      .toMatchObject({ ok: false, error: "not_owner" });
+    expect(await release(TAB_A, at(42_000))).toMatchObject({ ok: false, error: "not_owner" });
+    expect(await command(session.id, { type: "resume", requestId: uuid(), ownerToken: TAB_B }, at(45_000)))
+      .toMatchObject({ ok: true, response: { session: { status: "active", ownership: "you", timing: { activeMs: 20_000, observedMs: 30_000 } } } });
+
+    await finish(session.id, at(MIN), { ownerToken: TAB_B });
+    expect(await command(session.id, { type: "release", ownerToken: TAB_B }, at(2 * MIN))).toMatchObject({ ok: false, error: "invalid_transition" });
+  });
+
   it("finishes with an outcome backed by evidence and opens the rating window only for reviews", async () => {
     await insertProblem("p-due", "due", at(-HOUR));
     const review = await start({ target: { kind: "problem", problemId: "p-due" }, mode: "due_review" });

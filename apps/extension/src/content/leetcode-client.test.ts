@@ -59,11 +59,28 @@ describe("LeetCode client", () => {
   });
 
   it("never reports a failed or signed-out listing as zero submissions", async () => {
-    expect(await fakeLeetcode(() => ({ data: {} }), null).client.listSubmissions("x")).toEqual({ availability: "signed_out", value: null });
-    expect(await fakeLeetcode(() => ({ data: { questionSubmissionList: null } })).client.listSubmissions("x")).toEqual({ availability: "signed_out", value: null });
+    // LeetCode answers the submissions query with `list`, and says whether anyone is signed in.
+    const leetcode = (list: Response | { data?: unknown; errors?: { message: string }[] }, isSignedIn: boolean | null) =>
+      fakeLeetcode((query) => (query.includes("userStatus") ? { data: { userStatus: isSignedIn == null ? null : { isSignedIn } } } : list)).client;
+    const empty = { data: { questionSubmissionList: { submissions: [], hasNext: false, lastKey: null } } };
+    const signedOut = { availability: "signed_out", value: null };
+
+    expect(await fakeLeetcode(() => ({ data: {} }), null).client.listSubmissions("x")).toEqual(signedOut);
+    // Signing out keeps the csrftoken cookie: whatever shape the anonymous
+    // answer takes (null, empty, or an error), LeetCode's own status decides.
+    expect(await leetcode({ data: { questionSubmissionList: null } }, false).listSubmissions("x")).toEqual(signedOut);
+    expect(await leetcode(empty, false).listSubmissions("x")).toEqual(signedOut);
+    expect(await leetcode({ errors: [{ message: "User is not authenticated" }] }, false).listSubmissions("x")).toEqual(signedOut);
+    // Signed in, or not known: never called signed out.
+    expect(await leetcode(empty, true).listSubmissions("x")).toEqual({ availability: "available", value: { submissions: [], complete: true } });
+    expect(await leetcode(empty, null).listSubmissions("x")).toEqual({ availability: "available", value: { submissions: [], complete: true } });
+    expect(await leetcode({ data: { questionSubmissionList: null } }, true).listSubmissions("x")).toEqual({ availability: "unavailable", value: null });
+    expect(await leetcode({ errors: [{ message: "boom" }] }, true).listSubmissions("x")).toEqual({ availability: "unavailable", value: null });
     expect(await fakeLeetcode(() => new Response("", { status: 502 })).client.listSubmissions("x")).toEqual({ availability: "unavailable", value: null });
-    expect(await fakeLeetcode(() => ({ data: { questionSubmissionList: { submissions: [], hasNext: false, lastKey: null } } })).client.listSubmissions("x"))
-      .toEqual({ availability: "available", value: { submissions: [], complete: true } });
+    // A listing with submissions needs no second check.
+    const { client, fetch } = fakeLeetcode(() => ({ data: { questionSubmissionList: { submissions: [listed(7)], hasNext: false, lastKey: null } } }));
+    expect(await client.listSubmissions("x")).toMatchObject({ availability: "available", value: { submissions: [{ id: "7" }] } });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("pages with lastKey until the baseline, flags submissions still being judged", async () => {

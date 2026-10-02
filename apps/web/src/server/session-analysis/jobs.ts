@@ -1,7 +1,7 @@
 import type { AiJobCreateRequestInput, AnalysisTrigger } from "@ankify/contracts";
-import { automaticAnalysisTrigger, hasAnalyzableCode } from "@ankify/core";
+import { hasAnalyzableCode } from "@ankify/core";
 import { getDb, schema, type AiJob } from "@ankify/db";
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { dispatchAiJob } from "../ai-generation/dispatch";
 import { AiJobRequestError, encryptJobInput, MAX_ACTIVE_JOBS_PER_USER, markJobDispatched } from "../ai-generation/jobs";
@@ -15,7 +15,6 @@ import { ANALYZER_VERSION, loadAnalysisEvidence, type SessionAnalysisEvidence } 
 export const MANUAL_DAILY_ANALYSES = 10;
 /** A queued job without a dispatch this old counts as stranded. */
 const STRANDED_AFTER_MS = 30_000;
-const PATTERN_WINDOW_MS = 90 * 86_400_000;
 const ACTIVE = ["queued", "running"] as const;
 
 type Db = ReturnType<typeof getDb> | DbTransaction;
@@ -183,8 +182,8 @@ export type AutomaticAnalysisContext = {
 /**
  * Read before a session transaction: null unless automatic analysis is
  * available on this deployment, not switched off by the user, and the user
- * has their own key. There is no daily cap: eligibility (a failure with code)
- * and one job per evidence state bound the calls.
+ * has their own key. There is no daily cap: one job per finished session and
+ * evidence state bounds the calls.
  */
 export async function loadAutomaticAnalysisContext(userId: string): Promise<AutomaticAnalysisContext | null> {
   if (!isAutomaticAnalysisEnabled()) return null;
@@ -198,7 +197,8 @@ export async function loadAutomaticAnalysisContext(userId: string): Promise<Auto
 
 /**
  * Inside the transaction that completed a session: persists an automatic
- * analysis job when the session qualifies, so the intent commits with the
+ * analysis job when the session has captured code (any session kind, accepted
+ * or not; the same rule as a manual analysis), so the intent commits with the
  * session. Returns the job id to publish after commit; a failed publish leaves
  * it for `redispatchStrandedJobs()`. One automatic job per session and
  * evidence state: an active job, a job for the same evidence, or a cached
@@ -212,13 +212,7 @@ export async function planAutomaticAnalysis(
   now: Date,
 ): Promise<string | null> {
   const evidence = await loadAnalysisEvidence(tx, userId, sessionId);
-  if (!evidence || evidence.session.status !== "completed") return null;
-  const trigger = automaticAnalysisTrigger({
-    outcome: evidence.session.outcome,
-    attempts: evidence.attempts,
-    matchesConfirmedPattern: await matchesConfirmedPattern(tx, userId, evidence, now),
-  });
-  if (!trigger) return null;
+  if (!evidence || evidence.session.status !== "completed" || !hasAnalyzableCode(evidence.attempts)) return null;
 
   const j = schema.aiJobs;
   const [existing] = await tx
@@ -244,53 +238,6 @@ export async function planAutomaticAnalysis(
     .onConflictDoNothing()
     .returning({ id: j.id });
   return inserted[0]?.id ?? null;
-}
-
-/**
- * Whether a confirmed mistake on another problem from the last 90 days shares
- * a topic with this problem and a failing verdict with this session.
- */
-async function matchesConfirmedPattern(tx: DbTransaction, userId: string, evidence: SessionAnalysisEvidence, now: Date) {
-  const failing = new Set(evidence.attempts.filter((attempt) => attempt.verdict !== "Accepted").map((attempt) => attempt.verdict));
-  if (failing.size === 0) return false;
-  const [problem] = await tx
-    .select({ topicTags: schema.problems.topicTags })
-    .from(schema.problems)
-    .where(and(eq(schema.problems.id, evidence.session.problemId), eq(schema.problems.userId, userId)))
-    .limit(1);
-  const topics = new Set(problem?.topicTags ?? []);
-  if (topics.size === 0) return false;
-
-  const m = schema.mistakeRecords;
-  const p = schema.problems;
-  const since = new Date(now.getTime() - PATTERN_WINDOW_MS);
-  const recent = and(eq(m.userId, userId), eq(m.status, "confirmed"), ne(m.problemId, evidence.session.problemId), gte(m.createdAt, since));
-  const [linked, observed] = await Promise.all([
-    tx
-      .select({ id: m.id, topicTags: p.topicTags, verdict: schema.submissions.status })
-      .from(m)
-      .innerJoin(p, and(eq(p.id, m.problemId), eq(p.userId, m.userId)))
-      .leftJoin(schema.submissions, and(eq(schema.submissions.id, m.submissionId), eq(schema.submissions.userId, m.userId)))
-      .where(recent),
-    tx
-      .select({ id: m.id, verdict: schema.practiceSessionSubmissions.verdict })
-      .from(m)
-      .innerJoin(
-        schema.practiceSessionSubmissions,
-        and(eq(schema.practiceSessionSubmissions.sessionId, m.practiceSessionId), eq(schema.practiceSessionSubmissions.userId, m.userId)),
-      )
-      .where(and(recent, inArray(schema.practiceSessionSubmissions.association, ["automatic", "confirmed"]))),
-  ]);
-  const verdicts = new Map<string, Set<string>>();
-  for (const row of [...linked, ...observed]) {
-    if (!row.verdict || row.verdict === "Accepted") continue;
-    const set = verdicts.get(row.id) ?? new Set<string>();
-    set.add(row.verdict);
-    verdicts.set(row.id, set);
-  }
-  return linked.some(
-    (row) => row.topicTags.some((topic) => topics.has(topic)) && [...(verdicts.get(row.id) ?? [])].some((verdict) => failing.has(verdict)),
-  );
 }
 
 /** Publishes jobs planned inside a committed transaction; failures wait for recovery. */

@@ -188,7 +188,7 @@ Neither manual nor automatic analysis depends on the cron.
 - **Automatic:** the job is committed with the finished session, set to run about 15 seconds later so late verdicts are included, and published after commit. If that publish fails, the job waits with `dispatched_at` unset.
 - **Recovery:** stranded jobs are re-sent when the same user next opens the popup, loads a problem page, or reads an analysis. The optional cron re-sends them for everyone on a timer.
 
-**Before deploying this code to Production, decide:** automatic analysis becomes active for every user who has saved their own key, with no daily cap. Each call is bounded by eligibility (a failed submission with code) and one job per session and evidence state. To keep it off for now, set `ANKIFY_AUTOMATIC_ANALYSIS=disabled` first.
+**Before deploying this code to Production, decide:** automatic analysis becomes active for every user who has saved their own key, with no daily cap. Each finished session with captured code (accepted or not, review or first practice) gets one call, and again only if its evidence changes. To keep it off for now, set `ANKIFY_AUTOMATIC_ANALYSIS=disabled` first.
 
 To add the timer-based recovery:
 

@@ -1,5 +1,5 @@
 import type { PracticeSessionCurrentDto, PracticeSessionListDto } from "../../packages/contracts/src";
-import { test, expect } from "./fixtures";
+import { API_ORIGIN, test, expect } from "./fixtures";
 import { focus, newProblem, openPanel } from "./helpers";
 import { problemUrl, submit, submitJudging } from "./leetcode-fixture";
 
@@ -157,6 +157,29 @@ test("a reloaded page keeps its session, and another tab takes over only when as
   expect(current.session).toMatchObject({ status: "active", ownership: "other_tab" });
 });
 
+test("closing the tab mid-session interrupts it at once; reopening offers Resume, not Continue here", async ({ context, leetcode, api }) => {
+  const slug = newProblem(leetcode, "closed-tab");
+  const first = await context.newPage();
+  await first.goto(problemUrl(slug));
+  await openPanel(first);
+  await first.getByRole("button", { name: "Start practice" }).click();
+  await expect(first.getByText("First practice in progress")).toBeVisible();
+  await first.close();
+
+  // Well within the closed tab's 60-second lease.
+  await expect.poll(async () => (await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`)).session?.status, { timeout: 10_000 }).toBe("interrupted");
+  const reopened = await context.newPage();
+  await reopened.goto(problemUrl(slug));
+  await openPanel(reopened);
+  await expect(reopened.getByText("This session was interrupted.")).toBeVisible();
+  await expect(reopened.getByRole("button", { name: "Continue here" })).toHaveCount(0);
+  await reopened.getByRole("button", { name: "Resume" }).click();
+  await expect(reopened.getByText("First practice in progress")).toBeVisible();
+  const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  expect(current.session).toMatchObject({ status: "active", ownership: "other_tab" });
+  await reopened.close();
+});
+
 test("SPA navigation follows the problem in the URL", async ({ context, leetcode, panel }) => {
   void panel; // signs the context in
   const slug = newProblem(leetcode, "spa");
@@ -299,15 +322,14 @@ test("signing out of LeetCode mid-session warns, signing back in resumes trackin
   await page.getByRole("button", { name: "Start review" }).click();
   await expect(page.getByText("Review in progress")).toBeVisible();
 
-  // LeetCode signs out: its session cookie goes, and reads report signed out.
+  // LeetCode signs out (in another tab): as on leetcode.com, the csrftoken
+  // cookie stays and the submissions list just comes back empty.
   leetcode.signedIn = false;
-  await context.clearCookies({ name: "csrftoken" });
   await focus(page);
   await expect(page.getByText("Sign in to LeetCode so submissions can be tracked.")).toBeVisible({ timeout: 10_000 });
 
   // Back in: the next check reads LeetCode again and the warning clears.
   leetcode.signedIn = true;
-  await context.addCookies([{ name: "csrftoken", value: "fixture-csrf-2", url: "https://leetcode.com" }]);
   submit(leetcode, slug, "Accepted");
   await page.getByRole("button", { name: "Submit", exact: true }).click();
   await expect(page.getByText("1 submission, 1 accepted")).toBeVisible({ timeout: 10_000 });
@@ -323,4 +345,30 @@ test("signing out of LeetCode mid-session warns, signing back in resumes trackin
   await expect(page.getByText("Review in progress")).toBeVisible();
   const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
   expect(current.session).toMatchObject({ type: "scheduled_review", reviewIntent: "early", status: "active" });
+});
+
+test("signing out of ankify mid-session shows the sign-in view; signing in again (QA, no Google) brings the session back", async ({ context, leetcode, panel }) => {
+  void panel; // signs the context in
+  const slug = newProblem(leetcode, "ankify-signout");
+  const page = await context.newPage();
+  await page.goto(problemUrl(slug));
+  await openPanel(page);
+  await page.getByRole("button", { name: "Start practice" }).click();
+  await expect(page.getByText("First practice in progress")).toBeVisible();
+
+  // Sign out on the web: the seeded QA session row is deleted.
+  const web = await context.newPage();
+  await web.goto(`${API_ORIGIN}/today`);
+  await web.evaluate(() => fetch("/api/auth/sign-out", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }));
+  await web.close();
+  await expect(page.getByText("Sign in to ankify to track this problem.")).toBeVisible({ timeout: 25_000 });
+
+  // The panel's Sign in opens /login, which in the QA profile signs in without Google.
+  const [login] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Sign in", exact: true }).click()]);
+  await login.getByRole("link", { name: "Sign in as the QA user" }).click();
+  await login.waitForURL(`${API_ORIGIN}/extension-connected`);
+  await login.close();
+
+  await focus(page);
+  await expect(page.getByText("First practice in progress")).toBeVisible({ timeout: 10_000 });
 });

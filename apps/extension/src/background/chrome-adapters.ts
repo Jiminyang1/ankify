@@ -8,6 +8,9 @@ import type { ActivityTotals, TokenRegistry } from "./sessions";
  */
 
 const TAB_TOKENS = "ankify.tabTokens";
+/** Sessions each tab has controlled, released when it closes. */
+const TAB_SESSIONS = "ankify.tabSessions";
+const MAX_TAB_SESSIONS = 5;
 const POPUP_TOKEN = "ankify.popupToken";
 const ACTIVITY = "ankify.activity";
 const MAX_ACTIVITY_ENTRIES = 200;
@@ -25,9 +28,10 @@ function serialized() {
 export function createTokenRegistry(
   session: chrome.storage.StorageArea,
   newId: () => string,
-): TokenRegistry & { bind(tabId: number, token: string): Promise<void>; forget(tabId: number): Promise<void> } {
+): TokenRegistry & { bind(tabId: number, token: string): Promise<void> } {
   const lock = serialized();
   const read = async () => ((await session.get(TAB_TOKENS))[TAB_TOKENS] as Record<string, string> | undefined) ?? {};
+  const readSessions = async () => ((await session.get(TAB_SESSIONS))[TAB_SESSIONS] as Record<string, string[]> | undefined) ?? {};
   return {
     tokenFor: (tabId) =>
       lock(async () => {
@@ -52,11 +56,22 @@ export function createTokenRegistry(
       lock(async () => {
         await session.set({ [TAB_TOKENS]: { ...(await read()), [String(tabId)]: token } });
       }),
+    noteSession: (tabId, sessionId) =>
+      lock(async () => {
+        const all = await readSessions();
+        const current = all[String(tabId)] ?? [];
+        if (current.includes(sessionId)) return;
+        await session.set({ [TAB_SESSIONS]: { ...all, [String(tabId)]: [...current, sessionId].slice(-MAX_TAB_SESSIONS) } });
+      }),
     forget: (tabId) =>
       lock(async () => {
-        const tokens = await read();
+        const [tokens, sessions] = await Promise.all([read(), readSessions()]);
+        const token = tokens[String(tabId)] ?? null;
+        const sessionIds = sessions[String(tabId)] ?? [];
         delete tokens[String(tabId)];
-        await session.set({ [TAB_TOKENS]: tokens });
+        delete sessions[String(tabId)];
+        await session.set({ [TAB_TOKENS]: tokens, [TAB_SESSIONS]: sessions });
+        return { token, sessionIds };
       }),
   };
 }

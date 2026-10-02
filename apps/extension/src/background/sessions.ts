@@ -24,6 +24,10 @@ export type TokenRegistry = {
   tokenFor(tabId: number): Promise<string>;
   peek(tabId: number): Promise<string | null>;
   popupToken(): Promise<string>;
+  /** Records that the tab controls this session, so closing the tab can release it. */
+  noteSession(tabId: number, sessionId: string): Promise<void>;
+  /** Drops a closed tab's token; returns it with the sessions the tab controlled. */
+  forget(tabId: number): Promise<{ token: string | null; sessionIds: string[] }>;
 };
 
 /** Cumulative activity per session and owner token, reported in heartbeats. */
@@ -127,6 +131,11 @@ export function createSessionController(deps: {
     return { ok: true, queued: true };
   }
 
+  /** Remembers a session the tab controls (for `releaseTab()`). */
+  async function noteOwned(tabId: number, session: PracticeSessionDto | null | undefined) {
+    if (session?.ownership === "you") await tokens.noteSession(tabId, session.id).catch(() => undefined);
+  }
+
   async function control(ownerToken: string, sessionId: string, input: SessionControl): Promise<DurableOutcome<PracticeSessionCommandResponseDto>> {
     const requestId = deps.newId();
     const command = { ...input, type: input.command, requestId, ownerToken } as Record<string, unknown>;
@@ -152,6 +161,7 @@ export function createSessionController(deps: {
       if (!result.ok && result.kind === "auth") account.invalidate();
       if (!result.ok) return failure(result);
       void resumeSync().catch(() => undefined);
+      await noteOwned(tabId, result.data.session);
       const pendingObservations = result.data.session ? await outbox.pendingObservations(result.data.session.id) : 0;
       return { ok: true, response: { ...result.data, localSync: { pendingObservations } } };
     },
@@ -174,13 +184,32 @@ export function createSessionController(deps: {
         body: { requestId: deps.newId(), ownerToken, ...input },
       });
       if (!result.ok && result.kind === "auth") account.invalidate();
-      return result.ok ? { ok: true, response: result.data } : failure(result);
+      if (!result.ok) return failure(result);
+      if ("tabId" in origin) await noteOwned(origin.tabId, result.data.session);
+      return { ok: true, response: result.data };
     },
 
     /** From a tab, with its token; from the popup (no tab), with the popup's. */
     async control(origin: { tabId: number } | { popup: true }, sessionId: string, input: SessionControl) {
       const ownerToken = "tabId" in origin ? await tokens.tokenFor(origin.tabId) : await tokens.popupToken();
-      return control(ownerToken, sessionId, input);
+      const result = await control(ownerToken, sessionId, input);
+      if ("tabId" in origin && result.ok && !result.queued) await noteOwned(origin.tabId, result.response.session);
+      return result;
+    },
+
+    /**
+     * The tab closed: releases the sessions it controlled so they read as
+     * interrupted (with Resume) at once, not as open in another tab until the
+     * lease runs out. Best effort: an unsent release only means waiting for
+     * the lease. Returns how many were released.
+     */
+    async releaseTab(tabId: number) {
+      const { token, sessionIds } = await tokens.forget(tabId);
+      if (!token) return 0;
+      const results = await Promise.all(
+        sessionIds.map((sessionId) => api.request(sessionPath(sessionId, "commands"), { body: { type: "release", ownerToken: token } })),
+      );
+      return results.filter((result) => result.ok).length;
     },
 
     /** Adds a tab's activity to its cumulative totals and renews its lease. */
@@ -198,6 +227,7 @@ export function createSessionController(deps: {
       });
       if (!result.ok) return failure(result);
       void resumeSync().catch(() => undefined);
+      await noteOwned(tabId, result.data.session);
       return { ok: true, response: result.data };
     },
 

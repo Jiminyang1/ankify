@@ -83,7 +83,7 @@ function useModel(...outputs: unknown[]) {
 let problemCounter = 0;
 async function session(
   verdicts: string[],
-  options: { userId?: string; codes?: (string | null)[]; finish?: boolean; topics?: string[] } = {},
+  options: { userId?: string; codes?: (string | null)[]; finish?: boolean; topics?: string[]; reviewOf?: string } = {},
 ) {
   problemCounter += 1;
   const userId = options.userId ?? USER;
@@ -92,7 +92,8 @@ async function session(
     userId,
     {
       requestId: uuid(),
-      target: {
+      // `reviewOf`: an early review of a problem already in the deck.
+      target: options.reviewOf ? { kind: "problem", problemId: options.reviewOf } : {
         kind: "leetcode",
         problem: {
           leetcodeSlug: `analysis-${problemCounter}`,
@@ -104,7 +105,7 @@ async function session(
           similarSlugs: [],
         },
       },
-      mode: "practice",
+      mode: options.reviewOf ? "early_review" : "practice",
       ownerToken: TAB,
       baseline: { state: "none" },
       supersedePendingRating: false,
@@ -470,16 +471,28 @@ describe("automatic analysis", () => {
     expect(await jobsOf()).toHaveLength(1);
   });
 
-  it("fires for any failure with code, never for a clean Accepted, an unfinished session, or failures without code", async () => {
+  it("runs for every finished session with code, accepted or not, and never for an unfinished session or one without code", async () => {
     enable();
-    await session(["Accepted"]);
     await session(["Wrong Answer", "Accepted"], { finish: false });
     await session(["Wrong Answer"], { codes: [null] });
     expect(await jobsOf()).toEqual([]);
+    const clean = await session(["Accepted"]);
     const failedOnly = await session(["Wrong Answer"]);
     const sameCode = await session(["Wrong Answer", "Wrong Answer", "Accepted"], { codes: ["same", "same", "done"] });
-    expect((await jobsOf()).map((row) => row.practiceSessionId).sort()).toEqual([failedOnly.sessionId, sameCode.sessionId].sort());
+    expect((await jobsOf()).map((row) => row.practiceSessionId).sort()).toEqual([clean.sessionId, failedOnly.sessionId, sameCode.sessionId].sort());
     expect(provider.doGenerateCalls).toHaveLength(0);
+  });
+
+  it("runs for a review exactly as for a first practice, before and regardless of its rating", async () => {
+    enable();
+    const first = await session(["Accepted"]);
+    const review = await session(["Accepted"], { reviewOf: first.problemId });
+    const [row] = await getDb().select().from(schema.practiceSessions).where(eq(schema.practiceSessions.id, review.sessionId));
+    expect(row).toMatchObject({ type: "scheduled_review", status: "completed", ratingDisposition: "pending" });
+    const planned = (await jobsOf()).filter((row) => row.practiceSessionId === review.sessionId);
+    expect(planned).toMatchObject([{ trigger: "automatic", status: "queued" }]);
+    const state = await getSessionAnalysisState(USER, review.sessionId);
+    expect(state!.job).toMatchObject({ trigger: "automatic", status: "queued" });
   });
 
   it("does not retry a rejected key: the job fails at once", async () => {

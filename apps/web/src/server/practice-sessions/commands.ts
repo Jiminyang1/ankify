@@ -298,6 +298,7 @@ export async function runSessionCommand(
   now = new Date(),
 ): Promise<CommandResult> {
   if (input.type === "heartbeat") return heartbeat(userId, sessionId, input, now);
+  if (input.type === "release") return release(userId, sessionId, input, now);
   // Read outside the write transaction; only finishing uses them.
   const initialReviewDelayHours = input.type === "finish" ? (await getReviewSettings(userId)).initialReviewDelayHours : 0;
   const automaticAnalysis = input.type === "finish" ? await loadAutomaticAnalysisContext(userId) : null;
@@ -480,6 +481,30 @@ async function heartbeat(
       },
       now,
     );
+    return { ok: true, response: { ok: true, session: await dtoOf(next), idempotentReplay: false } };
+  });
+}
+
+/**
+ * The owning tab closed. Its lease ends now, so every surface shows the
+ * session as interrupted (with Resume) instead of "open in another tab" for
+ * the rest of the lease. The token is cleared, so a heartbeat still in flight
+ * from that tab cannot renew it; its timing is folded in like on a claim.
+ */
+async function release(
+  userId: string,
+  sessionId: string,
+  input: Extract<PracticeSessionCommandInput, { type: "release" }>,
+  now: Date,
+): Promise<CommandResult> {
+  return getDb().transaction(async (tx): Promise<CommandResult> => {
+    const session = await loadSession(tx, userId, sessionId);
+    if (!session) return fail("session_not_found");
+    const problem = (await loadProblem(tx, userId, session.problemId))!;
+    const dtoOf = (row: PracticeSession) => sessionDto(tx, userId, row, problem, now, input.ownerToken);
+    if (!session.isOpen) return fail("invalid_transition", await dtoOf(session));
+    if (session.ownerToken !== input.ownerToken) return fail("not_owner", await dtoOf(session));
+    const next = await updateSession(tx, userId, session, { ...foldTimingPatch(session), ownerToken: null, ownerLeaseExpiresAt: null }, now);
     return { ok: true, response: { ok: true, session: await dtoOf(next), idempotentReplay: false } };
   });
 }

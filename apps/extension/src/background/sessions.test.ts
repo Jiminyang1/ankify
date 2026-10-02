@@ -35,6 +35,7 @@ function harness(respond: Responder, options: { onDelivered?: () => void } = {})
     },
   });
   const tabTokens = new Map<number, string>();
+  const tabSessions = new Map<number, string[]>();
   const totals = new Map<string, { activeMs: number; observedMs: number }>();
   let id = 0;
   const controller = createSessionController({
@@ -48,6 +49,17 @@ function harness(respond: Responder, options: { onDelivered?: () => void } = {})
       },
       peek: async (tabId) => tabTokens.get(tabId) ?? null,
       popupToken: async () => "token-popup",
+      noteSession: async (tabId, sessionId) => {
+        const current = tabSessions.get(tabId) ?? [];
+        if (!current.includes(sessionId)) tabSessions.set(tabId, [...current, sessionId]);
+      },
+      forget: async (tabId) => {
+        const token = tabTokens.get(tabId) ?? null;
+        const sessionIds = tabSessions.get(tabId) ?? [];
+        tabTokens.delete(tabId);
+        tabSessions.delete(tabId);
+        return { token, sessionIds };
+      },
     },
     totals: {
       add: async (sessionId, token, delta) => {
@@ -154,6 +166,30 @@ describe("session controller", () => {
     await controller.activity(7, "s1", { activeMs: 10_000, observedMs: 15_000 }, "available");
     await controller.activity(7, "s1", { activeMs: 5_000, observedMs: 15_000 }, "signed_out");
     expect(bodyOf(calls.at(-1)!)).toEqual({ type: "heartbeat", ownerToken: "token-tab-7", activeMs: 15_000, observedMs: 30_000, availability: "signed_out" });
+  });
+
+  it("releases the sessions a closed tab controlled, with its token, and nothing for tabs that controlled none", async () => {
+    const session = (id: string, ownership: string) => ({ id, ownership, status: "active" });
+    const { controller, calls } = harness((call) => {
+      if (call.path.startsWith("/api/practice-sessions/current")) return ok({ problem: null, session: session("s-other", "other_tab"), pendingRating: null });
+      if (call.path === "/api/practice-sessions") return ok({ created: true, session: session("s1", "you") });
+      return ok({ ok: true, session: session("s2", "you") });
+    });
+    await controller.pageState(7, "two-sum");
+    await controller.start({ tabId: 7 }, { target: { kind: "problem", problemId: "p1" }, mode: "practice", supersedePendingRating: false });
+    await controller.control({ tabId: 7 }, "s2", { command: "takeover" });
+    await controller.pageState(8, "two-sum");
+
+    const before = calls.length;
+    expect(await controller.releaseTab(7)).toBe(2);
+    expect(calls.slice(before).map((call) => [call.path, bodyOf(call)])).toEqual([
+      ["/api/practice-sessions/s1/commands", { type: "release", ownerToken: "token-tab-7" }],
+      ["/api/practice-sessions/s2/commands", { type: "release", ownerToken: "token-tab-7" }],
+    ]);
+    // A tab that only saw another tab's session releases nothing; a second close is a no-op.
+    expect(await controller.releaseTab(8)).toBe(0);
+    expect(await controller.releaseTab(7)).toBe(0);
+    expect(calls).toHaveLength(before + 2);
   });
 
   it("uses the popup's own token for sessions no tab controls, and stable request ids for ratings", async () => {

@@ -160,6 +160,18 @@ export function createLeetcodeClient(options: LeetcodeClientOptions = {}) {
     return { availability: "available", value: username ? { username } : null };
   }
 
+  /**
+   * Whether LeetCode itself says nobody is signed in. Signing out keeps the
+   * `csrftoken` cookie, and an anonymous submissions read may fail, come back
+   * null, or come back empty, so an unexpected listing is checked here; only
+   * an explicit answer counts.
+   */
+  async function confirmSignedOut(): Promise<boolean> {
+    const result = await graphql<{ userStatus: { isSignedIn: boolean } | null }>(`query ankifySignedIn { userStatus { isSignedIn } }`);
+    if (!result.ok) return result.signedOut;
+    return result.data.userStatus?.isSignedIn === false;
+  }
+
   async function listPage(slug: string, offset: number, limit: number, lastKey: string | null): Promise<GraphqlResult<SubmissionPage>> {
     if (paginationSupported) {
       const result = await graphql<{ questionSubmissionList: SubmissionPage }>(
@@ -203,14 +215,14 @@ export function createLeetcodeClient(options: LeetcodeClientOptions = {}) {
     let lastKey: string | null = null;
     for (let page = 0; page < maxPages; page += 1) {
       const result = await listPage(slug, page * pageSize, pageSize, lastKey);
-      if (!result.ok) {
-        return page === 0
-          ? { availability: result.signedOut ? "signed_out" : "unavailable", value: null }
-          : { availability: "partial", value: { submissions, complete: false } };
+      if (!result.ok || !result.data) {
+        if (page > 0) return { availability: "partial", value: { submissions, complete: false } };
+        const signedOut = (!result.ok && result.signedOut) || (await confirmSignedOut());
+        return { availability: signedOut ? "signed_out" : "unavailable", value: null };
       }
-      // LeetCode answers a signed-out request with a null list.
-      if (!result.data) return page === 0 ? { availability: "signed_out", value: null } : { availability: "partial", value: { submissions, complete: false } };
       const rows = result.data.submissions ?? [];
+      // An empty first page is also what a signed-out read can look like.
+      if (page === 0 && rows.length === 0 && (await confirmSignedOut())) return { availability: "signed_out", value: null };
       let reachedStop = false;
       for (const row of rows) {
         const id = String(row.id);

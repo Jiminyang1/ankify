@@ -82,7 +82,9 @@ export async function installLeetcodeFixture(context: BrowserContext, state: Lee
     if (query.includes("SubmissionList(") || query.includes("submissionList(")) {
       const key = query.includes("questionSubmissionList(") ? "questionSubmissionList" : "submissionList";
       const problem = state.problems[String(variables.questionSlug)];
-      if (!state.signedIn) return route.fulfill({ json: { data: { [key]: null } } });
+      // Signed out, the csrftoken cookie stays, and the list just comes back
+      // empty: only userStatus tells the page that nobody is signed in.
+      if (!state.signedIn) return route.fulfill({ json: { data: { [key]: { hasNext: false, lastKey: null, submissions: [] } } } });
       const newestFirst = [...(problem?.submissions ?? [])].sort((a, b) => Number(b.id) - Number(a.id));
       return route.fulfill({ json: { data: { [key]: {
         hasNext: false, lastKey: null,
