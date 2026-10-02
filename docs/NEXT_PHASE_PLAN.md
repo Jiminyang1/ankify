@@ -27,7 +27,7 @@ Then execute the phases in order.
 - Branch `refactor/extension-first`.
 - One commit per passing checkpoint; never push.
 - Record each checkpoint in `docs/EXTENSION_FIRST_CHECKPOINTS.md`.
-- Keep `docs/TEST_GUIDE.md` (git-ignored) current.
+- Keep `docs/TEST_GUIDE.md` current.
 - Rebuild `apps/extension/dist-local` after every fix the owner will test.
 - Gate before each commit: `pnpm test`, `typecheck`, `lint` (≤5 warnings), `test:e2e`, `build`, `extension:check-manifest`.
 
