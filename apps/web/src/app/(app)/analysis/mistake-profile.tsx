@@ -51,7 +51,7 @@ export function MistakeProfileSection({ profile, t }: { profile: MistakeProfileD
                   <ul className="space-y-1 text-sm">
                     {item.examples.map((example) => (
                       <li key={example.mistakeId}>
-                        <Link href={`/problems/${example.problemId}` as Route} className="text-accent hover:underline">
+                        <Link href={`/problems/${example.problemId}` as Route} className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
                           {example.problemTitle}
                         </Link>
                         {example.summary && <span className="text-muted">: {example.summary}</span>}
@@ -74,7 +74,7 @@ export function MistakeProfileSection({ profile, t }: { profile: MistakeProfileD
               <li key={candidate.mistakeId} className="flex flex-wrap items-center gap-3 py-3">
                 <Pill tone="accent">{category(candidate.category)}</Pill>
                 <div className="min-w-0 flex-1 text-sm">
-                  <Link href={`/problems/${candidate.problemId}` as Route} className="font-medium text-accent hover:underline">
+                  <Link href={`/problems/${candidate.problemId}` as Route} className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
                     {candidate.problemTitle}
                   </Link>
                   {candidate.summary && <p className="text-muted">{candidate.summary}</p>}

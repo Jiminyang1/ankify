@@ -125,7 +125,7 @@ export function SessionAnalysis({ sessionId }: { sessionId: string }) {
       {!running && !state.analysis && reason === "own_key_required" && (
         <p className="text-xs text-muted">
           {f.needsKey}{" "}
-          <Link href="/settings" className="text-accent hover:underline">
+          <Link href="/settings" className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
             {f.openSettings}
           </Link>
         </p>

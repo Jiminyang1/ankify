@@ -78,6 +78,10 @@ export function ProblemDetailLayout({
         role="separator"
         aria-label="Resize problem panels"
         aria-orientation="vertical"
+        // A focusable separator is a value control: it announces the rail width.
+        aria-valuenow={railWidth}
+        aria-valuemin={MIN_RAIL_WIDTH}
+        aria-valuemax={MAX_RAIL_WIDTH}
         tabIndex={0}
         onPointerDown={startResize}
         onKeyDown={resizeWithKeyboard}

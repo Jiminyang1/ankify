@@ -1438,3 +1438,45 @@ Gate:
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 38 tests |
 | `pnpm test:visual` | PASS: 7 tests, 29 screenshots |
+
+### 7–8: functional QA and visual/accessibility QA
+
+**Functional (brief 3):**
+
+- **Coverage.** The coverage matrix was audited against the tests added in phases 1–5:
+  - tracking, the rating lifecycle and exactly-once FSRS, cross-surface sync, auth and offline;
+  - AI analysis: eligibility, correction, integrity, provider failures, recovery;
+  - the profile, and suggestions.
+- **New test.** One gap remained: an e2e test where automatic analysis completes after the LeetCode tab is closed and the result is found on the problem page.
+- **Browser.** The real-browser pass uses Playwright's Chromium with the built extension on the fixture. Chrome DevTools MCP was not used, because it would drive the owner's own Chrome profile and accounts.
+- **Bug found by the gate:** the `/problems` hydration mismatch fixed in 6.
+- **Earlier phases.** Bugs found there and fixed with regression tests:
+  - fixture ids reused after a Playwright worker reload (1a);
+  - an unreported worker hand-off (1a);
+  - the quota error being retried (4).
+
+**Accessibility and visual (brief 4):**
+
+- **axe.** `tests/e2e/a11y.spec.ts` (`@axe-core/playwright`, WCAG 2.1 A/AA) covers six web pages, the popup, and the panel (due and rating) in light and dark, plus keyboard focus visibility on the web, the popup, and the panel. Serious and critical violations fail.
+- **Fixed:**
+  - Color contrast of status pills: success and danger text on 10–15 % tints of the same color were under 4.5:1. Light success, danger, warning, easy, hard, and text-accent are darker; dark danger and hard are lighter. LeetCode green and orange are unchanged.
+  - A focusable `role="separator"` (the problem-page column resizer) without `aria-valuenow`/`min`/`max`.
+  - Inline links told apart by color only (the profile examples, legal pages, the settings link in the analysis box). They now have a subtle permanent underline.
+- **Visual baselines** were regenerated after the contrast change and reviewed.
+
+**Not automatable here (owner):**
+
+- live leetcode.com: the theme signal, the panel position against the real editor and console, and the Submit-button locator;
+- the extension popup at OS zoom levels;
+- Windows font rendering.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 517 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 44 tests (incl. 5 a11y) |
+| `pnpm test:visual` | PASS: 7 tests, 29 screenshots |
+
+**The next phase (`docs/NEXT_PHASE_PLAN.md`) is complete.**

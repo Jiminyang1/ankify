@@ -121,7 +121,7 @@ export function PrivacyContent() {
             {t.contactBody}{" "}
             <a
               href="https://github.com/Jiminyang1/ankify/issues"
-              className="font-medium text-accent hover:underline"
+              className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
               rel="noreferrer"
             >
               github.com/Jiminyang1/ankify/issues
@@ -130,7 +130,7 @@ export function PrivacyContent() {
         </section>
       </div>
       <p className="mt-8 border-t border-border pt-5 text-sm">
-        <Link href="/terms" className="font-medium text-accent hover:underline">
+        <Link href="/terms" className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
           {t.terms}
         </Link>
       </p>

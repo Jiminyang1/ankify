@@ -59,7 +59,7 @@ export function TermsContent() {
         ))}
       </div>
       <p className="mt-8 border-t border-border pt-5 text-sm">
-        <Link href="/privacy" className="font-medium text-accent hover:underline">
+        <Link href="/privacy" className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
           {t.privacy}
         </Link>
       </p>

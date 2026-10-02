@@ -29,11 +29,11 @@ export const DARK_TOKENS: ThemeTokens = {
   success: "#2cbb5d",
   warning: "#ffb800",
   "warning-soft": "#3a2f10",
-  danger: "#f8615c",
+  danger: "#ff7b76",
   "danger-contrast": "#1a1a1a",
   easy: "#00b8a3",
   medium: "#ffc01e",
-  hard: "#ff5a76",
+  hard: "#ff7088",
 };
 
 export const LIGHT_TOKENS: ThemeTokens = {
@@ -43,18 +43,18 @@ export const LIGHT_TOKENS: ThemeTokens = {
   fg: "#262626",
   muted: "#5f6268",
   border: "#e3e5e8",
-  accent: "#a85800",
+  accent: "#964f00",
   "accent-solid": "#ffa116",
   "accent-contrast": "#1a1a1a",
   "accent-soft": "#fff4e0",
-  success: "#15803d",
-  warning: "#9a5c00",
+  success: "#11692f",
+  warning: "#8a5200",
   "warning-soft": "#fff6e0",
-  danger: "#d0312d",
+  danger: "#b42b26",
   "danger-contrast": "#ffffff",
-  easy: "#00796b",
+  easy: "#00695d",
   medium: "#8a5d00",
-  hard: "#d91a4a",
+  hard: "#b8143d",
 };
 
 /** `--name: value;` declarations, one per line. */

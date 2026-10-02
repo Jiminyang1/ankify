@@ -43,6 +43,7 @@
     "db:release": "pnpm db:backup && pnpm db:migrate:prod"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.63.0",
     "@types/chrome": "^0.0.290",

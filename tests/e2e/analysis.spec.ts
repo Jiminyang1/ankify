@@ -132,3 +132,22 @@ test("on the web, a session is analyzed from its problem page; findings are corr
   await expect(mistakes.getByRole("button", { name: "Record mistake" })).toHaveCount(0);
   await page.close();
 });
+
+test("automatic analysis finishes after the LeetCode tab is closed; the result is on the problem page later", async ({ context, leetcode, api }) => {
+  await api("/api/settings", { body: { ...OWN_KEY, analysisAutomatic: true } });
+  const { page: panelPage, slug, analysis } = await finishQualifyingSession(context, leetcode, "analysis-closed");
+  // Finishing does not wait for the analysis: the tab is closed while it is only queued.
+  await expect(analysis.getByText(/Analysis queued/)).toBeVisible();
+  await panelPage.close();
+
+  const sessionId = await sessionIdOf(api, slug);
+  await expect.poll(async () => (await api<SessionAnalysisStateDto>(`/api/practice-sessions/${sessionId}/analysis`)).job?.status, { timeout: 45_000, intervals: [1_000, 2_000] }).toBe("succeeded");
+
+  const current = await api<PracticeSessionCurrentDto>(`/api/practice-sessions/current?slug=${slug}`);
+  const page = await context.newPage();
+  await page.goto(`http://localhost:4317/problems/${current.problem!.id}`);
+  await page.getByRole("tab", { name: /Mistakes/ }).click();
+  const suggested = page.getByRole("tabpanel").getByRole("region", { name: "Suggested by analysis" });
+  await expect(suggested.getByText("An empty input returned the wrong value.")).toBeVisible();
+  await page.close();
+});
