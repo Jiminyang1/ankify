@@ -79,7 +79,7 @@ export function ProblemWorkspace({
                   <span
                     className={cn(
                       "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums leading-none",
-                      selected ? "bg-accent/15 text-accent" : "bg-subtle text-muted",
+                      selected ? "bg-accent-solid/15 text-accent" : "bg-subtle text-muted",
                     )}
                   >
                     {p.count}
@@ -87,7 +87,7 @@ export function ProblemWorkspace({
                 )}
               </span>
               {selected && (
-                <span aria-hidden className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent" />
+                <span aria-hidden className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-accent-solid" />
               )}
             </button>
           );

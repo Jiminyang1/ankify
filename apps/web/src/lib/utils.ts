@@ -6,10 +6,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** "in 2h", "3d ago", or "—" */
-export function formatRelative(date: Date | string | null | undefined) {
+/** Relative time ("in 3d", "5m ago"). Server-rendered client components pass
+ *  the server's `now`, so the server's and the client's first render agree. */
+export function formatRelative(date: Date | string | null | undefined, now: number = Date.now()) {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
-  const ms = d.getTime() - Date.now();
+  const ms = d.getTime() - now;
   const abs = Math.abs(ms);
   const min = 60 * 1000;
   const hr = 60 * min;

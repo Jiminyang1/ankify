@@ -250,7 +250,7 @@ export function AiSettingsForm({
 
   const onStarter = starter.enabled && !hasStoredApiKey;
   const sourceStatus = onStarter ? (
-    <p className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
+    <p className="rounded-lg border border-accent-solid/30 bg-accent-soft px-3 py-2 text-sm leading-6 text-fg">
       {starter.remaining === 0 && (starter.paidBalance ?? 0) > 0
         ? t.settings.paidActive(starter.paidBalance ?? 0)
         : t.settings.starterActive(starter.remaining, starter.limit)}

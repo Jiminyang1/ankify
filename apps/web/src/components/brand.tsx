@@ -25,7 +25,7 @@ export function BrandMark({ size = "md", className }: { size?: BrandSize; classN
     <span
       aria-hidden
       className={cn(
-        "grid shrink-0 place-items-center text-accent",
+        "grid shrink-0 place-items-center text-accent-solid",
         markSizes[size],
         className,
       )}
@@ -34,7 +34,7 @@ export function BrandMark({ size = "md", className }: { size?: BrandSize; classN
         <rect x="9" y="27" width="12" height="27" rx="4.5" fill="currentColor" opacity="0.42" />
         <rect x="27" y="20" width="12" height="34" rx="4.5" fill="currentColor" opacity="0.72" />
         <rect x="45" y="10" width="16" height="50" rx="6" fill="currentColor" />
-        <circle cx="53" cy="23" r="3" fill="#141418" />
+        <circle cx="53" cy="23" r="3" className="fill-bg" />
       </svg>
     </span>
   );

@@ -47,7 +47,7 @@ export function Stat({
     <Surface
       className={cn(
         "p-4",
-        tone === "accent" && "bg-accent-soft/40 border-accent/20",
+        tone === "accent" && "bg-accent-soft/40 border-accent-solid/20",
         tone === "success" && "bg-success/5 border-success/30",
         tone === "danger" && "bg-danger/5 border-danger/30",
         className,

@@ -14,7 +14,7 @@ export function IndeterminateProgress({
       aria-label={label}
       className={cn("h-1.5 overflow-hidden rounded-full bg-subtle", className)}
     >
-      <div className="h-full w-2/5 animate-indeterminate rounded-full bg-accent/80 motion-reduce:animate-pulse" />
+      <div className="h-full w-2/5 animate-indeterminate rounded-full bg-accent-solid/80 motion-reduce:animate-pulse" />
     </div>
   );
 }

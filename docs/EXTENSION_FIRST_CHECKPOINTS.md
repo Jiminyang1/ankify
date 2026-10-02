@@ -1401,3 +1401,40 @@ Gate:
 | `pnpm test` | PASS: 513 tests |
 | `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
 | `pnpm test:e2e` | PASS: 38 tests |
+
+### 6: LeetCode-native visual refresh
+
+- **Palette.** One palette lives in `apps/extension/src/shared/theme-tokens.ts`.
+  - It uses LeetCode's dark and light surfaces (`#1a1a1a` / `#262626`; `#f7f8fa` / `#ffffff`) and LeetCode orange `#ffa116` as `accent-solid`, for fills, borders, rings, and focus.
+  - Text uses a text-safe `accent`: `#ffa116` in dark, `#a85800` in light, because `#ffa116` on white is 2.0:1.
+  - Every text color was checked at 4.5:1 or better on its surface.
+  - The panel builds its CSS from the module. The popup's four blocks and the web's three repeat it, and `theme-tokens.test.ts` fails on any drift.
+- **Web.**
+  - The `accent-solid` Tailwind color replaces accent fills, borders, and rings: 33 usages.
+  - The card shadow is flattened. Problem-table headers are sentence case.
+  - The logo mark is LeetCode orange in both themes.
+  - CLAUDE.md and AGENTS.md list the new token.
+- **Panel.**
+  - It follows LeetCode's own theme: the root's `dark`/`light` class, `data-theme`, or `color-scheme`, watched with a MutationObserver and mirrored to `data-theme` on the shadow host. With no signal it falls back to the system preference.
+  - Radii are 8 px. Rating buttons have a grade-colored leading edge, and their labels still name the grade.
+  - The card is capped to the window height, with a scrolling body.
+  - Styles stay inside the shadow root.
+- **Popup.** Same tokens, 8 px radii, the same grade-edged rating buttons.
+- **Hydration fix.** Found by the gate: `/problems` decided "due" from the server's clock snapshot but formatted with `Date.now()`, so a due time near a minute boundary rendered "now" on the server and "1m ago" on the client. `formatRelative()` now takes `now`, and the table passes the snapshot. A regression test covers it.
+- **Visual suite.** `pnpm test:visual` (`playwright.visual.config.ts`, `tests/visual/`, own fresh QA server) runs screenshot regression over:
+  - the panel: collapsed, due, active, rating, and rated, in LeetCode light and dark;
+  - the popup with data and empty, in both themes;
+  - six web pages at 1440×900 in both themes;
+  - three pages at 390×844, which also assert no horizontal scroll.
+  - Day-dependent text is masked, and the Next.js dev overlay (which counts React's dev-only "eval" CSP warning) is hidden.
+  - Every baseline was reviewed by eye before acceptance, and two fresh runs matched.
+- **Still open (owner):** confirm the theme signal and the panel's position on live leetcode.com.
+
+Gate:
+
+| Check | Result |
+| --- | --- |
+| `pnpm test` | PASS: 517 tests |
+| `pnpm typecheck`, `pnpm lint` (5 warnings), build, manifest | PASS |
+| `pnpm test:e2e` | PASS: 38 tests |
+| `pnpm test:visual` | PASS: 7 tests, 29 screenshots |

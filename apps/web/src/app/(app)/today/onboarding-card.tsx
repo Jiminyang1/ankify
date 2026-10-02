@@ -278,7 +278,7 @@ export function OnboardingCard({
   if (progress.complete) return null;
 
   return (
-    <Surface className="overflow-hidden border-accent/25">
+    <Surface className="overflow-hidden border-accent-solid/25">
       <div className="border-b border-border bg-accent-soft/30 px-5 py-5 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -286,13 +286,13 @@ export function OnboardingCard({
             <h1 className="mt-2 text-2xl font-semibold tracking-tight">{t.title}</h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted">{t.description}</p>
           </div>
-          <span className="rounded-full border border-accent/20 bg-surface px-3 py-1 text-xs font-medium text-accent tabular-nums">
+          <span className="rounded-full border border-accent-solid/20 bg-surface px-3 py-1 text-xs font-medium text-accent tabular-nums">
             {t.progress(doneCount)}
           </span>
         </div>
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-border/70">
           <div
-            className="h-full rounded-full bg-accent transition-[width]"
+            className="h-full rounded-full bg-accent-solid transition-[width]"
             style={{ width: `${(doneCount / 4) * 100}%` }}
           />
         </div>

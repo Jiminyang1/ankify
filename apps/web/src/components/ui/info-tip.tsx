@@ -27,7 +27,7 @@ export function InfoTip({
         tabIndex={0}
         role="img"
         aria-label={label}
-        className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-border text-[9px] font-semibold leading-none text-muted transition-colors hover:border-accent hover:text-accent focus:outline-none focus-visible:border-accent focus-visible:text-accent"
+        className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-border text-[9px] font-semibold leading-none text-muted transition-colors hover:border-accent-solid hover:text-accent focus:outline-none focus-visible:border-accent-solid focus-visible:text-accent"
       >
         ?
       </span>

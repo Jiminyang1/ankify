@@ -40,6 +40,37 @@ export type PanelActions = {
 type Local = { tone: "neutral" | "warning" | "danger"; text: string } | null;
 
 /**
+ * LeetCode's current theme, read from its root element: the `dark` or `light`
+ * class its theme switcher sets, else a `data-theme`, else the computed
+ * `color-scheme`. Null when the page says nothing (the system preference then
+ * applies).
+ */
+export function leetcodeTheme(root: HTMLElement = document.documentElement): "dark" | "light" | null {
+  if (root.classList.contains("dark")) return "dark";
+  if (root.classList.contains("light")) return "light";
+  const declared = root.dataset.theme ?? root.dataset.mode;
+  if (declared === "dark" || declared === "light") return declared;
+  const scheme = getComputedStyle(root).colorScheme;
+  if (/\bdark\b/.test(scheme) && !/\blight\b/.test(scheme)) return "dark";
+  if (/\blight\b/.test(scheme) && !/\bdark\b/.test(scheme)) return "light";
+  return null;
+}
+
+/** Mirrors LeetCode's theme onto the panel host while it changes; returns a stop function. */
+function followLeetcodeTheme(host: HTMLElement) {
+  const root = document.documentElement;
+  const apply = () => {
+    const theme = leetcodeTheme(root);
+    if (theme) host.setAttribute("data-theme", theme);
+    else host.removeAttribute("data-theme");
+  };
+  apply();
+  const observer = new MutationObserver(apply);
+  observer.observe(root, { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-mode"] });
+  return () => observer.disconnect();
+}
+
+/**
  * The compact session panel on LeetCode problem pages. It lives in a shadow
  * root, so LeetCode's styles cannot reach it, and it renders the page
  * session's view; every action goes through the page session.
@@ -57,6 +88,8 @@ export function mountPanel(deps: {
   host.setAttribute("data-slug", deps.slug);
   // Open mode: a page script could hook attachShadow before this document_idle
   // script runs anyway; the shadow root is for style isolation.
+  // Follow LeetCode's own light or dark theme as it changes.
+  const stopFollowingTheme = followLeetcodeTheme(host);
   const shadow = host.attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = PANEL_STYLES;
@@ -462,6 +495,7 @@ export function mountPanel(deps: {
     },
     unmount() {
       unsubscribe();
+      stopFollowingTheme();
       host.remove();
     },
   };

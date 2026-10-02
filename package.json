@@ -23,6 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:visual": "playwright test --config playwright.visual.config.ts",
     "qa:provider-smoke": "pnpm --filter ./apps/web provider:smoke",
     "test:e2e:install": "playwright install chromium",
     "typecheck": "pnpm -r typecheck && tsc -p tests/e2e/tsconfig.json",

@@ -65,8 +65,8 @@ export function CategoryChips({
               "rounded-lg border text-left transition disabled:cursor-not-allowed disabled:opacity-50",
               showHints ? "px-3 py-2" : "px-3 py-1.5 text-xs font-medium",
               checked
-                ? "border-accent/50 bg-accent-soft text-accent"
-                : "border-border bg-surface text-fg hover:border-accent/30 hover:bg-subtle",
+                ? "border-accent-solid/50 bg-accent-soft text-accent"
+                : "border-border bg-surface text-fg hover:border-accent-solid/30 hover:bg-subtle",
             )}
           >
             <span className={cn(showHints && "block text-sm font-medium")}>{t.mistakes.categories[category]}</span>

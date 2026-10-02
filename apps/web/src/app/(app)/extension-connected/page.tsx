@@ -32,7 +32,7 @@ export default async function ExtensionConnectedPage() {
         <p className="mt-2 text-sm leading-6 text-muted">{t.body}</p>
         <Link
           href="/today"
-          className="mt-5 inline-flex rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast"
+          className="mt-5 inline-flex rounded-md bg-accent-solid px-4 py-2 text-sm font-medium text-accent-contrast"
         >
           {t.continue}
         </Link>

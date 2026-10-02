@@ -83,7 +83,7 @@ export function ProblemDetailLayout({
         onKeyDown={resizeWithKeyboard}
         className="group hidden cursor-col-resize items-stretch justify-center px-2 outline-none lg:flex"
       >
-        <div className="my-1 w-px rounded-full bg-border transition group-hover:bg-accent group-focus-visible:bg-accent" />
+        <div className="my-1 w-px rounded-full bg-border transition group-hover:bg-accent-solid group-focus-visible:bg-accent-solid" />
       </div>
       <div className="min-w-0">{workspace}</div>
     </div>

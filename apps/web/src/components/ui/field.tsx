@@ -15,7 +15,7 @@ import { MotionPresence } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
 
 const FIELD_BASE =
-  "min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-fg shadow-card transition placeholder:text-muted hover:border-accent/25 focus:border-accent/40 focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50";
+  "min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-fg shadow-card transition placeholder:text-muted hover:border-accent-solid/25 focus:border-accent-solid/40 focus:outline-none focus:ring-2 focus:ring-accent-solid/30 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function Input({
   className,
@@ -178,7 +178,7 @@ export function Select({
         className={cn(
           FIELD_BASE,
           "flex cursor-pointer items-center justify-between gap-3 text-left",
-          open && "border-accent/40 ring-2 ring-accent/30",
+          open && "border-accent-solid/40 ring-2 ring-accent-solid/30",
         )}
         {...rest}
       >

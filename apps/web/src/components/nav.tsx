@@ -136,7 +136,7 @@ export function Nav({
                   )}
                   <span className="relative z-10">{t.nav[l.key]}</span>
                   {showBadge && (
-                    <span className="relative z-10 ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-contrast">
+                    <span className="relative z-10 ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-solid px-1 text-[10px] font-semibold text-accent-contrast">
                       {dueCount > 99 ? "99+" : dueCount}
                     </span>
                   )}
@@ -152,7 +152,7 @@ export function Nav({
               <button
                 type="button"
                 onClick={() => setAccountOpen((open) => !open)}
-                className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-2 transition hover:border-accent/35 hover:bg-subtle"
+                className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-2 transition hover:border-accent-solid/35 hover:bg-subtle"
                 aria-label={t.nav.accountMenu}
                 aria-expanded={accountOpen}
                 aria-haspopup="menu"

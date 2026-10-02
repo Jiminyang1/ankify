@@ -353,7 +353,7 @@ export default function ProblemsPage({
 
       {nextCursor && (
         <p
-          className="rounded-lg border border-accent/20 bg-accent-soft px-3 py-2 text-xs text-muted"
+          className="rounded-lg border border-accent-solid/20 bg-accent-soft px-3 py-2 text-xs text-muted"
           role="status"
         >
           {t.problems.partialResults(problems.length, totalCount)}
@@ -365,7 +365,7 @@ export default function ProblemsPage({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted">
+              <tr className="border-b border-border text-left text-xs text-muted">
                 {([
                   { key: "title", label: t.problems.titleCol, className: "" },
                   { key: "difficulty", label: t.problems.diffCol, className: "hidden sm:table-cell" },
@@ -387,7 +387,7 @@ export default function ProblemsPage({
                         <button
                           type="button"
                           onClick={() => toggleSort(col.key as SortKey)}
-                          className="inline-flex select-none items-center gap-1 font-medium uppercase tracking-wide transition hover:text-fg"
+                          className="inline-flex select-none items-center gap-1 font-medium transition hover:text-fg"
                         >
                           {col.label}
                           {isSorted && <ChevronDown aria-hidden className={cn("h-3 w-3", sort.asc && "rotate-180")} />}
@@ -440,7 +440,7 @@ export default function ProblemsPage({
                           ? t.common.notScheduled
                           : isDue && p.fsrsReps > 0
                             ? t.common.now
-                            : formatRelative(p.fsrsDue)}
+                            : formatRelative(p.fsrsDue, nowMs)}
                       </span>
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">{p.fsrsReps}</td>

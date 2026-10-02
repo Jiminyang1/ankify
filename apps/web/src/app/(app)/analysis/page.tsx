@@ -52,7 +52,7 @@ function buildHeadline(data: AnalysisData, t: Awaited<ReturnType<typeof getReque
 
 const HEADLINE_TONE: Record<Headline["tone"], string> = {
   default: "border-border bg-subtle text-fg",
-  accent: "border-accent/20 bg-accent-soft/40 text-fg",
+  accent: "border-accent-solid/20 bg-accent-soft/40 text-fg",
   success: "border-success/30 bg-success/5 text-fg",
   danger: "border-danger/30 bg-danger/5 text-fg",
 };
@@ -218,7 +218,7 @@ export default async function AnalysisPage() {
                       <span className="w-24 text-muted">{st.label}</span>
                       <div className="h-3 flex-1 overflow-hidden rounded-full bg-subtle">
                         <div
-                          className="h-full rounded-full bg-accent/60 transition-all"
+                          className="h-full rounded-full bg-accent-solid/60 transition-all"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -241,7 +241,7 @@ export default async function AnalysisPage() {
                     <span className="w-16 text-muted">{b.label}</span>
                     <div className="h-3 flex-1 overflow-hidden rounded-full bg-subtle">
                       <div
-                        className={`h-full rounded-full transition-all ${STABILITY_BAR_COLOR[b.label] ?? "bg-accent/60"}`}
+                        className={`h-full rounded-full transition-all ${STABILITY_BAR_COLOR[b.label] ?? "bg-accent-solid/60"}`}
                         style={{ width: `${b.pct}%` }}
                       />
                     </div>

@@ -6,9 +6,9 @@ export type ButtonSize = "icon" | "xs" | "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
-    "border-accent/70 bg-accent text-accent-contrast shadow-card hover:border-accent hover:brightness-95 hover:shadow-card-hover",
+    "border-accent-solid/70 bg-accent-solid text-accent-contrast shadow-card hover:border-accent-solid hover:brightness-95 hover:shadow-card-hover",
   secondary:
-    "border-border bg-surface text-fg shadow-card hover:border-accent/30 hover:bg-subtle",
+    "border-border bg-surface text-fg shadow-card hover:border-accent-solid/30 hover:bg-subtle",
   ghost:
     "border-transparent bg-transparent text-muted shadow-none hover:bg-subtle hover:text-fg",
   danger:

@@ -119,7 +119,7 @@ If a new component needs a mono look, justify it against the four cases above; o
 
 Genuinely custom controls are the exception and stay raw: rating buttons, quiz answer choices, segmented tab triggers, full-width disclosure rows, and plain text links.
 
-**Colors come from the semantic tokens** (`bg`, `surface`, `subtle`, `fg`, `muted`, `border`, `accent`, `accent-soft`, `success`, `warning`, `danger`, `easy`, `medium`, `hard`). A raw Tailwind palette class like `text-red-600` is a bug; use `text-danger`. `apps/extension/src/popup/popup.css` mirrors the same token names and values in all four theme blocks - change one side and you must change the other.
+**Colors come from the semantic tokens** (`bg`, `surface`, `subtle`, `fg`, `muted`, `border`, `accent`, `accent-solid`, `accent-soft`, `success`, `warning`, `danger`, `easy`, `medium`, `hard`). The palette is LeetCode-native: `accent-solid` is LeetCode orange for fills, borders, and rings (with `accent-contrast` text); `accent` is the text-safe orange for links and active labels. A raw Tailwind palette class like `text-red-600` is a bug; use `text-danger`. The values live in `apps/extension/src/shared/theme-tokens.ts`; `popup.css` (four theme blocks), the panel, and the web's `globals.css` repeat them, and `theme-tokens.test.ts` fails if any copy drifts.
 
 **Focus is never removed.** `globals.css` gives `button / a / input / textarea / select / [role=button]` a `:focus-visible` outline. If an element opts out, it must supply its own indicator - use `.focus-inset` for borderless full-panel editors where an offset ring would fall outside the panel.
 

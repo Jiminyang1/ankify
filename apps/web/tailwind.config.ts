@@ -11,7 +11,10 @@ export default {
         fg: "rgb(var(--fg) / <alpha-value>)",
         muted: "rgb(var(--muted) / <alpha-value>)",
         border: "rgb(var(--border) / <alpha-value>)",
+        /** Text-safe accent (links, active labels). */
         accent: "rgb(var(--accent) / <alpha-value>)",
+        /** LeetCode orange for fills, borders, and rings; pair with accent-contrast text. */
+        "accent-solid": "rgb(var(--accent-solid) / <alpha-value>)",
         "accent-contrast": "rgb(var(--accent-contrast) / <alpha-value>)",
         "accent-soft": "rgb(var(--accent-soft) / <alpha-value>)",
         success: "rgb(var(--success) / <alpha-value>)",

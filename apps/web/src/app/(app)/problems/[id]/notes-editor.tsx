@@ -29,7 +29,7 @@ export function NotesEditor({
 
   return (
     <div className="space-y-2">
-      <div className="relative flex min-h-[18rem] flex-col rounded-lg border border-border bg-subtle p-3 transition-colors focus-within:border-accent/40">
+      <div className="relative flex min-h-[18rem] flex-col rounded-lg border border-border bg-subtle p-3 transition-colors focus-within:border-accent-solid/40">
         {showTextarea ? (
           <textarea
             value={notes}

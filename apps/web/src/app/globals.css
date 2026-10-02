@@ -7,50 +7,58 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+/* LeetCode-native palette: LeetCode's dark and light surfaces, its orange
+ * (#ffa116) as the solid accent for fills, and a text-safe accent (darker in
+ * light mode, where #ffa116 on white fails WCAG AA). Every text pairing here
+ * meets 4.5:1 on its surface. Mirrored in the extension's popup.css and
+ * panel-styles.ts. */
+
 /* ── Dark theme (default) ── */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: 20 20 24;
-  --surface: 28 28 33;
-  --subtle: 34 34 40;
-  --fg: 228 228 232;
-  --muted: 132 131 137;
-  --border: 48 48 54;
-  --accent: 212 168 83;
-  --accent-contrast: 26 26 30;
-  --accent-soft: 42 38 28;
-  --success: 76 175 145;
-  --warning: 232 146 64;
-  --warning-soft: 48 36 22;
-  --danger: 224 85 106;
-  --danger-contrast: 26 26 30;
-  --easy: 76 175 145;
-  --medium: 212 168 83;
-  --hard: 224 85 106;
+  --bg: 26 26 26;
+  --surface: 38 38 38;
+  --subtle: 48 48 48;
+  --fg: 239 241 246;
+  --muted: 160 161 166;
+  --border: 61 61 61;
+  --accent: 255 161 22;
+  --accent-solid: 255 161 22;
+  --accent-contrast: 26 26 26;
+  --accent-soft: 61 46 20;
+  --success: 44 187 93;
+  --warning: 255 184 0;
+  --warning-soft: 58 47 16;
+  --danger: 248 97 92;
+  --danger-contrast: 26 26 26;
+  --easy: 0 184 163;
+  --medium: 255 192 30;
+  --hard: 255 90 118;
   --shadow-color: 0 0 0;
 }
 
 /* ── Light theme ── */
 [data-theme="light"] {
   color-scheme: light;
-  --bg: 245 244 241;
+  --bg: 247 248 250;
   --surface: 255 255 255;
-  --subtle: 237 236 232;
-  --fg: 26 26 30;
-  --muted: 102 101 107;
-  --border: 217 214 208;
-  --accent: 184 150 63;
-  --accent-contrast: 26 26 30;
-  --accent-soft: 250 246 236;
-  --success: 45 143 109;
-  --warning: 192 110 28;
-  --warning-soft: 252 243 232;
-  --danger: 199 62 85;
+  --subtle: 242 243 245;
+  --fg: 38 38 38;
+  --muted: 95 98 104;
+  --border: 227 229 232;
+  --accent: 168 88 0;
+  --accent-solid: 255 161 22;
+  --accent-contrast: 26 26 26;
+  --accent-soft: 255 244 224;
+  --success: 21 128 61;
+  --warning: 154 92 0;
+  --warning-soft: 255 246 224;
+  --danger: 208 49 45;
   --danger-contrast: 255 255 255;
-  --easy: 45 143 109;
-  --medium: 184 150 63;
-  --hard: 199 62 85;
+  --easy: 0 121 107;
+  --medium: 138 93 0;
+  --hard: 217 26 74;
   --shadow-color: 30 30 40;
 }
 
@@ -58,23 +66,24 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg: 245 244 241;
+    --bg: 247 248 250;
     --surface: 255 255 255;
-    --subtle: 237 236 232;
-    --fg: 26 26 30;
-    --muted: 102 101 107;
-    --border: 217 214 208;
-    --accent: 184 150 63;
-    --accent-contrast: 26 26 30;
-    --accent-soft: 250 246 236;
-    --success: 45 143 109;
-    --warning: 192 110 28;
-    --warning-soft: 252 243 232;
-    --danger: 199 62 85;
+    --subtle: 242 243 245;
+    --fg: 38 38 38;
+    --muted: 95 98 104;
+    --border: 227 229 232;
+    --accent: 168 88 0;
+    --accent-solid: 255 161 22;
+    --accent-contrast: 26 26 26;
+    --accent-soft: 255 244 224;
+    --success: 21 128 61;
+    --warning: 154 92 0;
+    --warning-soft: 255 246 224;
+    --danger: 208 49 45;
     --danger-contrast: 255 255 255;
-    --easy: 45 143 109;
-    --medium: 184 150 63;
-    --hard: 199 62 85;
+    --easy: 0 121 107;
+    --medium: 138 93 0;
+    --hard: 217 26 74;
     --shadow-color: 30 30 40;
   }
 }
@@ -110,17 +119,12 @@ body {
   .subtle {
     background: rgb(var(--subtle));
   }
+  /* Flat, as on LeetCode: a hairline lift, no floating cards. */
   .shadow-card {
-    box-shadow:
-      0 1px 0 0 rgb(var(--border) / 0.6),
-      0 1px 2px -1px rgb(var(--shadow-color) / 0.08),
-      0 4px 8px -4px rgb(var(--shadow-color) / 0.06);
+    box-shadow: 0 1px 2px 0 rgb(var(--shadow-color) / 0.04);
   }
   .shadow-card-hover {
-    box-shadow:
-      0 1px 0 0 rgb(var(--border) / 0.7),
-      0 4px 8px -2px rgb(var(--shadow-color) / 0.10),
-      0 12px 24px -8px rgb(var(--shadow-color) / 0.10);
+    box-shadow: 0 2px 6px -2px rgb(var(--shadow-color) / 0.10);
   }
 }
 
@@ -159,14 +163,14 @@ textarea:focus-visible,
 select:focus-visible,
 [tabindex]:not([tabindex="-1"]):focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid rgb(var(--accent) / 0.5);
+  outline: 2px solid rgb(var(--accent-solid) / 0.85);
   outline-offset: 2px;
 }
 
 /* For full-panel editors where an offset ring would sit outside the panel:
  * draws the indicator inside the element's own box instead of removing it. */
 .focus-inset:focus-visible {
-  outline: 2px solid rgb(var(--accent) / 0.45);
+  outline: 2px solid rgb(var(--accent-solid) / 0.75);
   outline-offset: -2px;
   border-radius: 6px;
 }

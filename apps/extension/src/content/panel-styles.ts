@@ -1,52 +1,36 @@
+import { DARK_TOKENS, LIGHT_TOKENS, tokenDeclarations } from "../shared/theme-tokens";
+
 /**
- * Styles for the in-page panel, scoped to its shadow root. Token names
- * and values mirror `popup/popup.css`; the panel follows the system color
- * scheme because extension settings are not readable from content scripts.
+ * Styles for the in-page panel, scoped to its shadow root, so nothing here
+ * reaches LeetCode's own page. The palette is the shared LeetCode-native one
+ * (`shared/theme-tokens.ts`). The panel follows LeetCode's theme: the content
+ * script mirrors it onto the host as `data-theme`; without one it follows the
+ * system preference.
  */
 export const PANEL_STYLES = `
 :host {
   all: initial;
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
-  --bg: #141418;
-  --surface: #1c1c21;
-  --subtle: #222228;
-  --fg: #e4e4e8;
-  --muted: #848389;
-  --border: #303036;
-  --accent: #d4a853;
-  --accent-contrast: #1a1a1e;
-  --accent-soft: #2a261c;
-  --success: #4caf91;
-  --danger: #e0556a;
-  --warning: #e89240;
-  --warning-soft: #302416;
-  --easy: #4caf91;
-  --medium: #d4a853;
-  --hard: #e0556a;
-  --shadow: 0 8px 24px -8px rgba(0,0,0,0.45), 0 2px 6px -2px rgba(0,0,0,0.3);
+${tokenDeclarations(DARK_TOKENS)}
+  --shadow: 0 6px 20px -6px rgba(0,0,0,0.55), 0 2px 6px -2px rgba(0,0,0,0.35);
 }
 @media (prefers-color-scheme: light) {
-  :host {
+  :host(:not([data-theme])) {
     color-scheme: light;
-    --bg: #f5f4f1;
-    --surface: #ffffff;
-    --subtle: #edece8;
-    --fg: #1a1a1e;
-    --muted: #66656b;
-    --border: #d9d6d0;
-    --accent: #b8963f;
-    --accent-contrast: #1a1a1e;
-    --accent-soft: #faf6ec;
-    --success: #2d8f6d;
-    --danger: #c73e55;
-    --warning: #c06e1c;
-    --warning-soft: #fcf3e8;
-    --easy: #2d8f6d;
-    --medium: #b8963f;
-    --hard: #c73e55;
-    --shadow: 0 8px 24px -10px rgba(30,30,40,0.25), 0 2px 6px -2px rgba(30,30,40,0.12);
+${tokenDeclarations(LIGHT_TOKENS, "    ")}
+    --shadow: 0 6px 20px -8px rgba(30,30,40,0.22), 0 2px 6px -2px rgba(30,30,40,0.10);
   }
+}
+:host([data-theme="light"]) {
+  color-scheme: light;
+${tokenDeclarations(LIGHT_TOKENS)}
+  --shadow: 0 6px 20px -8px rgba(30,30,40,0.22), 0 2px 6px -2px rgba(30,30,40,0.10);
+}
+:host([data-theme="dark"]) {
+  color-scheme: dark;
+${tokenDeclarations(DARK_TOKENS)}
+  --shadow: 0 6px 20px -6px rgba(0,0,0,0.55), 0 2px 6px -2px rgba(0,0,0,0.35);
 }
 * { box-sizing: border-box; }
 .root {
@@ -68,7 +52,7 @@ button {
 }
 button:disabled { cursor: default; opacity: 0.6; }
 button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-solid);
   outline-offset: 2px;
 }
 .pill {
@@ -83,7 +67,7 @@ button:focus-visible, a:focus-visible {
   font-weight: 600;
 }
 .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.pill .dot[data-tone="accent"] { background: var(--accent); }
+.pill .dot[data-tone="accent"] { background: var(--accent-solid); }
 .pill .dot[data-tone="success"] { background: var(--success); }
 .pill .dot[data-tone="warning"] { background: var(--warning); }
 .pill .status { font-weight: 400; color: var(--muted); }
@@ -91,8 +75,12 @@ button:focus-visible, a:focus-visible {
 .card {
   width: 300px;
   max-width: calc(100vw - 32px);
+  /* Never taller than the window: the body scrolls instead. */
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
@@ -106,7 +94,7 @@ button:focus-visible, a:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 .card header .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .body { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.card .body { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow-y: auto; min-height: 0; }
 .card footer {
   display: flex;
   justify-content: space-between;
@@ -134,8 +122,8 @@ button:focus-visible, a:focus-visible {
   background: var(--surface);
 }
 .btn:hover:not(:disabled) { background: var(--subtle); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
-.btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.05); }
+.btn-primary { background: var(--accent-solid); border-color: var(--accent-solid); color: var(--accent-contrast); font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-solid); filter: brightness(1.05); }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--muted); }
 .btn-ghost:hover:not(:disabled) { color: var(--fg); background: var(--subtle); }
 .btn-danger { color: var(--danger); }
@@ -162,22 +150,25 @@ button:focus-visible, a:focus-visible {
 .notice[data-tone="danger"] { color: var(--danger); }
 .ratings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .rating {
+  --grade: var(--muted);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
+  /* The grade's color marks the leading edge; the label names it, so color is never the only cue. */
+  border-left: 3px solid var(--grade);
   background: var(--surface);
   text-align: left;
 }
-.rating:hover:not(:disabled) { background: var(--subtle); }
-.rating .label { font-weight: 600; }
-.rating[data-grade="1"] .label { color: var(--hard); }
-.rating[data-grade="2"] .label { color: var(--medium); }
-.rating[data-grade="3"] .label { color: var(--success); }
-.rating[data-grade="4"] .label { color: var(--easy); }
+.rating:hover:not(:disabled) { background: var(--subtle); border-color: var(--grade); }
+.rating .label { font-weight: 600; color: var(--grade); }
+.rating[data-grade="1"] { --grade: var(--hard); }
+.rating[data-grade="2"] { --grade: var(--medium); }
+.rating[data-grade="3"] { --grade: var(--success); }
+.rating[data-grade="4"] { --grade: var(--easy); }
 .rating .hint { font-size: 11px; color: var(--muted); }
 select {
   font: inherit;
@@ -188,7 +179,7 @@ select {
   border: 1px solid var(--border);
   background: var(--surface);
 }
-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select:focus-visible { outline: 2px solid var(--accent-solid); outline-offset: 2px; }
 .analysis { border-top: 1px solid var(--border); padding-top: 10px; }
 .finding { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--subtle); }
 .status-line { display: inline-flex; align-items: center; gap: 6px; }
