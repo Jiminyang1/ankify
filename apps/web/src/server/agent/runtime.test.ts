@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelMessage } from "ai";
+import { agentTurnRequestSchema } from "@ankify/contracts";
 import type { AgentSession } from "@ankify/db";
 import { classifyAgentError } from "./errors";
 import {
@@ -8,6 +9,7 @@ import {
   buildSessionSummaryPrompt,
   prepareAgentResponseMessages,
   STUDY_COACH_INSTRUCTIONS,
+  withoutEditorCode,
 } from "./prompt";
 import { toAgentSessionDto } from "./store";
 
@@ -141,5 +143,46 @@ describe("Study Coach model context", () => {
     expect(prepareAgentResponseMessages(messages, false)).toEqual([
       { role: "assistant", content: [{ type: "text", text: "Final answer" }] },
     ]);
+  });
+});
+
+describe("LeetCode page context", () => {
+  const leetcode = {
+    page: "leetcode" as const,
+    activePanel: "overview" as const,
+    problemId: null,
+    leetcode: {
+      slug: "two-sum",
+      title: "Two Sum",
+      editor: { language: "python3", code: "class Solution:\n    pass" },
+    },
+  };
+  const turn = (context: unknown) =>
+    agentTurnRequestSchema.safeParse({
+      sessionId: null,
+      requestId: "7b0c1d2e-3f40-4a5b-8c6d-7e8f9a0b1c2d",
+      message: "Why is this wrong?",
+      context,
+    });
+
+  it("accepts an unsaved problem with an editor snapshot, within limits", () => {
+    expect(turn(leetcode).success).toBe(true);
+    const tooLong = { ...leetcode, leetcode: { ...leetcode.leetcode, editor: { language: "python3", code: "x".repeat(20_001) } } };
+    expect(turn(tooLong).success).toBe(false);
+    expect(turn({ ...leetcode, leetcode: { ...leetcode.leetcode, extra: true } }).success).toBe(false);
+  });
+
+  it("drops the editor snapshot from older turns but keeps the problem", () => {
+    expect(withoutEditorCode(leetcode)).toEqual({
+      ...leetcode,
+      leetcode: { slug: "two-sum", title: "Two Sum" },
+    });
+    const plain = { page: "today" as const, activePanel: "overview" as const, problemId: null };
+    expect(withoutEditorCode(plain)).toBe(plain);
+  });
+
+  it("tells the Coach to hint rather than solve while the user is coding", () => {
+    expect(STUDY_COACH_INSTRUCTIONS).toContain("runtimeContext.leetcode");
+    expect(STUDY_COACH_INSTRUCTIONS).toContain("give a full solution only when they ask for one");
   });
 });

@@ -19,7 +19,8 @@ export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
 
-  const body = await readJsonBody(req, 20_000);
+  // Room for a 12k-character message plus a 20k-character editor snapshot.
+  const body = await readJsonBody(req, 64_000);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
   const parsed = agentTurnRequestSchema.safeParse(body.value);
   if (!parsed.success) {

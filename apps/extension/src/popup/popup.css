@@ -2765,3 +2765,195 @@ a:focus-visible,
 }
 
 .quick-rate { }
+
+/* ── Study Coach ── */
+
+/* The Coach is a chat: the thread scrolls, the composer stays in view. */
+#root:has(.coach) {
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.coach-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-context {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.coach-context-title {
+  font-weight: 650;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-context-note {
+  color: var(--muted);
+}
+
+.coach-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 160px;
+  overflow-y: auto;
+  padding: 2px 2px 4px;
+}
+
+.coach-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coach-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.coach-quick .btn-xs {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+  padding: 6px 9px;
+}
+
+.coach-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coach-msg {
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.coach-msg-user {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
+.coach-msg-assistant {
+  padding: 2px 2px 0;
+}
+
+.coach-thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.coach-step {
+  margin: 0;
+}
+
+.coach-step-read {
+  font-size: 11px;
+  color: var(--muted);
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.coach-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.coach-proposal p {
+  margin: 0;
+}
+
+.coach-proposal-summary {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.coach-proposal-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.coach-proposal-actions .btn-xs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.coach-run-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.coach-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.coach-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coach-input {
+  min-height: 64px;
+  max-height: 180px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.coach-composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.coach-toggle input {
+  accent-color: var(--accent);
+}

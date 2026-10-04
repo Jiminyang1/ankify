@@ -48,6 +48,13 @@ export default defineManifest(({ mode }) => {
         js: ["src/content/index.ts"],
         run_at: "document_idle",
       },
+      {
+        // Reads LeetCode's code editor for the Study Coach; see editor-main.ts.
+        matches: ["https://leetcode.com/problems/*"],
+        js: ["src/content/editor-main.ts"],
+        run_at: "document_idle",
+        world: "MAIN",
+      },
     ],
     background: {
       service_worker: "src/background/index.ts",

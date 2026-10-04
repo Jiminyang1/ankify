@@ -24,6 +24,7 @@ import {
   buildAgentUserContent,
   buildCompressedSessionMessages,
   prepareAgentResponseMessages,
+  withoutEditorCode,
   type AgentSummaryTurn,
 } from "./prompt";
 import {
@@ -413,11 +414,13 @@ export async function getAgentModelMessages(userId: string, sessionId: string) {
       .slice(-AGENT_DETAILED_TOOL_RUNS)
       .map((run) => run.id),
   );
+  const newestRunId = runs.at(-1)!.id;
   const messages = runs.flatMap<ModelMessage>((run) => {
+    const context = run.id === newestRunId ? run.contextJson : withoutEditorCode(run.contextJson);
     const messages: ModelMessage[] = [
       {
         role: "user",
-        content: buildAgentUserContent(run.contextJson, userContentByRun.get(run.id)!),
+        content: buildAgentUserContent(context, userContentByRun.get(run.id)!),
       },
     ];
     if (run.status === "succeeded") {
@@ -489,7 +492,7 @@ export async function getAgentCompactionBatch(userId: string, sessionId: string)
     messagesByRun.set(message.runId, current);
   }
   const turns: AgentSummaryTurn[] = runs.map((run) => ({
-    context: run.context,
+    context: withoutEditorCode(run.context),
     userMessage: messagesByRun.get(run.id)!.user!,
     assistantMessage: messagesByRun.get(run.id)?.assistant ?? null,
   }));
@@ -721,7 +724,7 @@ export function toAgentRunDto(run: AgentRun): AgentRunDto {
     sessionId: run.sessionId,
     requestId: run.requestId,
     status: run.status,
-    context: run.contextJson,
+    context: withoutEditorCode(run.contextJson),
     errorCode: run.errorCode,
     errorMessage: run.errorMessage,
     inputTokens: run.inputTokens,

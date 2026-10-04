@@ -1,4 +1,5 @@
 import type { ContentRequest, ContentResponse } from "../shared/messages";
+import { readEditor } from "./editor";
 import { captureCurrent, fetchSubmissionInputs } from "./leetcode";
 import { startAutoResetCodeOnProblemPages } from "./reset-code";
 import { startProblemWatch, syncSolved } from "./problem-watch";
@@ -24,6 +25,10 @@ chrome.runtime.onMessage.addListener(
       fetchSubmissionInputs(msg.submissions)
         .then((data) => sendResponse({ type: "submissions", data }))
         .catch((err: unknown) => sendResponse({ type: "error", message: errorMessage(err) }));
+      return true;
+    }
+    if (msg.type === "read_editor") {
+      void readEditor().then((editor) => sendResponse({ type: "editor", editor }));
       return true;
     }
     if (msg.type === "sync_solved_now") {

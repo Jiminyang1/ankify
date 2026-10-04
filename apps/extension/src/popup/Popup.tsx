@@ -27,6 +27,8 @@ import {
   setCardDraft,
   setSettings,
 } from "../shared/storage";
+import { AUTH_REQUIRED_EVENT, apiFetch } from "./api";
+import { CoachTab } from "./CoachTab";
 import { PopupMarkdown } from "./PopupMarkdown";
 
 type LocalCandidate = ApiCard & {
@@ -62,11 +64,11 @@ type Sticky = {
   previews: Previews;
 };
 
-type NavTab = "today" | "problem" | "settings";
+type NavTab = "today" | "problem" | "coach" | "settings";
 
 const EXT_I18N = {
   en: {
-    nav: { today: "Today", problem: "Problem", settings: "Settings" },
+    nav: { today: "Today", problem: "Problem", coach: "Coach", settings: "Settings" },
     common: {
       navigation: "Primary navigation",
       cancel: "Cancel",
@@ -250,6 +252,35 @@ const EXT_I18N = {
       saved: "Saved",
       placeholder: "What tripped you up, key insights, alternative approaches...",
     },
+    coach: {
+      intro:
+        "Ask about the problem you're on. With \"Include my code\" on, the Coach also sees what's in LeetCode's editor right now, so it can point at the bug instead of guessing.",
+      placeholder: "Ask the Study Coach",
+      send: "Send",
+      stop: "Stop",
+      newChat: "New chat",
+      includeCode: "Include my code",
+      onProblem: (title: string) => `On ${title}`,
+      notSaved: "Not saved in ankify",
+      offPage: "Open a LeetCode problem to talk about it, or ask about your reviews.",
+      thinking: "Thinking",
+      quick: {
+        failing: "Why is my code failing?",
+        hint: "Give me a hint, not the answer",
+        history: "What did I get wrong on this before?",
+      },
+      approve: "Approve",
+      dismiss: "Dismiss",
+      dismissed: "Dismissed.",
+      jobRunning: "Generating",
+      jobDone: "Done. Find it in the Problem tab.",
+      jobFailed: "Generation failed.",
+      openReview: "Open review in ankify",
+      openProblem: "Open in ankify",
+      noCode: "Couldn't read LeetCode's editor, so this was sent without your code. Reload the LeetCode tab if this keeps happening.",
+      loadFailed: "Couldn't load the Study Coach.",
+      sendFailed: "Couldn't reach the Study Coach. Try again.",
+    },
     settings: {
       appearance: "Appearance",
       appearanceHelp: "Language and theme for this extension.",
@@ -288,7 +319,7 @@ const EXT_I18N = {
     },
   },
   zh: {
-    nav: { today: "今日", problem: "题目", settings: "设置" },
+    nav: { today: "今日", problem: "题目", coach: "教练", settings: "设置" },
     common: {
       navigation: "主导航",
       cancel: "取消",
@@ -454,6 +485,34 @@ const EXT_I18N = {
       saving: "保存中...",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
+    coach: {
+      intro: "问问你正在做的这道题。勾选「附上我的代码」后，教练还能看到 LeetCode 编辑器里现在的代码，直接指出问题在哪。",
+      placeholder: "问学习教练",
+      send: "发送",
+      stop: "停止",
+      newChat: "新对话",
+      includeCode: "附上我的代码",
+      onProblem: (title: string) => `当前题目：${title}`,
+      notSaved: "还没存进 ankify",
+      offPage: "打开一道 LeetCode 题就能聊这道题，也可以问复习安排。",
+      thinking: "思考中",
+      quick: {
+        failing: "我的代码哪里错了？",
+        hint: "给我一点提示，别直接给答案",
+        history: "我以前这题错在哪？",
+      },
+      approve: "同意",
+      dismiss: "不用了",
+      dismissed: "已忽略。",
+      jobRunning: "生成中",
+      jobDone: "好了，在「题目」页里看。",
+      jobFailed: "生成失败。",
+      openReview: "在 ankify 里打开复习",
+      openProblem: "在 ankify 里打开",
+      noCode: "没读到 LeetCode 编辑器，这次没附上代码。如果一直这样，刷新一下 LeetCode 页面。",
+      loadFailed: "学习教练加载失败。",
+      sendFailed: "连不上学习教练，请重试。",
+    },
     settings: {
       appearance: "外观",
       appearanceHelp: "扩展里的语言和主题。",
@@ -589,7 +648,6 @@ const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" 
 ];
 
 const CARD_GENERATION_TARGET_SECONDS = 60;
-const AUTH_REQUIRED_EVENT = "ankify:auth-required";
 
 /* ── helpers ── */
 
@@ -601,18 +659,6 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 function authHeaders(settings: ExtSettings): HeadersInit {
   void settings;
   return {};
-}
-
-async function apiFetch(settings: ExtSettings, path: string, init?: RequestInit) {
-  const base = settings.apiBaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    credentials: "include",
-  });
-  if (response.status === 401) {
-    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
-  }
-  return response;
 }
 
 function aiJobs(settings: ExtSettings) {
@@ -1008,7 +1054,7 @@ export function Popup() {
           aria-label={text.common.navigation}
           onKeyDown={movePopupTabFocus}
         >
-          {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
+          {(["today", "problem", "coach", "settings"] as NavTab[]).map((navTab) => (
             <button
               key={navTab}
               id={`popup-nav-tab-${navTab}`}
@@ -1060,6 +1106,26 @@ export function Popup() {
               onJumpToSticky={jumpToSticky}
               onRefresh={() => detect({ force: true })}
               onError={(msg) => setState({ kind: "error", msg })}
+            />
+          </div>
+        )}
+
+        {tab === "coach" && settings && (
+          <div
+            id="popup-nav-panel-coach"
+            role="tabpanel"
+            aria-labelledby="popup-nav-tab-coach"
+            className="tab-pane"
+            key="coach"
+          >
+            <CoachTab
+              settings={settings}
+              saved={
+                captured
+                  ? { slug: captured.problem.leetcodeSlug, problemId: captured.problem.id, title: captured.problem.title }
+                  : null
+              }
+              copy={text.coach}
             />
           </div>
         )}

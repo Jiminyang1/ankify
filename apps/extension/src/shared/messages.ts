@@ -11,14 +11,20 @@ export type ContentRequest =
   | { type: "fetch_submissions"; submissions: SubmissionSummary[] }
   /** Popup's "Sync now": read the solved list and hand it to the background. */
   | { type: "sync_solved_now" }
+  /** Side panel's Study Coach asks for the code in LeetCode's editor. */
+  | { type: "read_editor" }
   | { type: "ping" };
 
 export type ContentResponse =
   | { type: "captured"; data: CaptureProblemInput }
   | { type: "submissions"; data: CaptureSubmissionInput[] }
   | { type: "solved_synced"; result: SolvedSyncState }
+  | { type: "editor"; editor: EditorSnapshot | null }
   | { type: "error"; message: string }
   | { type: "pong" };
+
+/** What LeetCode's code editor holds right now. */
+export type EditorSnapshot = { language: string; code: string };
 
 /** Messages handled by the background service worker. */
 export type BackgroundRequest =

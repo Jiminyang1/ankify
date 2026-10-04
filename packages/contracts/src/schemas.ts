@@ -51,6 +51,7 @@ export const agentPageEnum = z.enum([
   "settings",
   "extension",
   "profile",
+  "leetcode",
 ]);
 export const agentPanelEnum = z.enum(["quiz", "cards", "submissions", "notes", "overview"]);
 export const agentRunStatusEnum = z.enum(["running", "succeeded", "failed"]);
@@ -62,11 +63,30 @@ export const agentStepStatusEnum = z.enum([
   "failed",
 ]);
 
+/** The LeetCode problem open next to the extension's side panel. The editor
+ *  snapshot is what the user is writing right now; only the newest turn keeps
+ *  it (see getAgentModelMessages). */
+export const agentLeetcodeContextSchema = z
+  .object({
+    slug: z.string().min(1).max(256),
+    title: z.string().min(1).max(512).optional(),
+    editor: z
+      .object({
+        language: z.string().min(1).max(64),
+        code: z.string().max(20_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type AgentLeetcodeContext = z.infer<typeof agentLeetcodeContextSchema>;
+
 export const agentPageContextSchema = z
   .object({
     page: agentPageEnum,
     activePanel: agentPanelEnum,
     problemId: z.string().min(1).max(64).nullable(),
+    leetcode: agentLeetcodeContextSchema.optional(),
   })
   .strict();
 export type AgentPageContext = z.infer<typeof agentPageContextSchema>;

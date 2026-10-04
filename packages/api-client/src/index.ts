@@ -77,5 +77,5 @@ export function createAiJobClient(request: ApiRequest) {
     return job;
   }
 
-  return { start, listActive, getActive, wait, requireSucceeded };
+  return { start, get, listActive, getActive, wait, requireSucceeded };
 }
