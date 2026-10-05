@@ -213,10 +213,14 @@ export function CoachTab({
     try {
       const res = await api(`/api/problems/${savedProblemId}/practice`, { method: "POST" });
       const body = (await res.json().catch(() => null)) as { session?: PracticeSessionDto; message?: string; error?: string } | null;
-      if (!res.ok || !body?.session) throw new Error(body?.message ?? body?.error ?? copy.practice.actionFailed);
+      if (!res.ok || !body?.session) {
+        // Name the status so a wrong server or an unexpected reply is diagnosable.
+        throw new Error(body?.message ?? body?.error ?? `${copy.practice.actionFailed} (HTTP ${res.status})`);
+      }
       setLocalPractice(body.session);
       onExpandedChange(true);
     } catch (startError) {
+      console.error("[ankify] start practice failed", startError);
       setError(startError instanceof Error ? startError.message : copy.practice.actionFailed);
     } finally {
       setStartingPractice(false);

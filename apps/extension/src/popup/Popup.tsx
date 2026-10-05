@@ -229,7 +229,7 @@ const EXT_I18N = {
     capture: {
       notInDeck: "Not in your deck",
       notCaptured: (slug: string) => `Problem ${slug} hasn't been captured.`,
-      autoHint: "It's added automatically the first time you submit, pass or fail.",
+      autoHint: "It's added automatically the next time you submit here, pass or fail. Submissions from before you opened this page don't count, so browsing old problems never fills your queue.",
       addNow: "Add now",
       helperUnavailable:
         "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
@@ -518,7 +518,7 @@ const EXT_I18N = {
     capture: {
       notInDeck: "不在你的题库中",
       notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
-      autoHint: "你第一次提交时（不管通过没通过）会自动收录。",
+      autoHint: "下次在这里提交时（不管通过没通过）会自动收录。打开页面之前的提交不算，所以翻看以前做过的题不会塞满复习队列。",
       addNow: "现在收录",
       helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
       reading: "读取中...",
