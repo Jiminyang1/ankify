@@ -181,7 +181,7 @@ body {
 
 /* A fixed-height column: top bar, scrolling content, docked Coach. */
 #root {
-  padding: 14px 16px 14px;
+  padding: 14px 20px 16px;
   height: 100vh;
   box-sizing: border-box;
   display: flex;
@@ -190,7 +190,7 @@ body {
 
 @media (min-width: 520px) {
   .textarea-card { min-height: 110px; }
-  #root { padding: 16px 20px 16px; }
+  #root { padding: 16px 28px 18px; }
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -2888,12 +2888,97 @@ a:focus-visible,
 
 .coach-bar-actions {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
 }
 
-.coach-docked .coach-input {
-  min-height: 44px;
+.coach-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.coach-icon:hover:not(:disabled),
+.coach-icon[aria-expanded="true"] {
+  background: var(--subtle);
+  color: var(--fg);
+}
+
+.coach-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* The menu hangs from the Coach bar, so it never runs past the panel's edge. */
+.coach-history {
+  position: static;
+}
+
+.coach-history-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(300px, 100%);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.35), var(--shadow);
+}
+
+.coach-history-empty {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.coach-history-menu .coach-thinking {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.coach-history-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coach-history-item:hover { background: var(--subtle); }
+
+.coach-history-item[aria-current="true"] {
+  background: var(--accent-soft);
+}
+
+.coach-history-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-history-date {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .coach {
@@ -2905,6 +2990,7 @@ a:focus-visible,
 }
 
 .coach-bar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2915,7 +3001,7 @@ a:focus-visible,
   display: flex;
   flex-direction: column;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
 }
 
@@ -2934,11 +3020,11 @@ a:focus-visible,
 .coach-thread {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   flex: 1;
   min-height: 160px;
   overflow-y: auto;
-  padding: 2px 2px 4px;
+  padding: 4px 2px 8px;
 }
 
 .coach-empty {
@@ -2953,12 +3039,26 @@ a:focus-visible,
   gap: 6px;
 }
 
-.coach-quick .btn-xs {
-  white-space: normal;
+.coach-suggestion {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.35;
   text-align: left;
-  line-height: 1.3;
-  padding: 6px 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
+
+.coach-suggestion:hover:not(:disabled) {
+  background: var(--subtle);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.coach-suggestion:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .coach-turn {
   display: flex;
@@ -2974,9 +3074,9 @@ a:focus-visible,
 
 .coach-msg-user {
   align-self: flex-end;
-  max-width: 88%;
-  padding: 8px 11px;
-  border-radius: var(--radius-sm);
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
   background: var(--accent-soft);
   color: var(--fg);
   white-space: pre-wrap;
@@ -3046,19 +3146,50 @@ a:focus-visible,
   color: var(--warning);
 }
 
+/* One rounded box: the text grows as you type; tools and send sit inside. */
 .coach-composer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.coach-composer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.coach-composer-box:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .coach-input {
-  min-height: 64px;
-  max-height: 180px;
-  resize: vertical;
+  width: 100%;
+  min-height: 22px;
+  max-height: 168px;
+  padding: 2px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
+
+.coach-input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+
+/* The box shows focus; the bare textarea inside doesn't need its own ring. */
+.coach-input:focus-visible { outline: none; }
 
 .coach-composer-row {
   display: flex;
@@ -3067,17 +3198,84 @@ a:focus-visible,
   gap: 8px;
 }
 
-.coach-toggle {
-  display: inline-flex;
+.coach-tools {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
-.coach-toggle input {
-  accent-color: var(--accent);
+.coach-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.coach-tool:hover:not(:disabled) {
+  background: var(--subtle);
+  color: var(--fg);
+}
+
+.coach-tool:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.coach-tool-icon {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.coach-tool[aria-pressed="true"],
+.coach-tool[aria-expanded="true"],
+.coach-tool-accent,
+.coach-tool-accent:hover:not(:disabled),
+.coach-tool[aria-pressed="true"]:hover:not(:disabled),
+.coach-tool[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-soft);
+}
+
+.coach-send {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, filter 0.15s ease;
+}
+
+.coach-send:hover:not(:disabled) { filter: brightness(0.95); }
+
+.coach-send:disabled {
+  background: var(--subtle);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.coach-rating {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 /* ── Docs: the problem's Notes and Cards ── */
@@ -3210,25 +3408,6 @@ a:focus-visible,
 }
 
 /* ── Practice (inside the Coach chat) ── */
-
-.coach-chip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.coach-chip-label {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--warning);
-}
-
-.coach-chip .btn-xs {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 
 .practice {
   display: flex;
@@ -3385,18 +3564,6 @@ a:focus-visible,
 
 .popup-main.is-strip:empty {
   display: none;
-}
-
-.coach-chip-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.coach-chip-actions {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
 }
 
 /* ── Weak spots (pinned above a problem's chat) ── */

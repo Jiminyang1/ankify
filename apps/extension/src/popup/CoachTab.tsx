@@ -36,6 +36,9 @@ export type CoachCopy = {
   send: string;
   stop: string;
   newChat: string;
+  history: string;
+  noHistory: string;
+  untitled: string;
   includeCode: string;
   onProblem: (title: string) => string;
   notSaved: string;
@@ -113,6 +116,11 @@ export function CoachTab({
   const [startingPractice, setStartingPractice] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [weaknesses, setWeaknesses] = useState<WeaknessDto[] | null>(null);
+  /** Past conversations, loaded when the history menu opens. */
+  const [history, setHistory] = useState<AgentSessionDto[] | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const historyRef = useRef<HTMLDivElement | null>(null);
   const debriefed = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
@@ -437,7 +445,69 @@ export function CoachTab({
     setError(null);
     setNotice(null);
     void chrome.storage.local.remove(sessionKeyFor(page?.slug ?? null));
+    inputRef.current?.focus();
   }
+
+  async function toggleHistory() {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    try {
+      const response = await api("/api/agent/sessions", { cache: "no-store" });
+      if (!response.ok) throw new Error(copy.loadFailed);
+      setHistory(((await response.json()) as { sessions: AgentSessionDto[] }).sessions);
+    } catch (loadError) {
+      setHistoryOpen(false);
+      setError(loadError instanceof Error ? loadError.message : copy.loadFailed);
+    }
+  }
+
+  async function openSession(id: string) {
+    setHistoryOpen(false);
+    if (streaming || id === sessionId) return;
+    setSessionId(id);
+    setSnapshot(null);
+    setJobs({});
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+    // This problem (or, off a problem, the panel) resumes it next time.
+    void chrome.storage.local.set({ [sessionKeyFor(page?.slug ?? null)]: id });
+    try {
+      await loadSnapshot(id);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : copy.loadFailed);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // The history menu closes on a click outside it or Escape.
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!historyRef.current?.contains(event.target as Node)) setHistoryOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHistoryOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [historyOpen]);
+
+  // The composer grows with its text, up to a few lines, then scrolls.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 168)}px`;
+  }, [draft, expanded]);
 
   async function actOnProposal(step: AgentStepDto, action: "approve" | "dismiss") {
     setBusyStep(step.id);
@@ -479,6 +549,16 @@ export function CoachTab({
     ? [copy.quick.failing, copy.quick.hint, ...(savedHere ? [copy.quick.history] : [])]
     : [];
 
+  sendRef.current = send;
+  const practiceShownInThread = new Set(
+    (snapshot?.steps ?? []).flatMap((step) => (step.practiceSessionId ? [step.practiceSessionId] : [])),
+  );
+  // Whether a session is running comes from the server (resume on load, or
+  // the session the Coach or the button started), not from old chat steps.
+  const practiceActive = localPractice?.status === "active";
+  const canPractice = savedHere != null && !practiceActive && !streaming;
+  const canRate = canPractice && savedHere.due && ratingPanel != null;
+
   const composer = (
     <form
       className="coach-composer"
@@ -487,74 +567,151 @@ export function CoachTab({
         void send(draft);
       }}
     >
-      <textarea
-        className="textarea-card coach-input scroll-area"
-        value={draft}
-        rows={expanded ? 3 : 2}
-        maxLength={12_000}
-        placeholder={copy.placeholder}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            void send(draft);
-          }
-        }}
-      />
-      <div className="coach-composer-row">
-        {page ? (
-          <label className="coach-toggle">
-            <input type="checkbox" checked={includeCode} onChange={(event) => setIncludeCode(event.target.checked)} />
-            {copy.includeCode}
-          </label>
-        ) : (
-          <span />
-        )}
-        {streaming ? (
-          <button type="button" className="btn btn-secondary btn-inline" onClick={() => abortRef.current?.abort()}>
-            {copy.stop}
-          </button>
-        ) : (
-          <button type="submit" className="btn btn-primary btn-inline" disabled={!draft.trim() || busy}>
-            {copy.send}
-          </button>
-        )}
+      {showRating && canRate && <div className="coach-rating">{ratingPanel}</div>}
+      <div className="coach-composer-box">
+        <textarea
+          ref={inputRef}
+          className="coach-input scroll-area"
+          value={draft}
+          rows={1}
+          maxLength={12_000}
+          placeholder={copy.placeholder}
+          aria-label={copy.placeholder}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void send(draft);
+            }
+          }}
+        />
+        <div className="coach-composer-row">
+          <div className="coach-tools">
+            {page && (
+              <button
+                type="button"
+                className="coach-tool coach-tool-icon"
+                aria-pressed={includeCode}
+                aria-label={copy.includeCode}
+                title={copy.includeCode}
+                onClick={() => setIncludeCode((value) => !value)}
+              >
+                <CodeIcon />
+              </button>
+            )}
+            {canPractice && (
+              <button
+                type="button"
+                className={`coach-tool${savedHere.due ? " coach-tool-accent" : ""}`}
+                title={savedHere.due ? copy.dueForReview : undefined}
+                disabled={startingPractice || busy}
+                onClick={() => void startPracticeHere()}
+              >
+                {startingPractice ? <span className="btn-spinner" /> : <PlayIcon />}
+                {copy.startPractice}
+              </button>
+            )}
+            {canRate && (
+              <button
+                type="button"
+                className="coach-tool"
+                aria-expanded={showRating}
+                onClick={() => setShowRating((open) => !open)}
+              >
+                <StarIcon />
+                {copy.rateDirectly}
+              </button>
+            )}
+          </div>
+          {streaming ? (
+            <button
+              type="button"
+              className="coach-send"
+              aria-label={copy.stop}
+              title={copy.stop}
+              onClick={() => abortRef.current?.abort()}
+            >
+              <StopIcon />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="coach-send"
+              aria-label={copy.send}
+              title={copy.send}
+              disabled={!draft.trim() || busy}
+            >
+              <SendIcon />
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );
 
-  sendRef.current = send;
-  const practiceShownInThread = new Set(
-    (snapshot?.steps ?? []).flatMap((step) => (step.practiceSessionId ? [step.practiceSessionId] : [])),
-  );
-  // Whether a session is running comes from the server (resume on load, or
-  // the session the Coach or the button started), not from old chat steps.
-  const practiceActive = localPractice?.status === "active";
-  const practiceChip =
-    savedHere && !practiceActive && !streaming ? (
-      <div className="coach-chip-wrap">
-        <div className="coach-chip">
-          {savedHere.due && <span className="coach-chip-label">{copy.dueForReview}</span>}
-          <div className="coach-chip-actions">
-            {savedHere.due && ratingPanel && (
-              <button type="button" className="btn-xs" onClick={() => setShowRating((open) => !open)}>
-                {copy.rateDirectly}
-              </button>
+  const headerActions = (
+    <div className="coach-bar-actions">
+      <div className="coach-history" ref={historyRef}>
+        <button
+          type="button"
+          className="coach-icon"
+          aria-label={copy.history}
+          title={copy.history}
+          aria-expanded={historyOpen}
+          disabled={streaming}
+          onClick={() => void toggleHistory()}
+        >
+          <HistoryIcon />
+        </button>
+        {historyOpen && (
+          <div className="coach-history-menu scroll-area" role="menu">
+            {history === null ? (
+              <p className="popup-muted coach-thinking">
+                <span className="btn-spinner" />
+              </p>
+            ) : history.length === 0 ? (
+              <p className="popup-muted coach-history-empty">{copy.noHistory}</p>
+            ) : (
+              history.slice(0, 30).map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  role="menuitem"
+                  className="coach-history-item"
+                  aria-current={session.id === sessionId}
+                  onClick={() => void openSession(session.id)}
+                >
+                  <span className="coach-history-title">{session.title?.trim() || copy.untitled}</span>
+                  <span className="coach-history-date">{formatSessionDate(session.updatedAt, settings.language)}</span>
+                </button>
+              ))
             )}
-            <button
-              type="button"
-              className={savedHere.due ? "btn-xs btn-xs-accent" : "btn-xs"}
-              disabled={startingPractice || busy}
-              onClick={() => void startPracticeHere()}
-            >
-              {startingPractice && <span className="btn-spinner" />}
-              {copy.startPractice}
-            </button>
           </div>
-        </div>
-        {showRating && savedHere.due && ratingPanel}
+        )}
       </div>
-    ) : null;
+      <button
+        type="button"
+        className="coach-icon"
+        aria-label={copy.newChat}
+        title={copy.newChat}
+        onClick={newChat}
+        disabled={streaming || !sessionId}
+      >
+        <NewChatIcon />
+      </button>
+      {mode === "dock" && (
+        <button
+          type="button"
+          className="coach-icon"
+          aria-label={copy.hideChat}
+          title={copy.hideChat}
+          onClick={() => onExpandedChange(false)}
+        >
+          <ChevronDownIcon />
+        </button>
+      )}
+    </div>
+  );
   const categoryName = (key: string) =>
     weaknesses?.find((weakness) => weakness.category === key)?.categoryName ??
     builtinWeaknessCategoryName(key, settings.language) ??
@@ -576,15 +733,20 @@ export function CoachTab({
   if (mode === "dock" && !expanded) {
     return (
       <section className="coach coach-docked" aria-label={copy.title}>
-        <div className="coach-dock-head">
-          <span className="coach-dock-title">{copy.title}</span>
-          {(runs.length > 0 || error || localPractice) && (
-            <button type="button" className="btn-xs" onClick={() => onExpandedChange(true)}>
-              {copy.showChat}
+        {(runs.length > 0 || error || localPractice) && (
+          <div className="coach-dock-head">
+            <span className="coach-dock-title">{copy.title}</span>
+            <button
+              type="button"
+              className="coach-icon"
+              aria-label={copy.showChat}
+              title={copy.showChat}
+              onClick={() => onExpandedChange(true)}
+            >
+              <ChevronDownIcon up />
             </button>
-          )}
-        </div>
-        {practiceChip}
+          </div>
+        )}
         {error && <p className="coach-run-error">{error}</p>}
         {composer}
       </section>
@@ -596,7 +758,7 @@ export function CoachTab({
       <div className="coach-bar">
         <div className="coach-context">
           {mode === "full" ? (
-            <span className="coach-dock-title">{copy.title}</span>
+            <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>
           ) : page ? (
             <>
               <span className="coach-context-title">{copy.onProblem(savedHere?.title ?? page.title ?? page.slug)}</span>
@@ -606,16 +768,7 @@ export function CoachTab({
             <span className="coach-context-note">{copy.offPage}</span>
           )}
         </div>
-        <div className="coach-bar-actions">
-          <button type="button" className="btn-xs" onClick={newChat} disabled={streaming || !sessionId}>
-            {copy.newChat}
-          </button>
-          {mode === "dock" && (
-            <button type="button" className="btn-xs" onClick={() => onExpandedChange(false)}>
-              {copy.hideChat}
-            </button>
-          )}
-        </div>
+        {headerActions}
       </div>
 
       <div className="coach-thread scroll-area" ref={scrollRef} aria-live="polite">
@@ -640,7 +793,7 @@ export function CoachTab({
             {quickPrompts.length > 0 && (
               <div className="coach-quick">
                 {quickPrompts.map((prompt) => (
-                  <button key={prompt} type="button" className="btn-xs" disabled={busy} onClick={() => void send(prompt)}>
+                  <button key={prompt} type="button" className="coach-suggestion" disabled={busy} onClick={() => void send(prompt)}>
                     {prompt}
                   </button>
                 ))}
@@ -715,7 +868,6 @@ export function CoachTab({
         )}
       </div>
 
-      {practiceChip}
       {error && <div className="err-banner">{error}</div>}
       {notice && !error && <p className="coach-notice">{notice}</p>}
 
@@ -852,4 +1004,90 @@ async function readStream(stream: ReadableStream<Uint8Array>, onEvent: (event: A
   }
   buffer += decoder.decode();
   if (buffer) onEvent(JSON.parse(buffer) as AgentStreamEvent);
+}
+
+/** "14:32" today, "Oct 3" this year, otherwise "2025-10-03". */
+function formatSessionDate(iso: string, language: "en" | "zh"): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const locale = language === "zh" ? "zh-CN" : "en-US";
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function SendIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function CodeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M3.5 2.2v7.6L9.8 6 3.5 2.2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5L8 2Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M2.3 2.6v2.3h2.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 5.2V8l2 1.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function NewChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M13 8.5V12a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V5a1.5 1.5 0 0 1 1.5-1.5H8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="m11.6 2.4 2 2L8.2 9.8l-2.6.6.6-2.6 5.4-5.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ up = false }: { up?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={up ? { transform: "rotate(180deg)" } : undefined}>
+      <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
