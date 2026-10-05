@@ -3228,7 +3228,6 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
 }
 
 .practice {
@@ -3375,4 +3374,27 @@ a:focus-visible,
 .practice-rating[data-active="true"] {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* On a problem the chat is the main area; the strip above it only holds
+ * status (loading, not in deck, pinned from another tab). */
+.popup-main.is-strip {
+  flex: none;
+  overflow: visible;
+}
+
+.popup-main.is-strip:empty {
+  display: none;
+}
+
+.coach-chip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coach-chip-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
 }

@@ -51,7 +51,7 @@ type Sticky = {
   previews: Previews;
 };
 
-type PanelView = "auto" | "today" | "settings";
+type PanelView = "auto" | "today" | "settings" | "docs";
 
 const EXT_I18N = {
   en: {
@@ -283,6 +283,7 @@ const EXT_I18N = {
         actionFailed: "That didn't save. Try again.",
       },
       startPractice: "Start practice",
+      rateDirectly: "Rate",
       dueForReview: "Due for review",
       practiceFinished: (points: number, total: number) => `Practice finished: ${points} of ${total}. Go over what I missed.`,
       title: "Study Coach",
@@ -566,6 +567,7 @@ const EXT_I18N = {
         actionFailed: "没保存上，请重试。",
       },
       startPractice: "开始练习",
+      rateDirectly: "直接评分",
       dueForReview: "该复习了",
       practiceFinished: (points: number, total: number) => `练习完成：${points} / ${total}。帮我过一下错的地方。`,
       title: "学习教练",
@@ -1072,9 +1074,21 @@ export function Popup() {
   }
 
   const showSettings = view === "settings";
-  const showToday = !showSettings && (view === "today" || (state.kind === "off-page" && !sticky));
   const headerProblem = captured ?? (state.kind === "off-page" ? sticky : null);
-  const canReturnToProblem = view === "today" && (state.kind !== "off-page" || sticky != null);
+  const showDocs = view === "docs" && headerProblem != null;
+  const showToday = !showSettings && !showDocs && (view === "today" || (state.kind === "off-page" && !sticky));
+  // On a problem the Coach chat is the main area; elsewhere it docks below.
+  const problemView = !showSettings && !showDocs && !showToday;
+  const canReturnToProblem = (view === "today" || showDocs) && (state.kind !== "off-page" || sticky != null);
+  const ratingPanel =
+    headerProblem && isDue(headerProblem.problem.fsrsDue) ? (
+      <QuickRate
+        problemId={headerProblem.problem.id}
+        previews={headerProblem.previews}
+        settings={settings}
+        onRated={() => void detect({ force: true })}
+      />
+    ) : null;
 
   return (
     <div className="popup-shell">
@@ -1093,6 +1107,8 @@ export function Popup() {
           ) : null}
           {showSettings ? (
             <h1 className="panel-bar-title">{text.nav.settings}</h1>
+          ) : showDocs ? (
+            <h1 className="panel-bar-title">{headerProblem!.problem.title}</h1>
           ) : showToday ? (
             <h1 className="panel-bar-title">{text.nav.today}</h1>
           ) : headerProblem ? (
@@ -1102,7 +1118,18 @@ export function Popup() {
           )}
         </div>
         <div className="panel-bar-actions">
-          {!showSettings && !showToday && headerProblem && (
+          {problemView && headerProblem && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.docs.title}
+              title={text.docs.title}
+              onClick={() => setView("docs")}
+            >
+              <BookIcon />
+            </button>
+          )}
+          {problemView && headerProblem && (
             <a
               href={`${settings.apiBaseUrl}/problems/${headerProblem.problem.id}`}
               target="_blank"
@@ -1114,7 +1141,7 @@ export function Popup() {
               <ExternalIcon />
             </a>
           )}
-          {!showSettings && !showToday && (
+          {!showSettings && !showToday && !showDocs && (
             <button
               type="button"
               className="panel-bar-icon"
@@ -1140,7 +1167,11 @@ export function Popup() {
         </div>
       </header>
 
-      <main className={`popup-main scroll-area${coachExpanded && !showSettings ? " is-covered" : ""}`}>
+      <main
+        className={`popup-main scroll-area${problemView ? " is-strip" : ""}${
+          showToday && coachExpanded ? " is-covered" : ""
+        }`}
+      >
         {showSettings ? (
           <SettingsTab
             settings={settings}
@@ -1149,6 +1180,10 @@ export function Popup() {
             onThemeChange={setThemePreference}
             onSave={saveLocalSettings}
           />
+        ) : showDocs ? (
+          <div className="content-card">
+            <DocsPanel settings={settings} problemId={headerProblem!.problem.id} revision={docsRevision} copy={text.docs} />
+          </div>
         ) : showToday ? (
           <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} />
         ) : (
@@ -1160,12 +1195,11 @@ export function Popup() {
             onJumpToSticky={jumpToSticky}
             onRefresh={() => detect({ force: true })}
             onError={(msg) => setState({ kind: "error", msg })}
-            docsRevision={docsRevision}
           />
         )}
       </main>
 
-      {!showSettings && (
+      {(problemView || showToday) && (
         <CoachTab
           settings={settings}
           saved={
@@ -1179,8 +1213,10 @@ export function Popup() {
               : null
           }
           copy={text.coach}
-          expanded={coachExpanded}
+          mode={problemView ? "full" : "dock"}
+          expanded={problemView || coachExpanded}
           onExpandedChange={setCoachExpanded}
+          ratingPanel={ratingPanel}
           onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
           onProblemChanged={() => void detect({ force: true })}
         />
@@ -1233,6 +1269,19 @@ function GearIcon() {
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 3.2c1.8-.6 3.6-.4 5.5.8 1.9-1.2 3.7-1.4 5.5-.8v9.3c-1.8-.6-3.6-.4-5.5.8-1.9-1.2-3.7-1.4-5.5-.8V3.2ZM8 4v9.3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -1437,7 +1486,6 @@ function ProblemTab({
   onJumpToSticky,
   onRefresh,
   onError,
-  docsRevision,
 }: {
   state: State;
   settings: ExtSettings;
@@ -1451,7 +1499,6 @@ function ProblemTab({
   onJumpToSticky: () => void;
   onRefresh: () => Promise<void> | void;
   onError: (msg: string) => void;
-  docsRevision: number;
 }) {
   const t = getExtText(settings);
 
@@ -1487,63 +1534,15 @@ function ProblemTab({
 
   if (!displayCaptured) return null;
 
-  const { problem, previews } = displayCaptured;
-
+  // The Coach chat below is the problem view; only a pinned problem from
+  // another tab needs a note here.
+  if (!isStickyView) return null;
   return (
-    <>
-      {isStickyView && (
-        <div className="sticky-banner">
-          <span className="sticky-banner-text">
-            {t.problem.activeTabNotOn(problem.title)}
-          </span>
-          <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
-            {t.problem.openIt}
-          </button>
-        </div>
-      )}
-      <ProblemWorkspace
-        key={problem.id}
-        problem={problem}
-        previews={previews}
-        settings={settings}
-        onRefresh={onRefresh}
-        docsRevision={docsRevision}
-      />
-    </>
-  );
-}
-
-/* ── ProblemWorkspace: the problem's docs, plus rating when due ── */
-
-function ProblemWorkspace({
-  problem,
-  previews,
-  settings,
-  onRefresh,
-  docsRevision,
-}: {
-  problem: ApiProblem;
-  previews: Previews;
-  settings: ExtSettings;
-  onRefresh: () => Promise<void> | void;
-  docsRevision: number;
-}) {
-  const t = getExtText(settings);
-  const due = isDue(problem.fsrsDue);
-  const refresh = () => void onRefresh();
-
-  // Practice happens in the Coach chat; this view holds the problem's docs
-  // and the rating buttons for a review done another way (like re-solving).
-  return (
-    <div className="review-workspace">
-      <div className="content-card">
-        <DocsPanel settings={settings} problemId={problem.id} revision={docsRevision} copy={t.docs} />
-      </div>
-      {due && (
-        <div className="rating-card">
-          <QuickRate problemId={problem.id} previews={previews} settings={settings} onRated={refresh} />
-        </div>
-      )}
+    <div className="sticky-banner">
+      <span className="sticky-banner-text">{t.problem.activeTabNotOn(displayCaptured.problem.title)}</span>
+      <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
+        {t.problem.openIt}
+      </button>
     </div>
   );
 }

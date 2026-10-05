@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createAiJobClient } from "@ankify/api-client";
 import type {
   PracticeSessionDto,
@@ -21,6 +21,7 @@ export type CoachSavedProblem = { slug: string; problemId: string; title: string
 export type CoachCopy = {
   practice: PracticeCopy;
   startPractice: string;
+  rateDirectly: string;
   dueForReview: string;
   practiceFinished: (points: number, total: number) => string;
   title: string;
@@ -53,6 +54,8 @@ export type CoachCopy = {
 };
 
 const SESSION_KEY = "ankify.coachSessionId";
+/** Each problem keeps its own conversation; off a problem, the latest one. */
+const sessionKeyFor = (slug: string | null) => (slug ? `ankify.coachSession:${slug}` : SESSION_KEY);
 
 type PageInfo = { tabId: number; slug: string; title: string | null } | null;
 
@@ -64,16 +67,23 @@ export function CoachTab({
   settings,
   saved,
   copy,
+  mode,
   expanded,
   onExpandedChange,
+  ratingPanel,
   onDocsChanged,
   onProblemChanged,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
   copy: CoachCopy;
+  /** "full": the chat is the problem view. "dock": a composer under other
+   *  content that expands over it. */
+  mode: "full" | "dock";
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  /** Rating buttons for a due problem reviewed another way (like re-solving). */
+  ratingPanel: ReactNode;
   /** A doc-edit proposal was applied: the Docs view should reload. */
   onDocsChanged: () => void;
   /** The problem was rated from a practice summary. */
@@ -89,13 +99,15 @@ export function CoachTab({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [includeCode, setIncludeCode] = useState(true);
-  const [page, setPage] = useState<PageInfo>(null);
+  /** undefined until the active tab is known. */
+  const [page, setPage] = useState<PageInfo | undefined>(undefined);
   const [busyStep, setBusyStep] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
   const abortRef = useRef<AbortController | null>(null);
   /** A session started from the button, or resumed, that no Coach step shows. */
   const [localPractice, setLocalPractice] = useState<PracticeSessionDto | null>(null);
   const [startingPractice, setStartingPractice] = useState(false);
+  const [showRating, setShowRating] = useState(false);
   const debriefed = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
@@ -112,18 +124,29 @@ export function CoachTab({
     [api, copy.loadFailed],
   );
 
-  // Resume the conversation this panel used last, else the newest one.
+  // On a problem, resume that problem's conversation (or start empty); off a
+  // problem, resume the latest one.
+  const scopeSlug = page === undefined ? undefined : (page?.slug ?? null);
+  const streamingRef = useRef(false);
+  streamingRef.current = streaming;
   useEffect(() => {
+    if (scopeSlug === undefined || streamingRef.current) return;
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     void (async () => {
       try {
-        const stored = (await chrome.storage.local.get(SESSION_KEY))[SESSION_KEY] as string | undefined;
+        const key = sessionKeyFor(scopeSlug);
+        const stored = (await chrome.storage.local.get(key))[key] as string | undefined;
         const response = await api("/api/agent/sessions", { cache: "no-store" });
         if (!response.ok) throw new Error(copy.loadFailed);
         const { sessions } = (await response.json()) as { sessions: AgentSessionDto[] };
-        const id = sessions.find((session) => session.id === stored)?.id ?? sessions[0]?.id ?? null;
+        const id =
+          sessions.find((session) => session.id === stored)?.id ?? (scopeSlug ? null : (sessions[0]?.id ?? null));
         if (cancelled) return;
         setSessionId(id);
+        setSnapshot(null);
+        setJobs({});
         if (id) await loadSnapshot(id);
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : copy.loadFailed);
@@ -134,7 +157,7 @@ export function CoachTab({
     return () => {
       cancelled = true;
     };
-  }, [api, copy.loadFailed, loadSnapshot]);
+  }, [api, copy.loadFailed, loadSnapshot, scopeSlug]);
 
   // Track the active tab so the context line matches what the next turn sends.
   useEffect(() => {
@@ -311,7 +334,7 @@ export function CoachTab({
   function handleEvent(event: AgentStreamEvent) {
     if (event.type === "run_started") {
       setSessionId(event.session.id);
-      void chrome.storage.local.set({ [SESSION_KEY]: event.session.id });
+      void chrome.storage.local.set({ [SESSION_KEY]: event.session.id, [sessionKeyFor(page?.slug ?? null)]: event.session.id });
       setPendingMessage(null);
       setSnapshot((current) =>
         current && current.session.id === event.session.id
@@ -353,7 +376,7 @@ export function CoachTab({
     setJobs({});
     setError(null);
     setNotice(null);
-    void chrome.storage.local.remove(SESSION_KEY);
+    void chrome.storage.local.remove(sessionKeyFor(page?.slug ?? null));
   }
 
   async function actOnProposal(step: AgentStepDto, action: "approve" | "dismiss") {
@@ -456,17 +479,27 @@ export function CoachTab({
     );
   const practiceChip =
     savedHere && !practiceActive && !streaming ? (
-      <div className="coach-chip">
-        {savedHere.due && <span className="coach-chip-label">{copy.dueForReview}</span>}
-        <button
-          type="button"
-          className={savedHere.due ? "btn-xs btn-xs-accent" : "btn-xs"}
-          disabled={startingPractice || busy}
-          onClick={() => void startPracticeHere()}
-        >
-          {startingPractice && <span className="btn-spinner" />}
-          {copy.startPractice}
-        </button>
+      <div className="coach-chip-wrap">
+        <div className="coach-chip">
+          {savedHere.due && <span className="coach-chip-label">{copy.dueForReview}</span>}
+          <div className="coach-chip-actions">
+            {savedHere.due && ratingPanel && (
+              <button type="button" className="btn-xs" onClick={() => setShowRating((open) => !open)}>
+                {copy.rateDirectly}
+              </button>
+            )}
+            <button
+              type="button"
+              className={savedHere.due ? "btn-xs btn-xs-accent" : "btn-xs"}
+              disabled={startingPractice || busy}
+              onClick={() => void startPracticeHere()}
+            >
+              {startingPractice && <span className="btn-spinner" />}
+              {copy.startPractice}
+            </button>
+          </div>
+        </div>
+        {showRating && savedHere.due && ratingPanel}
       </div>
     ) : null;
   const renderPractice = (practiceSessionId: string, initial?: PracticeSessionDto) => (
@@ -481,7 +514,7 @@ export function CoachTab({
     />
   );
 
-  if (!expanded) {
+  if (mode === "dock" && !expanded) {
     return (
       <section className="coach coach-docked" aria-label={copy.title}>
         <div className="coach-dock-head">
@@ -500,10 +533,12 @@ export function CoachTab({
   }
 
   return (
-    <section className="coach coach-expanded" aria-label={copy.title}>
+    <section className={`coach coach-expanded${mode === "full" ? " coach-full" : ""}`} aria-label={copy.title}>
       <div className="coach-bar">
         <div className="coach-context">
-          {page ? (
+          {mode === "full" ? (
+            <span className="coach-dock-title">{copy.title}</span>
+          ) : page ? (
             <>
               <span className="coach-context-title">{copy.onProblem(savedHere?.title ?? page.title ?? page.slug)}</span>
               {!savedHere && <span className="coach-context-note">{copy.notSaved}</span>}
@@ -516,9 +551,11 @@ export function CoachTab({
           <button type="button" className="btn-xs" onClick={newChat} disabled={streaming || !sessionId}>
             {copy.newChat}
           </button>
-          <button type="button" className="btn-xs" onClick={() => onExpandedChange(false)}>
-            {copy.hideChat}
-          </button>
+          {mode === "dock" && (
+            <button type="button" className="btn-xs" onClick={() => onExpandedChange(false)}>
+              {copy.hideChat}
+            </button>
+          )}
         </div>
       </div>
 
