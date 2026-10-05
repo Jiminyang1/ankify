@@ -154,6 +154,11 @@ export function docEditTarget(edit: DocEdit): ProblemDocTarget {
   return edit.op === "append_section" || edit.op === "replace_section" ? "notes" : "cards";
 }
 
+/** PATCH /api/weaknesses/:id: the user removes, resolves, or reopens one. */
+export const weaknessPatchSchema = z
+  .object({ status: z.enum(["active", "resolved", "dismissed"]) })
+  .strict();
+
 /** PUT /api/problems/:id/docs: the user's own edit of one doc. */
 export const problemDocPutSchema = z
   .object({
@@ -175,6 +180,14 @@ export const agentProposalSchema = z.discriminatedUnion("action", [
     requestId: z.string().uuid(),
     problemId: z.string().min(1).max(64),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
+    reason: z.string().min(1).max(500),
+  }),
+  /** A new weakness category; added to the user's list on approval. */
+  z.object({
+    action: z.literal("weakness_category"),
+    key: z.string().regex(/^[a-z][a-z0-9_]{2,39}$/),
+    name: z.string().trim().min(1).max(60),
+    description: z.string().trim().min(1).max(200),
     reason: z.string().min(1).max(500),
   }),
   /** An edit to the problem's Notes or Cards doc, applied on approval. */

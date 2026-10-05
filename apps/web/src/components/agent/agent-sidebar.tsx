@@ -520,7 +520,8 @@ export function AgentSidebar({
         error?: string;
       };
       // A doc edit is applied at once and starts no job.
-      const docEdit = step.proposal?.action === "doc_edit";
+      // Doc edits and new categories apply at once and start no job.
+      const docEdit = step.proposal?.action === "doc_edit" || step.proposal?.action === "weakness_category";
       if (!response.ok || !body.step || (!docEdit && !body.job)) {
         throw new Error(body.message ?? body.error ?? t.agent.sendFailed);
       }
@@ -1002,6 +1003,15 @@ function AgentStep({
     );
   }
 
+  if (step.kind === "weakness") {
+    return (
+      <div className="flex items-start gap-2 px-1 text-[11px] text-muted">
+        <CircleAlert className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
+        <span>{t.agent.weaknessNoted(step.summary)}</span>
+      </div>
+    );
+  }
+
   if (step.kind === "practice") {
     return (
       <div className="flex items-center gap-2 px-1 text-[11px] text-muted">
@@ -1061,7 +1071,7 @@ function AgentStep({
             )}
             {job ? t.agent[job.status] : docEdit ? t.agent.applied : t.agent.accepted}
           </span>
-          {step.proposal && (
+          {step.proposal && "problemId" in step.proposal && (
             <Link
               href={`/problems/${step.proposal.problemId}`}
               className={buttonClasses({ variant: "ghost", size: "xs" })}

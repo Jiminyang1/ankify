@@ -9,12 +9,13 @@ import {
   type AgentStepDto,
   type DocEdit,
 } from "@ankify/contracts";
-import { leetcodeTagName } from "@ankify/core";
+import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
 import { startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
+import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { docEditInput } from "./doc-edit-input";
@@ -31,10 +32,13 @@ type AgentToolContext = {
 
 /** Code-enforced cap; the prompt asks for one per ordinary reply. */
 const MAX_DOC_PROPOSALS_PER_RUN = 3;
+/** Code-enforced cap on new weaknesses per reply. */
+const MAX_WEAKNESSES_PER_RUN = 3;
 
 export function createStudyCoachTools(context: AgentToolContext) {
   let nextSequence = 1;
   let docProposals = 0;
+  let weaknessesRecorded = 0;
   const problemIdInput = z
     .string()
     .min(1)
@@ -43,13 +47,14 @@ export function createStudyCoachTools(context: AgentToolContext) {
     .optional();
 
   const record = async (args: {
-    kind: "read" | "navigation" | "proposal" | "practice";
+    kind: "read" | "navigation" | "proposal" | "practice" | "weakness";
     toolName: string;
     status: "completed" | "pending" | "failed";
     summary: string;
     navigation?: AgentNavigation;
     proposal?: AgentProposal;
     practiceSessionId?: string;
+    weaknessId?: string;
   }) => {
     const sequence = nextSequence++;
     const step = await createAgentStep({ ...context, ...args, sequence });
@@ -377,6 +382,117 @@ export function createStudyCoachTools(context: AgentToolContext) {
           cards: docs.cards.cards,
           cardIssues: docs.cards.issues,
         };
+      },
+    }),
+
+    get_weaknesses: tool({
+      description:
+        "Load the user's recorded weak spots: this problem's (active and resolved, each with category, detail, evidence, and how often it happened) and their profile across problems (categories ranked by active weaknesses). Also lists the categories you can record into. Call before recording, and whenever their past mistakes matter.",
+      inputSchema: z.object({ problemId: problemIdInput }),
+      execute: async ({ problemId: requestedId }) => {
+        const problemId = requestedId ?? context.problemId;
+        const [problemWeaknesses, profile] = await Promise.all([
+          problemId ? listProblemWeaknesses(context.userId, (await resolveProblem(problemId)).id) : Promise.resolve([]),
+          loadWeaknessProfile(context.userId),
+        ]);
+        await record({
+          kind: "read",
+          toolName: "get_weaknesses",
+          status: "completed",
+          summary: `Read ${problemWeaknesses.length} weak spot${problemWeaknesses.length === 1 ? "" : "s"} on this problem`,
+        });
+        return {
+          thisProblem: problemWeaknesses.map((weakness) => ({
+            id: weakness.id,
+            category: weakness.category,
+            detail: weakness.detail,
+            status: weakness.status,
+            timesSeen: weakness.hitCount,
+            lastSeen: relativeTimeLabel(new Date(weakness.lastSeenAt)),
+          })),
+          profile: profile.categories.slice(0, 6).map((entry) => ({
+            category: entry.category,
+            active: entry.active,
+            resolved: entry.resolved,
+            timesSeen: entry.hits,
+            problems: entry.problems.map((problem) => problem.title),
+          })),
+          categories: [
+            ...WEAKNESS_CATEGORIES.map((category) => ({
+              key: category.key,
+              name: category.name.en,
+              description: category.description,
+            })),
+            ...profile.customCategories.map((category) => ({
+              key: category.key,
+              name: category.name,
+              description: category.description,
+            })),
+          ],
+        };
+      },
+    }),
+
+    record_weakness: tool({
+      description:
+        "Record one specific mistake the user makes on this problem, with its category and evidence. Recorded at once (the user can remove it). Use when you've diagnosed a mistake from a submission, a practice answer, or the conversation. A repeat of an active weak spot updates it instead of adding a new one.",
+      inputSchema: z.object({
+        problemId: problemIdInput,
+        category: z.string().max(40).describe("A category key from get_weaknesses"),
+        detail: z
+          .string()
+          .max(300)
+          .describe("The specific mistake in one sentence, concrete to this problem, e.g. 'dp starts at 0, so amount 0 returns the wrong count'"),
+        submissionIds: z.array(z.string().max(64)).max(5).optional().describe("Submissions showing it (ids from get_submissions)"),
+        practiceSessionIds: z.array(z.string().max(64)).max(3).optional(),
+      }),
+      execute: async ({ problemId: requestedId, category, detail, submissionIds, practiceSessionIds }) => {
+        if (weaknessesRecorded >= MAX_WEAKNESSES_PER_RUN) {
+          return { recorded: false, error: "too_many_this_turn" };
+        }
+        const target = await resolveProblem(requestedId);
+        const result = await recordWeakness(context.userId, {
+          problemId: target.id,
+          category: category.trim(),
+          detail,
+          evidence: [
+            ...(submissionIds ?? []).filter(Boolean).map((ref) => ({ kind: "submission" as const, ref })),
+            ...(practiceSessionIds ?? []).filter(Boolean).map((ref) => ({ kind: "practice" as const, ref })),
+          ],
+          runId: context.runId,
+        });
+        if (!result.ok) return { recorded: false, error: result.error };
+        weaknessesRecorded += 1;
+        await record({
+          kind: "weakness",
+          toolName: "record_weakness",
+          status: "completed",
+          summary: result.weakness.detail,
+          weaknessId: result.weakness.id,
+        });
+        return { recorded: true, merged: result.merged, timesSeen: result.weakness.hitCount };
+      },
+    }),
+
+    propose_weakness_category: tool({
+      description:
+        "Propose a new weakness category when none of the existing ones fits a mistake. It's added only if the user approves; until then, don't record into it.",
+      inputSchema: z.object({
+        key: z.string().regex(/^[a-z][a-z0-9_]{2,39}$/).describe("snake_case key"),
+        name: z.string().min(1).max(60),
+        description: z.string().min(1).max(200),
+        reason: z.string().min(1).max(500),
+      }),
+      execute: async ({ key, name, description, reason }) => {
+        const proposal: AgentProposal = { action: "weakness_category", key, name, description, reason };
+        const step = await record({
+          kind: "proposal",
+          toolName: "propose_weakness_category",
+          status: "pending",
+          summary: `New category: ${name}`,
+          proposal,
+        });
+        return { proposalId: step.id, requiresUserConfirmation: true };
       },
     }),
 

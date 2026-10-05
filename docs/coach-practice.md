@@ -4,7 +4,7 @@ Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web r
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
-## Version 2: weakness-driven practice (proposal, 2026-10-05)
+## Version 2: weakness-driven practice (2026-10-05; weak spots built, practice and web profile next)
 
 Decided with Jimin after trying stage 2. It replaces the stage 2 practice
 flow; the docs (stage 1), sessions, grading, and rating code stay.
@@ -32,6 +32,7 @@ Built in (keys are stable, names are translated):
 | Key | Name |
 | --- | --- |
 | `approach_choice` | Picking the approach (greedy vs DP, BFS vs DFS...) |
+| `efficiency` | Right idea, too slow (missing memoization, repeated work) |
 | `state_definition` | Defining the state or subproblem |
 | `transition_order` | Transitions and loop order |
 | `init_sentinel` | Initial values and sentinels |

@@ -389,6 +389,66 @@ export const practiceSessions = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * weaknesses
+ * The specific mistakes a user makes on a problem (docs/coach-practice.md,
+ * version 2), each in one category with the evidence behind it. The Coach
+ * records them; the profile across problems is computed, never stored.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type WeaknessEvidence = {
+  kind: "submission" | "practice" | "conversation";
+  /** Submission id, practice session id, or Coach run id. */
+  ref: string;
+  note?: string;
+};
+
+export const weaknesses = sqliteTable(
+  "weaknesses",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    /** A built-in key (packages/core WEAKNESS_CATEGORIES) or the user's own. */
+    category: text("category").notNull(),
+    detail: text("detail").notNull(),
+    evidenceJson: text("evidence_json", { mode: "json" }).$type<WeaknessEvidence[]>().notNull(),
+    status: text("status", { enum: ["active", "resolved", "dismissed"] }).notNull().default("active"),
+    hitCount: integer("hit_count").notNull().default(1),
+    /** Later practice sessions answered correctly in a row. */
+    correctStreak: integer("correct_streak").notNull().default(0),
+    firstSeenAt: ts("first_seen_at"),
+    lastSeenAt: ts("last_seen_at"),
+    resolvedAt: optTs("resolved_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userProblemIdx: index("weaknesses_user_problem_idx").on(t.userId, t.problemId, t.status),
+    userCategoryIdx: index("weaknesses_user_category_idx").on(t.userId, t.category, t.status),
+  }),
+);
+
+/** Categories a user approved beyond the built-in ones. */
+export const weaknessCategories = sqliteTable(
+  "weakness_categories",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    userKeyIdx: uniqueIndex("weakness_categories_user_key_unique").on(t.userId, t.key),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * ai_jobs
  * Durable source of truth for asynchronous Card / Quiz generation. Queue
  * messages contain only the job id; all ownership, inputs and results live in
@@ -570,7 +630,7 @@ export const agentSteps = sqliteTable(
       .notNull()
       .references(() => agentRuns.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
-    kind: text("kind", { enum: ["read", "navigation", "proposal", "practice"] }).notNull(),
+    kind: text("kind", { enum: ["read", "navigation", "proposal", "practice", "weakness"] }).notNull(),
     toolName: text("tool_name").notNull(),
     status: text("status", {
       enum: ["completed", "pending", "accepted", "dismissed", "failed"],
@@ -582,6 +642,7 @@ export const agentSteps = sqliteTable(
     practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, {
       onDelete: "set null",
     }),
+    weaknessId: text("weakness_id").references(() => weaknesses.id, { onDelete: "set null" }),
     createdAt: ts("created_at"),
     updatedAt: ts("updated_at"),
   },
@@ -623,6 +684,7 @@ export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
 export type PracticeSession = typeof practiceSessions.$inferSelect;
+export type Weakness = typeof weaknesses.$inferSelect;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;

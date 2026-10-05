@@ -47,7 +47,7 @@ export type AgentStepDto = {
   id: string;
   runId: string;
   sequence: number;
-  kind: "read" | "navigation" | "proposal" | "practice";
+  kind: "read" | "navigation" | "proposal" | "practice" | "weakness";
   toolName: string;
   status: "completed" | "pending" | "accepted" | "dismissed" | "failed";
   summary: string;
@@ -55,6 +55,8 @@ export type AgentStepDto = {
   proposal: AgentProposal | null;
   /** Set on `practice` steps: the session the Coach started. */
   practiceSessionId: string | null;
+  /** Set on `weakness` steps: the weakness the Coach recorded. */
+  weaknessId: string | null;
   aiJobId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -331,4 +333,35 @@ export type PracticeSessionDto = {
   suggestedRating: 1 | 2 | 3 | 4 | null;
   createdAt: string;
   completedAt: string | null;
+};
+
+/** One specific mistake on a problem (docs/coach-practice.md, version 2). */
+export type WeaknessDto = {
+  id: string;
+  problemId: string;
+  category: string;
+  /** Display name: built-in names are localized on the client; custom ones come from here. */
+  categoryName: string | null;
+  detail: string;
+  evidence: { kind: "submission" | "practice" | "conversation"; ref: string; note?: string }[];
+  status: "active" | "resolved" | "dismissed";
+  hitCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  resolvedAt: string | null;
+};
+
+/** Weaknesses across problems, by category. */
+export type WeaknessProfileDto = {
+  categories: {
+    category: string;
+    categoryName: string | null;
+    active: number;
+    resolved: number;
+    hits: number;
+    recent: number;
+    recentlyResolved: number;
+    problems: { id: string; title: string; leetcodeSlug: string }[];
+  }[];
+  customCategories: { key: string; name: string; description: string }[];
 };

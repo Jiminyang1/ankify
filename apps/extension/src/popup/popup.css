@@ -3398,3 +3398,109 @@ a:focus-visible,
   gap: 6px;
   margin-left: auto;
 }
+
+/* ── Weak spots (pinned above a problem's chat) ── */
+
+.weak-spots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface));
+}
+
+.weak-spots-empty {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weak-spots-empty p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.weak-spots-empty .btn-xs {
+  flex-shrink: 0;
+}
+
+.weak-spots-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.weak-spots-count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--warning);
+}
+
+.weak-spots-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weak-spot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "category remove" "detail remove";
+  column-gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.weak-spot-category {
+  grid-area: category;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.weak-spot-detail {
+  grid-area: detail;
+  color: var(--fg);
+}
+
+.weak-spot-remove {
+  grid-area: remove;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.weak-spot-remove:hover {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--subtle);
+}
+
+.coach-step-weakness {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--warning);
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+}

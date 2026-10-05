@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createAiJobClient } from "@ankify/api-client";
 import type {
+  WeaknessDto,
   PracticeSessionDto,
   AgentPageContext,
   AgentSessionDto,
@@ -14,12 +15,14 @@ import type { ContentResponse, EditorSnapshot, ExtSettings } from "../shared/mes
 import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
 import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
+import { WeakSpots, type WeakSpotsCopy } from "./WeakSpots";
 
 /** The problem the Problem tab resolved, when it's saved in ankify. */
 export type CoachSavedProblem = { slug: string; problemId: string; title: string; due: boolean };
 
 export type CoachCopy = {
   practice: PracticeCopy;
+  weakSpots: WeakSpotsCopy & { analyzePrompt: string; noted: (detail: string) => string };
   startPractice: string;
   rateDirectly: string;
   dueForReview: string;
@@ -108,6 +111,7 @@ export function CoachTab({
   const [localPractice, setLocalPractice] = useState<PracticeSessionDto | null>(null);
   const [startingPractice, setStartingPractice] = useState(false);
   const [showRating, setShowRating] = useState(false);
+  const [weaknesses, setWeaknesses] = useState<WeaknessDto[] | null>(null);
   const debriefed = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
@@ -228,6 +232,35 @@ export function CoachTab({
       cancelled = true;
     };
   }, [api, savedProblemId]);
+
+  // Loads can overlap (a "noted" step, then a removal); only the latest wins.
+  const weaknessLoadSeq = useRef(0);
+  const loadWeaknesses = useCallback(async () => {
+    if (!savedProblemId) return;
+    const seq = ++weaknessLoadSeq.current;
+    try {
+      const res = await api(`/api/problems/${savedProblemId}/weaknesses`, { cache: "no-store" });
+      if (!res.ok) return;
+      const { weaknesses: next } = (await res.json()) as { weaknesses: WeaknessDto[] };
+      if (seq === weaknessLoadSeq.current) setWeaknesses(next);
+    } catch {
+      /* the card just keeps what it had */
+    }
+  }, [api, savedProblemId]);
+
+  useEffect(() => {
+    setWeaknesses(null);
+    void loadWeaknesses();
+  }, [loadWeaknesses]);
+
+  async function removeWeakness(id: string) {
+    await api(`/api/weaknesses/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "dismissed" }),
+    }).catch(() => null);
+    void loadWeaknesses();
+  }
 
   async function startPracticeHere() {
     if (!savedProblemId || startingPractice) return;
@@ -350,6 +383,7 @@ export function CoachTab({
       setPartial((current) => current + event.delta);
     } else if (event.type === "step") {
       setSnapshot((current) => (current ? { ...current, steps: upsert(current.steps, event.step) } : current));
+      if (event.step.kind === "weakness") void loadWeaknesses();
     } else if (event.type === "done") {
       setPartial("");
       setSnapshot((current) =>
@@ -560,6 +594,16 @@ export function CoachTab({
       </div>
 
       <div className="coach-thread scroll-area" ref={scrollRef} aria-live="polite">
+        {mode === "full" && savedHere && weaknesses && (
+          <WeakSpots
+            weaknesses={weaknesses}
+            language={settings.language}
+            copy={copy.weakSpots}
+            busy={busy || streaming}
+            onAnalyze={() => void send(copy.weakSpots.analyzePrompt)}
+            onRemove={(id) => void removeWeakness(id)}
+          />
+        )}
         {loading ? (
           <p className="popup-muted coach-thinking">
             <span className="btn-spinner" /> {copy.thinking}
@@ -602,6 +646,7 @@ export function CoachTab({
                     onApprove={() => void actOnProposal(step, "approve")}
                     onDismiss={() => void actOnProposal(step, "dismiss")}
                     onOpen={() => openInAnkify(step)}
+                    onRemoveWeakness={(id) => void removeWeakness(id)}
                   />
                 ))}
                 {assistant ? (
@@ -657,6 +702,7 @@ function CoachStep({
   onApprove,
   onDismiss,
   onOpen,
+  onRemoveWeakness,
 }: {
   step: AgentStepDto;
   job: PublicAiJobDto | undefined;
@@ -665,7 +711,20 @@ function CoachStep({
   onApprove: () => void;
   onDismiss: () => void;
   onOpen: () => void;
+  onRemoveWeakness: (id: string) => void;
 }) {
+  if (step.kind === "weakness") {
+    return (
+      <div className="coach-step coach-step-weakness">
+        <span>{copy.weakSpots.noted(step.summary)}</span>
+        {step.weaknessId && (
+          <button type="button" className="btn-xs" onClick={() => onRemoveWeakness(step.weaknessId!)}>
+            {copy.weakSpots.remove}
+          </button>
+        )}
+      </div>
+    );
+  }
   if (step.kind === "navigation" && step.navigation) {
     return (
       <div className="coach-step">

@@ -263,6 +263,16 @@ const EXT_I18N = {
       issueTooLong: (limit: number) => `Cards are limited to ${limit} characters.`,
     },
     coach: {
+      weakSpots: {
+        title: "Weak spots on this problem",
+        analyze: "Analyze my attempts",
+        analyzePrompt: "Analyze my attempts on this problem and find where I tend to go wrong.",
+        empty: "No weak spots recorded yet. The Coach can read your submissions and find them.",
+        remove: "Remove",
+        resolved: (count: number) => `${count} resolved`,
+        timesSeen: (count: number) => `${count} times`,
+        noted: (detail: string) => `Noted a weak spot: ${detail}`,
+      },
       practice: {
         title: "Practice",
         progress: (done: number, total: number) => `${done} of ${total}`,
@@ -547,6 +557,16 @@ const EXT_I18N = {
       issueTooLong: (limit: number) => `卡片文档最多 ${limit} 个字符。`,
     },
     coach: {
+      weakSpots: {
+        title: "这题的弱点",
+        analyze: "分析我的提交",
+        analyzePrompt: "分析我在这道题上的提交，找出我容易出错的地方。",
+        empty: "还没有记录弱点。教练可以读你的提交，帮你找出来。",
+        remove: "删除",
+        resolved: (count: number) => `已解决 ${count}`,
+        timesSeen: (count: number) => `出现 ${count} 次`,
+        noted: (detail: string) => `已记下弱点：${detail}`,
+      },
       practice: {
         title: "练习",
         progress: (done: number, total: number) => `${done} / ${total}`,

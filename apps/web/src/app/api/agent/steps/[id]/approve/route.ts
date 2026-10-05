@@ -12,6 +12,7 @@ import {
   getOwnedAgentStep,
 } from "@/server/agent/store";
 import { DOC_WRITE_STATUS, applyProblemDocEdit } from "@/server/problem-docs";
+import { addWeaknessCategory } from "@/server/weaknesses";
 
 const DOC_EDIT_MESSAGES: Partial<Record<keyof typeof DOC_WRITE_STATUS, string>> = {
   version_conflict: "This doc changed since the suggestion. Ask the Coach again.",
@@ -50,6 +51,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }
       const accepted = await acceptAgentProposal(user.id, step.id, null);
       return NextResponse.json({ ok: true, step: accepted, docs: applied.docs });
+    }
+    if (proposal.action === "weakness_category") {
+      await addWeaknessCategory(user.id, {
+        key: proposal.key,
+        name: proposal.name,
+        description: proposal.description,
+      });
+      const accepted = await acceptAgentProposal(user.id, step.id, null);
+      return NextResponse.json({ ok: true, step: accepted });
     }
     const job = await startAiJobForUser(user.id, proposal);
     const accepted = await acceptAgentProposal(user.id, step.id, job.id);
