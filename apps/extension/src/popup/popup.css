@@ -3232,10 +3232,10 @@ a:focus-visible,
 
 .coach-tool:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.coach-tool-icon {
-  width: 28px;
-  padding: 0;
-  justify-content: center;
+/* Keep Code, Practice, and Rate on one row in the narrowest panel. */
+@media (max-width: 359px) {
+  .coach-tools { gap: 3px; }
+  .coach-tool { gap: 4px; padding: 0 7px; }
 }
 
 .coach-tool[aria-pressed="true"],

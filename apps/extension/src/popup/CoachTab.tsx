@@ -40,6 +40,8 @@ export type CoachCopy = {
   noHistory: string;
   untitled: string;
   includeCode: string;
+  /** Short label on the code toggle; includeCode is its tooltip. */
+  codeLabel: string;
   onProblem: (title: string) => string;
   notSaved: string;
   offPage: string;
@@ -590,13 +592,13 @@ export function CoachTab({
             {page && (
               <button
                 type="button"
-                className="coach-tool coach-tool-icon"
+                className="coach-tool"
                 aria-pressed={includeCode}
-                aria-label={copy.includeCode}
                 title={copy.includeCode}
                 onClick={() => setIncludeCode((value) => !value)}
               >
                 <CodeIcon />
+                {copy.codeLabel}
               </button>
             )}
             {canPractice && (
