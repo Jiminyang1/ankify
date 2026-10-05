@@ -2,6 +2,7 @@ import type {
   BackgroundRequest,
   ContentResponse,
   ContentSettingsResponse,
+  PanelEvent,
   SolvedSyncState,
   SubmissionSummary,
 } from "../shared/messages";
@@ -47,7 +48,7 @@ chrome.runtime.onStartup?.addListener(() => {
  * Problem pages. Content scripts report (slug, recent submissions); we look
  * the problem up in ankify and then:
  * - badge the tab when it's solved on LeetCode but not in the deck,
- * - auto-capture it when a new Accepted landed (the autoCapture setting),
+ * - collect it on its first new submission, any verdict (the autoCapture setting),
  * - send captured problems the submissions ankify is missing (append-only,
  *   so it never un-archives or reschedules anything).
  * Missing config, sign-out, and API errors never badge or capture.
@@ -131,7 +132,7 @@ async function loadProblemState(slug: string): Promise<ProblemState | null> {
 
 async function handleProblemPage(
   tabId: number,
-  { slug, submissions, newAcceptedIds }: Extract<BackgroundRequest, { type: "problem_page_check" }>,
+  { slug, submissions, newSubmissionIds }: Extract<BackgroundRequest, { type: "problem_page_check" }>,
 ) {
   if (!slug) {
     await setBadge(tabId, false);
@@ -147,7 +148,7 @@ async function handleProblemPage(
     }
     if (!state.captured) {
       const settings = await getSettings();
-      if (settings.autoCapture && newAcceptedIds.length > 0 && (await autoCapture(tabId, slug))) {
+      if (settings.autoCapture && newSubmissionIds.length > 0 && (await autoCapture(tabId, slug))) {
         await flashCaptured(tabId);
         return;
       }
@@ -180,10 +181,16 @@ async function autoCapture(tabId: number, slug: string): Promise<boolean> {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: encodeCapturePayload(resp.data),
+    // Collected right after working on it: the first review is tomorrow.
+    body: encodeCapturePayload({ ...resp.data, firstReview: "next_day" }),
   });
   if (!res.ok) return false;
   problemCache.delete(slug);
+  // An open side panel swaps "not in your deck" for the problem.
+  const collected: PanelEvent = { type: "problem_collected", slug };
+  void chrome.runtime.sendMessage(collected).catch(() => {
+    /* no side panel open */
+  });
   // Everything captured just now counts as sent.
   await addSentSubmissionIds(
     slug,

@@ -9,6 +9,9 @@ import {
   MAX_SUBMISSIONS_PER_PROBLEM,
 } from "@/server/resource-limits";
 
+/** A problem collected right after the user worked on it comes back a day later. */
+const FIRST_REVIEW_DELAY_MS = 24 * 60 * 60 * 1000;
+
 type CaptureOutcome =
   | {
       problemId: string;
@@ -83,7 +86,10 @@ export async function captureProblem(
         topicTags,
         similarSlugs: input.similarSlugs,
         notes: input.notes,
-        fsrsDue: initialState.due,
+        fsrsDue:
+          input.firstReview === "next_day"
+            ? new Date(Date.now() + FIRST_REVIEW_DELAY_MS)
+            : initialState.due,
         fsrsStability: initialState.stability,
         fsrsDifficulty: initialState.difficulty,
         fsrsLearningSteps: initialState.learningSteps,

@@ -160,6 +160,10 @@ export const captureProblemSchema = z.object({
   similarSlugs: z.array(z.string().max(256)).max(64).default([]),
   notes: z.string().max(50_000).optional(),
   submissions: z.array(captureSubmissionSchema).max(20).default([]),
+  /** For a problem new to the deck: "next_day" when the extension collects it
+   *  right after the user worked on it, so it isn't due at once. Ignored for
+   *  problems already in the deck. */
+  firstReview: z.enum(["now", "next_day"]).optional(),
 });
 export type CaptureProblemInput = z.infer<typeof captureProblemSchema>;
 

@@ -4,8 +4,9 @@ import { fetchSolvedList, fetchSubmissionSummaries } from "./leetcode";
 /**
  * Problem-page watcher. Each check reports the open problem's recent
  * submissions to the background worker, which badges solved-but-uncaptured
- * problems, auto-captures new Accepted ones, and syncs submissions ankify is
- * missing. It also kicks off the daily solved-list sync.
+ * problems, collects a problem on its first new submission (any verdict), and
+ * syncs submissions ankify is missing. It also kicks off the daily
+ * solved-list sync.
  */
 
 const NAV_SETTLE_MS = 1_500;
@@ -13,9 +14,11 @@ const NAV_SETTLE_MS = 1_500;
 const RECHECK_INTERVAL_MS = 60_000;
 /** Faster checks right after Submit; the 60s re-check covers a missed click. */
 const AFTER_SUBMIT_DELAYS_MS = [5_000, 12_000, 25_000, 45_000];
-/** An Accepted this recent at the first check counts as new: the page may
+/** A submission this recent at the first check counts as new: the page may
  *  have been opened or reloaded right after submitting. */
-const RECENT_ACCEPT_WINDOW_S = 10 * 60;
+const RECENT_SUBMISSION_WINDOW_S = 10 * 60;
+/** Verdicts still being judged; they're reported once LeetCode settles. */
+const PENDING_STATUS = /pending|judging|running/i;
 
 let started = false;
 let scheduled: number | undefined;
@@ -23,7 +26,7 @@ let lastSeenUrl = "";
 let checkSeq = 0;
 let submitTimers: number[] = [];
 /** Submission ids already on each problem when this page first saw it, so an
- *  old Accepted doesn't auto-capture a problem the user merely opened. */
+ *  old submission doesn't collect a problem the user merely opened. */
 const baseline = new Map<string, Set<string>>();
 
 export function startProblemWatch(): void {
@@ -88,11 +91,11 @@ async function check() {
     }
   }
   if (seq !== checkSeq) return; // superseded by a newer navigation
-  const newAcceptedIds = slug && loaded ? newAccepted(slug, submissions) : [];
-  send({ type: "problem_page_check", slug, submissions, newAcceptedIds });
+  const newSubmissionIds = slug && loaded ? newSubmissions(slug, submissions) : [];
+  send({ type: "problem_page_check", slug, submissions, newSubmissionIds });
 }
 
-function newAccepted(slug: string, submissions: SubmissionSummary[]): string[] {
+function newSubmissions(slug: string, submissions: SubmissionSummary[]): string[] {
   let known = baseline.get(slug);
   const firstLook = !known;
   if (!known) {
@@ -103,8 +106,8 @@ function newAccepted(slug: string, submissions: SubmissionSummary[]): string[] {
   return submissions
     .filter(
       (s) =>
-        s.status === "Accepted" &&
-        ((!firstLook && !known.has(s.id)) || nowS - s.timestamp < RECENT_ACCEPT_WINDOW_S),
+        !PENDING_STATUS.test(s.status) &&
+        ((!firstLook && !known.has(s.id)) || nowS - s.timestamp < RECENT_SUBMISSION_WINDOW_S),
     )
     .map((s) => s.id);
 }

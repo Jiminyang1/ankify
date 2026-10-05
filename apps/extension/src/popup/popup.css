@@ -179,16 +179,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* A fixed-height column: top bar, scrolling content, docked Coach. */
 #root {
-  padding: 18px 20px 22px;
-  min-height: 100vh;
+  padding: 14px 16px 14px;
+  height: 100vh;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
 @media (min-width: 520px) {
   .textarea-card { min-height: 110px; }
-  #root { padding: 22px 24px 26px; }
+  #root { padding: 16px 20px 16px; }
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -295,6 +297,89 @@ label, button, th, .font-ui {
   gap: 10px;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+
+/* The expanded Coach covers the content; keep it mounted so a quiz in
+ * progress survives. */
+.popup-main.is-covered {
+  display: none;
+}
+
+/* ── top bar ── */
+
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.panel-bar-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.3;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.panel-bar-icon {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.panel-bar-icon:hover {
+  background: var(--subtle);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.panel-bar-count {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* When ThisProblemTab renders content, its top-level .stack should also flex-grow */
@@ -304,6 +389,11 @@ label, button, th, .font-ui {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* .popup-main scrolls, so its children keep their content height. */
+.popup-main > * {
+  flex-shrink: 0;
 }
 
 .popup-muted {
@@ -2768,10 +2858,42 @@ a:focus-visible,
 
 /* ── Study Coach ── */
 
-/* The Coach is a chat: the thread scrolls, the composer stays in view. */
-#root:has(.coach) {
-  height: 100vh;
-  box-sizing: border-box;
+/* Docked: a composer under the content. Expanded: covers the content. */
+.coach.coach-docked {
+  flex: none;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.coach.coach-expanded {
+  flex: 1;
+}
+
+.coach-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.coach-dock-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.coach-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.coach-docked .coach-input {
+  min-height: 44px;
 }
 
 .coach {

@@ -17,7 +17,7 @@ import type {
   QuizSessionDto as QuizSession,
   ReviewQueuePayloadDto as QueueResponse,
 } from "@ankify/contracts";
-import type { BackgroundRequest, ContentResponse, ExtSettings, SolvedSyncState } from "../shared/messages";
+import type { BackgroundRequest, ContentResponse, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
   clearCardDraft,
@@ -64,12 +64,13 @@ type Sticky = {
   previews: Previews;
 };
 
-type NavTab = "today" | "problem" | "coach" | "settings";
+type PanelView = "auto" | "today" | "settings";
 
 const EXT_I18N = {
   en: {
-    nav: { today: "Today", problem: "Problem", coach: "Coach", settings: "Settings" },
+    nav: { today: "Today", problem: "Problem", settings: "Settings" },
     common: {
+      back: "Back",
       navigation: "Primary navigation",
       cancel: "Cancel",
       retry: "Retry",
@@ -201,6 +202,7 @@ const EXT_I18N = {
       sources: { statement: "Statement", submission: "Submission", notes: "Notes", card: "Card" },
     },
     cards: {
+      manage: "Manage cards",
       add: "Add a card",
       savedCount: (count: number) => `${count} saved card${count === 1 ? "" : "s"}`,
       noSaved: "No saved cards yet.",
@@ -240,6 +242,8 @@ const EXT_I18N = {
     capture: {
       notInDeck: "Not in your deck",
       notCaptured: (slug: string) => `Problem ${slug} hasn't been captured.`,
+      autoHint: "It's added automatically the first time you submit, pass or fail.",
+      addNow: "Add now",
       helperUnavailable:
         "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
       reading: "Reading...",
@@ -253,6 +257,9 @@ const EXT_I18N = {
       placeholder: "What tripped you up, key insights, alternative approaches...",
     },
     coach: {
+      title: "Study Coach",
+      showChat: "Show chat",
+      hideChat: "Hide chat",
       intro:
         "Ask about the problem you're on. With \"Include my code\" on, the Coach also sees what's in LeetCode's editor right now, so it can point at the bug instead of guessing.",
       placeholder: "Ask the Study Coach",
@@ -293,9 +300,9 @@ const EXT_I18N = {
       resetCode: "Reset code on problem pages",
       resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
       leetcodeSync: "LeetCode sync",
-      autoCapture: "Auto-capture on Accepted",
+      autoCapture: "Collect problems when you submit",
       autoCaptureHelp:
-        "When you get Accepted on a problem that isn't in ankify yet, capture it automatically. New submissions on problems you've captured always sync.",
+        "The first time you submit on a problem that isn't in ankify, pass or fail, it's added automatically and comes up for review the next day. New submissions on collected problems always sync.",
       solvedSynced: (count: number, when: string) => `Solved list synced ${when}: ${count} problems.`,
       solvedNever: "Your LeetCode solved list syncs once a day when you open a problem page.",
       solvedFailed: (error: string) => `Last sync failed (${error}).`,
@@ -319,8 +326,9 @@ const EXT_I18N = {
     },
   },
   zh: {
-    nav: { today: "今日", problem: "题目", coach: "教练", settings: "设置" },
+    nav: { today: "今日", problem: "题目", settings: "设置" },
     common: {
+      back: "返回",
       navigation: "主导航",
       cancel: "取消",
       retry: "重试",
@@ -440,6 +448,7 @@ const EXT_I18N = {
       sources: { statement: "题目", submission: "提交", notes: "笔记", card: "卡片" },
     },
     cards: {
+      manage: "管理卡片",
       add: "添加卡片",
       savedCount: (count: number) => `${count} 张已保存卡片`,
       noSaved: "还没有已保存卡片。",
@@ -479,6 +488,8 @@ const EXT_I18N = {
     capture: {
       notInDeck: "不在你的题库中",
       notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
+      autoHint: "你第一次提交时（不管通过没通过）会自动收录。",
+      addNow: "现在收录",
       helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
       reading: "读取中...",
       captureThis: "捕获这道题",
@@ -486,6 +497,9 @@ const EXT_I18N = {
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
     coach: {
+      title: "学习教练",
+      showChat: "展开对话",
+      hideChat: "收起对话",
       intro: "问问你正在做的这道题。勾选「附上我的代码」后，教练还能看到 LeetCode 编辑器里现在的代码，直接指出问题在哪。",
       placeholder: "问学习教练",
       send: "发送",
@@ -525,8 +539,8 @@ const EXT_I18N = {
       resetCode: "打开题目时重置代码",
       resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
       leetcodeSync: "LeetCode 同步",
-      autoCapture: "AC 后自动收录",
-      autoCaptureHelp: "在还没收录的题上拿到 Accepted 时，自动收录这道题。已收录题目的新提交会一直自动同步。",
+      autoCapture: "提交后自动收录",
+      autoCaptureHelp: "在还没收录的题上第一次提交（不管通过没通过），就自动收录这道题，第二天安排复习。已收录题目的新提交会一直自动同步。",
       solvedSynced: (count: number, when: string) => `已同步做题记录（${when}）：共 ${count} 道。`,
       solvedNever: "打开 LeetCode 题目页时，每天自动同步一次你的做题记录。",
       solvedFailed: (error: string) => `上次同步失败（${error}）。`,
@@ -857,7 +871,9 @@ export function Popup() {
   const [sticky, setSticky] = useState<Sticky | null>(null);
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
   const [authState, setAuthState] = useState<AuthState>({ kind: "loading" });
-  const [tab, setTab] = useState<NavTab>("today");
+  /** "auto" shows the problem in the active tab, or Today when there is none. */
+  const [view, setView] = useState<PanelView>("auto");
+  const [coachExpanded, setCoachExpanded] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -936,7 +952,8 @@ export function Popup() {
       // Skip when this isn't the first detect, slug hasn't changed, and the
       // caller didn't explicitly force a refresh. Avoids tearing the UI down
       // every time LeetCode fires a "complete" tab event.
-      if (!force && hasDetectedOnceRef.current && slug === currentSlugRef.current) {
+      const sameSlug = hasDetectedOnceRef.current && slug === currentSlugRef.current;
+      if (!force && sameSlug) {
         return;
       }
       hasDetectedOnceRef.current = true;
@@ -947,7 +964,10 @@ export function Popup() {
         return;
       }
 
-      setState({ kind: "loading", slug });
+      // Refreshing the problem already on screen revalidates in place: a
+      // loading placeholder would unmount the workspace (and its quiz or card
+      // form), and some of those refresh again when they mount.
+      if (!sameSlug) setState({ kind: "loading", slug });
       try {
         const data = await fetchProblemBySlug(settings, slug);
         // User navigated away while we were fetching: discard the result.
@@ -992,8 +1012,31 @@ export function Popup() {
     };
   }, [settings, authState.kind, detect]);
 
+  // The background collected the open problem on a submission: show it.
+  useEffect(() => {
+    const onMessage = (message: PanelEvent) => {
+      if (message?.type === "problem_collected" && message.slug === currentSlugRef.current) {
+        void detect({ force: true });
+      }
+    };
+    chrome.runtime.onMessage.addListener(onMessage);
+    return () => chrome.runtime.onMessage.removeListener(onMessage);
+  }, [detect]);
+
   const captured = state.kind === "captured" ? state : null;
   const text = settings ? getExtText(settings) : EXT_I18N.en;
+  const pageSlug =
+    state.kind === "loading" || state.kind === "not-saved"
+      ? state.slug
+      : state.kind === "captured"
+        ? state.problem.leetcodeSlug
+        : null;
+  const dueCount = useDueCount(settings, authState.kind === "signed-in");
+
+  // Moving to another problem brings the panel back to it.
+  useEffect(() => {
+    setView((current) => (current === "settings" ? current : "auto"));
+  }, [pageSlug]);
 
   // Jump back to the LeetCode tab where the sticky problem was last seen.
   // Hooks must run before the loading / signed-out early returns so the hook
@@ -1044,112 +1087,195 @@ export function Popup() {
     );
   }
 
+  const showSettings = view === "settings";
+  const showToday = !showSettings && (view === "today" || (state.kind === "off-page" && !sticky));
+  const headerProblem = captured ?? (state.kind === "off-page" ? sticky : null);
+  const canReturnToProblem = view === "today" && (state.kind !== "off-page" || sticky != null);
+
   return (
     <div className="popup-shell">
-      {/* Nav */}
-      <nav className="popup-nav">
-        <div
-          className="popup-nav-tabs"
-          role="tablist"
-          aria-label={text.common.navigation}
-          onKeyDown={movePopupTabFocus}
-        >
-          {(["today", "problem", "coach", "settings"] as NavTab[]).map((navTab) => (
+      <header className="panel-bar">
+        <div className="panel-bar-main">
+          {showSettings || canReturnToProblem ? (
             <button
-              key={navTab}
-              id={`popup-nav-tab-${navTab}`}
               type="button"
-              role="tab"
-              aria-selected={tab === navTab}
-              aria-controls={`popup-nav-panel-${navTab}`}
-              tabIndex={tab === navTab ? 0 : -1}
-              className="popup-nav-tab"
-              data-active={tab === navTab}
-              onClick={() => setTab(navTab)}
+              className="panel-bar-icon"
+              aria-label={text.common.back}
+              title={text.common.back}
+              onClick={() => setView("auto")}
             >
-              {text.nav[navTab]}
+              <ChevronIcon direction="left" />
             </button>
-          ))}
+          ) : null}
+          {showSettings ? (
+            <h1 className="panel-bar-title">{text.nav.settings}</h1>
+          ) : showToday ? (
+            <h1 className="panel-bar-title">{text.nav.today}</h1>
+          ) : headerProblem ? (
+            <ProblemHeading problem={headerProblem.problem} settings={settings} />
+          ) : (
+            <h1 className="panel-bar-title">{pageSlug ?? text.nav.problem}</h1>
+          )}
         </div>
-      </nav>
+        <div className="panel-bar-actions">
+          {!showSettings && !showToday && headerProblem && (
+            <a
+              href={`${settings.apiBaseUrl}/problems/${headerProblem.problem.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="panel-bar-icon"
+              title={text.problem.openWeb}
+              aria-label={text.problem.openWeb}
+            >
+              <ExternalIcon />
+            </a>
+          )}
+          {!showSettings && !showToday && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.nav.today}
+              title={text.nav.today}
+              onClick={() => setView("today")}
+            >
+              <ListIcon />
+              {dueCount > 0 && <span className="panel-bar-count">{dueCount}</span>}
+            </button>
+          )}
+          {!showSettings && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.nav.settings}
+              title={text.nav.settings}
+              onClick={() => setView("settings")}
+            >
+              <GearIcon />
+            </button>
+          )}
+        </div>
+      </header>
 
-      {/* Content */}
-      <main className="popup-main">
-        {tab === "today" && settings && (
-          <div
-            id="popup-nav-panel-today"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-today"
-            className="tab-pane"
-            key="today"
-          >
-            <TodayTab
-              settings={settings}
-              onJumpToProblem={() => setTab("problem")}
-            />
-          </div>
-        )}
-
-        {tab === "problem" && settings && (
-          <div
-            id="popup-nav-panel-problem"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-problem"
-            className="tab-pane"
-            key="problem"
-          >
-            <ProblemTab
-              state={state}
-              settings={settings}
-              captured={captured}
-              sticky={sticky}
-              onJumpToSticky={jumpToSticky}
-              onRefresh={() => detect({ force: true })}
-              onError={(msg) => setState({ kind: "error", msg })}
-            />
-          </div>
-        )}
-
-        {tab === "coach" && settings && (
-          <div
-            id="popup-nav-panel-coach"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-coach"
-            className="tab-pane"
-            key="coach"
-          >
-            <CoachTab
-              settings={settings}
-              saved={
-                captured
-                  ? { slug: captured.problem.leetcodeSlug, problemId: captured.problem.id, title: captured.problem.title }
-                  : null
-              }
-              copy={text.coach}
-            />
-          </div>
-        )}
-
-        {tab === "settings" && settings && (
-          <div
-            id="popup-nav-panel-settings"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-settings"
-            className="tab-pane"
-            key="settings"
-          >
-            <SettingsTab
-              settings={settings}
-              account={authState.account}
-              theme={theme}
-              onThemeChange={setThemePreference}
-              onSave={saveLocalSettings}
-            />
-          </div>
+      <main className={`popup-main scroll-area${coachExpanded && !showSettings ? " is-covered" : ""}`}>
+        {showSettings ? (
+          <SettingsTab
+            settings={settings}
+            account={authState.account}
+            theme={theme}
+            onThemeChange={setThemePreference}
+            onSave={saveLocalSettings}
+          />
+        ) : showToday ? (
+          <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} />
+        ) : (
+          <ProblemTab
+            state={state}
+            settings={settings}
+            captured={captured}
+            sticky={sticky}
+            onJumpToSticky={jumpToSticky}
+            onRefresh={() => detect({ force: true })}
+            onError={(msg) => setState({ kind: "error", msg })}
+          />
         )}
       </main>
+
+      {!showSettings && (
+        <CoachTab
+          settings={settings}
+          saved={
+            captured
+              ? { slug: captured.problem.leetcodeSlug, problemId: captured.problem.id, title: captured.problem.title }
+              : null
+          }
+          copy={text.coach}
+          expanded={coachExpanded}
+          onExpandedChange={setCoachExpanded}
+        />
+      )}
     </div>
   );
+}
+
+/** Problem title and status, shown in the top bar. */
+function ProblemHeading({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+  const t = getExtText(settings);
+  const due = isDue(problem.fsrsDue);
+  return (
+    <div className="problem-card-info">
+      <h1 className="problem-card-title">
+        {problem.leetcodeId != null && <span className="problem-card-num">{problem.leetcodeId}. </span>}
+        {problem.title}
+      </h1>
+      <div className="problem-card-tags">
+        <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{difficultyLabel(problem.difficulty, t)}</span>
+        {due ? (
+          <span className="pill pill-due">{t.common.due}</span>
+        ) : (
+          <span className="problem-card-next">
+            {t.problem.next} {formatInterval(problem.fsrsDue)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M6 4h7M6 8h7M6 12h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="3" cy="4" r="1" fill="currentColor" />
+      <circle cx="3" cy="8" r="1" fill="currentColor" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V13H3V5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Reviews left today, for the Today button's badge. */
+function useDueCount(settings: ExtSettings | null, signedIn: boolean) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!settings || !signedIn) return;
+    const load = async () => {
+      try {
+        const res = await apiFetch(settings, "/api/review/queue?limit=1", { cache: "no-store" });
+        if (res.ok) setCount(((await res.json()) as QueueResponse).queue.remaining);
+      } catch {
+        /* the badge just stays as it was */
+      }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    const timer = window.setInterval(() => void load(), 60_000);
+    return () => {
+      window.removeEventListener("focus", load);
+      window.clearInterval(timer);
+    };
+  }, [settings, signedIn]);
+  return count;
 }
 
 /* ── TodayTab ── */
@@ -1334,72 +1460,14 @@ function ProblemTab({
   onError: (msg: string) => void;
 }) {
   const t = getExtText(settings);
-  const [mode, setMode] = useState<"review" | "manage">("review");
-  const [syncState, setSyncState] = useState<{
-    busy: boolean;
-    message: string | null;
-    tone: "success" | "error";
-  }>({ busy: false, message: null, tone: "success" });
-  const lastProblemIdRef = useRef<string | null>(null);
 
   // When the active tab has no slug but we have a sticky pin from earlier,
   // keep showing that problem instead of the bare "off-page" placeholder.
   const isStickyView = state.kind === "off-page" && sticky !== null;
   const displayCaptured = captured ?? (isStickyView ? sticky : null);
 
-  // Auto-select mode when problem changes: due → review, otherwise → manage
-  useEffect(() => {
-    if (!displayCaptured) return;
-    const newId = displayCaptured.problem.id;
-    if (lastProblemIdRef.current !== newId) {
-      setMode(isDue(displayCaptured.problem.fsrsDue) ? "review" : "manage");
-      setSyncState({ busy: false, message: null, tone: "success" });
-      lastProblemIdRef.current = newId;
-    }
-  }, [displayCaptured]);
-
-  async function syncLatestSubmissions() {
-    if (!displayCaptured || syncState.busy) return;
-
-    setSyncState({ busy: true, message: null, tone: "success" });
-    try {
-      const capturedProblem = await readActiveProblem(settings);
-      if (capturedProblem.leetcodeSlug !== displayCaptured.problem.leetcodeSlug) {
-        throw new Error(`Active tab is ${capturedProblem.leetcodeSlug}, not ${displayCaptured.problem.leetcodeSlug}.`);
-      }
-      const result = await saveCapturedProblem(settings, capturedProblem);
-      setSyncState({
-        busy: false,
-        message:
-          result.importedSubmissions === 1
-            ? t.problem.syncOne
-            : result.importedSubmissions > 1
-              ? t.problem.syncMany(result.importedSubmissions)
-              : t.problem.upToDate,
-        tone: "success",
-      });
-      onRefresh();
-    } catch (e) {
-      setSyncState({
-        busy: false,
-        message: e instanceof Error ? e.message : t.problem.syncFailed,
-        tone: "error",
-      });
-    }
-  }
-
   if (state.kind === "detecting") return <p className="popup-muted">{t.problem.connecting}</p>;
   if (state.kind === "loading") return <p className="popup-muted">{t.problem.syncing(state.slug)}</p>;
-
-  if (state.kind === "off-page" && !sticky) {
-    return (
-      <div className="panel panel-quiet">
-        <p className="popup-muted" style={{ margin: 0 }}>
-          {t.problem.offPage}
-        </p>
-      </div>
-    );
-  }
 
   if (state.kind === "error") {
     return (
@@ -1426,7 +1494,6 @@ function ProblemTab({
   if (!displayCaptured) return null;
 
   const { problem, cards, candidates, previews } = displayCaptured;
-  const due = isDue(problem.fsrsDue);
 
   return (
     <>
@@ -1440,205 +1507,44 @@ function ProblemTab({
           </button>
         </div>
       )}
-      {mode === "review" ? (
-        <div id="problem-mode-panel-review" role="tabpanel" aria-labelledby="problem-mode-tab-review">
-          <ReviewView
-            problem={problem}
-            cards={cards}
-            previews={previews}
-            settings={settings}
-            due={due}
-            mode={mode}
-            onModeChange={setMode}
-            onSync={syncLatestSubmissions}
-            syncBusy={syncState.busy}
-            syncMessage={syncState.message}
-            syncTone={syncState.tone}
-            canSync={!isStickyView}
-            onRefresh={onRefresh}
-            onRated={onRefresh}
-          />
-        </div>
-      ) : (
-        <div id="problem-mode-panel-manage" role="tabpanel" aria-labelledby="problem-mode-tab-manage">
-          <ManageView
-            problem={problem}
-            cards={cards}
-            candidates={candidates}
-            settings={settings}
-            due={due}
-            mode={mode}
-            onModeChange={setMode}
-            onSync={syncLatestSubmissions}
-            syncBusy={syncState.busy}
-            syncMessage={syncState.message}
-            syncTone={syncState.tone}
-            canSync={!isStickyView}
-            onRefresh={onRefresh}
-          />
-        </div>
-      )}
+      <ProblemWorkspace
+        key={problem.id}
+        problem={problem}
+        cards={cards}
+        candidates={candidates}
+        previews={previews}
+        settings={settings}
+        onRefresh={onRefresh}
+      />
     </>
   );
 }
 
-/* ── ProblemCard (Module 1: context + mode toggle) ── */
+/* ── ProblemWorkspace: Quiz / Cards / Notes, plus rating when due ── */
 
-function ProblemCard({
-  problem,
-  settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
-}: {
-  problem: ApiProblem;
-  settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-}) {
-  const t = getExtText(settings);
-  return (
-    <div className="problem-card">
-      <div className="problem-card-top">
-        <div className="problem-card-info">
-          <h2 className="problem-card-title">
-            {problem.leetcodeId != null && (
-              <span className="problem-card-num">{problem.leetcodeId}. </span>
-            )}
-            {problem.title}
-          </h2>
-          <div className="problem-card-tags">
-            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{difficultyLabel(problem.difficulty, t)}</span>
-            {due ? (
-              <span className="pill pill-due">{t.common.due}</span>
-            ) : (
-              <span className="problem-card-next">{t.problem.next} {formatInterval(problem.fsrsDue)}</span>
-            )}
-          </div>
-        </div>
-        <div className="problem-card-actions">
-          <button
-            type="button"
-            className="problem-header-web"
-            title={t.problem.syncTitle}
-            aria-label={t.problem.syncTitle}
-            disabled={!canSync || syncBusy}
-            onClick={onSync}
-          >
-            {syncBusy ? "…" : "↻"}
-          </button>
-          <a
-            href={`${settings.apiBaseUrl}/problems/${problem.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="problem-header-web"
-            title={t.problem.openWeb}
-            aria-label={t.problem.openWeb}
-          >
-            ↗
-          </a>
-        </div>
-      </div>
-      {syncMessage && <div className={`problem-card-sync problem-card-sync-${syncTone}`}>{syncMessage}</div>}
-      <div
-        className="problem-card-mode"
-        role="tablist"
-        aria-label={t.problem.review}
-        onKeyDown={movePopupTabFocus}
-      >
-        <button
-          id="problem-mode-tab-review"
-          type="button"
-          role="tab"
-          aria-selected={mode === "review"}
-          aria-controls="problem-mode-panel-review"
-          tabIndex={mode === "review" ? 0 : -1}
-          className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
-          onClick={() => onModeChange("review")}
-        >
-          {t.problem.review}
-        </button>
-        <button
-          id="problem-mode-tab-manage"
-          type="button"
-          role="tab"
-          aria-selected={mode === "manage"}
-          aria-controls="problem-mode-panel-manage"
-          tabIndex={mode === "manage" ? 0 : -1}
-          className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
-          onClick={() => onModeChange("manage")}
-        >
-          {t.problem.manage}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ── ReviewView ── */
-
-function ReviewView({
+function ProblemWorkspace({
   problem,
   cards,
+  candidates,
   previews,
   settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
   onRefresh,
-  onRated,
 }: {
   problem: ApiProblem;
   cards: ApiCard[];
+  candidates: ApiCard[];
   previews: Previews;
   settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-  onRefresh: () => void;
-  onRated: () => void;
+  onRefresh: () => Promise<void> | void;
 }) {
   const t = getExtText(settings);
-  const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
+  const due = isDue(problem.fsrsDue);
+  // A due problem opens on the quiz; otherwise on its cards.
+  const [view, setView] = useState<"quiz" | "cards" | "notes">(due ? "quiz" : "cards");
+  const refresh = () => void onRefresh();
 
   return (
     <div className="review-workspace">
-      {/* Module 1 — problem context */}
-      <ProblemCard
-        problem={problem}
-        settings={settings}
-        due={due}
-        mode={mode}
-        onModeChange={onModeChange}
-        onSync={onSync}
-        syncBusy={syncBusy}
-        syncMessage={syncMessage}
-        syncTone={syncTone}
-        canSync={canSync}
-      />
-
-      {/* Module 2 — content */}
       <div className="content-card">
         <div
           className="content-card-tabs"
@@ -1646,7 +1552,7 @@ function ReviewView({
           aria-label={t.review.workspace}
           onKeyDown={movePopupTabFocus}
         >
-          {(["quiz", "card", "notes"] as const).map((v) => (
+          {(["quiz", "cards", "notes"] as const).map((v) => (
             <button
               key={v}
               id={`extension-review-tab-${v}`}
@@ -1659,7 +1565,7 @@ function ReviewView({
               data-active={view === v}
               onClick={() => setView(v)}
             >
-              {v === "quiz" ? t.review.quiz : v === "card" ? t.review.cards : t.review.notes}
+              {v === "quiz" ? t.review.quiz : v === "cards" ? t.review.cards : t.review.notes}
             </button>
           ))}
         </div>
@@ -1673,38 +1579,36 @@ function ReviewView({
               className="review-stage-pane tab-pane"
               key="quiz"
             >
-              <QuizPanel
-                problem={problem}
-                settings={settings}
-                onRefresh={onRefresh}
-              />
+              <QuizPanel problem={problem} settings={settings} onRefresh={refresh} />
             </div>
           )}
 
-          {view === "card" && (
+          {view === "cards" && (
             <div
-              id="extension-review-panel-card"
+              id="extension-review-panel-cards"
               role="tabpanel"
-              aria-labelledby="extension-review-tab-card"
-              className="review-stage-pane tab-pane"
-              key="card"
+              aria-labelledby="extension-review-tab-cards"
+              className="review-stage-pane tab-pane stack"
+              key="cards"
             >
-              {cards.length === 0 ? (
-                <div className="review-empty">
-                  <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
-                    {t.review.noCards}
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => onModeChange("manage")}
-                  >
-                    {t.review.goManage}
-                  </button>
-                </div>
-              ) : (
-                <CardFlipper cards={cards} settings={settings} />
+              {candidates.length > 0 && (
+                <CandidateList problem={problem} candidates={candidates} settings={settings} onRefresh={refresh} />
               )}
+              {cards.length > 0 && <CardFlipper cards={cards} settings={settings} />}
+              <Collapse header={t.cards.manage} defaultOpen={cards.length === 0}>
+                <div className="stack">
+                  <div className="panel">
+                    <div className="section-label">{t.cards.add}</div>
+                    <AddCardForm problem={problem} settings={settings} onAdded={refresh} />
+                  </div>
+                  {cards.length > 0 && (
+                    <div>
+                      <div className="section-label">{t.cards.savedCount(cards.length)}</div>
+                      <CardList cards={cards} settings={settings} onRefresh={refresh} />
+                    </div>
+                  )}
+                </div>
+              </Collapse>
             </div>
           )}
 
@@ -1722,15 +1626,9 @@ function ReviewView({
         </div>
       </div>
 
-      {/* Module 3 — rating */}
       {due && (
         <div className="rating-card">
-          <QuickRate
-            problemId={problem.id}
-            previews={previews}
-            settings={settings}
-            onRated={onRated}
-          />
+          <QuickRate problemId={problem.id} previews={previews} settings={settings} onRated={refresh} />
         </div>
       )}
     </div>
@@ -2334,85 +2232,6 @@ function getSuggestedRating(score: number, t: ReturnType<typeof getExtText>): { 
   if (score === 2) return { rating: 2, label: t.rating.hard };
   if (score <= 4) return { rating: 3, label: t.rating.good };
   return { rating: 4, label: t.rating.easy };
-}
-
-/* ── ManageView ── */
-
-function ManageView({
-  problem,
-  cards,
-  candidates,
-  settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
-  onRefresh,
-}: {
-  problem: ApiProblem;
-  cards: ApiCard[];
-  candidates: ApiCard[];
-  settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  return (
-    <div className="stack">
-      <ProblemCard
-        problem={problem}
-        settings={settings}
-        due={due}
-        mode={mode}
-        onModeChange={onModeChange}
-        onSync={onSync}
-        syncBusy={syncBusy}
-        syncMessage={syncMessage}
-        syncTone={syncTone}
-        canSync={canSync}
-      />
-
-      <div className="panel">
-        <div className="section-label">{t.cards.add}</div>
-        <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
-      </div>
-
-      {candidates.length > 0 && (
-        <CandidateList
-          problem={problem}
-          candidates={candidates}
-          settings={settings}
-          onRefresh={onRefresh}
-        />
-      )}
-
-      <div>
-        <div className="section-label">
-          {t.cards.savedCount(cards.length)}
-        </div>
-        {cards.length === 0 ? (
-          <div className="panel panel-quiet">
-            <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
-              {t.cards.noSaved}
-            </p>
-          </div>
-        ) : (
-          <CardList cards={cards} settings={settings} onRefresh={onRefresh} />
-        )}
-      </div>
-    </div>
-  );
 }
 
 /* ── CardFlipper ── */
@@ -3293,20 +3112,23 @@ function CaptureView({
     <div className="panel">
       <span className="section-label">{t.capture.notInDeck}</span>
       <p className="popup-muted" style={{ marginTop: 0 }}>
-        {t.capture.notCaptured(slug)}
+        {settings.autoCapture ? t.capture.autoHint : t.capture.notCaptured(slug)}
       </p>
       <button
         type="button"
         onClick={captureNow}
         disabled={busy}
-        className="btn btn-primary"
+        className={settings.autoCapture ? "btn btn-secondary" : "btn btn-primary"}
         style={{ marginTop: 14 }}
       >
+        {busy && <span className="btn-spinner" />}
         {phase === "reading"
           ? t.capture.reading
           : phase === "saving"
             ? t.capture.saving
-            : t.capture.captureThis}
+            : settings.autoCapture
+              ? t.capture.addNow
+              : t.capture.captureThis}
       </button>
     </div>
   );

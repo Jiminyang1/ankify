@@ -16,6 +16,9 @@ import { PopupMarkdown } from "./PopupMarkdown";
 export type CoachSavedProblem = { slug: string; problemId: string; title: string };
 
 export type CoachCopy = {
+  title: string;
+  showChat: string;
+  hideChat: string;
   intro: string;
   placeholder: string;
   send: string;
@@ -44,17 +47,22 @@ const SESSION_KEY = "ankify.coachSessionId";
 
 type PageInfo = { tabId: number; slug: string; title: string | null } | null;
 
-/** The Study Coach, beside the LeetCode problem in the active tab. Shares the
- *  web app's conversations; each turn carries the problem and, unless turned
- *  off, a snapshot of LeetCode's editor. */
+/** The Study Coach, docked at the bottom of the side panel. Collapsed it is
+ *  just a composer; sending (or "Show chat") expands it over the panel's
+ *  content. Shares the web app's conversations; each turn carries the problem
+ *  in the active tab and, unless turned off, a snapshot of LeetCode's editor. */
 export function CoachTab({
   settings,
   saved,
   copy,
+  expanded,
+  onExpandedChange,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
   copy: CoachCopy;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
@@ -139,7 +147,7 @@ export function CoachTab({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [snapshot, partial, pendingMessage]);
+  }, [snapshot, partial, pendingMessage, expanded]);
 
   // Follow jobs started from approved proposals until they finish.
   const followJob = useCallback(
@@ -192,6 +200,7 @@ export function CoachTab({
     if (!text || streaming || remoteRunActive) return;
     const controller = new AbortController();
     abortRef.current = controller;
+    onExpandedChange(true);
     setStreaming(true);
     setPartial("");
     setPendingMessage(text);
@@ -310,8 +319,68 @@ export function CoachTab({
     ? [copy.quick.failing, copy.quick.hint, ...(savedHere ? [copy.quick.history] : [])]
     : [];
 
+  const composer = (
+    <form
+      className="coach-composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send(draft);
+      }}
+    >
+      <textarea
+        className="textarea-card coach-input scroll-area"
+        value={draft}
+        rows={expanded ? 3 : 2}
+        maxLength={12_000}
+        placeholder={copy.placeholder}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void send(draft);
+          }
+        }}
+      />
+      <div className="coach-composer-row">
+        {page ? (
+          <label className="coach-toggle">
+            <input type="checkbox" checked={includeCode} onChange={(event) => setIncludeCode(event.target.checked)} />
+            {copy.includeCode}
+          </label>
+        ) : (
+          <span />
+        )}
+        {streaming ? (
+          <button type="button" className="btn btn-secondary btn-inline" onClick={() => abortRef.current?.abort()}>
+            {copy.stop}
+          </button>
+        ) : (
+          <button type="submit" className="btn btn-primary btn-inline" disabled={!draft.trim() || busy}>
+            {copy.send}
+          </button>
+        )}
+      </div>
+    </form>
+  );
+
+  if (!expanded) {
+    return (
+      <section className="coach coach-docked" aria-label={copy.title}>
+        <div className="coach-dock-head">
+          <span className="coach-dock-title">{copy.title}</span>
+          {(runs.length > 0 || error) && (
+            <button type="button" className="btn-xs" onClick={() => onExpandedChange(true)}>
+              {copy.showChat}
+            </button>
+          )}
+        </div>
+        {composer}
+      </section>
+    );
+  }
+
   return (
-    <div className="coach">
+    <section className="coach coach-expanded" aria-label={copy.title}>
       <div className="coach-bar">
         <div className="coach-context">
           {page ? (
@@ -323,9 +392,14 @@ export function CoachTab({
             <span className="coach-context-note">{copy.offPage}</span>
           )}
         </div>
-        <button type="button" className="btn-xs" onClick={newChat} disabled={streaming || !sessionId}>
-          {copy.newChat}
-        </button>
+        <div className="coach-bar-actions">
+          <button type="button" className="btn-xs" onClick={newChat} disabled={streaming || !sessionId}>
+            {copy.newChat}
+          </button>
+          <button type="button" className="btn-xs" onClick={() => onExpandedChange(false)}>
+            {copy.hideChat}
+          </button>
+        </div>
       </div>
 
       <div className="coach-thread scroll-area" ref={scrollRef} aria-live="polite">
@@ -399,48 +473,8 @@ export function CoachTab({
       {error && <div className="err-banner">{error}</div>}
       {notice && !error && <p className="coach-notice">{notice}</p>}
 
-      <form
-        className="coach-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send(draft);
-        }}
-      >
-        <textarea
-          className="textarea-card coach-input scroll-area"
-          value={draft}
-          rows={3}
-          maxLength={12_000}
-          placeholder={copy.placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void send(draft);
-            }
-          }}
-        />
-        <div className="coach-composer-row">
-          {page ? (
-            <label className="coach-toggle">
-              <input type="checkbox" checked={includeCode} onChange={(event) => setIncludeCode(event.target.checked)} />
-              {copy.includeCode}
-            </label>
-          ) : (
-            <span />
-          )}
-          {streaming ? (
-            <button type="button" className="btn btn-secondary btn-inline" onClick={() => abortRef.current?.abort()}>
-              {copy.stop}
-            </button>
-          ) : (
-            <button type="submit" className="btn btn-primary btn-inline" disabled={!draft.trim() || busy}>
-              {copy.send}
-            </button>
-          )}
-        </div>
-      </form>
-    </div>
+      {composer}
+    </section>
   );
 }
 

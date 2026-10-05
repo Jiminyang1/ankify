@@ -94,7 +94,7 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
 - **API routes** under `src/app/api/`:
   - `auth/[...all]/` - Better Auth route handler for Google OAuth sessions and auth callbacks.
   - `me/` - returns the current session user; used by extension automatic login detection and Test connection.
-  - `capture/` - extension hits this to upsert problems + submissions. Idempotent by `leetcodeSlug`, stores `leetcodeId` when present, and seeds FSRS state for new problems.
+  - `capture/` - extension hits this to upsert problems + submissions. Idempotent by `leetcodeSlug`, stores `leetcodeId` when present, and seeds FSRS state for new problems. `firstReview: "next_day"` (sent by the extension's automatic collection) makes a new problem's first review due 24h later instead of at once; it never touches problems already in the deck.
   - `problems/` - list problems with card counts. Supports `?search=` for title search and `?archived=1` to list archived problems instead of active ones.
   - `problems/[id]/` - PATCH accepts `{ notes }` (autosave from review) and/or `{ archived }` (sets/clears `archivedAt`; archived problems keep all data but leave the review rotation). DELETE permanently removes the problem and cascades to its submissions, cards, quiz sessions, and review events.
   - `problems/by-slug/[slug]/` - extension lookup by LeetCode slug. Returns problem, ready cards, candidates, FSRS previews, and queue state.
@@ -165,31 +165,30 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
 - **Content script** (`content/leetcode.ts`): scrapes LeetCode problem pages via their GraphQL endpoint - fetches problem metadata, recent submissions, and submission details (code, status, failures). Falls back from `questionSubmissionList` to legacy `submissionList`.
 - **Problem watch** (`content/problem-watch.ts` + background): the content script watches the SPA URL (plus a 60s in-place re-check and quick re-checks after Submit / Cmd+Enter) and reports the problem's recent submissions. The background worker looks the slug up via `/api/problems/by-slug/[slug]/submissions` (60s in-memory cache), then:
   - sets a per-tab gold `!` badge when the problem has an Accepted submission but isn't captured;
-  - auto-captures it when a *new* Accepted lands (made while the page was open, or within 10 minutes) and the `autoCapture` setting is on (default). Opening an old solved problem never auto-captures;
+  - collects it on its first *new* submission, any verdict (made while the page was open, or within 10 minutes; still-judging verdicts wait), when the `autoCapture` setting is on (default). It sends `firstReview: "next_day"` and broadcasts `problem_collected` so an open side panel switches to the problem. Opening a problem, even an old solved one, never collects it;
   - posts any submissions ankify is missing for captured problems to the append-only endpoint. Ids already sent are remembered in `chrome.storage.session`.
   Missing config, sign-out, and API errors never badge or capture. A successful capture from the popup sends `capture_badge_captured` to clear matching tabs.
 - **Solved-list sync**: once a day (or via popup Settings "Sync now"), a problem page reads the signed-in user's solved list from LeetCode's same-origin `/api/problems/all/` (GraphQL `questionList` status filter as fallback) and the background posts the slugs to `/api/leetcode/solved`. No LeetCode cookie or code leaves the browser.
 - **Editor reader** (`content/editor-main.ts`, a second content script with `world: "MAIN"`): the only code that can see LeetCode's `window.monaco`. It answers `window.postMessage` requests from `content/editor.ts`, which serves the side panel's `read_editor` message. Keep it import-free so crxjs inlines it (MAIN world has no `chrome.runtime` for a loader). No `scripting` permission: the manifest check forbids it.
 - **Background** (`background/index.ts`): MV3 service worker — side-panel behavior, problem-page handling, and solved-list sync.
-- **Popup** (`popup/`):
-  - Top nav: `Today`, `Problem`, `Coach`, `Settings`.
-  - `Coach` (`popup/CoachTab.tsx`) is the Study Coach beside the LeetCode tab: it resumes the same conversations as the web sidebar, sends the active problem plus (unless "Include my code" is off) a snapshot of the editor with each turn, streams the reply, and handles proposals (Approve starts the AI job) and navigation (opens the web app). Session list/rename/delete stay on the web.
-  - Theme control: `System`, `Light`, `Dark`.
-  - `Problem` has compact `Review` / `Manage` modes.
-  - `Review` contains `Quiz`, `Card`, and `Notes` sub-tabs. Quiz generation runs as an AI job (via `@ankify/api-client`); switching tabs keeps the pending state, and the Quiz tab picks the session up when the job finishes. Completed quizzes can create a new batch and bulk-create cards for missed items.
-  - `Manage` contains manual card creation, AI candidate generation/follow-up (as jobs)/confirm/discard, pending-state preservation for in-flight jobs, and existing card management.
-  - `Settings` stores only the API base URL and preferences (including `autoCapture`), shows LeetCode solved-list sync status with a Sync now button, and Test connection calls `/api/me` with the shared web session to show the signed-in email.
-  - Markdown rendering is used for card answers, quiz text, explanations, and notes; code stays mono and regular UI stays sans.
+- **Side panel** (`popup/`; the toolbar icon opens it, there is no separate popup):
+  - Layered, not tabbed. A top bar shows what's on screen: the problem in the active LeetCode tab (number, title, difficulty, due/next review), or Today, or Settings. Its icons open the problem on the web, Today (badge = reviews left today), and Settings; Today and Settings have a back button. Moving to another problem returns to it.
+  - Problem view (`ProblemWorkspace`): `Quiz`, `Cards`, `Notes` tabs, with the rating buttons below when the problem is due. A due problem opens on Quiz, others on Cards. Cards shows AI candidates, the card flipper, and a "Manage cards" section (add manually or with AI, edit, delete). A problem not yet in the deck shows that it's collected on the first submission, with a small "Add now". Refreshing the problem on screen revalidates in place (no loading placeholder), because some children refresh on mount.
+  - Not on a problem: Today (due queue) is the home screen. When the active tab leaves LeetCode, the last problem stays pinned with a "jump back" banner.
+  - The Study Coach (`popup/CoachTab.tsx`) is docked at the bottom of every screen except Settings: collapsed it's a composer; sending or "Show chat" expands it over the content (the content stays mounted, so a quiz in progress survives). It resumes the same conversations as the web sidebar, sends the active problem plus (unless "Include my code" is off) a snapshot of the editor with each turn, streams the reply, and handles proposals (Approve starts the AI job) and navigation (opens the web app). Session list/rename/delete stay on the web.
+  - Quiz generation runs as an AI job (via `@ankify/api-client`); switching tabs keeps the pending state, and the Quiz tab picks the session up when the job finishes. Completed quizzes can create a new batch and bulk-create cards for missed items.
+  - Settings: language, theme, the API base URL, preferences (including `autoCapture`), LeetCode solved-list sync status with Sync now, and Test connection (`/api/me` with the shared web session).
+  - Markdown rendering is used for card answers, quiz text, explanations, Coach replies, and notes; code stays mono and regular UI stays sans.
 - **Design**: CSS variables match the web app (gold accent, same bg/surface/fg colors), custom reusable scrollbars, and shared typography rules.
 
 ## Data Flow
 
 ### Capture (extension)
 
-1. Open a LeetCode problem page and click the extension popup.
+1. Open a LeetCode problem with the side panel open; it shows that problem.
 2. The extension sends credentialed requests to the exact API origin; Chrome includes the existing Better Auth web-session cookie.
-3. If the problem is unknown, "Capture this problem" reads page data via the content script and POSTs to `/api/capture`.
-4. If the problem is known, the popup shows Review/Manage with the current FSRS due state, ready cards, candidates, submissions, notes, and quiz session.
+3. If the problem is unknown, the first new submission (any verdict) collects it automatically: the background reads page data through the content script and POSTs to `/api/capture` with `firstReview: "next_day"`. "Add now" in the panel captures it manually (due at once).
+4. If the problem is known, the panel shows its Quiz / Cards / Notes, due state, and rating; new submissions sync through the append-only endpoint.
 
 ### Card creation
 
