@@ -1,4 +1,5 @@
 import type { QuizAnswer, QuizItem } from "@ankify/contracts";
+import { serializeCards } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { loadDbEnv } from "@ankify/db/client";
 import { and, eq } from "drizzle-orm";
@@ -257,7 +258,7 @@ async function main() {
       },
     ]);
 
-    await tx.insert(schema.cards).values([
+    const seededCards: (typeof schema.cards.$inferInsert)[] = [
       {
         id: "qa-card-two-sum-invariant",
         userId: QA_USER_ID,
@@ -298,7 +299,9 @@ async function main() {
         createdAt: ago(20),
         updatedAt: ago(20),
       },
-    ]);
+    ];
+    await tx.insert(schema.cards).values(seededCards);
+    await writeCardDocs(tx, seededCards);
 
     await tx.insert(schema.reviewEvents).values([
       {
@@ -384,3 +387,20 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+/** The panel reads cards from each problem's Cards doc; mirror the seeded rows. */
+async function writeCardDocs(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  rows: (typeof schema.cards.$inferInsert)[],
+) {
+  const byProblem = new Map<string, { prompt: string; answer: string }[]>();
+  for (const row of rows) {
+    byProblem.set(row.problemId, [...(byProblem.get(row.problemId) ?? []), { prompt: row.question, answer: row.answer }]);
+  }
+  for (const [problemId, cards] of byProblem) {
+    await tx
+      .update(schema.problems)
+      .set({ cardsMd: serializeCards(cards), cardsVersion: 1 })
+      .where(eq(schema.problems.id, problemId));
+  }
+}

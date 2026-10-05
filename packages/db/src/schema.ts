@@ -8,6 +8,12 @@ import type {
   QuizItem,
 } from "@ankify/contracts";
 
+export type CardStat = {
+  lastShownAt: string;
+  lastResult: "got_it" | "missed";
+  missCount: number;
+};
+
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
 
@@ -115,6 +121,17 @@ export const problems = sqliteTable(
     topicTags: text("topic_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
     similarSlugs: text("similar_slugs", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
     notes: text("notes"),
+    // The problem's two docs (docs/coach-practice.md). Versions bump on every
+    // write so a stale edit or Coach proposal can't overwrite newer text.
+    notesVersion: integer("notes_version").notNull().default(0),
+    cardsMd: text("cards_md"),
+    cardsVersion: integer("cards_version").notNull().default(0),
+    /** Practice stats per card key: when it was last shown and how it went. */
+    cardStats: text("card_stats", { mode: "json" })
+      .$type<Record<string, CardStat>>()
+      .notNull()
+      // A constant default: SQLite can't ADD COLUMN with json('{}').
+      .default(sql`'{}'`),
 
     // FSRS-6 state
     fsrsDue: optTs("fsrs_due"),

@@ -186,3 +186,18 @@ describe("LeetCode page context", () => {
     expect(STUDY_COACH_INSTRUCTIONS).toContain("give a full solution only when they ask for one");
   });
 });
+
+describe("propose_doc_edit input", () => {
+  it("keeps only the op's fields, so empty extras don't fail the strict edit schema", async () => {
+    const { docEditInput } = await import("./doc-edit-input");
+    const { docEditSchema } = await import("@ankify/contracts");
+    const withExtras = { section: "", markdown: "", prompt: "Why loop over amounts?", answer: "Order doesn't matter.", key: "" };
+    expect(docEditSchema.safeParse(docEditInput("add_card", withExtras)).success).toBe(true);
+    expect(docEditSchema.safeParse({ op: "add_card", ...withExtras }).success).toBe(false);
+    expect(docEditInput("update_card", { key: "0123456789abcdef", answer: "New." })).toEqual({
+      op: "update_card",
+      key: "0123456789abcdef",
+      answer: "New.",
+    });
+  });
+});

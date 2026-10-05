@@ -3079,3 +3079,132 @@ a:focus-visible,
 .coach-toggle input {
   accent-color: var(--accent);
 }
+
+/* ── Docs: the problem's Notes and Cards ── */
+
+.docs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docs-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--subtle);
+}
+
+.docs-switch button {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.docs-switch button[data-active="true"] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.docs-switch button:disabled:not([data-active="true"]) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.docs-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.docs-actions .btn-xs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.docs-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docs-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Same type as the rendered markdown, so switching to edit doesn't jump. */
+.docs-editor {
+  min-height: 260px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.docs-body {
+  font-size: 13px;
+}
+
+.docs-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.docs-issue {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.docs-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 10px;
+}
+
+.docs-card summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
+.docs-card[open] summary {
+  margin-bottom: 6px;
+}
+
+.docs-card-answer {
+  font-size: 13px;
+}
+
+.coach-proposal-preview {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 8px 10px;
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}

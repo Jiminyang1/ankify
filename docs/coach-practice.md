@@ -1,6 +1,6 @@
 # Coach-led practice (design)
 
-Status: proposal, 2026-10-05. Not implemented. This doc describes how studying
+Status: stage 1 implemented (2026-10-05); stages 2 to 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
@@ -196,7 +196,7 @@ New kinds and their components:
 | Step kind | Component | Interaction |
 | --- | --- | --- |
 | `practice` | Practice card: recall flips, then questions, then summary | answers go to REST, not to the model |
-| `doc_proposal` | A diff of the proposed Notes or Cards change | **Apply** / **Dismiss** |
+| `proposal` with `action: "doc_edit"` | A preview of the proposed Notes or Cards change | **Apply** / **Dismiss** |
 | `rating` | Four rating buttons with one preselected | rates through the review API |
 
 Navigation and read steps stay as they are. The Coach can also start a
@@ -264,8 +264,8 @@ proposed, not when applied.
   - content: `recall_json` (card keys plus the prompt and answer text as shown),
     `check_job_id`, `check_json`;
   - outcome: `results_json`, `score`, `suggested_rating`.
-- `agent_steps.kind` gains `practice`, `doc_proposal`, `rating`;
-  `proposal_json` gains the doc-edit shape.
+- `agent_steps.kind` gains `practice` and `rating`; doc edits reuse the
+  `proposal` kind with `proposal_json.action = "doc_edit"` (edit + base version).
 - `ai_jobs.action` gains `practice_check`.
 - `agentTurnRequestSchema` gains an optional `trigger`; `message` becomes
   optional when a trigger is present.
@@ -282,7 +282,7 @@ All user-owned, all scoped by `user_id`, all cascading from the problem.
 | `GET /api/practice/[id]` | session state; check items without answers until answered |
 | `POST /api/practice/[id]/recall` | `{ cardKey, result }` |
 | `POST /api/practice/[id]/check` | `{ itemId, choice }` returns correctness and explanation |
-| `POST /api/agent/steps/[id]/apply` | apply a doc proposal |
+| `POST /api/agent/steps/[id]/approve` | applies a `doc_edit` proposal (existing route) |
 
 ## Cost
 

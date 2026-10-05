@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { problemPatchSchema } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
@@ -21,7 +21,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .update(schema.problems)
     .set({
       updatedAt: now,
-      ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+      ...(parsed.data.notes !== undefined
+        ? { notes: parsed.data.notes, notesVersion: sql`${schema.problems.notesVersion} + 1` }
+        : {}),
       ...(parsed.data.archived !== undefined ? { archivedAt: parsed.data.archived ? now : null } : {}),
     })
     .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, user.id)))

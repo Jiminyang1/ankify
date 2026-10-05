@@ -113,7 +113,9 @@ export async function captureProblem(
           descriptionMd: input.descriptionMd ?? existingProblem.descriptionMd,
           topicTags,
           similarSlugs: input.similarSlugs,
-          notes: input.notes ?? existingProblem.notes,
+          ...(input.notes !== undefined
+            ? { notes: input.notes, notesVersion: sql`${schema.problems.notesVersion} + 1` }
+            : {}),
           archivedAt: null,
           updatedAt: new Date(),
         })

@@ -6,6 +6,7 @@ import type {
   AgentSessionSnapshotDto,
   AgentStepDto,
   AgentStreamEvent,
+  DocEdit,
   PublicAiJobDto,
 } from "@ankify/contracts";
 import type { ContentResponse, EditorSnapshot, ExtSettings } from "../shared/messages";
@@ -31,6 +32,8 @@ export type CoachCopy = {
   thinking: string;
   quick: { failing: string; hint: string; history: string };
   approve: string;
+  apply: string;
+  applied: string;
   dismiss: string;
   dismissed: string;
   jobRunning: string;
@@ -57,12 +60,15 @@ export function CoachTab({
   copy,
   expanded,
   onExpandedChange,
+  onDocsChanged,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
   copy: CoachCopy;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  /** A doc-edit proposal was applied: the Docs view should reload. */
+  onDocsChanged: () => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
@@ -289,12 +295,14 @@ export function CoachTab({
       const body = (await response.json().catch(() => null)) as {
         step?: AgentStepDto;
         job?: PublicAiJobDto;
+        docs?: unknown;
         message?: string;
         error?: string;
       } | null;
       if (!response.ok || !body?.step) throw new Error(body?.message ?? body?.error ?? copy.sendFailed);
       setSnapshot((current) => (current ? { ...current, steps: upsert(current.steps, body.step!) } : current));
       if (body.job) followJob(body.job);
+      if (body.docs) onDocsChanged();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : copy.sendFailed);
     } finally {
@@ -505,15 +513,22 @@ function CoachStep({
     );
   }
   if (step.kind === "proposal" && step.proposal) {
+    const docEdit = step.proposal.action === "doc_edit" ? step.proposal.edit : null;
+    const preview = docEdit ? docEditPreview(docEdit) : null;
     return (
       <div className="coach-proposal">
         <p className="coach-proposal-summary">{step.summary}</p>
+        {preview && (
+          <div className="coach-proposal-preview">
+            <PopupMarkdown>{preview}</PopupMarkdown>
+          </div>
+        )}
         {step.proposal.reason && <p className="popup-muted">{step.proposal.reason}</p>}
         {step.status === "pending" ? (
           <div className="coach-proposal-actions">
             <button type="button" className="btn-xs btn-xs-accent" disabled={busy} onClick={onApprove}>
               {busy && <span className="btn-spinner" />}
-              {copy.approve}
+              {docEdit ? copy.apply : copy.approve}
             </button>
             <button type="button" className="btn-xs" disabled={busy} onClick={onDismiss}>
               {copy.dismiss}
@@ -521,6 +536,8 @@ function CoachStep({
           </div>
         ) : step.status === "dismissed" ? (
           <p className="popup-muted">{copy.dismissed}</p>
+        ) : step.status === "accepted" && docEdit ? (
+          <p className="popup-muted">{copy.applied}</p>
         ) : step.status === "accepted" ? (
           <p className="popup-muted coach-thinking">
             {!job || job.status === "queued" || job.status === "running" ? (
@@ -538,6 +555,21 @@ function CoachStep({
     );
   }
   return <p className="coach-step coach-step-read">{step.summary}</p>;
+}
+
+/** What a doc-edit proposal would write, shown before the user applies it. */
+function docEditPreview(edit: DocEdit): string | null {
+  switch (edit.op) {
+    case "append_section":
+    case "replace_section":
+      return edit.markdown;
+    case "add_card":
+      return `**${edit.prompt}**\n\n${edit.answer}`;
+    case "update_card":
+      return [edit.prompt ? `**${edit.prompt}**` : null, edit.answer ?? null].filter(Boolean).join("\n\n") || null;
+    case "remove_card":
+      return null;
+  }
 }
 
 /** "Two Sum - LeetCode" -> "Two Sum". */

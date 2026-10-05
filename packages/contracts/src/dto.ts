@@ -287,3 +287,20 @@ export type LeetcodeAccountDto = {
   fetchedAt: string | null;
   profile: LeetcodeProfileDto | null;
 };
+
+/** A problem's Notes and Cards docs (docs/coach-practice.md). */
+export type ProblemDocsDto = {
+  problemId: string;
+  notes: { markdown: string; version: number; sections: string[] };
+  cards: {
+    markdown: string;
+    version: number;
+    cards: { key: string; prompt: string; answer: string }[];
+    issues: (
+      | { kind: "empty_answer"; prompt: string }
+      | { kind: "duplicate_prompt"; prompt: string }
+      | { kind: "too_many_cards"; limit: number }
+      | { kind: "too_long"; limit: number }
+    )[];
+  };
+};

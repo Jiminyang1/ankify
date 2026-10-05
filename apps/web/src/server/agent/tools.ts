@@ -1,13 +1,22 @@
 import { and, asc, desc, eq, isNull, like } from "drizzle-orm";
 import { tool } from "ai";
 import { z } from "zod";
-import type { AgentNavigation, AgentProposal, AgentStepDto } from "@ankify/contracts";
+import {
+  docEditSchema,
+  docEditTarget,
+  type AgentNavigation,
+  type AgentProposal,
+  type AgentStepDto,
+  type DocEdit,
+} from "@ankify/contracts";
 import { leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
+import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
+import { docEditInput } from "./doc-edit-input";
 import { createAgentStep } from "./store";
 import { toAgentSafeQuizState } from "./quiz-context";
 import { relativeTimeLabel } from "./time-labels";
@@ -19,8 +28,12 @@ type AgentToolContext = {
   emitStep: (step: AgentStepDto) => void;
 };
 
+/** Code-enforced cap; the prompt asks for one per ordinary reply. */
+const MAX_DOC_PROPOSALS_PER_RUN = 3;
+
 export function createStudyCoachTools(context: AgentToolContext) {
   let nextSequence = 1;
+  let docProposals = 0;
   const problemIdInput = z
     .string()
     .min(1)
@@ -324,44 +337,6 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
 
-    get_cards: tool({
-      description:
-        "Load a problem's ready and candidate flashcards only when the user asks about cards or a card is necessary to answer the latest request. Never call it merely because cards exist or the Cards panel is open. Omit problemId to use the current problem.",
-      inputSchema: z.object({ problemId: problemIdInput }),
-      execute: async ({ problemId: requestedId }) => {
-        const target = await resolveProblem(requestedId);
-        const db = getDb();
-        const cards = await db
-          .select({
-            id: schema.cards.id,
-            status: schema.cards.aiStatus,
-            question: schema.cards.question,
-            answer: schema.cards.answer,
-            version: schema.cards.version,
-          })
-          .from(schema.cards)
-          .where(
-            and(
-              eq(schema.cards.problemId, target.id),
-              eq(schema.cards.userId, context.userId),
-            ),
-          )
-          .orderBy(desc(schema.cards.createdAt))
-          .limit(20);
-        await record({
-          kind: "read",
-          toolName: "get_cards",
-          status: "completed",
-          summary: `Loaded ${cards.length} card${cards.length === 1 ? "" : "s"}`,
-        });
-        return cards.map((card) => ({
-          ...card,
-          question: limitText(card.question, 4_000),
-          answer: limitText(card.answer, 8_000),
-        }));
-      },
-    }),
-
     get_quiz_state: tool({
       description:
         "Load a problem's quiz state only when the user asks about quiz progress, an answered quiz result, or requests a quiz action that depends on current state. Never call it merely because the Quiz panel is open and never redirect unrelated teaching to Quiz. Omit problemId to use the current problem. Unanswered content is withheld.",
@@ -380,31 +355,74 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
 
-    propose_card_draft: tool({
+    get_problem_docs: tool({
       description:
-        "Propose generating one AI card candidate. Call only when the user explicitly asks to create or generate a card. This never writes a card until the user confirms the proposal.",
+        "Load the problem's two docs: Notes (the user's understanding, in ## sections such as Approach, Key insight, Pitfalls, Complexity, My attempts) and Cards (each ## heading is a recall prompt, the text under it the answer, each card has a key). Call before proposing a doc edit, or when what the user already wrote down matters.",
+      inputSchema: z.object({ problemId: problemIdInput }),
+      execute: async ({ problemId: requestedId }) => {
+        const target = await resolveProblem(requestedId);
+        const docs = await loadProblemDocs(context.userId, target.id);
+        if (!docs) throw new Error("problem_not_found");
+        await record({
+          kind: "read",
+          toolName: "get_problem_docs",
+          status: "completed",
+          summary: `Read Notes and Cards for ${target.title}`,
+        });
+        return {
+          notes: docs.notes.markdown || null,
+          notesSections: docs.notes.sections,
+          cards: docs.cards.cards,
+          cardIssues: docs.cards.issues,
+        };
+      },
+    }),
+
+    propose_doc_edit: tool({
+      description:
+        "Propose one edit to the problem's Notes or Cards doc. Nothing changes until the user approves it. Ops: append_section / replace_section (Notes: section + markdown); add_card (Cards: prompt + answer); update_card (Cards: key + new prompt and/or answer); remove_card (Cards: key). Call get_problem_docs first so you don't duplicate what's there.",
       inputSchema: z.object({
         problemId: problemIdInput,
-        reason: z.string().min(1).max(500),
+        op: z.enum(["append_section", "replace_section", "add_card", "update_card", "remove_card"]),
+        section: z.string().max(60).optional().describe("Notes section heading, e.g. Pitfalls"),
+        markdown: z.string().max(4_000).optional().describe("Notes content to append or replace with"),
+        prompt: z.string().max(300).optional().describe("Card prompt: one question, one line"),
+        answer: z.string().max(2_000).optional().describe("Card answer: short, at most a few lines"),
+        key: z.string().max(16).optional().describe("Existing card key from get_problem_docs"),
+        reason: z.string().min(1).max(500).describe("Why this edit helps, in one sentence"),
       }),
-      execute: async ({ problemId: requestedId, reason }) => {
+      execute: async ({ problemId: requestedId, op, section, markdown, prompt, answer, key, reason }) => {
+        if (docProposals >= MAX_DOC_PROPOSALS_PER_RUN) {
+          return { proposalCreated: false, error: "too_many_proposals_this_turn" };
+        }
         const target = await resolveProblem(requestedId);
+        const parsed = docEditSchema.safeParse(
+          docEditInput(op, { section, markdown, prompt, answer, key }),
+        );
+        if (!parsed.success) {
+          return { proposalCreated: false, error: "invalid_edit", issues: parsed.error.issues.map((i) => i.message) };
+        }
+        const edit = parsed.data;
+        const preview = await previewProblemDocEdit(context.userId, target.id, edit);
+        if (!preview.ok) return { proposalCreated: false, error: preview.error };
         const proposal: AgentProposal = {
-          action: "card_generate",
-          requestId: crypto.randomUUID(),
+          action: "doc_edit",
           problemId: target.id,
+          edit,
+          baseVersion: preview.baseVersion,
           reason,
         };
+        docProposals += 1;
         const step = await record({
           kind: "proposal",
-          toolName: "propose_card_draft",
+          toolName: "propose_doc_edit",
           status: "pending",
-          summary: reason,
+          summary: docEditSummary(edit),
           proposal,
         });
         return {
           proposalId: step.id,
-          action: proposal.action,
+          target: docEditTarget(edit),
           requiresUserConfirmation: true,
         };
       },
@@ -470,4 +488,20 @@ export function createStudyCoachTools(context: AgentToolContext) {
 function limitText(value: string | null, maxLength: number) {
   if (value === null || value.length <= maxLength) return value;
   return `${value.slice(0, maxLength)}\n\n[truncated]`;
+}
+
+/** One line for the proposal card: what will change if the user approves. */
+function docEditSummary(edit: DocEdit): string {
+  switch (edit.op) {
+    case "append_section":
+      return `Add to Notes, ${edit.section}`;
+    case "replace_section":
+      return `Rewrite Notes, ${edit.section}`;
+    case "add_card":
+      return "Add a card";
+    case "update_card":
+      return "Edit a card";
+    case "remove_card":
+      return "Remove a card";
+  }
 }

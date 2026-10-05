@@ -20,22 +20,15 @@ import type {
 import type { BackgroundRequest, ContentResponse, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
-  clearCardDraft,
-  getCardDraft,
   getSettings,
   getSolvedSyncState,
-  setCardDraft,
   setSettings,
 } from "../shared/storage";
 import { AUTH_REQUIRED_EVENT, apiFetch } from "./api";
 import { CoachTab } from "./CoachTab";
+import { DocsPanel } from "./DocsPanel";
 import { PopupMarkdown } from "./PopupMarkdown";
 
-type LocalCandidate = ApiCard & {
-  instruction: string;
-  busy: string | null;
-  localError: string | null;
-};
 type ThemePreference = "system" | "light" | "dark";
 type Language = ExtSettings["language"];
 
@@ -256,6 +249,25 @@ const EXT_I18N = {
       saved: "Saved",
       placeholder: "What tripped you up, key insights, alternative approaches...",
     },
+    docs: {
+      title: "Docs",
+      notes: "Notes",
+      cards: "Cards",
+      edit: "Edit",
+      save: "Save",
+      cancel: "Cancel",
+      reload: "Load latest",
+      emptyNotes: "No notes yet. Write your approach and pitfalls here, or ask the Coach to draft them.",
+      emptyCards: "No cards yet. Add questions worth recalling, or ask the Coach to suggest some.",
+      cardsFormat: "Each line starting with ## is a question; the text under it is the answer.",
+      conflict: "This doc changed since you opened it. Load the latest, then edit again.",
+      loadFailed: "Couldn't load this problem's docs.",
+      saveFailed: "Couldn't save. Try again.",
+      issueEmptyAnswer: (prompt: string) => `"${prompt}" has no answer yet, so it isn't a card.`,
+      issueDuplicate: (prompt: string) => `"${prompt}" appears twice; only the first counts.`,
+      issueTooMany: (limit: number) => `Only the first ${limit} cards are used.`,
+      issueTooLong: (limit: number) => `Cards are limited to ${limit} characters.`,
+    },
     coach: {
       title: "Study Coach",
       showChat: "Show chat",
@@ -277,6 +289,8 @@ const EXT_I18N = {
         history: "What did I get wrong on this before?",
       },
       approve: "Approve",
+      apply: "Apply",
+      applied: "Applied.",
       dismiss: "Dismiss",
       dismissed: "Dismissed.",
       jobRunning: "Generating",
@@ -496,6 +510,25 @@ const EXT_I18N = {
       saving: "保存中...",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
+    docs: {
+      title: "文档",
+      notes: "笔记",
+      cards: "卡片",
+      edit: "编辑",
+      save: "保存",
+      cancel: "取消",
+      reload: "加载最新",
+      emptyNotes: "还没有笔记。在这里写下思路和易错点，或者让教练帮你起草。",
+      emptyCards: "还没有卡片。加几个值得记住的问题，或者让教练建议一些。",
+      cardsFormat: "以 ## 开头的一行是问题，下面的文字是答案。",
+      conflict: "你打开之后这个文档被改过了。先加载最新版本，再编辑。",
+      loadFailed: "加载这道题的文档失败。",
+      saveFailed: "保存失败，请重试。",
+      issueEmptyAnswer: (prompt: string) => `「${prompt}」还没有答案，暂时不算一张卡片。`,
+      issueDuplicate: (prompt: string) => `「${prompt}」出现了两次，只算第一个。`,
+      issueTooMany: (limit: number) => `只使用前 ${limit} 张卡片。`,
+      issueTooLong: (limit: number) => `卡片文档最多 ${limit} 个字符。`,
+    },
     coach: {
       title: "学习教练",
       showChat: "展开对话",
@@ -516,6 +549,8 @@ const EXT_I18N = {
         history: "我以前这题错在哪？",
       },
       approve: "同意",
+      apply: "应用",
+      applied: "已应用。",
       dismiss: "不用了",
       dismissed: "已忽略。",
       jobRunning: "生成中",
@@ -661,8 +696,6 @@ const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" 
   { value: "dark", key: "dark" },
 ];
 
-const CARD_GENERATION_TARGET_SECONDS = 60;
-
 /* ── helpers ── */
 
 function jsonHeaders(settings: ExtSettings): HeadersInit {
@@ -785,17 +818,6 @@ function apiErrorMessage(json: { error?: string; message?: string } | null, fall
   return json?.message ?? json?.error ?? fallback;
 }
 
-function mergeCandidatePendingState(
-  card: ApiCard,
-  previous: LocalCandidate | undefined,
-): Pick<LocalCandidate, "instruction" | "busy" | "localError"> {
-  return {
-    instruction: previous?.instruction ?? "",
-    busy: previous?.busy ?? null,
-    localError: previous?.localError ?? null,
-  };
-}
-
 function applyThemePreference(preference: ThemePreference) {
   if (preference === "system") {
     document.documentElement.removeAttribute("data-theme");
@@ -847,23 +869,6 @@ async function fetchProblemBySlug(
   return (await res.json()) as ProblemLookupPayloadDto;
 }
 
-/* ── Collapse (used only for ready cards) ── */
-
-function Collapse({ header, defaultOpen, children }: { header: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  return (
-    <div className="collapse">
-      <button type="button" className="collapse-head" onClick={() => setOpen((v) => !v)}>
-        <span className="collapse-chevron">{open ? "▾" : "▸"}</span>
-        <span className="collapse-label">{header}</span>
-      </button>
-      <div className={`collapse-body scroll-area${open ? " collapse-body-open" : ""}`}>
-        <div className="collapse-inner">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Popup ── */
 
 export function Popup() {
@@ -874,6 +879,8 @@ export function Popup() {
   /** "auto" shows the problem in the active tab, or Today when there is none. */
   const [view, setView] = useState<PanelView>("auto");
   const [coachExpanded, setCoachExpanded] = useState(false);
+  /** Bumps when the Coach applies a doc edit, so the Docs tab reloads. */
+  const [docsRevision, setDocsRevision] = useState(0);
   const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -1176,6 +1183,7 @@ export function Popup() {
             onJumpToSticky={jumpToSticky}
             onRefresh={() => detect({ force: true })}
             onError={(msg) => setState({ kind: "error", msg })}
+            docsRevision={docsRevision}
           />
         )}
       </main>
@@ -1191,6 +1199,7 @@ export function Popup() {
           copy={text.coach}
           expanded={coachExpanded}
           onExpandedChange={setCoachExpanded}
+          onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
         />
       )}
     </div>
@@ -1445,6 +1454,7 @@ function ProblemTab({
   onJumpToSticky,
   onRefresh,
   onError,
+  docsRevision,
 }: {
   state: State;
   settings: ExtSettings;
@@ -1458,6 +1468,7 @@ function ProblemTab({
   onJumpToSticky: () => void;
   onRefresh: () => Promise<void> | void;
   onError: (msg: string) => void;
+  docsRevision: number;
 }) {
   const t = getExtText(settings);
 
@@ -1493,7 +1504,7 @@ function ProblemTab({
 
   if (!displayCaptured) return null;
 
-  const { problem, cards, candidates, previews } = displayCaptured;
+  const { problem, previews } = displayCaptured;
 
   return (
     <>
@@ -1510,37 +1521,34 @@ function ProblemTab({
       <ProblemWorkspace
         key={problem.id}
         problem={problem}
-        cards={cards}
-        candidates={candidates}
         previews={previews}
         settings={settings}
         onRefresh={onRefresh}
+        docsRevision={docsRevision}
       />
     </>
   );
 }
 
-/* ── ProblemWorkspace: Quiz / Cards / Notes, plus rating when due ── */
+/* ── ProblemWorkspace: Quiz / Docs, plus rating when due ── */
 
 function ProblemWorkspace({
   problem,
-  cards,
-  candidates,
   previews,
   settings,
   onRefresh,
+  docsRevision,
 }: {
   problem: ApiProblem;
-  cards: ApiCard[];
-  candidates: ApiCard[];
   previews: Previews;
   settings: ExtSettings;
   onRefresh: () => Promise<void> | void;
+  docsRevision: number;
 }) {
   const t = getExtText(settings);
   const due = isDue(problem.fsrsDue);
-  // A due problem opens on the quiz; otherwise on its cards.
-  const [view, setView] = useState<"quiz" | "cards" | "notes">(due ? "quiz" : "cards");
+  // A due problem opens on the quiz; otherwise on its docs.
+  const [view, setView] = useState<"quiz" | "docs">(due ? "quiz" : "docs");
   const refresh = () => void onRefresh();
 
   return (
@@ -1552,7 +1560,7 @@ function ProblemWorkspace({
           aria-label={t.review.workspace}
           onKeyDown={movePopupTabFocus}
         >
-          {(["quiz", "cards", "notes"] as const).map((v) => (
+          {(["quiz", "docs"] as const).map((v) => (
             <button
               key={v}
               id={`extension-review-tab-${v}`}
@@ -1565,7 +1573,7 @@ function ProblemWorkspace({
               data-active={view === v}
               onClick={() => setView(v)}
             >
-              {v === "quiz" ? t.review.quiz : v === "cards" ? t.review.cards : t.review.notes}
+              {v === "quiz" ? t.review.quiz : t.docs.title}
             </button>
           ))}
         </div>
@@ -1583,44 +1591,15 @@ function ProblemWorkspace({
             </div>
           )}
 
-          {view === "cards" && (
+          {view === "docs" && (
             <div
-              id="extension-review-panel-cards"
+              id="extension-review-panel-docs"
               role="tabpanel"
-              aria-labelledby="extension-review-tab-cards"
-              className="review-stage-pane tab-pane stack"
-              key="cards"
-            >
-              {candidates.length > 0 && (
-                <CandidateList problem={problem} candidates={candidates} settings={settings} onRefresh={refresh} />
-              )}
-              {cards.length > 0 && <CardFlipper cards={cards} settings={settings} />}
-              <Collapse header={t.cards.manage} defaultOpen={cards.length === 0}>
-                <div className="stack">
-                  <div className="panel">
-                    <div className="section-label">{t.cards.add}</div>
-                    <AddCardForm problem={problem} settings={settings} onAdded={refresh} />
-                  </div>
-                  {cards.length > 0 && (
-                    <div>
-                      <div className="section-label">{t.cards.savedCount(cards.length)}</div>
-                      <CardList cards={cards} settings={settings} onRefresh={refresh} />
-                    </div>
-                  )}
-                </div>
-              </Collapse>
-            </div>
-          )}
-
-          {view === "notes" && (
-            <div
-              id="extension-review-panel-notes"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-notes"
+              aria-labelledby="extension-review-tab-docs"
               className="review-stage-pane tab-pane"
-              key="notes"
+              key="docs"
             >
-              <NotesPanel problem={problem} settings={settings} />
+              <DocsPanel settings={settings} problemId={problem.id} revision={docsRevision} copy={t.docs} />
             </div>
           )}
         </div>
@@ -2234,227 +2213,6 @@ function getSuggestedRating(score: number, t: ReturnType<typeof getExtText>): { 
   return { rating: 4, label: t.rating.easy };
 }
 
-/* ── CardFlipper ── */
-
-function CardFlipper({ cards, settings }: { cards: ApiCard[]; settings: ExtSettings }) {
-  const t = getExtText(settings);
-  const [idx, setIdx] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-
-  // Reset flip when card changes
-  useEffect(() => {
-    setFlipped(false);
-  }, [idx]);
-
-  // Keyboard: Space flips, ←/→ navigates (ignore when typing)
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      const target = e.target as HTMLElement;
-      if (
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLInputElement ||
-        target.isContentEditable
-      ) {
-        return;
-      }
-      if (e.key === " ") {
-        e.preventDefault();
-        setFlipped((f) => !f);
-      } else if (e.key === "ArrowLeft") {
-        setIdx((i) => Math.max(0, i - 1));
-      } else if (e.key === "ArrowRight") {
-        setIdx((i) => Math.min(cards.length - 1, i + 1));
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [cards.length]);
-
-  const card = cards[idx];
-  if (!card) return null;
-
-  return (
-    <div className="card-flipper">
-      <div
-        className="card-flipper-stage"
-        onClick={() => setFlipped((f) => !f)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          setFlipped((value) => !value);
-        }}
-        role="button"
-        tabIndex={0}
-        aria-label={flipped ? t.cards.showQuestion : t.cards.showAnswer}
-      >
-        <div className={`card-flipper-inner${flipped ? " is-flipped" : ""}`}>
-          <div className="card-face card-face-front">
-            <div className="card-face-label">{t.cards.question}</div>
-            <div className="card-face-content scroll-area">
-              <PopupMarkdown className="card-face-md">{card.question}</PopupMarkdown>
-            </div>
-            <div className="card-face-hint">{t.cards.flipHint}</div>
-          </div>
-          <div className="card-face card-face-back">
-            <div className="card-face-label card-face-label-answer">{t.cards.answer}</div>
-            <div className="card-face-content scroll-area">
-              <PopupMarkdown className="card-face-md">{card.answer}</PopupMarkdown>
-            </div>
-            <div className="card-face-hint">{t.cards.flipBackHint}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card-flipper-nav">
-        <button
-          type="button"
-          className="card-flipper-arrow"
-          disabled={idx === 0}
-          onClick={() => setIdx((i) => Math.max(0, i - 1))}
-          aria-label={t.common.previous}
-        >
-          <ChevronIcon direction="left" />
-        </button>
-        <span className="card-flipper-pos">
-          {idx + 1} / {cards.length}
-        </span>
-        <button
-          type="button"
-          className="card-flipper-arrow"
-          disabled={idx >= cards.length - 1}
-          onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
-          aria-label={t.common.next}
-        >
-          <ChevronIcon direction="right" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ── NotesPanel (local-first auto-save) ── */
-
-type NotesDraft = { value: string; dirty: boolean; ts: number };
-
-function notesDraftKey(problemId: string) {
-  return `ankify.notes-draft.${problemId}`;
-}
-
-function readNotesDraft(problemId: string): NotesDraft | null {
-  try {
-    const raw = window.localStorage.getItem(notesDraftKey(problemId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as NotesDraft;
-    if (typeof parsed?.value !== "string" || typeof parsed?.dirty !== "boolean") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
-  try {
-    const payload: NotesDraft = { value, dirty, ts: Date.now() };
-    window.localStorage.setItem(notesDraftKey(problemId), JSON.stringify(payload));
-  } catch {
-    // localStorage can fail on quota; never block typing
-  }
-}
-
-function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
-  const t = getExtText(settings);
-  // Initial value: always prefer the local snapshot when it exists. It's the
-  // most recent text the user saw, whether or not it's been synced — `dirty`
-  // is for *syncing* decisions, not for *display* decisions. Falling back to
-  // `problem.notes` would show a stale prop (last fetched at popup-detect
-  // time) every time the tab is switched away and back.
-  const [notes, setNotes] = useState(() => {
-    const draft = readNotesDraft(problem.id);
-    if (draft) return draft.value;
-    return problem.notes ?? "";
-  });
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // Tracks the last value we believe the server has. Initialized from the
-  // freshly-fetched `problem.notes` prop (not from `notes`, which may be a
-  // local-only draft that was never confirmed). Updated on every successful
-  // PATCH so the dirty-detection logic stays accurate.
-  const savedRef = useRef(problem.notes ?? "");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  // If the popup picked up a dirty draft on mount whose value diverges from
-  // what the server returned, re-sync once so the server catches up. Compare
-  // against the live `problem.notes` prop (best signal for the server's
-  // current state) rather than savedRef.
-  useEffect(() => {
-    const draft = readNotesDraft(problem.id);
-    const serverValue = problem.notes ?? "";
-    if (draft?.dirty && draft.value !== serverValue) {
-      void persist(draft.value);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [problem.id]);
-
-  async function persist(value: string) {
-    if (value === savedRef.current) return;
-    setStatus("saving");
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}`, {
-        method: "PATCH",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ notes: value }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      savedRef.current = value;
-      writeNotesDraft(problem.id, value, false);
-      setStatus("saved");
-      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
-    } catch {
-      // Stay dirty so the next change retries.
-      setStatus("idle");
-    }
-  }
-
-  function handleChange(value: string) {
-    setNotes(value);
-    writeNotesDraft(problem.id, value, true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void persist(value), 1500);
-  }
-
-  function flushSave() {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    void persist(notes);
-  }
-
-  return (
-    <div className="notes-panel">
-      <div className="notes-panel-header">
-        <span className="section-label" style={{ margin: 0 }}>{t.notes.title}</span>
-        <span className={`notes-panel-status${status !== "idle" ? " is-visible" : ""}`}>
-          {status === "saving" ? t.notes.saving : status === "saved" ? t.notes.saved : ""}
-        </span>
-      </div>
-      <textarea
-        className="notes-panel-textarea scroll-area"
-        value={notes}
-        onChange={(e) => handleChange(e.target.value)}
-        onBlur={flushSave}
-        placeholder={t.notes.placeholder}
-      />
-    </div>
-  );
-}
-
 /* ── QuickRate ── */
 
 function QuickRate({
@@ -2534,542 +2292,6 @@ function QuickRate({
       </div>
 
       {error && <div className="err-banner" style={{ marginTop: 8 }}>{error}</div>}
-    </div>
-  );
-}
-
-/* ── CardList (saved cards) ── */
-
-function CardList({
-  cards,
-  settings,
-  onRefresh,
-}: {
-  cards: ApiCard[];
-  settings: ExtSettings;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  async function deleteCard(cardId: string) {
-    setDeletingId(cardId);
-    setDeleteError(null);
-    try {
-      const res = await apiFetch(settings, "/api/cards", {
-        method: "DELETE",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ ids: [cardId] }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      setPendingDeleteId(null);
-      onRefresh();
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : t.cards.deleteFailed);
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  return (
-    <>
-      {cards.map((card) => (
-        <Collapse key={card.id} header={<span className="card-q-preview">{card.question}</span>}>
-          <div className="card-q-box">
-            <div className="card-q-label">{t.cards.question}</div>
-            <PopupMarkdown>{card.question}</PopupMarkdown>
-          </div>
-          <div className="card-a-box">
-            <div className="card-a-label">{t.cards.answer}</div>
-            <PopupMarkdown>{card.answer}</PopupMarkdown>
-          </div>
-          <button
-            type="button"
-            className="btn-xs btn-xs-danger"
-            style={{ marginTop: 10 }}
-            disabled={deletingId === card.id}
-            onClick={() => {
-              setDeleteError(null);
-              setPendingDeleteId(card.id);
-            }}
-          >
-            {deletingId === card.id ? "…" : t.cards.delete}
-          </button>
-        </Collapse>
-      ))}
-      {pendingDeleteId && (
-        <div className="popup-confirm" role="group" aria-label={t.cards.delete}>
-          <p role="alert">{t.cards.deleteConfirm}</p>
-          {deleteError && <div className="err-banner" role="alert">{deleteError}</div>}
-          <div className="popup-confirm-actions">
-            <button
-              type="button"
-              className="btn btn-secondary btn-inline"
-              disabled={deletingId === pendingDeleteId}
-              onClick={() => {
-                setPendingDeleteId(null);
-                setDeleteError(null);
-              }}
-            >
-              {t.common.cancel}
-            </button>
-            <button
-              type="button"
-              className="btn-xs btn-xs-danger"
-              disabled={deletingId === pendingDeleteId}
-              onClick={() => void deleteCard(pendingDeleteId)}
-            >
-              {deletingId === pendingDeleteId ? "…" : t.cards.delete}
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-/* ── AddCardForm ── */
-
-function AddCardForm({
-  problem,
-  settings,
-  onAdded,
-}: {
-  problem: ApiProblem;
-  settings: ExtSettings;
-  onAdded: () => void;
-}) {
-  const t = getExtText(settings);
-  const slug = problem.leetcodeSlug;
-  const [mode, setMode] = useState<"manual" | "ai">("ai");
-  const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
-  const [checkingJob, setCheckingJob] = useState(true);
-  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  /* manual */
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-
-  /* AI */
-  const [rawText, setRawText] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const userEditedRef = useRef(false);
-  const generationElapsedSeconds = useElapsedSeconds(
-    busy === "auto" || busy === "note",
-    generationStartedAt,
-  );
-
-  useEffect(() => {
-    userEditedRef.current = false;
-    let cancelled = false;
-    void getCardDraft(slug).then((saved) => {
-      if (cancelled) return;
-      if (!userEditedRef.current) setRawText(saved);
-      setHydrated(true);
-    });
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const t = setTimeout(() => void setCardDraft(slug, rawText), 380);
-    return () => clearTimeout(t);
-  }, [rawText, slug, hydrated]);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const jobs = await getActiveAiJobs(settings, problem.id, "card");
-        const job = jobs.find((candidate) => candidate.action === "card_generate");
-        if (job) {
-          setBusy("auto");
-          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
-          await waitForAiJob(settings, job);
-        }
-        // Manage may have been unmounted while the job finished. Revalidate
-        // candidates even when there is no longer an active job to resume.
-        onAdded();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : t.cards.aiFailed);
-      } finally {
-        setBusy(false);
-        setGenerationStartedAt(null);
-        setCheckingJob(false);
-      }
-    })();
-  }, [problem.id, settings]);
-
-  const updateRawText = (v: string) => {
-    userEditedRef.current = true;
-    setRawText(v.slice(0, 6000));
-  };
-
-  async function clearLocalDraft() {
-    await clearCardDraft(slug);
-    userEditedRef.current = false;
-    setRawText("");
-  }
-
-  async function handleManualSave() {
-    if (!question.trim() || !answer.trim()) return;
-    setBusy("manual");
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/user-card`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ mode: "manual", question: question.trim(), answer: answer.trim() }),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
-      }
-      setQuestion("");
-      setAnswer("");
-      onAdded();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAiGenerate(kind: "auto" | "note") {
-    if (kind === "note" && !rawText.trim()) return;
-    setBusy(kind);
-    setGenerationStartedAt(Date.now());
-    setError(null);
-    try {
-      const job = await startAiJob(settings, {
-        action: "card_generate",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        ...(kind === "note" ? { rawText: rawText.trim() } : {}),
-      });
-      await waitForAiJob(settings, job);
-      if (kind === "note") await clearLocalDraft();
-      onAdded();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
-      setGenerationStartedAt(null);
-    }
-  }
-
-  return (
-    <div>
-      <div className="mode-tabs">
-        <button type="button" className={`mode-tab${mode === "ai" ? " active" : ""}`} onClick={() => setMode("ai")}>
-          {t.cards.aiFromNotes}
-        </button>
-        <button type="button" className={`mode-tab${mode === "manual" ? " active" : ""}`} onClick={() => setMode("manual")}>
-          {t.cards.manual}
-        </button>
-      </div>
-
-      {mode === "manual" && (
-        <div className="stack">
-          <label className="field-label">
-            {t.cards.question}
-            <textarea
-              className="textarea-card field-ta"
-              rows={3}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={t.cards.questionPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          <label className="field-label">
-            {t.cards.answer}
-            <textarea
-              className="textarea-card field-ta"
-              rows={4}
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder={t.cards.answerPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          {error && <div className="err-banner">{error}</div>}
-          <button
-            type="button"
-            onClick={handleManualSave}
-            disabled={checkingJob || !!busy || !question.trim() || !answer.trim()}
-            className="btn btn-primary"
-          >
-            {busy ? t.quiz.saving : t.cards.saveCard}
-          </button>
-        </div>
-      )}
-
-      {mode === "ai" && (
-        <div className="stack">
-          <label className="field-label">
-            {t.cards.yourNotes}
-            <textarea
-              className="textarea-card field-ta"
-              rows={5}
-              value={rawText}
-              onChange={(e) => updateRawText(e.target.value)}
-              placeholder={t.cards.notesPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          <div className="ai-toolbar">
-            <span className="draft-hint">
-              {busy === "auto" || busy === "note" ? t.cards.generatingCandidate : `${rawText.length}/6000${rawText.trim() && hydrated ? ` · ${t.cards.autosaved}` : ""}`}
-            </span>
-            <div style={{ display: "flex", gap: 8 }}>
-              {rawText.trim() && (
-                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={checkingJob || !!busy}>
-                  {t.cards.clear}
-                </button>
-              )}
-              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={checkingJob || !!busy} className="btn btn-ghost">
-                {busy === "auto" ? t.quiz.generating : t.cards.autoGenerate}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAiGenerate("note")}
-                disabled={checkingJob || !rawText.trim() || !!busy}
-                className="btn btn-primary"
-              >
-                {busy === "note" ? t.quiz.generating : t.cards.generateFromNote}
-              </button>
-            </div>
-          </div>
-          {(busy === "auto" || busy === "note") && (
-            <div className="operation-timer">
-              {t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds)).replace("02:00", formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS))}
-            </div>
-          )}
-
-          {error && <div className="err-banner">{error}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── CandidateList ── */
-
-function CandidateList({
-  problem,
-  candidates,
-  settings,
-  onRefresh,
-}: {
-  problem: ApiProblem;
-  candidates: ApiCard[];
-  settings: ExtSettings;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  const [local, setLocal] = useState<LocalCandidate[]>([]);
-  const [clock, setClock] = useState(Date.now());
-  const [jobStartedAt, setJobStartedAt] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    setLocal((prev) => {
-      const prevById = new Map(prev.map((c) => [c.id, c]));
-      return candidates.map((c) => ({
-        ...c,
-        ...mergeCandidatePendingState(c, prevById.get(c.id)),
-      }));
-    });
-  }, [candidates]);
-
-  useEffect(() => {
-    void getActiveAiJobs(settings, problem.id, "card")
-      .then((jobs) => {
-        const followups = jobs.filter((job) => job.action === "card_followup" && job.targetCardId);
-        for (const job of followups) {
-          const cardId = job.targetCardId!;
-          update(cardId, { busy: "followup", localError: null });
-          setJobStartedAt((prev) => ({
-            ...prev,
-            [cardId]: Date.parse(job.startedAt ?? job.queuedAt),
-          }));
-          void waitForAiJob(settings, job)
-            .then(() => {
-              update(cardId, { busy: null, instruction: "" });
-              onRefresh();
-            })
-            .catch((e) => update(cardId, {
-              busy: null,
-              localError: e instanceof Error ? e.message : t.cards.aiFailed,
-            }));
-        }
-      })
-      .catch((error) => console.error("[ai-job] failed to resume follow-up", error));
-  }, [problem.id, settings]);
-
-  useEffect(() => {
-    if (!local.some((card) => card.busy === "followup")) return;
-    const timer = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [local]);
-
-  function update(id: string, patch: Record<string, unknown>) {
-    setLocal((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  }
-
-  async function patchCard(id: string, body: Record<string, unknown>) {
-    const res = await apiFetch(settings, `/api/cards/${id}`, {
-      method: "PATCH",
-      headers: jsonHeaders(settings),
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const j = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(j?.error ?? `HTTP ${res.status}`);
-    }
-  }
-
-  async function runAi(
-    card: LocalCandidate,
-    instruction?: string,
-  ) {
-    update(card.id, { busy: "followup", localError: null });
-    setJobStartedAt((prev) => ({ ...prev, [card.id]: Date.now() }));
-    try {
-      const job = await startAiJob(settings, {
-        action: "card_followup",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        cardId: card.id,
-        expectedCardVersion: card.version,
-        draft: { question: card.question.trim(), answer: card.answer.trim() },
-        instruction: instruction ?? "",
-      });
-      await waitForAiJob(settings, job);
-      update(card.id, { busy: null, instruction: "" });
-      onRefresh();
-    } catch (e) {
-      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.aiFailed });
-    }
-  }
-
-  async function confirm(card: LocalCandidate) {
-    update(card.id, { busy: "confirm", localError: null });
-    try {
-      await patchCard(card.id, {
-        expectedVersion: card.version,
-        aiStatus: "ready",
-        question: card.question.trim(),
-        answer: card.answer.trim(),
-      });
-      onRefresh();
-    } catch (e) {
-      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.confirmFailed });
-    }
-  }
-
-  async function discard(id: string) {
-    update(id, { busy: "discard", localError: null });
-    try {
-      const res = await apiFetch(settings, "/api/cards", {
-        method: "DELETE",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ ids: [id] }),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
-      }
-      onRefresh();
-    } catch (e) {
-      update(id, { busy: null, localError: e instanceof Error ? e.message : t.cards.discardFailed });
-    }
-  }
-
-  return (
-    <div className="panel">
-      <div className="section-label">
-        {t.cards.candidateCount(candidates.length)}
-      </div>
-      {local.map((c) => {
-        const disabled = !!c.busy;
-        const startedAt = jobStartedAt[c.id];
-        const elapsedSeconds = startedAt
-          ? Math.max(0, Math.floor((clock - startedAt) / 1000))
-          : 0;
-        return (
-          <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
-            <div
-              className="candidate-status"
-              style={{
-                color: c.aiStatus === "failed" ? "var(--danger)" : "var(--muted)",
-              }}
-            >
-              {c.aiStatus === "failed" ? t.cards.failed : t.cards.candidate}
-            </div>
-            {c.errorMessage && <div className="err-banner" style={{ marginBottom: 8 }}>{c.errorMessage}</div>}
-
-            <label className="field-label">
-              Q
-              <textarea
-                className="textarea-card field-ta-sm"
-                rows={2}
-                value={c.question}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { question: e.target.value })}
-              />
-            </label>
-            <label className="field-label">
-              A
-              <textarea
-                className="textarea-card field-ta-sm"
-                rows={3}
-                value={c.answer}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { answer: e.target.value })}
-              />
-            </label>
-            <div className="candidate-followup">
-              <input
-                className="followup-input"
-                value={c.instruction}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { instruction: e.target.value })}
-                placeholder={t.cards.followupPlaceholder}
-              />
-              <div className="candidate-actions">
-                <button
-                  type="button"
-                  className="btn-xs"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim() || !c.instruction.trim()}
-                  onClick={() => runAi(c, c.instruction)}
-                >
-                  {c.busy === "followup" ? "…" : t.cards.apply}
-                </button>
-                <button
-                  type="button"
-                  className="btn-xs btn-xs-accent"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim()}
-                  onClick={() => confirm(c)}
-                >
-                  {c.busy === "confirm" ? "…" : t.cards.confirm}
-                </button>
-                <button type="button" className="btn-xs btn-xs-danger" disabled={!!c.busy} onClick={() => discard(c.id)}>
-                  ×
-                </button>
-              </div>
-              {c.busy === "followup" && (
-                <div className="operation-timer">
-                  {t.cards.applying} {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
-                </div>
-              )}
-            </div>
-            {c.localError && <div className="err-banner" style={{ marginTop: 6 }}>{c.localError}</div>}
-          </div>
-        );
-      })}
     </div>
   );
 }

@@ -651,7 +651,9 @@ export async function getOwnedAgentStep(userId: string, stepId: string) {
   return step ?? null;
 }
 
-export async function acceptAgentProposal(userId: string, stepId: string, aiJobId: string) {
+/** Marks a proposal accepted. `aiJobId` is the job it started, or null for a
+ *  doc edit that was applied directly. */
+export async function acceptAgentProposal(userId: string, stepId: string, aiJobId: string | null) {
   const db = getDb();
   const now = new Date();
   const [step] = await db

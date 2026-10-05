@@ -108,6 +108,44 @@ export const agentSessionPatchSchema = z
   .strict();
 export type AgentSessionPatchInput = z.infer<typeof agentSessionPatchSchema>;
 
+/* ── Problem docs (docs/coach-practice.md) ── */
+
+export const problemDocTargetEnum = z.enum(["notes", "cards"]);
+export type ProblemDocTarget = z.infer<typeof problemDocTargetEnum>;
+
+const docSection = z.string().trim().min(1).max(60);
+const docMarkdown = z.string().max(20_000);
+
+/** One edit to a problem's Notes or Cards doc. The op implies the target. */
+export const docEditSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("append_section"), section: docSection, markdown: docMarkdown.min(1) }).strict(),
+  z.object({ op: z.literal("replace_section"), section: docSection, markdown: docMarkdown }).strict(),
+  z.object({ op: z.literal("add_card"), prompt: z.string().trim().min(1).max(300), answer: docMarkdown.min(1) }).strict(),
+  z
+    .object({
+      op: z.literal("update_card"),
+      key: z.string().regex(/^[0-9a-f]{16}$/),
+      prompt: z.string().trim().min(1).max(300).optional(),
+      answer: docMarkdown.min(1).optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal("remove_card"), key: z.string().regex(/^[0-9a-f]{16}$/) }).strict(),
+]);
+export type DocEdit = z.infer<typeof docEditSchema>;
+
+export function docEditTarget(edit: DocEdit): ProblemDocTarget {
+  return edit.op === "append_section" || edit.op === "replace_section" ? "notes" : "cards";
+}
+
+/** PUT /api/problems/:id/docs: the user's own edit of one doc. */
+export const problemDocPutSchema = z
+  .object({
+    target: problemDocTargetEnum,
+    markdown: z.string().max(50_000),
+    expectedVersion: z.number().int().min(0),
+  })
+  .strict();
+
 export const agentProposalSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("card_generate"),
@@ -120,6 +158,15 @@ export const agentProposalSchema = z.discriminatedUnion("action", [
     requestId: z.string().uuid(),
     problemId: z.string().min(1).max(64),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
+    reason: z.string().min(1).max(500),
+  }),
+  /** An edit to the problem's Notes or Cards doc, applied on approval. */
+  z.object({
+    action: z.literal("doc_edit"),
+    problemId: z.string().min(1).max(64),
+    edit: docEditSchema,
+    /** The doc version the edit was checked against. */
+    baseVersion: z.number().int().min(0),
     reason: z.string().min(1).max(500),
   }),
 ]);

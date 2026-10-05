@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai";
 import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { parseCards } from "@ankify/core";
 import { quizDraftSchema, type QuizItem } from "@ankify/contracts";
 import { getDb, schema, type QuizSession } from "@ankify/db";
 import { getActiveModel } from "@/server/ai";
@@ -50,26 +51,16 @@ async function loadQuizPromptContext(userId: string, problemId: string) {
     .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)));
   if (!problem) throw new Error("problem_not_found");
 
-  const [cards, submissions] = await Promise.all([
-    db
-      .select()
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problemId),
-          eq(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(12),
-    db
-      .select()
-      .from(schema.submissions)
-      .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
-      .orderBy(desc(schema.submissions.submittedAt))
-      .limit(10),
-  ]);
+  // Cards come from the problem's Cards doc (docs/coach-practice.md).
+  const cards = parseCards(problem.cardsMd)
+    .cards.slice(0, 12)
+    .map((card) => ({ question: card.prompt, answer: card.answer }));
+  const submissions = await db
+    .select()
+    .from(schema.submissions)
+    .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
+    .orderBy(desc(schema.submissions.submittedAt))
+    .limit(10);
   return { problem, cards, submissions };
 }
 
