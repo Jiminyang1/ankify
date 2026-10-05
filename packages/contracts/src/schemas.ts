@@ -98,6 +98,27 @@ export const agentPageContextSchema = z
       })
       .strict()
       .optional(),
+    /** Set by the server while a talk-through practice session is active on
+     *  this problem: what to ask about and what's been graded. */
+    practiceActive: z
+      .object({
+        practiceSessionId: z.string().min(1).max(64),
+        targets: z
+          .array(
+            z
+              .object({
+                id: z.string().max(80),
+                kind: z.enum(["weakness", "category", "core"]),
+                category: z.string().max(40).nullable(),
+                label: z.string().max(400),
+                grade: z.enum(["correct", "partial", "missed"]).nullable(),
+              })
+              .strict(),
+          )
+          .max(5),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type AgentPageContext = z.infer<typeof agentPageContextSchema>;
@@ -111,8 +132,15 @@ export const agentTurnRequestSchema = z
     /** Instead of typed text: a practice session just finished; the server
      *  loads its results into the turn for the debrief. */
     trigger: z
-      .object({ type: z.literal("practice_completed"), practiceSessionId: z.string().min(1).max(64) })
+      .object({
+        type: z.enum(["practice_completed", "practice_start", "analyze_attempts"]),
+        /** Required for the practice triggers. */
+        practiceSessionId: z.string().min(1).max(64).optional(),
+      })
       .strict()
+      .refine((value) => value.type === "analyze_attempts" || Boolean(value.practiceSessionId), {
+        message: "practiceSessionId is required",
+      })
       .optional(),
   })
   .strict();

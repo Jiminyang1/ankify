@@ -315,6 +315,15 @@ export type PracticeSessionDto = {
   id: string;
   problemId: string;
   status: "active" | "completed" | "abandoned";
+  mode: "recall_check" | "talk";
+  /** Talk-through targets with their grades (mode "talk"). */
+  targets: {
+    id: string;
+    kind: "weakness" | "category" | "core";
+    category: string | null;
+    label: string;
+    grade: { grade: "correct" | "partial" | "missed"; reason: string } | null;
+  }[];
   recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
   check: {
     status: "pending" | "ready" | "failed" | "skipped";

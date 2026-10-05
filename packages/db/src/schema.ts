@@ -345,9 +345,22 @@ export const quizSessions = sqliteTable(
  * history. At most one active session per problem.
  * ──────────────────────────────────────────────────────────────────────────── */
 export type PracticeRecallItem = { key: string; prompt: string; answer: string };
+export type PracticeTarget = {
+  id: string;
+  /** weakness: a recorded mistake on this problem; category: a weak category
+   *  from other problems, applied here; core: approach or complexity. */
+  kind: "weakness" | "category" | "core";
+  weaknessId?: string;
+  category?: string;
+  /** What to ask about: the weakness detail, or the category / core key. */
+  label: string;
+};
+export type PracticeGrade = { grade: "correct" | "partial" | "missed"; reason: string };
 export type PracticeResults = {
   recall: Record<string, "got_it" | "missed">;
   check: Record<string, { choice: number; correct: boolean }>;
+  /** Talk-through grades by target id. */
+  talk?: Record<string, PracticeGrade>;
 };
 
 export const practiceSessions = sqliteTable(
@@ -363,6 +376,10 @@ export const practiceSessions = sqliteTable(
     /** The Coach run that started it, if any. */
     agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
     status: text("status", { enum: ["active", "completed", "abandoned"] }).notNull().default("active"),
+    /** talk: the Coach asks about weak spots (version 2); recall_check: cards
+     *  then generated questions (stage 2). */
+    mode: text("mode", { enum: ["recall_check", "talk"] }).notNull().default("recall_check"),
+    targetsJson: text("targets_json", { mode: "json" }).$type<PracticeTarget[]>(),
     recallJson: text("recall_json", { mode: "json" }).$type<PracticeRecallItem[]>().notNull(),
     checkStatus: text("check_status", { enum: ["pending", "ready", "failed", "skipped"] }).notNull(),
     checkMessage: text("check_message"),

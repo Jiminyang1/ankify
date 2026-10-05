@@ -4,7 +4,7 @@ Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web r
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
-## Version 2: weakness-driven practice (2026-10-05; weak spots built, practice and web profile next)
+## Version 2: weakness-driven practice (2026-10-05; weak spots and talk-through practice built, web profile next)
 
 Decided with Jimin after trying stage 2. It replaces the stage 2 practice
 flow; the docs (stage 1), sessions, grading, and rating code stay.
@@ -63,9 +63,10 @@ user's list only after they approve (a proposal, like doc edits).
 
 ### When the Coach analyzes (no surprise AI spend)
 
-- **Analyze my attempts** on a problem: one turn that reads all submissions
-  and notes and records the weaknesses it finds (the first time a problem is
-  studied).
+- **Analyze my attempts** on a problem: the server runs one structured call over
+  the failed submissions and records each finding through the same checks,
+  then the Coach explains them. (A chat model asked to record via a tool
+  sometimes explained the mistakes without recording them.)
 - During conversation and practice, whenever a mistake is diagnosed.
 - Not on every failed submission automatically: that would spend AI the user
   didn't ask for.

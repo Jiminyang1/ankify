@@ -10,7 +10,7 @@ import {
   failAgentRun,
 } from "@/server/agent/store";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
-import { getPracticeDebrief, markPracticeDebriefed } from "@/server/practice";
+import { getActiveTalkContext, getPracticeDebrief, markPracticeDebriefed } from "@/server/practice";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -30,14 +30,25 @@ export async function POST(req: Request) {
 
   // Practice results come from the server, never from the client.
   const trigger = parsed.data.trigger;
-  let context = { ...parsed.data.context, practice: undefined } as typeof parsed.data.context;
-  if (trigger) {
-    const debrief = await getPracticeDebrief(user.id, trigger.practiceSessionId);
+  let context = { ...parsed.data.context, practice: undefined, practiceActive: undefined } as typeof parsed.data.context;
+  if (trigger?.type === "practice_completed") {
+    const debrief = await getPracticeDebrief(user.id, trigger.practiceSessionId!);
     if (!debrief) {
       return NextResponse.json({ error: "practice_not_completed", message: "Finish the practice session first." }, { status: 409 });
     }
     const { problemId, ...practice } = debrief;
     context = { ...context, problemId, practice };
+  }
+  // A talk-through in progress on this problem rides along with every turn.
+  if (context.problemId) {
+    const active = await getActiveTalkContext(user.id, context.problemId);
+    if (active) context = { ...context, practiceActive: active };
+  }
+  if (trigger?.type === "analyze_attempts" && !context.problemId) {
+    return NextResponse.json({ error: "problem_not_saved", message: "Add this problem to ankify first." }, { status: 400 });
+  }
+  if (trigger?.type === "practice_start" && context.practiceActive?.practiceSessionId !== trigger.practiceSessionId) {
+    return NextResponse.json({ error: "practice_not_active", message: "That practice session isn't active." }, { status: 409 });
   }
 
   const limit = await checkRateLimit(user.id, "agent", RATE_LIMITS.agent);
@@ -78,7 +89,7 @@ export async function POST(req: Request) {
       context,
       settings: activeModel.settings,
     });
-    if (trigger) await markPracticeDebriefed(user.id, trigger.practiceSessionId);
+    if (trigger?.type === "practice_completed") await markPracticeDebriefed(user.id, trigger.practiceSessionId!);
   } catch (error) {
     if (error instanceof AgentRequestError) {
       return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
@@ -117,6 +128,7 @@ export async function POST(req: Request) {
             abortSignal: runAbortController.signal,
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),
             onStep: (step) => emit({ type: "step", step }),
+            analyzeAttempts: trigger?.type === "analyze_attempts",
           });
           emit({ type: "done", ...completed });
         } catch (error) {

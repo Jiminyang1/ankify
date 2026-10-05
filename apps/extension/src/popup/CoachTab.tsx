@@ -16,6 +16,7 @@ import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
 import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
 import { WeakSpots, type WeakSpotsCopy } from "./WeakSpots";
+import { builtinWeaknessCategoryName } from "@ankify/core";
 
 /** The problem the Problem tab resolved, when it's saved in ankify. */
 export type CoachSavedProblem = { slug: string; problemId: string; title: string; due: boolean };
@@ -233,6 +234,7 @@ export function CoachTab({
     };
   }, [api, savedProblemId]);
 
+  const loadWeaknessesRef = useRef<() => Promise<void>>(async () => {});
   // Loads can overlap (a "noted" step, then a removal); only the latest wins.
   const weaknessLoadSeq = useRef(0);
   const loadWeaknesses = useCallback(async () => {
@@ -248,6 +250,7 @@ export function CoachTab({
     }
   }, [api, savedProblemId]);
 
+  loadWeaknessesRef.current = loadWeaknesses;
   useEffect(() => {
     setWeaknesses(null);
     void loadWeaknesses();
@@ -275,6 +278,10 @@ export function CoachTab({
       }
       setLocalPractice(body.session);
       onExpandedChange(true);
+      // A talk-through starts with the Coach's first question.
+      if (body.session.mode === "talk" && body.session.status === "active") {
+        void sendRef.current(copy.practice.startMessage, { type: "practice_start", practiceSessionId: body.session.id });
+      }
     } catch (startError) {
       console.error("[ankify] start practice failed", startError);
       setError(startError instanceof Error ? startError.message : copy.practice.actionFailed);
@@ -287,8 +294,15 @@ export function CoachTab({
   const sendRef = useRef<typeof send>(null as unknown as typeof send);
   const practiceCompleted = useCallback(
     (session: PracticeSessionDto) => {
+      setLocalPractice((current) => (current?.id === session.id ? session : current));
       if (debriefed.current.has(session.id)) return;
       debriefed.current.add(session.id);
+      // A talk-through is summarized by the Coach in the same turn; its weak
+      // spots may have been resolved or repeated.
+      if (session.mode === "talk") {
+        void loadWeaknessesRef.current();
+        return;
+      }
       const items = session.recall.length + (session.check.status === "ready" ? session.check.items.length : 0);
       const points =
         session.recall.filter((card) => card.result === "got_it").length +
@@ -326,7 +340,10 @@ export function CoachTab({
     };
   }
 
-  async function send(message: string, trigger?: { type: "practice_completed"; practiceSessionId: string }) {
+  async function send(
+    message: string,
+    trigger?: { type: "practice_completed" | "practice_start" | "analyze_attempts"; practiceSessionId?: string },
+  ) {
     const text = message.trim();
     if (!text || streaming || remoteRunActive) return;
     const controller = new AbortController();
@@ -384,6 +401,15 @@ export function CoachTab({
     } else if (event.type === "step") {
       setSnapshot((current) => (current ? { ...current, steps: upsert(current.steps, event.step) } : current));
       if (event.step.kind === "weakness") void loadWeaknesses();
+      // The Coach started a talk-through: pin it above the chat.
+      if (event.step.kind === "practice" && event.step.practiceSessionId) {
+        void api(`/api/practice/${event.step.practiceSessionId}`, { cache: "no-store" })
+          .then(async (res) => (res.ok ? ((await res.json()) as { session: PracticeSessionDto }).session : null))
+          .then((session) => {
+            if (session) setLocalPractice(session);
+          })
+          .catch(() => {});
+      }
     } else if (event.type === "done") {
       setPartial("");
       setSnapshot((current) =>
@@ -501,16 +527,9 @@ export function CoachTab({
   const practiceShownInThread = new Set(
     (snapshot?.steps ?? []).flatMap((step) => (step.practiceSessionId ? [step.practiceSessionId] : [])),
   );
-  const lastRunId = runs.at(-1)?.id;
-  const practiceActive =
-    localPractice?.status === "active" ||
-    (snapshot?.steps ?? []).some(
-      (step) =>
-        step.kind === "practice" &&
-        step.runId === lastRunId &&
-        step.practiceSessionId != null &&
-        !debriefed.current.has(step.practiceSessionId),
-    );
+  // Whether a session is running comes from the server (resume on load, or
+  // the session the Coach or the button started), not from old chat steps.
+  const practiceActive = localPractice?.status === "active";
   const practiceChip =
     savedHere && !practiceActive && !streaming ? (
       <div className="coach-chip-wrap">
@@ -536,6 +555,11 @@ export function CoachTab({
         {showRating && savedHere.due && ratingPanel}
       </div>
     ) : null;
+  const categoryName = (key: string) =>
+    weaknesses?.find((weakness) => weakness.category === key)?.categoryName ??
+    builtinWeaknessCategoryName(key, settings.language) ??
+    key;
+  const pinnedTalk = localPractice?.mode === "talk" ? localPractice : null;
   const renderPractice = (practiceSessionId: string, initial?: PracticeSessionDto) => (
     <PracticeWidget
       key={practiceSessionId}
@@ -545,6 +569,7 @@ export function CoachTab({
       copy={copy.practice}
       onCompleted={practiceCompleted}
       onRated={onProblemChanged}
+      categoryName={categoryName}
     />
   );
 
@@ -600,10 +625,11 @@ export function CoachTab({
             language={settings.language}
             copy={copy.weakSpots}
             busy={busy || streaming}
-            onAnalyze={() => void send(copy.weakSpots.analyzePrompt)}
+            onAnalyze={() => void send(copy.weakSpots.analyzePrompt, { type: "analyze_attempts" })}
             onRemove={(id) => void removeWeakness(id)}
           />
         )}
+        {mode === "full" && pinnedTalk && renderPractice(pinnedTalk.id, pinnedTalk)}
         {loading ? (
           <p className="popup-muted coach-thinking">
             <span className="btn-spinner" /> {copy.thinking}
@@ -629,7 +655,7 @@ export function CoachTab({
             const live = streaming && run.status === "running";
             // A session started from the button sits right before its debrief.
             const practiceBefore =
-              localPractice && run.context.practice?.practiceSessionId === localPractice.id
+              localPractice && !pinnedTalk && run.context.practice?.practiceSessionId === localPractice.id
                 ? renderPractice(localPractice.id, localPractice)
                 : null;
             return (
@@ -665,13 +691,17 @@ export function CoachTab({
                   <p className="coach-run-error">{run.errorMessage}</p>
                 ) : null}
                 {steps
-                  .filter((step) => step.kind === "practice" && step.practiceSessionId)
+                  .filter(
+                    (step) =>
+                      step.kind === "practice" && step.practiceSessionId && step.practiceSessionId !== pinnedTalk?.id,
+                  )
                   .map((step) => renderPractice(step.practiceSessionId!))}
               </div>
             );
           })
         )}
         {localPractice &&
+          !pinnedTalk &&
           !practiceShownInThread.has(localPractice.id) &&
           !runs.some((run) => run.context.practice?.practiceSessionId === localPractice.id) &&
           renderPractice(localPractice.id, localPractice)}

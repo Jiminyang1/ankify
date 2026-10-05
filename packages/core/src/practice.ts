@@ -35,14 +35,71 @@ export function selectPracticeCards(
   return ranked.slice(0, max).map((entry) => entry.card);
 }
 
-/** Score (correct / items) to a suggested rating. The user still chooses. */
-export function suggestPracticeRating(points: number, items: number): FsrsRating {
+/** Score (correct / items) to a suggested rating. The user still chooses.
+ *  A perfect score suggests Easy only with at least `easyMinItems` items. */
+export function suggestPracticeRating(points: number, items: number, easyMinItems = 4): FsrsRating {
   if (items <= 0) return 3;
   const score = points / items;
   if (score < 0.4) return 1;
   if (score < 0.67) return 2;
   if (score < 1) return 3;
-  return items >= 4 ? 4 : 3;
+  return items >= easyMinItems ? 4 : 3;
+}
+
+/* ── Talk-through practice (docs/coach-practice.md, version 2) ── */
+
+export const TALK_TARGET_COUNT = 3;
+const MAX_PROBLEM_WEAKNESS_TARGETS = 2;
+const MAX_CATEGORY_TARGETS = 1;
+const CORE_TARGETS = ["approach", "complexity"] as const;
+
+export type TalkTarget = {
+  id: string;
+  kind: "weakness" | "category" | "core";
+  weaknessId?: string;
+  category?: string;
+  label: string;
+};
+
+/** What a talk-through session asks about, decided by code: this problem's
+ *  active weak spots (most recent first), then the user's weakest category
+ *  from other problems, then approach and complexity. */
+export function selectPracticeTargets(args: {
+  problemWeaknesses: { id: string; category: string; detail: string; lastSeenAt: Date }[];
+  /** Categories with active weak spots, weakest first (from the profile). */
+  weakCategories: string[];
+}): TalkTarget[] {
+  const targets: TalkTarget[] = [];
+  const weaknesses = [...args.problemWeaknesses]
+    .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
+    .slice(0, MAX_PROBLEM_WEAKNESS_TARGETS);
+  for (const weakness of weaknesses) {
+    targets.push({ id: `w-${weakness.id}`, kind: "weakness", weaknessId: weakness.id, category: weakness.category, label: weakness.detail });
+  }
+  const covered = new Set(targets.map((target) => target.category));
+  for (const category of args.weakCategories) {
+    if (targets.length >= TALK_TARGET_COUNT || targets.filter((t) => t.kind === "category").length >= MAX_CATEGORY_TARGETS) break;
+    if (covered.has(category)) continue;
+    targets.push({ id: `c-${category}`, kind: "category", category, label: category });
+    covered.add(category);
+  }
+  for (const core of CORE_TARGETS) {
+    if (targets.length >= TALK_TARGET_COUNT) break;
+    if (core === "complexity" && covered.has("complexity")) continue;
+    targets.push({ id: `k-${core}`, kind: "core", label: core });
+  }
+  return targets.slice(0, TALK_TARGET_COUNT);
+}
+
+export const GRADE_POINTS = { correct: 1, partial: 0.5, missed: 0 } as const;
+
+/** Talk-through score and suggestion: every target correct suggests Easy. */
+export function scoreTalk(grades: ("correct" | "partial" | "missed")[]): { score: number; rating: FsrsRating } {
+  const points = grades.reduce((sum, grade) => sum + GRADE_POINTS[grade], 0);
+  return {
+    score: grades.length ? points / grades.length : 0,
+    rating: suggestPracticeRating(points, grades.length, grades.length),
+  };
 }
 
 /** A card or question about time/space cost covers the complexity rule. */

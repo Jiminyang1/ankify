@@ -275,6 +275,12 @@ const EXT_I18N = {
       },
       practice: {
         title: "Practice",
+        talkHint: "Answer the Coach's questions in the chat below.",
+        talkScore: (correct: number, partial: number, total: number) =>
+          `${correct} of ${total} right${partial ? `, ${partial} partly` : ""}`,
+        core: { approach: "The approach", complexity: "Complexity" },
+        grades: { correct: "Right", partial: "Partly", missed: "Missed" },
+        startMessage: "Let's practice this problem.",
         progress: (done: number, total: number) => `${done} of ${total}`,
         showAnswer: "Show answer",
         gotIt: "Got it",
@@ -569,6 +575,12 @@ const EXT_I18N = {
       },
       practice: {
         title: "练习",
+        talkHint: "在下面的聊天里回答教练的问题。",
+        talkScore: (correct: number, partial: number, total: number) =>
+          `答对 ${correct} / ${total}${partial ? `，部分对 ${partial}` : ""}`,
+        core: { approach: "解题思路", complexity: "复杂度" },
+        grades: { correct: "对", partial: "部分对", missed: "没答上" },
+        startMessage: "开始练习这道题。",
         progress: (done: number, total: number) => `${done} / ${total}`,
         showAnswer: "显示答案",
         gotIt: "记得",

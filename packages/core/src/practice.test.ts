@@ -116,3 +116,38 @@ describe("validateCheckItems with unsectioned notes", () => {
     expect(validateCheckItems(items, base)).toEqual([{ rule: "citation", item: 0 }]);
   });
 });
+
+describe("talk-through targets and score", () => {
+  const at = (days: number) => new Date(Date.UTC(2026, 9, 5) - days * 86_400_000);
+  it("takes this problem's weak spots first, then a weak category, then core", async () => {
+    const { selectPracticeTargets } = await import("./practice");
+    const targets = selectPracticeTargets({
+      problemWeaknesses: [
+        { id: "a", category: "init_sentinel", detail: "dp starts at 0", lastSeenAt: at(5) },
+        { id: "b", category: "efficiency", detail: "no memo, TLE", lastSeenAt: at(1) },
+        { id: "c", category: "edge_cases", detail: "empty input", lastSeenAt: at(9) },
+      ],
+      weakCategories: ["init_sentinel", "boundary_index", "complexity"],
+    });
+    expect(targets.map((t) => t.id)).toEqual(["w-b", "w-a", "c-boundary_index"]);
+  });
+
+  it("fills with approach and complexity when there are no weak spots", async () => {
+    const { selectPracticeTargets } = await import("./practice");
+    expect(selectPracticeTargets({ problemWeaknesses: [], weakCategories: [] }).map((t) => t.id)).toEqual([
+      "k-approach",
+      "k-complexity",
+    ]);
+    expect(
+      selectPracticeTargets({ problemWeaknesses: [], weakCategories: ["complexity"] }).map((t) => t.id),
+    ).toEqual(["c-complexity", "k-approach"]);
+  });
+
+  it("scores grades, with Easy only for all correct", async () => {
+    const { scoreTalk } = await import("./practice");
+    expect(scoreTalk(["correct", "correct", "correct"])).toEqual({ score: 1, rating: 4 });
+    expect(scoreTalk(["correct", "partial", "correct"]).rating).toBe(3);
+    expect(scoreTalk(["missed", "partial", "correct"]).rating).toBe(2);
+    expect(scoreTalk(["missed", "missed", "partial"]).rating).toBe(1);
+  });
+});

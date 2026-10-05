@@ -12,6 +12,7 @@ import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
 import { finishAgentRun, getAgentModelMessages } from "./store";
+import { analyzeAttempts } from "./analyze-attempts";
 import { createStudyCoachTools } from "./tools";
 
 const AGENT_TIMEOUT_MS = 175_000;
@@ -26,6 +27,8 @@ export async function runStudyCoach(args: {
   abortSignal: AbortSignal;
   onTextDelta: (delta: string) => void;
   onStep: (step: AgentStepDto) => void;
+  /** "Analyze my attempts": record weak spots server-side before the Coach explains them. */
+  analyzeAttempts?: boolean;
 }) {
   const runState: { navigationStep: AgentStepDto | null } = { navigationStep: null };
   await compactAgentSessionIfNeeded({
@@ -36,7 +39,7 @@ export async function runStudyCoach(args: {
     callOptions: aiCallOptions(args.settings, "lightest"),
     abortSignal: args.abortSignal,
   });
-  const tools = createStudyCoachTools({
+  const { tools, recordStep } = createStudyCoachTools({
     userId: args.userId,
     problemId: args.problemId,
     runId: args.runId,
@@ -52,11 +55,44 @@ export async function runStudyCoach(args: {
     model: args.model,
     instructions: STUDY_COACH_INSTRUCTIONS,
     tools,
-    stopWhen: [stepCountIs(8), hasToolCall("open_problem"), hasToolCall("start_practice")],
+    stopWhen: [stepCountIs(8), hasToolCall("open_problem")],
     maxOutputTokens: 4_000,
     ...aiCallOptions(args.settings, "user"),
   });
   const messages: ModelMessage[] = await getAgentModelMessages(args.userId, args.sessionId);
+  if (args.analyzeAttempts && args.problemId) {
+    const findings = await analyzeAttempts({
+      userId: args.userId,
+      problemId: args.problemId,
+      runId: args.runId,
+      model: args.model,
+      settings: args.settings,
+      abortSignal: args.abortSignal,
+    });
+    for (const finding of findings) {
+      await recordStep({
+        kind: "weakness",
+        toolName: "analyze_attempts",
+        status: "completed",
+        summary: finding.weakness.detail,
+        weaknessId: finding.weakness.id,
+      });
+    }
+    // The Coach explains what the server recorded; it doesn't record these again.
+    const last = messages.at(-1);
+    if (last && last.role === "user" && typeof last.content === "string") {
+      const content = JSON.parse(last.content) as Record<string, unknown>;
+      last.content = JSON.stringify({
+        ...content,
+        analysisFindings: findings.map(({ weakness, merged }) => ({
+          category: weakness.category,
+          detail: weakness.detail,
+          evidence: weakness.evidence.filter((item) => item.kind === "submission").map((item) => item.ref),
+          seenBefore: merged,
+        })),
+      });
+    }
+  }
   const result = await agent.stream({
     messages,
     abortSignal: args.abortSignal,

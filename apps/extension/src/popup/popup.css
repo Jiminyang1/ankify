@@ -3504,3 +3504,67 @@ a:focus-visible,
   padding-left: 10px;
   border-left: 2px solid color-mix(in srgb, var(--warning) 60%, var(--border));
 }
+
+/* ── Talk-through practice (pinned above the chat) ── */
+
+.practice-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.practice-target {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.practice-target-mark {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.practice-target[data-grade="correct"] .practice-target-mark { background: var(--success); border-color: var(--success); }
+.practice-target[data-grade="partial"] .practice-target-mark { background: var(--warning); border-color: var(--warning); }
+.practice-target[data-grade="missed"] .practice-target-mark { background: var(--danger); border-color: var(--danger); }
+
+.practice-target-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.practice-target-kind {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.practice-target-label {
+  color: var(--muted);
+}
+
+.practice-target-grade {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.practice-talk-hint {
+  margin: 0;
+  font-size: 11px;
+}
+
+/* The talk-through card stays in view while the conversation scrolls. */
+.coach-thread > .practice-talk {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.35);
+}

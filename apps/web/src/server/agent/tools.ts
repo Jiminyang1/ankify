@@ -13,7 +13,7 @@ import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
-import { startPractice } from "@/server/practice";
+import { gradeTalkTarget, startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { loadProfile, type PlanItem } from "@/server/profile";
@@ -79,7 +79,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
     return problem;
   };
 
-  return {
+  const tools = {
     get_review_queue: tool({
       description:
         "Load only problems currently eligible for review: already due at asOf or never scheduled. Future-due problems are not returned. Also returns the user's authoritative daily queue stats. Use this for review planning and prioritization; never invent additional time buckets.",
@@ -498,7 +498,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     start_practice: tool({
       description:
-        "Start a practice session on a saved problem: a few of the user's cards, then fresh check questions, then a suggested rating. The panel shows it; you don't write any of its content. Call when the user asks to practice, review, or be quizzed on a problem. Ends your turn.",
+        "Start a talk-through practice session on a saved problem. The server picks 2 to 3 targets (the user's weak spots on this problem, a weak category from other problems, or approach and complexity); you then ask about them one at a time and grade each answer with grade_answer. Call when the user asks to practice, review, or be quizzed.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
@@ -513,8 +513,40 @@ export function createStudyCoachTools(context: AgentToolContext) {
         });
         return {
           started: true,
-          cards: result.session.recall.length,
-          questions: result.session.check.status === "skipped" ? 0 : 3,
+          targets: result.session.targets.map(({ id, kind, category, label, grade }) => ({ id, kind, category, label, graded: grade?.grade ?? null })),
+        };
+      },
+    }),
+
+    grade_answer: tool({
+      description:
+        "Grade the user's answer about one practice target: correct (complete and right), partial (right idea, missing or shaky on a key part), or missed (wrong or no idea). The reason is one sentence. The last grade completes the session and returns the score and suggested rating.",
+      inputSchema: z.object({
+        targetId: z.string().max(80).describe("The target id from runtimeContext.practiceActive"),
+        grade: z.enum(["correct", "partial", "missed"]),
+        reason: z.string().min(1).max(300),
+      }),
+      execute: async ({ targetId, grade, reason }) => {
+        if (!context.problemId) return { graded: false, error: "no_active_practice" };
+        const result = await gradeTalkTarget(context.userId, context.problemId, targetId, { grade, reason });
+        if (!result.ok) return { graded: false, error: result.error };
+        const remaining = result.session.targets.filter((target) => !target.grade);
+        await record({
+          kind: "read",
+          toolName: "grade_answer",
+          status: "completed",
+          summary: `${grade}: ${reason}`,
+        });
+        return {
+          graded: true,
+          completed: result.session.status === "completed",
+          remaining: remaining.map(({ id, kind, category, label }) => ({ id, kind, category, label })),
+          ...(result.session.status === "completed"
+            ? {
+                score: result.session.score,
+                suggestedRating: ["Again", "Hard", "Good", "Easy"][(result.session.suggestedRating ?? 3) - 1],
+              }
+            : {}),
         };
       },
     }),
@@ -624,6 +656,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
   };
+  return { tools, recordStep: record };
 }
 
 function limitText(value: string | null, maxLength: number) {

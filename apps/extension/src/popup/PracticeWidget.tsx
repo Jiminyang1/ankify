@@ -6,6 +6,11 @@ import { PopupMarkdown } from "./PopupMarkdown";
 
 export type PracticeCopy = {
   title: string;
+  talkHint: string;
+  talkScore: (correct: number, partial: number, total: number) => string;
+  core: { approach: string; complexity: string };
+  grades: { correct: string; partial: string; missed: string };
+  startMessage: string;
   progress: (done: number, total: number) => string;
   showAnswer: string;
   gotIt: string;
@@ -36,6 +41,7 @@ export function PracticeWidget({
   copy,
   onCompleted,
   onRated,
+  categoryName,
 }: {
   settings: ExtSettings;
   sessionId: string;
@@ -44,6 +50,8 @@ export function PracticeWidget({
   /** Fires once when the session first reaches its summary. */
   onCompleted: (session: PracticeSessionDto) => void;
   onRated: () => void;
+  /** Display name for a weakness category key. */
+  categoryName: (key: string) => string;
 }) {
   const [session, setSession] = useState<PracticeSessionDto | null>(initial ?? null);
   const [revealed, setRevealed] = useState(false);
@@ -66,7 +74,9 @@ export function PracticeWidget({
   }, [copy.loadFailed, initial, load]);
 
   // Questions are generated in the background; check until they're ready.
-  const pending = session?.status === "active" && session.check.status === "pending";
+  // A talk-through is graded by the Coach in the chat; follow its progress.
+  const pending =
+    session?.status === "active" && (session.check.status === "pending" || session.mode === "talk");
   useEffect(() => {
     if (!pending) return;
     const timer = window.setInterval(() => void load().catch(() => {}), 1_500);
@@ -130,6 +140,85 @@ export function PracticeWidget({
     );
   }
 
+  const ratingBlock = (
+    <>
+      {rated ? (
+        <p className="popup-muted">{copy.rated(copy.ratings[rated - 1]!)}</p>
+      ) : (
+        <>
+          {session.suggestedRating && (
+            <p className="popup-muted">{copy.suggested(copy.ratings[session.suggestedRating - 1]!)}</p>
+          )}
+          <div className="practice-ratings" role="radiogroup" aria-label={copy.rate}>
+            {([1, 2, 3, 4] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={rating === value}
+                className="practice-rating"
+                data-rating={value}
+                data-active={rating === value}
+                onClick={() => setRating(value)}
+              >
+                {copy.ratings[value - 1]}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="btn btn-primary btn-inline" disabled={!rating || busy} onClick={() => void rate()}>
+            {busy && <span className="btn-spinner" />}
+            {copy.rate}
+          </button>
+        </>
+      )}
+    </>
+  );
+
+  if (session.mode === "talk") {
+    const graded = session.targets.filter((target) => target.grade);
+    const correct = graded.filter((target) => target.grade!.grade === "correct").length;
+    const partial = graded.filter((target) => target.grade!.grade === "partial").length;
+    return (
+      <div className="practice practice-talk">
+        <div className="practice-head">
+          <span className="coach-dock-title">{copy.title}</span>
+          <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
+        </div>
+        <ul className="practice-targets">
+          {session.targets.map((target) => (
+            <li key={target.id} className="practice-target" data-grade={target.grade?.grade ?? "open"}>
+              <span className="practice-target-mark" aria-hidden="true" />
+              <span className="practice-target-text">
+                <span className="practice-target-kind">
+                  {target.kind === "core"
+                    ? target.label === "complexity"
+                      ? copy.core.complexity
+                      : copy.core.approach
+                    : categoryName(target.category ?? target.label)}
+                </span>
+                {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
+                {target.grade && (
+                  <span className="practice-target-grade">
+                    {copy.grades[target.grade.grade]} · {target.grade.reason}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {session.status === "completed" ? (
+          <div className="practice-summary">
+            <p className="practice-score">{copy.talkScore(correct, partial, session.targets.length)}</p>
+            {ratingBlock}
+          </div>
+        ) : (
+          <p className="popup-muted practice-talk-hint">{copy.talkHint}</p>
+        )}
+        {error && <p className="coach-run-error">{error}</p>}
+      </div>
+    );
+  }
+
   const checkItems = session.check.status === "ready" ? session.check.items : [];
   const total = session.recall.length + (session.check.status === "ready" || pending ? 3 : 0);
   const done =
@@ -155,35 +244,7 @@ export function PracticeWidget({
           {(session.check.status === "failed" || session.check.status === "skipped") && session.check.message && (
             <p className="popup-muted">{copy.noQuestions(session.check.message)}</p>
           )}
-          {rated ? (
-            <p className="popup-muted">{copy.rated(copy.ratings[rated - 1]!)}</p>
-          ) : (
-            <>
-              {session.suggestedRating && (
-                <p className="popup-muted">{copy.suggested(copy.ratings[session.suggestedRating - 1]!)}</p>
-              )}
-              <div className="practice-ratings" role="radiogroup" aria-label={copy.rate}>
-                {([1, 2, 3, 4] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={rating === value}
-                    className="practice-rating"
-                    data-rating={value}
-                    data-active={rating === value}
-                    onClick={() => setRating(value)}
-                  >
-                    {copy.ratings[value - 1]}
-                  </button>
-                ))}
-              </div>
-              <button type="button" className="btn btn-primary btn-inline" disabled={!rating || busy} onClick={() => void rate()}>
-                {busy && <span className="btn-spinner" />}
-                {copy.rate}
-              </button>
-            </>
-          )}
+          {ratingBlock}
         </div>
       ) : recallCard ? (
         <div className="practice-card">

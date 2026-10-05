@@ -1,8 +1,16 @@
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { parseCards, selectPracticeCards, suggestPracticeRating } from "@ankify/core";
+import {
+  WEAKNESS_RESOLVE_STREAK,
+  computeWeaknessProfile,
+  parseCards,
+  scoreTalk,
+  selectPracticeCards,
+  selectPracticeTargets,
+  suggestPracticeRating,
+} from "@ankify/core";
 import type { PracticeSessionDto } from "@ankify/contracts";
-import { getDb, schema, type CardStat, type PracticeSession } from "@ankify/db";
+import { getDb, schema, type CardStat, type PracticeGrade, type PracticeSession } from "@ankify/db";
 import { AiJobRequestError, getOwnedAiJob } from "@/server/ai-generation/jobs";
 import { startAiJobForUser } from "@/server/ai-generation/start";
 
@@ -21,7 +29,8 @@ export type PracticeError =
   | "card_not_in_session"
   | "check_not_ready"
   | "item_not_found"
-  | "already_answered";
+  | "already_answered"
+  | "target_not_found";
 
 export type PracticeResult = { ok: true; session: PracticeSessionDto } | { ok: false; error: PracticeError; message?: string };
 
@@ -34,16 +43,26 @@ export const PRACTICE_ERROR_STATUS: Record<PracticeError, number> = {
   check_not_ready: 409,
   item_not_found: 404,
   already_answered: 409,
+  target_not_found: 404,
 };
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
 export function toPracticeDto(session: PracticeSession): PracticeSessionDto {
   const results = session.resultsJson;
+  const talk = results.talk ?? {};
   return {
     id: session.id,
     problemId: session.problemId,
     status: session.status,
+    mode: session.mode,
+    targets: (session.targetsJson ?? []).map((target) => ({
+      id: target.id,
+      kind: target.kind,
+      category: target.category ?? null,
+      label: target.label,
+      grade: talk[target.id] ?? null,
+    })),
     recall: session.recallJson.map((card) => ({ ...card, result: results.recall[card.key] ?? null })),
     check: {
       status: session.checkStatus,
@@ -94,11 +113,71 @@ async function loadActive(userId: string, problemId: string) {
 }
 
 /** Starts a session, or returns the one already active for this problem. */
+/** Starts a talk-through session (docs/coach-practice.md, version 2): the
+ *  targets come from the problem's weak spots and the user's weak categories;
+ *  the Coach asks and grades in the chat. */
+async function startTalkPractice(userId: string, problemId: string, agentRunId?: string): Promise<PracticeResult> {
+  const db = getDb();
+  const existing = await loadActive(userId, problemId);
+  if (existing) return { ok: true, session: toPracticeDto(existing) };
+  const all = await db
+    .select({
+      id: schema.weaknesses.id,
+      problemId: schema.weaknesses.problemId,
+      category: schema.weaknesses.category,
+      detail: schema.weaknesses.detail,
+      status: schema.weaknesses.status,
+      hitCount: schema.weaknesses.hitCount,
+      lastSeenAt: schema.weaknesses.lastSeenAt,
+      resolvedAt: schema.weaknesses.resolvedAt,
+    })
+    .from(schema.weaknesses)
+    .where(eq(schema.weaknesses.userId, userId));
+  const targets = selectPracticeTargets({
+    problemWeaknesses: all.filter((w) => w.problemId === problemId && w.status === "active"),
+    weakCategories: computeWeaknessProfile(all)
+      .filter((entry) => entry.active > 0)
+      .map((entry) => entry.category),
+  });
+  const id = nanoid(16);
+  const now = new Date();
+  const inserted = await db
+    .insert(schema.practiceSessions)
+    .values({
+      id,
+      userId,
+      problemId,
+      agentRunId: agentRunId ?? null,
+      mode: "talk",
+      targetsJson: targets,
+      recallJson: [],
+      checkStatus: "skipped",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted.length === 0) {
+    const raced = await loadActive(userId, problemId);
+    return raced ? { ok: true, session: toPracticeDto(raced) } : { ok: false, error: "practice_not_found" };
+  }
+  return { ok: true, session: toPracticeDto(inserted[0]!) };
+}
+
 export async function startPractice(
   userId: string,
   problemId: string,
-  options: { agentRunId?: string } = {},
+  options: { agentRunId?: string; mode?: "talk" | "recall_check" } = {},
 ): Promise<PracticeResult> {
+  if ((options.mode ?? "talk") === "talk") {
+    const [owned] = await getDb()
+      .select({ id: schema.problems.id })
+      .from(schema.problems)
+      .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)))
+      .limit(1);
+    if (!owned) return { ok: false, error: "problem_not_found" };
+    return startTalkPractice(userId, problemId, options.agentRunId);
+  }
   const db = getDb();
   const [problem] = await db
     .select({ id: schema.problems.id, cardsMd: schema.problems.cardsMd, cardStats: schema.problems.cardStats })
@@ -166,9 +245,13 @@ export async function startPractice(
 /** A pending check whose job ended without questions becomes "failed", so
  *  the session can finish with cards only. */
 async function reconcile(session: PracticeSession): Promise<PracticeSession> {
-  if (session.status !== "active") return session;
+  // Reads are polled; they only write when there's something to finish.
+  // A talk-through completes when its last answer is graded, never here.
+  if (session.status !== "active" || session.mode === "talk") return session;
   // The worker marks failed questions without re-checking completion.
   if (session.checkStatus === "failed" || session.checkStatus === "skipped") {
+    const recallDone = session.recallJson.every((card) => session.resultsJson.recall[card.key]);
+    if (!recallDone) return session;
     return getDb().transaction((tx) => completeIfDone(tx, session.id));
   }
   if (session.checkStatus !== "pending") return session;
@@ -305,6 +388,7 @@ async function completeIfDone(tx: Tx, sessionId: string): Promise<PracticeSessio
     .where(eq(schema.practiceSessions.id, sessionId))
     .limit(1);
   if (!session || session.status !== "active") return session!;
+  if (session.mode === "talk") return completeTalkIfDone(tx, session);
   const { recall, check } = session.resultsJson;
   const checkItems = session.checkStatus === "ready" ? (session.checkJson ?? []) : [];
   const recallDone = session.recallJson.every((card) => recall[card.key]);
@@ -367,4 +451,125 @@ export async function getPracticeDebrief(userId: string, sessionId: string) {
     suggestedRating: (session.suggestedRating ?? 3) as 1 | 2 | 3 | 4,
     missed: missed.slice(0, 10),
   };
+}
+
+/* ── Talk-through grading ── */
+
+/** The active talk-through session on a problem, as the Coach sees it. */
+export async function getActiveTalkContext(userId: string, problemId: string) {
+  const session = await loadActive(userId, problemId);
+  if (!session || session.mode !== "talk") return null;
+  const talk = session.resultsJson.talk ?? {};
+  return {
+    practiceSessionId: session.id,
+    targets: (session.targetsJson ?? []).map((target) => ({
+      id: target.id,
+      kind: target.kind,
+      category: target.category ?? null,
+      label: target.label.slice(0, 400),
+      grade: talk[target.id]?.grade ?? null,
+    })),
+  };
+}
+
+/** The Coach's grade for one target. The last grade completes the session. */
+export async function gradeTalkTarget(
+  userId: string,
+  problemId: string,
+  targetId: string,
+  grade: PracticeGrade,
+): Promise<PracticeResult> {
+  return getDb().transaction(async (tx) => {
+    const [session] = await tx
+      .select()
+      .from(schema.practiceSessions)
+      .where(
+        and(
+          eq(schema.practiceSessions.userId, userId),
+          eq(schema.practiceSessions.problemId, problemId),
+          eq(schema.practiceSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!session || session.mode !== "talk") return { ok: false, error: "practice_not_active" } as const;
+    if (!(session.targetsJson ?? []).some((target) => target.id === targetId)) {
+      return { ok: false, error: "target_not_found" } as const;
+    }
+    const talk = session.resultsJson.talk ?? {};
+    if (talk[targetId]) return { ok: false, error: "already_answered" } as const;
+    await tx
+      .update(schema.practiceSessions)
+      .set({
+        resultsJson: { ...session.resultsJson, talk: { ...talk, [targetId]: grade } },
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.practiceSessions.id, session.id));
+    return { ok: true, session: toPracticeDto(await completeIfDone(tx, session.id)) } as const;
+  });
+}
+
+/** Scores a finished talk-through and updates the weak spots it covered:
+ *  correct twice in later sessions resolves one; a miss counts as a repeat. */
+async function completeTalkIfDone(tx: Tx, session: PracticeSession): Promise<PracticeSession> {
+  const targets = session.targetsJson ?? [];
+  const talk = session.resultsJson.talk ?? {};
+  if (targets.length === 0 || !targets.every((target) => talk[target.id])) return session;
+  const { score, rating } = scoreTalk(targets.map((target) => talk[target.id]!.grade));
+  const now = new Date();
+
+  for (const target of targets) {
+    if (target.kind !== "weakness" || !target.weaknessId) continue;
+    const [weakness] = await tx
+      .select()
+      .from(schema.weaknesses)
+      .where(and(eq(schema.weaknesses.id, target.weaknessId), eq(schema.weaknesses.userId, session.userId)))
+      .limit(1);
+    if (!weakness || weakness.status === "dismissed") continue;
+    const result = talk[target.id]!.grade;
+    if (result === "correct") {
+      const streak = weakness.correctStreak + 1;
+      const resolved = streak >= WEAKNESS_RESOLVE_STREAK;
+      await tx
+        .update(schema.weaknesses)
+        .set({
+          correctStreak: streak,
+          ...(resolved ? { status: "resolved" as const, resolvedAt: now } : {}),
+          updatedAt: now,
+        })
+        .where(eq(schema.weaknesses.id, weakness.id));
+    } else if (result === "missed") {
+      await tx
+        .update(schema.weaknesses)
+        .set({
+          status: "active",
+          resolvedAt: null,
+          correctStreak: 0,
+          hitCount: weakness.hitCount + 1,
+          lastSeenAt: now,
+          evidenceJson: [...weakness.evidenceJson, { kind: "practice" as const, ref: session.id }].slice(-10),
+          updatedAt: now,
+        })
+        .where(eq(schema.weaknesses.id, weakness.id));
+    } else {
+      await tx
+        .update(schema.weaknesses)
+        .set({ correctStreak: 0, updatedAt: now })
+        .where(eq(schema.weaknesses.id, weakness.id));
+    }
+  }
+
+  const [completed] = await tx
+    .update(schema.practiceSessions)
+    .set({
+      status: "completed",
+      score,
+      suggestedRating: rating,
+      // The Coach summarizes in the same turn as the last grade.
+      debriefedAt: now,
+      completedAt: now,
+      updatedAt: now,
+    })
+    .where(and(eq(schema.practiceSessions.id, session.id), eq(schema.practiceSessions.status, "active")))
+    .returning();
+  return completed ?? session;
 }
