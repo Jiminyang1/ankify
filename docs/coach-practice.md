@@ -4,7 +4,108 @@ Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web r
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
-## Summary
+## Version 2: weakness-driven practice (proposal, 2026-10-05)
+
+Decided with Jimin after trying stage 2. It replaces the stage 2 practice
+flow; the docs (stage 1), sessions, grading, and rating code stay.
+
+**Idea.** Cards, notes, submissions, and practice results are raw material
+the Coach reads; the user shouldn't be handed them first. The Coach's job is
+diagnosis: for each problem, *where do you go wrong*, and across problems,
+*which kinds of mistakes do you keep making*. Practice then targets those.
+
+### Three layers
+
+1. **Raw material** (behind the book icon): Notes, Cards, submissions with
+   failing tests, past practice answers, Coach conversations.
+2. **Per-problem weaknesses** (Coach-maintained): each is one specific
+   mistake ("`dp` initialized to 0, so `amount = 0` returned 1"), with one
+   **category**, its **evidence** (submission ids, practice answers,
+   conversation turns), and a status (`active`, `resolved`, `dismissed`).
+3. **Weakness profile** (computed, never stored): categories ranked by active
+   weaknesses, with counts, recent trend, and the problems involved.
+
+### Categories: a fixed list, extendable
+
+Built in (keys are stable, names are translated):
+
+| Key | Name |
+| --- | --- |
+| `approach_choice` | Picking the approach (greedy vs DP, BFS vs DFS...) |
+| `state_definition` | Defining the state or subproblem |
+| `transition_order` | Transitions and loop order |
+| `init_sentinel` | Initial values and sentinels |
+| `boundary_index` | Indices and off-by-one |
+| `edge_cases` | Special inputs (empty, single, duplicates, negatives) |
+| `complexity` | Judging time and space complexity |
+| `data_structure` | Choosing or using a data structure |
+| `invariant` | Invariants and why it's correct |
+| `overflow_precision` | Overflow and precision |
+| `implementation_slip` | Implementation slips |
+| `problem_reading` | Misreading the problem |
+
+The Coach may propose a new category when none fits; it's added to the
+user's list only after they approve (a proposal, like doc edits).
+
+### Recording: automatic, with evidence, deletable
+
+- The Coach records a weakness with `record_weakness` (category, one-line
+  detail, evidence). No approval step: the chat shows a small line ("Noted:
+  initial values, Coin Change") with **Remove**.
+- Code rules: evidence must resolve (a submission of this problem, a practice
+  answer, or a run in this conversation); at most 3 new weaknesses per turn;
+  a near-duplicate of an active weakness on the same problem bumps its count
+  and evidence instead of adding a row.
+- A weakness is **resolved** after it's answered correctly in 2 later practice
+  sessions (code rule), or when the user marks it. A resolved one that recurs
+  becomes active again.
+
+### When the Coach analyzes (no surprise AI spend)
+
+- **Analyze my attempts** on a problem: one turn that reads all submissions
+  and notes and records the weaknesses it finds (the first time a problem is
+  studied).
+- During conversation and practice, whenever a mistake is diagnosed.
+- Not on every failed submission automatically: that would spend AI the user
+  didn't ask for.
+
+### Practice: talk it through
+
+1. Code picks 2 to 3 **targets**: this problem's active weaknesses (most
+   recent first), then the user's top active categories that apply to this
+   problem, then (if still short) its approach and complexity.
+2. The Coach asks about each target in its own words, open-ended ("How should
+   `dp` be initialized here, and why?"). The user answers in text.
+3. The Coach grades each answer with a tool (`grade_answer`: target,
+   `correct | partial | missed`, one-line reason). Code turns the grades into
+   a score and the suggested rating (same table as stage 2).
+4. Summary: grades, the suggested rating on the four buttons, and the
+   weakness changes (resolved, recurring, newly found).
+
+Cost: about one model call per answer plus the summary, so 4 to 5 calls a
+session; each is a starter credit for users without their own key.
+
+The stage 2 multiple-choice generator stays available as a hint when the user
+says they don't know ("show me options").
+
+### Where it shows
+
+- **Side panel**: the top of a problem's chat pins *This problem's weak
+  spots* (active weaknesses as category chips with their detail). The Coach
+  cites the profile in conversation ("this is your 6th initial-value slip").
+- **Web**: a *Weak spots* section on Analysis: categories ranked, trend, and
+  the problems behind each, linking to them.
+
+### Data
+
+- `weaknesses`: id, user, problem, category key, detail, evidence (JSON),
+  status, hit count, first and last seen, resolved at.
+- `weakness_categories`: the user's approved custom categories (key, name,
+  description).
+- Practice sessions gain `targets_json` and per-target grades; `recall_json`
+  and `check_json` stay for old sessions.
+
+## Summary (stages 1 and 2)
 
 - Each problem keeps two markdown documents: **Notes** (your understanding)
   and **Cards** (prompts worth recalling). They are the problem's memory.
