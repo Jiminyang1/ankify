@@ -232,7 +232,8 @@ const EXT_I18N = {
       autoHint: "It's added automatically the next time you submit here, pass or fail. Submissions from before you opened this page don't count, so browsing old problems never fills your queue.",
       addNow: "Add now",
       helperUnavailable:
-        "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
+        "ankify can't reach this LeetCode tab yet. Chrome only adds the extension to pages opened or refreshed after it loads, so refresh this tab.",
+      refreshTab: "Refresh LeetCode tab",
       reading: "Reading...",
       captureThis: "Capture this problem",
       saving: "Saving...",
@@ -537,7 +538,8 @@ const EXT_I18N = {
       notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
       autoHint: "下次在这里提交时（不管通过没通过）会自动收录。打开页面之前的提交不算，所以翻看以前做过的题不会塞满复习队列。",
       addNow: "现在收录",
-      helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
+      helperUnavailable: "ankify 还连不上这个 LeetCode 页面。Chrome 只会把扩展加到它加载之后打开或刷新的页面里，刷新一下这个页面就好。",
+      refreshTab: "刷新 LeetCode 页面",
       reading: "读取中...",
       captureThis: "捕获这道题",
       saving: "保存中...",
@@ -1508,6 +1510,15 @@ function TodayTab({
   );
 }
 
+/** Reloads the active LeetCode tab so the extension's content script loads,
+ *  then waits a moment for the page to come up. */
+async function refreshLeetcodeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (tab?.id == null) return;
+  await chrome.tabs.reload(tab.id).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+}
+
 /* ── ProblemTab ── */
 
 function ProblemTab({
@@ -1543,11 +1554,17 @@ function ProblemTab({
   if (state.kind === "loading") return <p className="popup-muted">{t.problem.syncing(state.slug)}</p>;
 
   if (state.kind === "error") {
+    // The tab predates the extension: refreshing it is the fix, so offer it.
+    const needsTabRefresh = state.msg === t.capture.helperUnavailable;
     return (
       <div className="stack">
         <div className="err-banner">{state.msg}</div>
-        <button type="button" onClick={onRefresh} className="btn btn-primary">
-          {t.common.retry}
+        <button
+          type="button"
+          onClick={() => (needsTabRefresh ? void refreshLeetcodeTab().then(() => onRefresh()) : void onRefresh())}
+          className="btn btn-primary"
+        >
+          {needsTabRefresh ? t.capture.refreshTab : t.common.retry}
         </button>
       </div>
     );
