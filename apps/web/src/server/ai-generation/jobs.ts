@@ -171,7 +171,7 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
       id,
       userId,
       problemId: input.problemId,
-      kind: input.action.startsWith("card_") ? "card" : "quiz",
+      kind: input.action.startsWith("card_") ? "card" : input.action === "practice_check" ? "practice" : "quiz",
       action: input.action,
       status: "queued",
       idempotencyKey: input.requestId,
@@ -215,6 +215,25 @@ export async function createAiJob(userId: string, input: AiJobCreateRequestInput
 
 async function validateJobPrecondition(userId: string, input: AiJobCreateRequestInput) {
   const db = getDb();
+  if (input.action === "practice_check") {
+    const [session] = await db
+      .select({
+        problemId: schema.practiceSessions.problemId,
+        status: schema.practiceSessions.status,
+        checkStatus: schema.practiceSessions.checkStatus,
+        checkJobId: schema.practiceSessions.checkJobId,
+      })
+      .from(schema.practiceSessions)
+      .where(and(eq(schema.practiceSessions.id, input.practiceSessionId), eq(schema.practiceSessions.userId, userId)))
+      .limit(1);
+    if (!session || session.problemId !== input.problemId || session.status !== "active") {
+      throw new AiJobRequestError("practice_session_not_found", "Practice session not found.", 404);
+    }
+    if (session.checkStatus !== "pending" || session.checkJobId) {
+      throw new AiJobRequestError("practice_check_exists", "This session already has its questions.", 409);
+    }
+    return { expectedQuizSessionId: null, existingQuizSessionId: null };
+  }
   if (input.action === "card_generate") {
     const [{ count } = { count: 0 }] = await db
       .select({ count: sql<number>`count(*)` })
@@ -258,6 +277,7 @@ async function validateJobPrecondition(userId: string, input: AiJobCreateRequest
 }
 
 function dedupKeyFor(input: AiJobCreateRequestInput) {
+  if (input.action === "practice_check") return `practice:${input.practiceSessionId}`;
   if (input.action === "card_followup") return `card-followup:${input.cardId}`;
   if (input.action === "card_generate") return `card-generate:${input.problemId}`;
   return `quiz:${input.problemId}`;

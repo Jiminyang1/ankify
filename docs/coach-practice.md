@@ -1,6 +1,6 @@
 # Coach-led practice (design)
 
-Status: stage 1 implemented (2026-10-05); stages 2 to 4 not yet. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web review and cleanup) and stage 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 

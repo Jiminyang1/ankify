@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createAiJobClient } from "@ankify/api-client";
-import { formatQuizMarkdown, type FsrsRating } from "@ankify/core";
+import type { FsrsRating } from "@ankify/core";
 import type {
-  AiJobCreateRequestInput,
   AuthUserDto as AuthAccount,
   CaptureProblemInput,
   CaptureResultDto as CaptureResult,
@@ -10,11 +8,7 @@ import type {
   FsrsPreviewsDto as Previews,
   ProblemDto as ApiProblem,
   ProblemLookupPayloadDto,
-  PublicAiJobDto,
   QueueProblemDto as QueueProblem,
-  QuizAnswer,
-  QuizItem,
-  QuizSessionDto as QuizSession,
   ReviewQueuePayloadDto as QueueResponse,
 } from "@ankify/contracts";
 import type { BackgroundRequest, ContentResponse, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
@@ -269,6 +263,28 @@ const EXT_I18N = {
       issueTooLong: (limit: number) => `Cards are limited to ${limit} characters.`,
     },
     coach: {
+      practice: {
+        title: "Practice",
+        progress: (done: number, total: number) => `${done} of ${total}`,
+        showAnswer: "Show answer",
+        gotIt: "Got it",
+        missed: "Missed it",
+        preparing: "Preparing your questions",
+        noQuestions: (reason: string) => `No AI questions this time: ${reason}`,
+        next: "Next",
+        correct: "Correct",
+        incorrect: "Not quite. The answer:",
+        score: (points: number, total: number) => `${points} of ${total} right`,
+        suggested: (rating: string) => `Suggested rating: ${rating}. You decide.`,
+        rate: "Rate this review",
+        rated: (rating: string) => `Rated ${rating}.`,
+        ratings: ["Again", "Hard", "Good", "Easy"] as [string, string, string, string],
+        loadFailed: "Couldn't load this practice session.",
+        actionFailed: "That didn't save. Try again.",
+      },
+      startPractice: "Start practice",
+      dueForReview: "Due for review",
+      practiceFinished: (points: number, total: number) => `Practice finished: ${points} of ${total}. Go over what I missed.`,
       title: "Study Coach",
       showChat: "Show chat",
       hideChat: "Hide chat",
@@ -530,6 +546,28 @@ const EXT_I18N = {
       issueTooLong: (limit: number) => `卡片文档最多 ${limit} 个字符。`,
     },
     coach: {
+      practice: {
+        title: "练习",
+        progress: (done: number, total: number) => `${done} / ${total}`,
+        showAnswer: "显示答案",
+        gotIt: "记得",
+        missed: "没想起来",
+        preparing: "正在准备题目",
+        noQuestions: (reason: string) => `这次没有 AI 题目：${reason}`,
+        next: "下一题",
+        correct: "答对了",
+        incorrect: "不对。正确答案：",
+        score: (points: number, total: number) => `答对 ${points} / ${total}`,
+        suggested: (rating: string) => `建议评分：${rating}，由你决定。`,
+        rate: "给这次复习评分",
+        rated: (rating: string) => `已评分：${rating}。`,
+        ratings: ["重来", "困难", "良好", "简单"] as [string, string, string, string],
+        loadFailed: "练习加载失败。",
+        actionFailed: "没保存上，请重试。",
+      },
+      startPractice: "开始练习",
+      dueForReview: "该复习了",
+      practiceFinished: (points: number, total: number) => `练习完成：${points} / ${total}。帮我过一下错的地方。`,
       title: "学习教练",
       showChat: "展开对话",
       hideChat: "收起对话",
@@ -604,24 +642,6 @@ function getExtText(settings: ExtSettings) {
   return EXT_I18N[settings.language === "zh" ? "zh" : "en"];
 }
 
-function movePopupTabFocus(event: React.KeyboardEvent<HTMLElement>) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const tabs = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-  );
-  const currentIndex = tabs.indexOf(event.target as HTMLButtonElement);
-  if (currentIndex < 0 || tabs.length === 0) return;
-  event.preventDefault();
-  const nextIndex =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? tabs.length - 1
-        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-  tabs[nextIndex]?.focus();
-  tabs[nextIndex]?.click();
-}
-
 /** Chevron for glyph-only controls. A drawn icon scales with the button and
  *  keeps its weight consistent, which a text arrow character does not. */
 function ChevronIcon({ direction }: { direction: "left" | "right" }) {
@@ -682,14 +702,6 @@ function fsrsLabel(state: ApiProblem["fsrsState"], t: ReturnType<typeof getExtTe
   return t.fsrs[state];
 }
 
-function quizScopeLabel(scope: QuizItem["scope"], t: ReturnType<typeof getExtText>) {
-  return t.quiz.scopes[scope];
-}
-
-function quizSourceLabel(source: QuizItem["source"], t: ReturnType<typeof getExtText>) {
-  return t.quiz.sources[source];
-}
-
 const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" }[] = [
   { value: "system", key: "system" },
   { value: "light", key: "light" },
@@ -706,23 +718,6 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 function authHeaders(settings: ExtSettings): HeadersInit {
   void settings;
   return {};
-}
-
-function aiJobs(settings: ExtSettings) {
-  return createAiJobClient((path, init) => apiFetch(settings, path, init));
-}
-
-function startAiJob(settings: ExtSettings, input: AiJobCreateRequestInput) {
-  return aiJobs(settings).start(input);
-}
-
-function getActiveAiJobs(settings: ExtSettings, problemId: string, kind: "card" | "quiz") {
-  return aiJobs(settings).listActive(problemId, kind);
-}
-
-async function waitForAiJob(settings: ExtSettings, initial: PublicAiJobDto) {
-  const client = aiJobs(settings);
-  return client.requireSucceeded(await client.wait(initial));
 }
 
 async function loadSessionAccount(apiBaseUrl: string): Promise<AuthAccount | null> {
@@ -794,24 +789,6 @@ async function saveCapturedProblem(settings: ExtSettings, problem: CaptureProble
     /* background unavailable — the next content-script check reconciles */
   }
   return (await res.json()) as CaptureResult;
-}
-
-function useElapsedSeconds(active: boolean, startedAt: number | null) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!active || !startedAt) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active, startedAt]);
-  if (!active || !startedAt) return 0;
-  return Math.max(0, Math.floor((now - startedAt) / 1000));
-}
-
-function formatElapsedSeconds(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function apiErrorMessage(json: { error?: string; message?: string } | null, fallback: string) {
@@ -1193,13 +1170,19 @@ export function Popup() {
           settings={settings}
           saved={
             captured
-              ? { slug: captured.problem.leetcodeSlug, problemId: captured.problem.id, title: captured.problem.title }
+              ? {
+                  slug: captured.problem.leetcodeSlug,
+                  problemId: captured.problem.id,
+                  title: captured.problem.title,
+                  due: isDue(captured.problem.fsrsDue),
+                }
               : null
           }
           copy={text.coach}
           expanded={coachExpanded}
           onExpandedChange={setCoachExpanded}
           onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
+          onProblemChanged={() => void detect({ force: true })}
         />
       )}
     </div>
@@ -1530,7 +1513,7 @@ function ProblemTab({
   );
 }
 
-/* ── ProblemWorkspace: Quiz / Docs, plus rating when due ── */
+/* ── ProblemWorkspace: the problem's docs, plus rating when due ── */
 
 function ProblemWorkspace({
   problem,
@@ -1547,64 +1530,15 @@ function ProblemWorkspace({
 }) {
   const t = getExtText(settings);
   const due = isDue(problem.fsrsDue);
-  // A due problem opens on the quiz; otherwise on its docs.
-  const [view, setView] = useState<"quiz" | "docs">(due ? "quiz" : "docs");
   const refresh = () => void onRefresh();
 
+  // Practice happens in the Coach chat; this view holds the problem's docs
+  // and the rating buttons for a review done another way (like re-solving).
   return (
     <div className="review-workspace">
       <div className="content-card">
-        <div
-          className="content-card-tabs"
-          role="tablist"
-          aria-label={t.review.workspace}
-          onKeyDown={movePopupTabFocus}
-        >
-          {(["quiz", "docs"] as const).map((v) => (
-            <button
-              key={v}
-              id={`extension-review-tab-${v}`}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              aria-controls={`extension-review-panel-${v}`}
-              tabIndex={view === v ? 0 : -1}
-              className="content-card-tab"
-              data-active={view === v}
-              onClick={() => setView(v)}
-            >
-              {v === "quiz" ? t.review.quiz : t.docs.title}
-            </button>
-          ))}
-        </div>
-
-        <div className="review-stage-body">
-          {view === "quiz" && (
-            <div
-              id="extension-review-panel-quiz"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-quiz"
-              className="review-stage-pane tab-pane"
-              key="quiz"
-            >
-              <QuizPanel problem={problem} settings={settings} onRefresh={refresh} />
-            </div>
-          )}
-
-          {view === "docs" && (
-            <div
-              id="extension-review-panel-docs"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-docs"
-              className="review-stage-pane tab-pane"
-              key="docs"
-            >
-              <DocsPanel settings={settings} problemId={problem.id} revision={docsRevision} copy={t.docs} />
-            </div>
-          )}
-        </div>
+        <DocsPanel settings={settings} problemId={problem.id} revision={docsRevision} copy={t.docs} />
       </div>
-
       {due && (
         <div className="rating-card">
           <QuickRate problemId={problem.id} previews={previews} settings={settings} onRated={refresh} />
@@ -1612,605 +1546,6 @@ function ProblemWorkspace({
       )}
     </div>
   );
-}
-
-/* ── QuizPanel ── */
-
-function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; settings: ExtSettings; onRefresh: () => void }) {
-  const t = getExtText(settings);
-  const [session, setSession] = useState<QuizSession | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
-  const [submittingItem, setSubmittingItem] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
-  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
-  const [savingItemId, setSavingItemId] = useState<string | null>(null);
-  const [savingMissed, setSavingMissed] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmingReset, setConfirmingReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const generationElapsedSeconds = useElapsedSeconds(generating, generationStartedAt);
-
-  const loadSession = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setLoading(true);
-    setError(null);
-    setFeedback(null);
-    setSavedItemIds(new Set());
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
-        headers: authHeaders(settings),
-      });
-      const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
-      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      const nextSession = json?.session ?? null;
-      const pendingFeedback = getStoredQuizFeedback(problem.id, nextSession);
-      setSession(nextSession);
-      setFeedback(pendingFeedback);
-      setCurrentIndex(pendingFeedback ? getQuizItemIndex(nextSession, pendingFeedback.item.id) : getFirstUnansweredQuizIndex(nextSession));
-      setSavingMissed(false);
-      setShowResults(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedLoad);
-    } finally {
-      if (!opts?.silent) setLoading(false);
-    }
-  }, [problem.id, settings]);
-
-  useEffect(() => {
-    void (async () => {
-      let generationError: string | null = null;
-      try {
-        const [job] = await getActiveAiJobs(settings, problem.id, "quiz");
-        if (job) {
-          setLoading(false);
-          setGenerating(true);
-          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
-          await waitForAiJob(settings, job);
-        }
-      } catch (e) {
-        generationError = e instanceof Error ? e.message : t.quiz.failedGenerate;
-      } finally {
-        setGenerating(false);
-        setGenerationStartedAt(null);
-        await loadSession();
-        if (generationError) setError(generationError);
-      }
-    })();
-  }, [loadSession, problem.id, settings]);
-
-  async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
-    setGenerating(true);
-    setGenerationStartedAt(Date.now());
-    setError(null);
-    setFeedback(null);
-    setShowResults(false);
-    try {
-      const job = await startAiJob(settings, {
-        action: action === "generate"
-          ? "quiz_generate"
-          : action === "regenerate"
-            ? "quiz_regenerate"
-            : "quiz_next_batch",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        expectedQuizSessionId: session?.id ?? null,
-      });
-      await waitForAiJob(settings, job);
-      if (session) clearStoredQuizFeedback(problem.id, session.id);
-      await loadSession();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedGenerate);
-    } finally {
-      setGenerating(false);
-      setGenerationStartedAt(null);
-    }
-  }
-
-  async function resetHistory() {
-    setResetting(true);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
-        method: "DELETE",
-        headers: authHeaders(settings),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
-      }
-      if (session) clearStoredQuizFeedback(problem.id, session.id);
-      setSession(null);
-      setSavedItemIds(new Set());
-      setFeedback(null);
-      setCurrentIndex(0);
-      setShowResults(false);
-      setConfirmingReset(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedReset);
-    } finally {
-      setResetting(false);
-    }
-  }
-
-  const resetConfirmation = confirmingReset ? (
-    <div className="popup-confirm" role="group" aria-label={t.quiz.confirmReset}>
-      <p role="alert">{t.quiz.resetConfirm}</p>
-      <div className="popup-confirm-actions">
-        <button
-          type="button"
-          className="btn btn-secondary btn-inline"
-          disabled={resetting}
-          onClick={() => setConfirmingReset(false)}
-        >
-          {t.common.cancel}
-        </button>
-        <button
-          type="button"
-          className="btn-xs btn-xs-danger"
-          disabled={resetting}
-          onClick={() => void resetHistory()}
-        >
-          {resetting ? t.quiz.resetting : t.quiz.confirmReset}
-        </button>
-      </div>
-    </div>
-  ) : null;
-
-  async function submitAnswer(item: QuizItem, selectedIndex: number) {
-    if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
-    setSubmittingItem(true);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}`, {
-        method: "PATCH",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ itemId: item.id, selectedIndex }),
-      });
-      if (res.status === 409) {
-        setError(t.quiz.changed);
-        await loadSession({ silent: true });
-        return;
-      }
-      const json = (await res.json().catch(() => null)) as {
-        session?: QuizSession;
-        item?: QuizItem;
-        answer?: QuizAnswer;
-        error?: string;
-      } | null;
-      if (!res.ok || !json?.session || !json.item || !json.answer) {
-        throw new Error(json?.error ?? `HTTP ${res.status}`);
-      }
-      setSession(json.session);
-      storeQuizFeedback(problem.id, json.session.id, json.item.id);
-      setFeedback({ item: json.item, answer: json.answer });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedSubmit);
-    } finally {
-      setSubmittingItem(false);
-    }
-  }
-
-  async function saveAsCard(item: QuizItem) {
-    if (!session) return;
-    setSavingItemId(item.id);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ itemId: item.id }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      setSavedItemIds((prev) => new Set(prev).add(item.id));
-      void onRefresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedSave);
-    } finally {
-      setSavingItemId(null);
-    }
-  }
-
-  async function saveMissedAsCards() {
-    if (!session || savingMissed) return;
-    const missedItems = getMissedQuizItems(session).filter((item) => !savedItemIds.has(item.id));
-    if (missedItems.length === 0) return;
-    setSavingMissed(true);
-    try {
-      for (const item of missedItems) {
-        await saveAsCard(item);
-      }
-    } finally {
-      setSavingMissed(false);
-    }
-  }
-
-  function goNext() {
-    if (!session) return;
-    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
-    setFeedback(null);
-    setCurrentIndex(getNextUnansweredQuizIndex(session, currentIndex));
-  }
-
-  function goToQuestion(index: number) {
-    if (!session) return;
-    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
-    setFeedback(null);
-    setCurrentIndex(clampNumber(index, 0, session.itemsJson.length - 1));
-  }
-
-  if (loading) {
-    return <div className="quiz-empty"><p className="popup-muted">{t.quiz.loading}</p></div>;
-  }
-
-  if (generating) {
-    return (
-      <div className="quiz-empty">
-        <div className="quiz-pending-bar"><span /></div>
-        <div className="quiz-empty-title">{t.quiz.generating}</div>
-        <p className="popup-muted">{t.quiz.switchHint}</p>
-        <div className="quiz-pending-timer">{t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds))}</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="quiz-empty">
-        <div className="quiz-empty-kicker">{t.review.quiz}</div>
-        <div className="quiz-empty-title">{t.quiz.noQuiz}</div>
-        <p className="popup-muted">{t.quiz.noQuizBody}</p>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={generating}
-          onClick={() => void generateQuiz("generate")}
-        >
-          {generating ? t.quiz.generating : t.quiz.generate}
-        </button>
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    );
-  }
-
-  if (session.status === "completed" && !feedback) {
-    const suggested = getSuggestedRating(session.score ?? 0, t);
-    const missedItems = getMissedQuizItems(session);
-    const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
-    const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
-    const scopeBreakdown = getQuizBreakdown(session, "scope", t);
-    const sourceBreakdown = getQuizBreakdown(session, "source", t);
-    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map((scope) => quizScopeLabel(scope, t));
-    return (
-      <div className="quiz-panel">
-        <div className="quiz-results scroll-area">
-          <div className="quiz-overview-card">
-            <div className="quiz-overview-main">
-              <div className="quiz-score-card">
-                <div className="quiz-score-value">
-                  {session.score ?? 0}<span>/{session.itemsJson.length}</span>
-                </div>
-                <div className="quiz-score-label">{accuracy}% · {suggested.label}</div>
-              </div>
-              <div className="quiz-overview-copy">
-                <div className="quiz-overview-title">{t.quiz.batchComplete}</div>
-                <div className="quiz-overview-meta">
-                  {missedItems.length === 0 ? t.quiz.noMisses : t.quiz.missed(missedItems.length)} · {t.quiz.coverageBalanced}
-                </div>
-              </div>
-              <div className="quiz-overview-actions">
-                <button
-                  type="button"
-                  className="quiz-link-btn quiz-link-muted"
-                  disabled={generating || resetting}
-                  onClick={() => setConfirmingReset(true)}
-                  title={t.quiz.resetConfirm}
-                >
-                  {t.quiz.reset}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-inline quiz-next-batch"
-                  disabled={generating}
-                  onClick={() => void generateQuiz("nextBatch")}
-                >
-                  {generating ? t.quiz.generating : t.quiz.newBatch}
-                </button>
-              </div>
-            </div>
-            {resetConfirmation}
-
-            <div className="quiz-overview-rows">
-              <QuizBreakdown label={t.quiz.scope} items={scopeBreakdown} />
-              <QuizBreakdown label={t.quiz.source} items={sourceBreakdown} />
-            </div>
-
-            <div className="quiz-missed-row">
-              <div>
-                <span className="quiz-missed-label">{t.quiz.missedLabel}</span>
-                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : t.quiz.none}</span>
-              </div>
-              <button
-                type="button"
-                className="quiz-missed-save"
-                disabled={unsavedMissedCount === 0 || savingMissed}
-                onClick={() => void saveMissedAsCards()}
-              >
-                {savingMissed ? t.quiz.creating : unsavedMissedCount === 0 ? t.quiz.cardsSaved : t.quiz.createCards}
-                {unsavedMissedCount > 0 && !savingMissed && <span>{unsavedMissedCount}</span>}
-              </button>
-            </div>
-          </div>
-
-          <div className="quiz-review-toggle-wrap">
-            <button type="button" className="quiz-review-toggle" onClick={() => setShowResults((value) => !value)}>
-              <span>{showResults ? t.quiz.hideQuiz : t.quiz.reviewQuiz}</span>
-              <span>{showResults ? t.quiz.hideAnswers : t.quiz.expandQuestions}</span>
-            </button>
-          </div>
-          {showResults && session.itemsJson.map((item, index) => {
-            const answer = session.answersJson.find((a) => a.itemId === item.id) ?? null;
-            const correctChoice = item.choices[item.answerIndex] ?? "";
-            const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
-            const saved = savedItemIds.has(item.id);
-            const saving = savingItemId === item.id;
-            return (
-              <div key={item.id} className="quiz-result-item">
-                <div className="quiz-result-meta">
-                  <span>{t.quiz.question(index + 1, session.itemsJson.length)}</span>
-                  <span className={answer?.correct ? "quiz-ok" : "quiz-bad"}>
-                    {answer?.correct ? t.quiz.correct : t.quiz.incorrect}
-                  </span>
-                </div>
-                <div className="quiz-result-tags">
-                  <span>{quizSourceLabel(item.source, t)}</span>
-                  <span>{quizScopeLabel(item.scope, t)}</span>
-                </div>
-                <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
-                {selectedChoice && (
-                  <div className="quiz-result-line">
-                    {t.quiz.yourAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
-                  </div>
-                )}
-                <div className="quiz-result-line">
-                  {t.quiz.correctAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
-                </div>
-                <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
-                <button
-                  type="button"
-                  className={`quiz-result-save${saved ? " is-saved" : ""}`}
-                  disabled={saved || saving}
-                  onClick={() => void saveAsCard(item)}
-                >
-                  {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    );
-  }
-
-  const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
-  if (!item) {
-    return (
-      <div className="quiz-empty">
-        <p className="popup-muted">{t.quiz.noQuestions}</p>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={generating}
-          onClick={() => void generateQuiz("regenerate")}
-        >
-          {generating ? t.quiz.regenerating : t.quiz.regenerate}
-        </button>
-      </div>
-    );
-  }
-
-  const answeredCount = session.answersJson.length;
-  const activeAnswer = session.answersJson.find((answer) => answer.itemId === item.id) ?? null;
-  const activeFeedback = feedback?.item.id === item.id ? feedback : activeAnswer ? { item, answer: activeAnswer } : null;
-  const canGoPrev = currentIndex > 0;
-  const canGoNext = currentIndex < session.itemsJson.length - 1;
-  const progressPct = Math.max(8, (answeredCount / session.itemsJson.length) * 100);
-
-  return (
-    <div className="quiz-panel">
-      <div className="quiz-panel-head">
-        <div>
-          <div className="quiz-head-title">{t.quiz.question(currentIndex + 1, session.itemsJson.length)}</div>
-          <div className="quiz-head-meta">{t.quiz.answered(answeredCount, session.itemsJson.length)}</div>
-          <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
-        </div>
-        <div className="quiz-nav-row">
-          <button
-            type="button"
-            className="quiz-link-btn"
-            disabled={!canGoPrev}
-            onClick={() => goToQuestion(currentIndex - 1)}
-          >
-            {t.quiz.prev}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn"
-            disabled={!canGoNext}
-            onClick={() => goToQuestion(currentIndex + 1)}
-          >
-            {t.quiz.next}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn quiz-link-muted"
-            disabled={generating}
-            onClick={() => void generateQuiz("regenerate")}
-          >
-            {t.quiz.regenerate}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn quiz-link-muted"
-            disabled={generating || resetting}
-            onClick={() => setConfirmingReset(true)}
-            title={t.quiz.resetConfirm}
-          >
-            {t.quiz.reset}
-          </button>
-        </div>
-      </div>
-      {resetConfirmation}
-      <div className="quiz-active scroll-area">
-        <div className="quiz-question">
-          <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
-        </div>
-        <div className="quiz-choices">
-          {item.choices.map((choice, index) => {
-            const wasSelected = activeFeedback?.answer.selectedIndex === index;
-            const isCorrect = activeFeedback && item.answerIndex === index;
-            return (
-              <button
-                key={index}
-                type="button"
-                disabled={!!activeFeedback || submittingItem}
-                onClick={() => void submitAnswer(item, index)}
-                className={`quiz-choice${isCorrect ? " is-correct" : ""}${activeFeedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
-              >
-                <span className="quiz-choice-letter">{String.fromCharCode(65 + index)}</span>
-                <PopupMarkdown>{formatQuizMarkdown(choice)}</PopupMarkdown>
-              </button>
-            );
-          })}
-        </div>
-        {activeFeedback ? (
-          <div className={`quiz-feedback${activeFeedback.answer.correct ? " is-correct" : " is-wrong"}`}>
-            <div className="quiz-feedback-head">
-              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? t.quiz.correct : t.quiz.wrong}</div>
-              <span>{quizSourceLabel(item.source, t)} · {quizScopeLabel(item.scope, t)}</span>
-            </div>
-            <div className="quiz-feedback-body">
-              <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
-            </div>
-            <div className="quiz-actions">
-              <button
-                type="button"
-                className="quiz-save-btn"
-                disabled={savedItemIds.has(item.id) || savingItemId === item.id}
-                onClick={() => void saveAsCard(item)}
-              >
-                {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
-              </button>
-              <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
-                {session.status === "completed" ? t.quiz.results : t.quiz.next}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="quiz-hint-row">
-            <p className="quiz-hint">{submittingItem ? t.quiz.checking : t.quiz.answerHint}</p>
-            {answeredCount < session.itemsJson.length && !canGoNext && (
-              <button type="button" className="quiz-link-btn" onClick={() => goToQuestion(getFirstUnansweredQuizIndex(session))}>
-                {t.quiz.firstUnanswered}
-              </button>
-            )}
-          </div>
-        )}
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    </div>
-  );
-}
-
-function getFirstUnansweredQuizIndex(session: QuizSession | null) {
-  if (!session) return 0;
-  const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
-  return idx === -1 ? 0 : idx;
-}
-
-function getNextUnansweredQuizIndex(session: QuizSession, currentIndex: number) {
-  const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
-  if (afterCurrent !== -1) return afterCurrent;
-  return getFirstUnansweredQuizIndex(session);
-}
-
-function isQuizItemAnswered(session: QuizSession, itemId: string) {
-  return session.answersJson.some((answer) => answer.itemId === itemId);
-}
-
-function getQuizItemIndex(session: QuizSession | null, itemId: string) {
-  if (!session) return 0;
-  const idx = session.itemsJson.findIndex((item) => item.id === itemId);
-  return idx === -1 ? getFirstUnansweredQuizIndex(session) : idx;
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function quizFeedbackStorageKey(problemId: string, sessionId: string) {
-  return `ankify.quiz.pendingFeedback.${problemId}.${sessionId}`;
-}
-
-function storeQuizFeedback(problemId: string, sessionId: string, itemId: string) {
-  window.sessionStorage.setItem(quizFeedbackStorageKey(problemId, sessionId), itemId);
-}
-
-function clearStoredQuizFeedback(problemId: string, sessionId: string) {
-  window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
-}
-
-function getStoredQuizFeedback(problemId: string, session: QuizSession | null) {
-  if (!session) return null;
-  const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
-  if (!itemId) return null;
-  const item = session.itemsJson.find((quizItem) => quizItem.id === itemId);
-  const answer = session.answersJson.find((quizAnswer) => quizAnswer.itemId === itemId);
-  if (!item || !answer) {
-    clearStoredQuizFeedback(problemId, session.id);
-    return null;
-  }
-  return { item, answer };
-}
-
-function QuizBreakdown({ label, items }: { label: string; items: { label: string; count: number }[] }) {
-  return (
-    <div className="quiz-breakdown-row">
-      <span className="quiz-breakdown-label">{label}</span>
-      <div className="quiz-breakdown">
-        {items.map((item) => (
-          <span key={item.label}>{item.label} <b>{item.count}</b></span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function getMissedQuizItems(session: QuizSession) {
-  return session.itemsJson.filter((item) => {
-    const answer = session.answersJson.find((a) => a.itemId === item.id);
-    return answer && !answer.correct;
-  });
-}
-
-function getQuizBreakdown(session: QuizSession, field: "scope" | "source", t: ReturnType<typeof getExtText>) {
-  const counts = new Map<string, number>();
-  session.itemsJson.forEach((item) => {
-    const key = field === "scope" ? quizScopeLabel(item.scope, t) : quizSourceLabel(item.source, t);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  });
-  return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
-}
-
-function getSuggestedRating(score: number, t: ReturnType<typeof getExtText>): { rating: FsrsRating; label: string } {
-  if (score <= 1) return { rating: 1, label: t.rating.again };
-  if (score === 2) return { rating: 2, label: t.rating.hard };
-  if (score <= 4) return { rating: 3, label: t.rating.good };
-  return { rating: 4, label: t.rating.easy };
 }
 
 /* ── QuickRate ── */

@@ -10,6 +10,7 @@ import {
   failAgentRun,
 } from "@/server/agent/store";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { getPracticeDebrief, markPracticeDebriefed } from "@/server/practice";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -25,6 +26,18 @@ export async function POST(req: Request) {
   const parsed = agentTurnRequestSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
+  }
+
+  // Practice results come from the server, never from the client.
+  const trigger = parsed.data.trigger;
+  let context = { ...parsed.data.context, practice: undefined } as typeof parsed.data.context;
+  if (trigger) {
+    const debrief = await getPracticeDebrief(user.id, trigger.practiceSessionId);
+    if (!debrief) {
+      return NextResponse.json({ error: "practice_not_completed", message: "Finish the practice session first." }, { status: 409 });
+    }
+    const { problemId, ...practice } = debrief;
+    context = { ...context, problemId, practice };
   }
 
   const limit = await checkRateLimit(user.id, "agent", RATE_LIMITS.agent);
@@ -59,9 +72,13 @@ export async function POST(req: Request) {
   try {
     started = await beginAgentTurn({
       userId: user.id,
-      ...parsed.data,
+      sessionId: parsed.data.sessionId,
+      requestId: parsed.data.requestId,
+      message: parsed.data.message,
+      context,
       settings: activeModel.settings,
     });
+    if (trigger) await markPracticeDebriefed(user.id, trigger.practiceSessionId);
   } catch (error) {
     if (error instanceof AgentRequestError) {
       return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
@@ -92,7 +109,7 @@ export async function POST(req: Request) {
         try {
           const completed = await runStudyCoach({
             userId: user.id,
-            problemId: parsed.data.context.problemId,
+            problemId: context.problemId,
             sessionId: started.session.id,
             runId: started.run.id,
             model: activeModel.model,

@@ -5,3 +5,4 @@ export * from "./ai-catalog";
 export * from "./leetcode-tags";
 export * from "./study-plans";
 export * from "./problem-docs";
+export * from "./practice";

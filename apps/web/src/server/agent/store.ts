@@ -533,12 +533,13 @@ export async function createAgentStep(args: {
   userId: string;
   runId: string;
   sequence: number;
-  kind: "read" | "navigation" | "proposal";
+  kind: "read" | "navigation" | "proposal" | "practice";
   toolName: string;
   status: AgentStep["status"];
   summary: string;
   navigation?: AgentNavigation;
   proposal?: AgentProposal;
+  practiceSessionId?: string;
 }) {
   const db = getDb();
   const [step] = await db
@@ -554,6 +555,7 @@ export async function createAgentStep(args: {
       summary: args.summary,
       navigationJson: args.navigation,
       proposalJson: args.proposal,
+      practiceSessionId: args.practiceSessionId,
     })
     .returning();
   return toAgentStepDto(step!);
@@ -748,6 +750,7 @@ export function toAgentStepDto(step: AgentStep): AgentStepDto {
     navigation: step.navigationJson,
     proposal: step.proposalJson,
     aiJobId: step.aiJobId,
+    practiceSessionId: step.practiceSessionId,
     createdAt: step.createdAt.toISOString(),
     updatedAt: step.updatedAt.toISOString(),
   };

@@ -40,6 +40,7 @@ export const aiJobActionEnum = z.enum([
   "quiz_generate",
   "quiz_regenerate",
   "quiz_next_batch",
+  "practice_check",
 ]);
 
 export const agentPageEnum = z.enum([
@@ -87,6 +88,16 @@ export const agentPageContextSchema = z
     activePanel: agentPanelEnum,
     problemId: z.string().min(1).max(64).nullable(),
     leetcode: agentLeetcodeContextSchema.optional(),
+    /** Set by the server from a practice_completed trigger, never by clients. */
+    practice: z
+      .object({
+        practiceSessionId: z.string().min(1).max(64),
+        score: z.number().min(0).max(1),
+        suggestedRating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        missed: z.array(z.string().max(4_000)).max(10),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type AgentPageContext = z.infer<typeof agentPageContextSchema>;
@@ -97,6 +108,12 @@ export const agentTurnRequestSchema = z
     requestId: z.string().uuid(),
     message: z.string().trim().min(1).max(12_000),
     context: agentPageContextSchema,
+    /** Instead of typed text: a practice session just finished; the server
+     *  loads its results into the turn for the debrief. */
+    trigger: z
+      .object({ type: z.literal("practice_completed"), practiceSessionId: z.string().min(1).max(64) })
+      .strict()
+      .optional(),
   })
   .strict();
 export type AgentTurnRequestInput = z.infer<typeof agentTurnRequestSchema>;
@@ -301,6 +318,52 @@ export const userCardManualCreateSchema = z.object({
 
 export type UserCardManualCreateInput = z.infer<typeof userCardManualCreateSchema>;
 
+/* ── Practice (docs/coach-practice.md) ── */
+
+export const practiceSourceKindEnum = z.enum(["statement", "notes", "card", "submission"]);
+
+/** A generated check question as stored: the server keeps answerIndex and
+ *  only reveals it after the user answers. */
+export const practiceCheckItemSchema = z.object({
+  id: z.string().min(1).max(32),
+  question: z.string().min(1).max(4_000),
+  choices: z.array(z.string().min(1).max(2_000)).length(4),
+  answerIndex: z.number().int().min(0).max(3),
+  explanation: z.string().min(1).max(4_000),
+  scope: quizItemScopeEnum,
+  source: z.object({ kind: practiceSourceKindEnum, ref: z.string().max(200).nullable() }),
+});
+export type PracticeCheckItem = z.infer<typeof practiceCheckItemSchema>;
+
+/** What the model returns for check questions. The correct option is named
+ *  by text (mapped to an index server-side), and every item cites a source. */
+export const practiceCheckDraftSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        question: z.string().min(1).max(4_000),
+        choices: z.array(z.string().min(1).max(2_000)).length(4),
+        correctAnswer: z.string().min(1).max(2_000),
+        explanation: z.string().min(1).max(4_000),
+        scope: quizItemScopeEnum,
+        sourceKind: practiceSourceKindEnum,
+        sourceRef: z
+          .string()
+          .max(200)
+          .describe("Notes section heading, card key, or submission id; empty for the statement"),
+      }),
+    )
+    .length(3),
+});
+export type PracticeCheckDraft = z.infer<typeof practiceCheckDraftSchema>;
+
+export const practiceRecallSchema = z
+  .object({ key: z.string().regex(/^[0-9a-f]{16}$/), result: z.enum(["got_it", "missed"]) })
+  .strict();
+export const practiceCheckAnswerSchema = z
+  .object({ itemId: z.string().min(1).max(32), choice: z.number().int().min(0).max(3) })
+  .strict();
+
 /** Durable async generation command shared by the web app and extension. */
 export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
   z.object({
@@ -323,6 +386,12 @@ export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
     problemId: z.string().min(1).max(64),
     requestId: z.string().uuid(),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
+  }),
+  z.object({
+    action: z.literal("practice_check"),
+    problemId: z.string().min(1).max(64),
+    requestId: z.string().uuid(),
+    practiceSessionId: z.string().min(1).max(64),
   }),
 ]);
 export type AiJobCreateRequestInput = z.infer<typeof aiJobCreateRequestSchema>;

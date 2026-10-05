@@ -4,6 +4,7 @@ import type {
   AgentNavigation,
   AgentPageContext,
   AgentProposal,
+  PracticeCheckItem,
   QuizAnswer,
   QuizItem,
 } from "@ankify/contracts";
@@ -337,6 +338,57 @@ export const quizSessions = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * practice_sessions
+ * One Practice run on a problem (docs/coach-practice.md): a few cards from
+ * its Cards doc, then generated check questions, then a suggested rating.
+ * The cards' text is copied in as shown, so later doc edits don't rewrite
+ * history. At most one active session per problem.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type PracticeRecallItem = { key: string; prompt: string; answer: string };
+export type PracticeResults = {
+  recall: Record<string, "got_it" | "missed">;
+  check: Record<string, { choice: number; correct: boolean }>;
+};
+
+export const practiceSessions = sqliteTable(
+  "practice_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    /** The Coach run that started it, if any. */
+    agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    status: text("status", { enum: ["active", "completed", "abandoned"] }).notNull().default("active"),
+    recallJson: text("recall_json", { mode: "json" }).$type<PracticeRecallItem[]>().notNull(),
+    checkStatus: text("check_status", { enum: ["pending", "ready", "failed", "skipped"] }).notNull(),
+    checkMessage: text("check_message"),
+    checkJobId: text("check_job_id"),
+    checkJson: text("check_json", { mode: "json" }).$type<PracticeCheckItem[]>(),
+    resultsJson: text("results_json", { mode: "json" })
+      .$type<PracticeResults>()
+      .notNull()
+      .default(sql`'{"recall":{},"check":{}}'`),
+    score: real("score"),
+    suggestedRating: integer("suggested_rating"),
+    /** Set once the Coach's debrief turn for this session started. */
+    debriefedAt: optTs("debriefed_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+    completedAt: optTs("completed_at"),
+  },
+  (t) => ({
+    userProblemIdx: index("practice_sessions_user_problem_idx").on(t.userId, t.problemId, t.createdAt),
+    activeIdx: uniqueIndex("practice_sessions_user_problem_active_unique")
+      .on(t.userId, t.problemId)
+      .where(sql`${t.status} = 'active'`),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * ai_jobs
  * Durable source of truth for asynchronous Card / Quiz generation. Queue
  * messages contain only the job id; all ownership, inputs and results live in
@@ -358,7 +410,7 @@ export const aiJobs = sqliteTable(
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["card", "quiz"] }).notNull(),
+    kind: text("kind", { enum: ["card", "quiz", "practice"] }).notNull(),
     action: text("action", {
       enum: [
         "card_generate",
@@ -366,6 +418,7 @@ export const aiJobs = sqliteTable(
         "quiz_generate",
         "quiz_regenerate",
         "quiz_next_batch",
+        "practice_check",
       ],
     }).notNull(),
     status: text("status", {
@@ -517,7 +570,7 @@ export const agentSteps = sqliteTable(
       .notNull()
       .references(() => agentRuns.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
-    kind: text("kind", { enum: ["read", "navigation", "proposal"] }).notNull(),
+    kind: text("kind", { enum: ["read", "navigation", "proposal", "practice"] }).notNull(),
     toolName: text("tool_name").notNull(),
     status: text("status", {
       enum: ["completed", "pending", "accepted", "dismissed", "failed"],
@@ -526,6 +579,9 @@ export const agentSteps = sqliteTable(
     navigationJson: text("navigation_json", { mode: "json" }).$type<AgentNavigation>(),
     proposalJson: text("proposal_json", { mode: "json" }).$type<AgentProposal>(),
     aiJobId: text("ai_job_id").references(() => aiJobs.id, { onDelete: "set null" }),
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, {
+      onDelete: "set null",
+    }),
     createdAt: ts("created_at"),
     updatedAt: ts("updated_at"),
   },
@@ -566,6 +622,7 @@ export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
+export type PracticeSession = typeof practiceSessions.$inferSelect;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;

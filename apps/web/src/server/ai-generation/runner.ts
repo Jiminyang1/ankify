@@ -11,6 +11,7 @@ import {
   failAiJob,
   requeueAiJob,
 } from "./jobs";
+import { generatePracticeCheck } from "./practice-check";
 import { generateQuizItems, getRecentCompletedQuizSessions } from "./quiz";
 
 type AiJobProcessResult =
@@ -33,6 +34,8 @@ export async function processAiJob(jobId: string, workerId: string): Promise<AiJ
     const input = decryptJobInput(job);
     if (input.action === "card_generate" || input.action === "card_followup") {
       await runCardJob(job, input);
+    } else if (input.action === "practice_check") {
+      await runPracticeCheckJob(job, input);
     } else {
       await runQuizJob(job, input);
     }
@@ -45,6 +48,7 @@ export async function processAiJob(jobId: string, workerId: string): Promise<AiJ
       return { state: "retry", delaySeconds };
     }
     await failAiJob(job, classified.code, classified.message);
+    if (job.action === "practice_check") await markPracticeCheckFailed(job, classified.message);
     return { state: "done" };
   }
 }
@@ -136,6 +140,53 @@ async function commitFollowupCard(
     }
     await markSucceeded(tx, job, { resultCardId: updated.id }, now);
   });
+}
+
+async function runPracticeCheckJob(
+  job: AiJob,
+  input: Extract<AiJobCreateRequestInput, { action: "practice_check" }>,
+) {
+  const items = await generatePracticeCheck({
+    userId: job.userId,
+    problemId: job.problemId,
+    practiceSessionId: input.practiceSessionId,
+  });
+  const now = new Date();
+  await getDb().transaction(async (tx) => {
+    const currentJob = await loadRunningJob(tx, job);
+    if (!currentJob) return;
+    const updated = await tx
+      .update(schema.practiceSessions)
+      .set({ checkJson: items, checkStatus: "ready", checkMessage: null, updatedAt: now })
+      .where(
+        and(
+          eq(schema.practiceSessions.id, input.practiceSessionId),
+          eq(schema.practiceSessions.userId, job.userId),
+          eq(schema.practiceSessions.checkJobId, job.id),
+          eq(schema.practiceSessions.status, "active"),
+        ),
+      )
+      .returning({ id: schema.practiceSessions.id });
+    if (updated.length === 0) {
+      await markSuperseded(tx, job, "practice_session_closed", "The practice session ended first.", now);
+      return;
+    }
+    await markSucceeded(tx, job, {}, now);
+  });
+}
+
+/** The session continues with cards only; the summary says why. */
+async function markPracticeCheckFailed(job: AiJob, message: string) {
+  await getDb()
+    .update(schema.practiceSessions)
+    .set({ checkStatus: "failed", checkMessage: message, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.practiceSessions.userId, job.userId),
+        eq(schema.practiceSessions.checkJobId, job.id),
+        eq(schema.practiceSessions.checkStatus, "pending"),
+      ),
+    );
 }
 
 async function runQuizJob(

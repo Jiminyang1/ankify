@@ -41,7 +41,9 @@ export async function runStudyCoach(args: {
     problemId: args.problemId,
     runId: args.runId,
     emitStep: (step) => {
-      if (step.kind === "navigation") runState.navigationStep = step;
+      // A reply that only opens a problem or starts practice has no text;
+      // the step's summary stands in for it.
+      if (step.kind === "navigation" || step.kind === "practice") runState.navigationStep = step;
       args.onStep(step);
     },
   });
@@ -50,7 +52,7 @@ export async function runStudyCoach(args: {
     model: args.model,
     instructions: STUDY_COACH_INSTRUCTIONS,
     tools,
-    stopWhen: [stepCountIs(8), hasToolCall("open_problem")],
+    stopWhen: [stepCountIs(8), hasToolCall("open_problem"), hasToolCall("start_practice")],
     maxOutputTokens: 4_000,
     ...aiCallOptions(args.settings, "user"),
   });

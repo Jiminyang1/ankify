@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createAiJobClient } from "@ankify/api-client";
 import type {
+  PracticeSessionDto,
   AgentPageContext,
   AgentSessionDto,
   AgentSessionSnapshotDto,
@@ -12,11 +13,16 @@ import type {
 import type { ContentResponse, EditorSnapshot, ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
+import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
 
 /** The problem the Problem tab resolved, when it's saved in ankify. */
-export type CoachSavedProblem = { slug: string; problemId: string; title: string };
+export type CoachSavedProblem = { slug: string; problemId: string; title: string; due: boolean };
 
 export type CoachCopy = {
+  practice: PracticeCopy;
+  startPractice: string;
+  dueForReview: string;
+  practiceFinished: (points: number, total: number) => string;
   title: string;
   showChat: string;
   hideChat: string;
@@ -61,6 +67,7 @@ export function CoachTab({
   expanded,
   onExpandedChange,
   onDocsChanged,
+  onProblemChanged,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
@@ -69,6 +76,8 @@ export function CoachTab({
   onExpandedChange: (expanded: boolean) => void;
   /** A doc-edit proposal was applied: the Docs view should reload. */
   onDocsChanged: () => void;
+  /** The problem was rated from a practice summary. */
+  onProblemChanged: () => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
@@ -84,6 +93,10 @@ export function CoachTab({
   const [busyStep, setBusyStep] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
   const abortRef = useRef<AbortController | null>(null);
+  /** A session started from the button, or resumed, that no Coach step shows. */
+  const [localPractice, setLocalPractice] = useState<PracticeSessionDto | null>(null);
+  const [startingPractice, setStartingPractice] = useState(false);
+  const debriefed = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
 
@@ -175,6 +188,58 @@ export function CoachTab({
   }, [followJob, jobClient, jobs, snapshot?.steps]);
 
   const savedHere = saved && page && saved.slug === page.slug ? saved : null;
+  const savedProblemId = savedHere?.problemId ?? null;
+
+  // Resume a session in progress (or finished, awaiting its debrief).
+  useEffect(() => {
+    setLocalPractice(null);
+    if (!savedProblemId) return;
+    let cancelled = false;
+    void api(`/api/problems/${savedProblemId}/practice`, { cache: "no-store" })
+      .then(async (res) => (res.ok ? ((await res.json()) as { session: PracticeSessionDto | null }).session : null))
+      .then((session) => {
+        if (!cancelled && session) setLocalPractice(session);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [api, savedProblemId]);
+
+  async function startPracticeHere() {
+    if (!savedProblemId || startingPractice) return;
+    setStartingPractice(true);
+    setError(null);
+    try {
+      const res = await api(`/api/problems/${savedProblemId}/practice`, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as { session?: PracticeSessionDto; message?: string; error?: string } | null;
+      if (!res.ok || !body?.session) throw new Error(body?.message ?? body?.error ?? copy.practice.actionFailed);
+      setLocalPractice(body.session);
+      onExpandedChange(true);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : copy.practice.actionFailed);
+    } finally {
+      setStartingPractice(false);
+    }
+  }
+
+  // Latest send, so the completion callback below can stay stable.
+  const sendRef = useRef<typeof send>(null as unknown as typeof send);
+  const practiceCompleted = useCallback(
+    (session: PracticeSessionDto) => {
+      if (debriefed.current.has(session.id)) return;
+      debriefed.current.add(session.id);
+      const items = session.recall.length + (session.check.status === "ready" ? session.check.items.length : 0);
+      const points =
+        session.recall.filter((card) => card.result === "got_it").length +
+        session.check.items.filter((item) => item.answer?.correct).length;
+      void sendRef.current(copy.practiceFinished(points, items), {
+        type: "practice_completed",
+        practiceSessionId: session.id,
+      });
+    },
+    [copy],
+  );
 
   async function buildContext(): Promise<AgentPageContext> {
     if (!page) return { page: "extension", activePanel: "overview", problemId: null };
@@ -201,7 +266,7 @@ export function CoachTab({
     };
   }
 
-  async function send(message: string) {
+  async function send(message: string, trigger?: { type: "practice_completed"; practiceSessionId: string }) {
     const text = message.trim();
     if (!text || streaming || remoteRunActive) return;
     const controller = new AbortController();
@@ -218,7 +283,7 @@ export function CoachTab({
       const response = await api("/api/agent/turns", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId, requestId: crypto.randomUUID(), message: text, context }),
+        body: JSON.stringify({ sessionId, requestId: crypto.randomUUID(), message: text, context, ...(trigger ? { trigger } : {}) }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -371,17 +436,60 @@ export function CoachTab({
     </form>
   );
 
+  sendRef.current = send;
+  const practiceShownInThread = new Set(
+    (snapshot?.steps ?? []).flatMap((step) => (step.practiceSessionId ? [step.practiceSessionId] : [])),
+  );
+  const lastRunId = runs.at(-1)?.id;
+  const practiceActive =
+    localPractice?.status === "active" ||
+    (snapshot?.steps ?? []).some(
+      (step) =>
+        step.kind === "practice" &&
+        step.runId === lastRunId &&
+        step.practiceSessionId != null &&
+        !debriefed.current.has(step.practiceSessionId),
+    );
+  const practiceChip =
+    savedHere && !practiceActive && !streaming ? (
+      <div className="coach-chip">
+        {savedHere.due && <span className="coach-chip-label">{copy.dueForReview}</span>}
+        <button
+          type="button"
+          className={savedHere.due ? "btn-xs btn-xs-accent" : "btn-xs"}
+          disabled={startingPractice || busy}
+          onClick={() => void startPracticeHere()}
+        >
+          {startingPractice && <span className="btn-spinner" />}
+          {copy.startPractice}
+        </button>
+      </div>
+    ) : null;
+  const renderPractice = (practiceSessionId: string, initial?: PracticeSessionDto) => (
+    <PracticeWidget
+      key={practiceSessionId}
+      settings={settings}
+      sessionId={practiceSessionId}
+      initial={initial}
+      copy={copy.practice}
+      onCompleted={practiceCompleted}
+      onRated={onProblemChanged}
+    />
+  );
+
   if (!expanded) {
     return (
       <section className="coach coach-docked" aria-label={copy.title}>
         <div className="coach-dock-head">
           <span className="coach-dock-title">{copy.title}</span>
-          {(runs.length > 0 || error) && (
+          {(runs.length > 0 || error || localPractice) && (
             <button type="button" className="btn-xs" onClick={() => onExpandedChange(true)}>
               {copy.showChat}
             </button>
           )}
         </div>
+        {practiceChip}
+        {error && <p className="coach-run-error">{error}</p>}
         {composer}
       </section>
     );
@@ -434,10 +542,16 @@ export function CoachTab({
             const assistant = snapshot?.messages.find((m) => m.runId === run.id && m.role === "assistant");
             const steps = (snapshot?.steps ?? []).filter((step) => step.runId === run.id);
             const live = streaming && run.status === "running";
+            // A session started from the button sits right before its debrief.
+            const practiceBefore =
+              localPractice && run.context.practice?.practiceSessionId === localPractice.id
+                ? renderPractice(localPractice.id, localPractice)
+                : null;
             return (
               <div key={run.id} className="coach-turn">
+                {practiceBefore}
                 {user && <div className="coach-msg coach-msg-user">{user.content}</div>}
-                {steps.map((step) => (
+                {steps.filter((step) => step.kind !== "practice").map((step) => (
                   <CoachStep
                     key={step.id}
                     step={step}
@@ -464,10 +578,17 @@ export function CoachTab({
                 ) : run.status === "failed" && run.errorMessage ? (
                   <p className="coach-run-error">{run.errorMessage}</p>
                 ) : null}
+                {steps
+                  .filter((step) => step.kind === "practice" && step.practiceSessionId)
+                  .map((step) => renderPractice(step.practiceSessionId!))}
               </div>
             );
           })
         )}
+        {localPractice &&
+          !practiceShownInThread.has(localPractice.id) &&
+          !runs.some((run) => run.context.practice?.practiceSessionId === localPractice.id) &&
+          renderPractice(localPractice.id, localPractice)}
         {pendingMessage && (
           <div className="coach-turn">
             <div className="coach-msg coach-msg-user">{pendingMessage}</div>
@@ -478,6 +599,7 @@ export function CoachTab({
         )}
       </div>
 
+      {practiceChip}
       {error && <div className="err-banner">{error}</div>}
       {notice && !error && <p className="coach-notice">{notice}</p>}
 

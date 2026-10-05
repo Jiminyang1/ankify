@@ -47,12 +47,14 @@ export type AgentStepDto = {
   id: string;
   runId: string;
   sequence: number;
-  kind: "read" | "navigation" | "proposal";
+  kind: "read" | "navigation" | "proposal" | "practice";
   toolName: string;
   status: "completed" | "pending" | "accepted" | "dismissed" | "failed";
   summary: string;
   navigation: AgentNavigation | null;
   proposal: AgentProposal | null;
+  /** Set on `practice` steps: the session the Coach started. */
+  practiceSessionId: string | null;
   aiJobId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -115,7 +117,7 @@ export type QuizSessionDto = {
 export type PublicAiJobDto = {
   id: string;
   problemId: string;
-  kind: "card" | "quiz";
+  kind: "card" | "quiz" | "practice";
   action: AiJobCreateRequestInput["action"];
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "superseded";
   attempt: number;
@@ -303,4 +305,30 @@ export type ProblemDocsDto = {
       | { kind: "too_long"; limit: number }
     )[];
   };
+};
+
+/** A practice session as the client sees it: check answers stay hidden until
+ *  each question is answered. */
+export type PracticeSessionDto = {
+  id: string;
+  problemId: string;
+  status: "active" | "completed" | "abandoned";
+  recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
+  check: {
+    status: "pending" | "ready" | "failed" | "skipped";
+    /** Why there are no questions, when failed or skipped. */
+    message: string | null;
+    items: {
+      id: string;
+      question: string;
+      choices: string[];
+      scope: string;
+      source: { kind: "statement" | "notes" | "card" | "submission"; ref: string | null };
+      answer: { choice: number; correct: boolean; answerIndex: number; explanation: string } | null;
+    }[];
+  };
+  score: number | null;
+  suggestedRating: 1 | 2 | 3 | 4 | null;
+  createdAt: string;
+  completedAt: string | null;
 };

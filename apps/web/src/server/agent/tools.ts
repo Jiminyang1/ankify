@@ -13,6 +13,7 @@ import { leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
+import { startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
@@ -42,12 +43,13 @@ export function createStudyCoachTools(context: AgentToolContext) {
     .optional();
 
   const record = async (args: {
-    kind: "read" | "navigation" | "proposal";
+    kind: "read" | "navigation" | "proposal" | "practice";
     toolName: string;
     status: "completed" | "pending" | "failed";
     summary: string;
     navigation?: AgentNavigation;
     proposal?: AgentProposal;
+    practiceSessionId?: string;
   }) => {
     const sequence = nextSequence++;
     const step = await createAgentStep({ ...context, ...args, sequence });
@@ -374,6 +376,29 @@ export function createStudyCoachTools(context: AgentToolContext) {
           notesSections: docs.notes.sections,
           cards: docs.cards.cards,
           cardIssues: docs.cards.issues,
+        };
+      },
+    }),
+
+    start_practice: tool({
+      description:
+        "Start a practice session on a saved problem: a few of the user's cards, then fresh check questions, then a suggested rating. The panel shows it; you don't write any of its content. Call when the user asks to practice, review, or be quizzed on a problem. Ends your turn.",
+      inputSchema: z.object({ problemId: problemIdInput }),
+      execute: async ({ problemId: requestedId }) => {
+        const target = await resolveProblem(requestedId);
+        const result = await startPractice(context.userId, target.id, { agentRunId: context.runId });
+        if (!result.ok) return { started: false, error: result.error, message: result.message ?? null };
+        await record({
+          kind: "practice",
+          toolName: "start_practice",
+          status: "completed",
+          summary: `Practice on ${target.title}`,
+          practiceSessionId: result.session.id,
+        });
+        return {
+          started: true,
+          cards: result.session.recall.length,
+          questions: result.session.check.status === "skipped" ? 0 : 3,
         };
       },
     }),

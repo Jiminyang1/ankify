@@ -1002,6 +1002,15 @@ function AgentStep({
     );
   }
 
+  if (step.kind === "practice") {
+    return (
+      <div className="flex items-center gap-2 px-1 text-[11px] text-muted">
+        <Check className="h-3 w-3 text-success" aria-hidden />
+        <span>{t.agent.practiceInPanel}</span>
+      </div>
+    );
+  }
+
   if (step.kind === "navigation" && step.navigation) {
     const problemId = encodeURIComponent(step.navigation.problemId);
     const href = step.navigation.destination === "review"
