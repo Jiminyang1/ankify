@@ -16,6 +16,9 @@ export type PracticeCopy = {
   keepGoing: string;
   endedEarly: string;
   abandoned: string;
+  showDetails: string;
+  hideDetails: string;
+  close: string;
   startMessage: string;
   progress: (done: number, total: number) => string;
   showAnswer: string;
@@ -48,6 +51,8 @@ export function PracticeWidget({
   onCompleted,
   onRated,
   onAbandoned,
+  variant = "card",
+  onClose,
   categoryName,
 }: {
   settings: ExtSettings;
@@ -59,6 +64,11 @@ export function PracticeWidget({
   onRated: () => void;
   /** The user ended it with nothing answered, so it was dropped. */
   onAbandoned: (session: PracticeSessionDto) => void;
+  /** "tray": a one-line bar attached above the composer that expands on
+   *  click (talk-throughs). "card": the full card in the chat. */
+  variant?: "card" | "tray";
+  /** Closes a finished tray. */
+  onClose?: () => void;
   /** Display name for a weakness category key. */
   categoryName: (key: string) => string;
 }) {
@@ -71,6 +81,12 @@ export function PracticeWidget({
   const [rating, setRating] = useState<Rating | null>(null);
   const [rated, setRated] = useState<Rating | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [open, setOpen] = useState(false);
+  // A finished talk-through opens its tray so the summary and rating show.
+  const finished = session?.status === "completed";
+  useEffect(() => {
+    if (finished) setOpen(true);
+  }, [finished]);
   const completedReported = useRef(false);
 
   const load = useCallback(async () => {
@@ -195,6 +211,9 @@ export function PracticeWidget({
     const correct = graded.filter((target) => target.grade!.grade === "correct").length;
     const partial = graded.filter((target) => target.grade!.grade === "partial").length;
     const active = session.status === "active";
+    const tray = variant === "tray";
+    const stateOf = (target: PracticeSessionDto["targets"][number]) =>
+      target.grade?.grade ?? (session.status === "completed" ? "skipped" : "open");
     if (session.status === "abandoned") {
       return (
         <div className="practice practice-talk practice-ended">
@@ -205,22 +224,25 @@ export function PracticeWidget({
         </div>
       );
     }
-    return (
-      <div className="practice practice-talk">
-        <div className="practice-head">
-          <span className="coach-dock-title">{copy.title}</span>
-          <span className="practice-head-side">
-            <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
-            {active && !confirmEnd && (
-              <button type="button" className="practice-end" disabled={busy} onClick={() => setConfirmEnd(true)}>
-                {copy.end}
-              </button>
-            )}
-          </span>
-        </div>
+    const endButton =
+      active && !confirmEnd ? (
+        <button
+          type="button"
+          className="practice-end"
+          disabled={busy}
+          onClick={() => {
+            setConfirmEnd(true);
+            setOpen(true);
+          }}
+        >
+          {copy.end}
+        </button>
+      ) : null;
+    const details = (
+      <>
         <ul className="practice-targets">
           {session.targets.map((target) => {
-            const state = target.grade?.grade ?? (session.status === "completed" ? "skipped" : "open");
+            const state = stateOf(target);
             return (
               <li key={target.id} className="practice-target" data-grade={state}>
                 <span className="practice-target-mark" aria-hidden="true" />
@@ -270,6 +292,59 @@ export function PracticeWidget({
           <p className="popup-muted practice-talk-hint">{copy.talkHint}</p>
         )}
         {error && <p className="coach-run-error">{error}</p>}
+      </>
+    );
+
+    if (tray) {
+      return (
+        <div className="practice-tray" data-open={open}>
+          <div className="practice-tray-bar">
+            <button
+              type="button"
+              className="practice-tray-toggle"
+              aria-expanded={open}
+              title={open ? copy.hideDetails : copy.showDetails}
+              onClick={() => setOpen((value) => !value)}
+            >
+              <svg className="practice-tray-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="m4 10 4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="practice-tray-title">{copy.title}</span>
+              <span className="practice-tray-dots" aria-hidden="true">
+                {session.targets.map((target) => (
+                  <span key={target.id} className="practice-tray-dot" data-grade={stateOf(target)} />
+                ))}
+              </span>
+              <span className="practice-progress">
+                {session.status === "completed"
+                  ? copy.talkScore(correct, partial, graded.length)
+                  : copy.progress(graded.length, session.targets.length)}
+              </span>
+            </button>
+            {endButton}
+            {session.status === "completed" && onClose && (
+              <button type="button" className="practice-tray-close" aria-label={copy.close} title={copy.close} onClick={onClose}>
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {open && <div className="practice-tray-body scroll-area">{details}</div>}
+        </div>
+      );
+    }
+
+    return (
+      <div className="practice practice-talk">
+        <div className="practice-head">
+          <span className="coach-dock-title">{copy.title}</span>
+          <span className="practice-head-side">
+            <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
+            {endButton}
+          </span>
+        </div>
+        {details}
       </div>
     );
   }

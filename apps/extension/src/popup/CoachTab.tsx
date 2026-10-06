@@ -617,6 +617,26 @@ export function CoachTab({
   const canPractice = savedHere != null && !practiceActive && !streaming;
   const canRate = canPractice && savedHere.due && ratingPanel != null;
 
+  const categoryName = (key: string) =>
+    weaknesses?.find((weakness) => weakness.category === key)?.categoryName ??
+    builtinWeaknessCategoryName(key, settings.language) ??
+    key;
+  const pinnedTalk = localPractice?.mode === "talk" ? localPractice : null;
+  const renderPractice = (practiceSessionId: string, initial?: PracticeSessionDto, variant: "card" | "tray" = "card") => (
+    <PracticeWidget
+      key={`${variant}-${practiceSessionId}`}
+      variant={variant}
+      onClose={() => setLocalPractice((current) => (current?.id === practiceSessionId ? null : current))}
+      settings={settings}
+      sessionId={practiceSessionId}
+      initial={initial}
+      copy={copy.practice}
+      onCompleted={practiceCompleted}
+      onRated={onProblemChanged}
+      onAbandoned={(session) => setLocalPractice((current) => (current?.id === session.id ? null : current))}
+      categoryName={categoryName}
+    />
+  );
   const modelPicker =
     pickable && currentModelId ? (
       <div className="coach-model-wrap" ref={modelRef}>
@@ -684,6 +704,8 @@ export function CoachTab({
       }}
     >
       {showRating && canRate && <div className="coach-rating">{ratingPanel}</div>}
+      {/* A talk-through rides on top of the composer: one line, open on click. */}
+      {pinnedTalk && renderPractice(pinnedTalk.id, pinnedTalk, "tray")}
       <div className="coach-composer-box">
         <textarea
           ref={inputRef}
@@ -831,24 +853,7 @@ export function CoachTab({
       )}
     </div>
   );
-  const categoryName = (key: string) =>
-    weaknesses?.find((weakness) => weakness.category === key)?.categoryName ??
-    builtinWeaknessCategoryName(key, settings.language) ??
-    key;
-  const pinnedTalk = localPractice?.mode === "talk" ? localPractice : null;
-  const renderPractice = (practiceSessionId: string, initial?: PracticeSessionDto) => (
-    <PracticeWidget
-      key={practiceSessionId}
-      settings={settings}
-      sessionId={practiceSessionId}
-      initial={initial}
-      copy={copy.practice}
-      onCompleted={practiceCompleted}
-      onRated={onProblemChanged}
-      onAbandoned={(session) => setLocalPractice((current) => (current?.id === session.id ? null : current))}
-      categoryName={categoryName}
-    />
-  );
+
 
   if (mode === "dock" && !expanded) {
     return (
@@ -902,7 +907,6 @@ export function CoachTab({
             onRemove={(id) => void removeWeakness(id)}
           />
         )}
-        {mode === "full" && pinnedTalk && renderPractice(pinnedTalk.id, pinnedTalk)}
         {loading ? (
           <p className="popup-muted coach-thinking">
             <span className="btn-spinner" /> {copy.thinking}
