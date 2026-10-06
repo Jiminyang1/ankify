@@ -3780,6 +3780,52 @@ a:focus-visible,
   font-style: italic;
 }
 
+.practice-head-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.practice-end {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.practice-end:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: var(--surface);
+}
+
+.practice-end:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.practice-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.practice-confirm p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.practice-target[data-grade="skipped"] .practice-target-mark {
+  border-style: dashed;
+}
+
+.practice-target[data-grade="skipped"] .practice-target-text {
+  opacity: 0.6;
+}
+
 .practice-talk-hint {
   margin: 0;
   font-size: 11px;

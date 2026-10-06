@@ -150,4 +150,10 @@ describe("talk-through targets and score", () => {
     expect(scoreTalk(["missed", "partial", "correct"]).rating).toBe(2);
     expect(scoreTalk(["missed", "missed", "partial"]).rating).toBe(1);
   });
+
+  it("never suggests Easy for a talk-through ended early", async () => {
+    const { scoreTalk } = await import("./practice");
+    expect(scoreTalk(["correct"], { endedEarly: true })).toEqual({ score: 1, rating: 3 });
+    expect(scoreTalk(["missed"], { endedEarly: true }).rating).toBe(1);
+  });
 });

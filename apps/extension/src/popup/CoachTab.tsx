@@ -838,6 +838,7 @@ export function CoachTab({
       copy={copy.practice}
       onCompleted={practiceCompleted}
       onRated={onProblemChanged}
+      onAbandoned={(session) => setLocalPractice((current) => (current?.id === session.id ? null : current))}
       categoryName={categoryName}
     />
   );

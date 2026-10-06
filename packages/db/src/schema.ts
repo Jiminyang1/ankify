@@ -361,6 +361,8 @@ export type PracticeResults = {
   check: Record<string, { choice: number; correct: boolean }>;
   /** Talk-through grades by target id. */
   talk?: Record<string, PracticeGrade>;
+  /** The user ended it before every target was graded; the rest were skipped. */
+  endedEarly?: boolean;
 };
 
 export const practiceSessions = sqliteTable(

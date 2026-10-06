@@ -56,6 +56,7 @@ export function toPracticeDto(session: PracticeSession): PracticeSessionDto {
     problemId: session.problemId,
     status: session.status,
     mode: session.mode,
+    endedEarly: results.endedEarly === true,
     targets: (session.targetsJson ?? []).map((target) => ({
       id: target.id,
       kind: target.kind,
@@ -508,13 +509,62 @@ export async function gradeTalkTarget(
   });
 }
 
+/**
+ * The user ends a session early. A talk-through with at least one grade
+ * completes on those grades (the rest are skipped); anything else is
+ * abandoned. Ending a session that already ended returns it as is.
+ */
+export async function endPractice(userId: string, sessionId: string): Promise<PracticeResult> {
+  return getDb().transaction(async (tx) => {
+    const [session] = await tx
+      .select()
+      .from(schema.practiceSessions)
+      .where(and(eq(schema.practiceSessions.id, sessionId), eq(schema.practiceSessions.userId, userId)))
+      .limit(1);
+    if (!session) return { ok: false, error: "practice_not_found" } as const;
+    if (session.status !== "active") return { ok: true, session: toPracticeDto(session) } as const;
+    const graded = Object.keys(session.resultsJson.talk ?? {}).length;
+    if (session.mode === "talk" && graded > 0) {
+      return { ok: true, session: toPracticeDto(await finishTalk(tx, session, { endedEarly: true })) } as const;
+    }
+    const now = new Date();
+    const [abandoned] = await tx
+      .update(schema.practiceSessions)
+      .set({
+        status: "abandoned",
+        resultsJson: { ...session.resultsJson, endedEarly: true },
+        debriefedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(schema.practiceSessions.id, session.id), eq(schema.practiceSessions.status, "active")))
+      .returning();
+    return { ok: true, session: toPracticeDto(abandoned ?? session) } as const;
+  });
+}
+
 /** Scores a finished talk-through and updates the weak spots it covered:
  *  correct twice in later sessions resolves one; a miss counts as a repeat. */
 async function completeTalkIfDone(tx: Tx, session: PracticeSession): Promise<PracticeSession> {
   const targets = session.targetsJson ?? [];
   const talk = session.resultsJson.talk ?? {};
   if (targets.length === 0 || !targets.every((target) => talk[target.id])) return session;
-  const { score, rating } = scoreTalk(targets.map((target) => talk[target.id]!.grade));
+  return finishTalk(tx, session);
+}
+
+/** Scores the graded targets and updates their weak spots. Ungraded ones (the
+ *  user ended early) count for nothing either way. */
+async function finishTalk(
+  tx: Tx,
+  session: PracticeSession,
+  options: { endedEarly?: boolean } = {},
+): Promise<PracticeSession> {
+  const talk = session.resultsJson.talk ?? {};
+  const targets = (session.targetsJson ?? []).filter((target) => talk[target.id]);
+  const { score, rating } = scoreTalk(
+    targets.map((target) => talk[target.id]!.grade),
+    { endedEarly: options.endedEarly },
+  );
   const now = new Date();
 
   for (const target of targets) {
@@ -564,7 +614,9 @@ async function completeTalkIfDone(tx: Tx, session: PracticeSession): Promise<Pra
       status: "completed",
       score,
       suggestedRating: rating,
-      // The Coach summarizes in the same turn as the last grade.
+      ...(options.endedEarly ? { resultsJson: { ...session.resultsJson, endedEarly: true } } : {}),
+      // The Coach summarizes in the same turn as the last grade; an early end
+      // shows its summary in the panel.
       debriefedAt: now,
       completedAt: now,
       updatedAt: now,

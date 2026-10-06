@@ -9,7 +9,13 @@ export type PracticeCopy = {
   talkHint: string;
   talkScore: (correct: number, partial: number, total: number) => string;
   core: { approach: string; complexity: string };
-  grades: { correct: string; partial: string; missed: string };
+  grades: { correct: string; partial: string; missed: string; skipped: string };
+  end: string;
+  endConfirm: string;
+  endNow: string;
+  keepGoing: string;
+  endedEarly: string;
+  abandoned: string;
   startMessage: string;
   progress: (done: number, total: number) => string;
   showAnswer: string;
@@ -41,6 +47,7 @@ export function PracticeWidget({
   copy,
   onCompleted,
   onRated,
+  onAbandoned,
   categoryName,
 }: {
   settings: ExtSettings;
@@ -50,6 +57,8 @@ export function PracticeWidget({
   /** Fires once when the session first reaches its summary. */
   onCompleted: (session: PracticeSessionDto) => void;
   onRated: () => void;
+  /** The user ended it with nothing answered, so it was dropped. */
+  onAbandoned: (session: PracticeSessionDto) => void;
   /** Display name for a weakness category key. */
   categoryName: (key: string) => string;
 }) {
@@ -61,6 +70,7 @@ export function PracticeWidget({
   const [error, setError] = useState<string | null>(null);
   const [rating, setRating] = useState<Rating | null>(null);
   const [rated, setRated] = useState<Rating | null>(null);
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const completedReported = useRef(false);
 
   const load = useCallback(async () => {
@@ -110,6 +120,12 @@ export function PracticeWidget({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function end() {
+    const next = await post("end", {});
+    setConfirmEnd(false);
+    if (next?.status === "abandoned") onAbandoned(next);
   }
 
   async function rate() {
@@ -178,38 +194,77 @@ export function PracticeWidget({
     const graded = session.targets.filter((target) => target.grade);
     const correct = graded.filter((target) => target.grade!.grade === "correct").length;
     const partial = graded.filter((target) => target.grade!.grade === "partial").length;
+    const active = session.status === "active";
+    if (session.status === "abandoned") {
+      return (
+        <div className="practice practice-talk practice-ended">
+          <div className="practice-head">
+            <span className="coach-dock-title">{copy.title}</span>
+          </div>
+          <p className="popup-muted practice-talk-hint">{copy.abandoned}</p>
+        </div>
+      );
+    }
     return (
       <div className="practice practice-talk">
         <div className="practice-head">
           <span className="coach-dock-title">{copy.title}</span>
-          <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
+          <span className="practice-head-side">
+            <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
+            {active && !confirmEnd && (
+              <button type="button" className="practice-end" disabled={busy} onClick={() => setConfirmEnd(true)}>
+                {copy.end}
+              </button>
+            )}
+          </span>
         </div>
         <ul className="practice-targets">
-          {session.targets.map((target) => (
-            <li key={target.id} className="practice-target" data-grade={target.grade?.grade ?? "open"}>
-              <span className="practice-target-mark" aria-hidden="true" />
-              <span className="practice-target-text">
-                <span className="practice-target-kind">
-                  {target.kind === "core"
-                    ? target.label === "complexity"
-                      ? copy.core.complexity
-                      : copy.core.approach
-                    : categoryName(target.category ?? target.label)}
-                </span>
-                {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
-                {target.grade && (
-                  <span className="practice-target-grade">
-                    {copy.grades[target.grade.grade]} · {target.grade.reason}
+          {session.targets.map((target) => {
+            const state = target.grade?.grade ?? (session.status === "completed" ? "skipped" : "open");
+            return (
+              <li key={target.id} className="practice-target" data-grade={state}>
+                <span className="practice-target-mark" aria-hidden="true" />
+                <span className="practice-target-text">
+                  <span className="practice-target-kind">
+                    {target.kind === "core"
+                      ? target.label === "complexity"
+                        ? copy.core.complexity
+                        : copy.core.approach
+                      : categoryName(target.category ?? target.label)}
                   </span>
-                )}
-              </span>
-            </li>
-          ))}
+                  {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
+                  {target.grade ? (
+                    <span className="practice-target-grade">
+                      {copy.grades[target.grade.grade]} · {target.grade.reason}
+                    </span>
+                  ) : state === "skipped" ? (
+                    <span className="practice-target-grade">{copy.grades.skipped}</span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
         </ul>
         {session.status === "completed" ? (
           <div className="practice-summary">
-            <p className="practice-score">{copy.talkScore(correct, partial, session.targets.length)}</p>
+            <p className="practice-score">
+              {copy.talkScore(correct, partial, graded.length)}
+              {session.endedEarly && <span className="popup-muted"> · {copy.endedEarly}</span>}
+            </p>
             {ratingBlock}
+          </div>
+        ) : confirmEnd ? (
+          <div className="practice-confirm">
+            <p className="popup-muted">{copy.endConfirm}</p>
+            <div className="practice-actions">
+              <button type="button" className="btn-xs" disabled={busy} onClick={() => setConfirmEnd(false)}>
+                {copy.keepGoing}
+              </button>
+              <button type="button" className="btn-xs btn-xs-danger" disabled={busy} onClick={() => void end()}>
+                {busy && <span className="btn-spinner" />}
+                {copy.endNow}
+              </button>
+            </div>
           </div>
         ) : (
           <p className="popup-muted practice-talk-hint">{copy.talkHint}</p>

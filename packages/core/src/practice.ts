@@ -94,11 +94,16 @@ export function selectPracticeTargets(args: {
 export const GRADE_POINTS = { correct: 1, partial: 0.5, missed: 0 } as const;
 
 /** Talk-through score and suggestion: every target correct suggests Easy. */
-export function scoreTalk(grades: ("correct" | "partial" | "missed")[]): { score: number; rating: FsrsRating } {
+export function scoreTalk(
+  grades: ("correct" | "partial" | "missed")[],
+  options: { endedEarly?: boolean } = {},
+): { score: number; rating: FsrsRating } {
   const points = grades.reduce((sum, grade) => sum + GRADE_POINTS[grade], 0);
+  const rating = suggestPracticeRating(points, grades.length, grades.length);
   return {
     score: grades.length ? points / grades.length : 0,
-    rating: suggestPracticeRating(points, grades.length, grades.length),
+    // Ending early skipped part of the check, so it can't suggest Easy.
+    rating: options.endedEarly && rating === 4 ? 3 : rating,
   };
 }
 

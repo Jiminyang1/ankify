@@ -327,6 +327,8 @@ export type PracticeSessionDto = {
   problemId: string;
   status: "active" | "completed" | "abandoned";
   mode: "recall_check" | "talk";
+  /** Ended by the user before everything was answered. */
+  endedEarly: boolean;
   /** Talk-through targets with their grades (mode "talk"). */
   targets: {
     id: string;
