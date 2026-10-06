@@ -28,7 +28,9 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
     if (msg.type === "read_editor") {
-      void readEditor().then((editor) => sendResponse({ type: "editor", editor }));
+      void readEditor().then((result) =>
+        sendResponse(result.editor ? { type: "editor", editor: result.editor } : { type: "editor", editor: null, reason: result.reason }),
+      );
       return true;
     }
     if (msg.type === "sync_solved_now") {

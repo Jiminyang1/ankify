@@ -11,7 +11,7 @@ import type {
   QueueProblemDto as QueueProblem,
   ReviewQueuePayloadDto as QueueResponse,
 } from "@ankify/contracts";
-import type { BackgroundRequest, ContentResponse, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
+import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
   getSettings,
@@ -350,7 +350,15 @@ const EXT_I18N = {
       jobFailed: "Generation failed.",
       openReview: "Open review in ankify",
       openProblem: "Open in ankify",
-      noCode: "Couldn't read LeetCode's editor, so this was sent without your code. Reload the LeetCode tab if this keeps happening.",
+      noCode: (reason: EditorReadFailure) =>
+        `Sent without your code: ${
+          {
+            no_receiver: "ankify isn't running in this LeetCode tab yet. Reload the tab.",
+            no_page_script: "ankify's editor reader didn't answer in this tab. Reload the tab; if it keeps happening, reload ankify in chrome://extensions too.",
+            no_monaco: "LeetCode's code editor isn't on this page.",
+            no_code_model: "LeetCode's editor has no code open.",
+          }[reason]
+        } (${reason})`,
       loadFailed: "Couldn't load the Study Coach.",
       sendFailed: "Couldn't reach the Study Coach. Try again.",
     },
@@ -667,7 +675,15 @@ const EXT_I18N = {
       jobFailed: "生成失败。",
       openReview: "在 ankify 里打开复习",
       openProblem: "在 ankify 里打开",
-      noCode: "没读到 LeetCode 编辑器，这次没附上代码。如果一直这样，刷新一下 LeetCode 页面。",
+      noCode: (reason: EditorReadFailure) =>
+        `这次没附上代码：${
+          {
+            no_receiver: "ankify 还没在这个 LeetCode 页面里运行，刷新一下页面。",
+            no_page_script: "这个页面里 ankify 的编辑器读取没响应。刷新页面；还不行的话，也在 chrome://extensions 里重新加载 ankify。",
+            no_monaco: "这个页面上没有 LeetCode 的代码编辑器。",
+            no_code_model: "LeetCode 编辑器里没有打开的代码。",
+          }[reason]
+        }（${reason}）`,
       loadFailed: "学习教练加载失败。",
       sendFailed: "连不上学习教练，请重试。",
     },

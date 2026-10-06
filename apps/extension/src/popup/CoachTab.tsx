@@ -13,7 +13,7 @@ import type {
   DocEdit,
   PublicAiJobDto,
 } from "@ankify/contracts";
-import type { ContentResponse, EditorSnapshot, ExtSettings } from "../shared/messages";
+import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
 import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
@@ -65,7 +65,7 @@ export type CoachCopy = {
   jobFailed: string;
   openReview: string;
   openProblem: string;
-  noCode: string;
+  noCode: (reason: EditorReadFailure) => string;
   loadFailed: string;
   sendFailed: string;
 };
@@ -343,13 +343,20 @@ export function CoachTab({
     if (!page) return { page: "extension", activePanel: "overview", problemId: null };
     let editor: EditorSnapshot | null = null;
     if (includeCode) {
+      let reason: EditorReadFailure = "no_receiver";
       try {
-        const response = (await chrome.tabs.sendMessage(page.tabId, { type: "read_editor" })) as ContentResponse;
-        editor = response.type === "editor" ? response.editor : null;
-      } catch {
-        editor = null;
+        const response = (await chrome.tabs.sendMessage(page.tabId, { type: "read_editor" })) as ContentResponse | undefined;
+        if (response?.type === "editor") {
+          editor = response.editor;
+          reason = response.reason ?? "no_code_model";
+        }
+      } catch (readError) {
+        console.warn("[ankify] read_editor: no content script in tab", page.tabId, readError);
       }
-      if (!editor) setNotice(copy.noCode);
+      if (!editor) {
+        console.warn("[ankify] read_editor failed:", reason);
+        setNotice(copy.noCode(reason));
+      }
     }
     const title = savedHere?.title ?? page.title;
     return {

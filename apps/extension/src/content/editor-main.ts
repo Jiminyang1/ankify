@@ -17,12 +17,14 @@ const RESPONSE = "ankify:editor-response";
 function codeModel(): MonacoModel | null {
   const monaco = (window as unknown as { monaco?: MonacoGlobal }).monaco;
   if (!monaco?.editor) return null;
+  const isCode = (model: MonacoModel) => !model.isDisposed?.() && model.getLanguageId() !== "plaintext";
   // Mounted editors first: LeetCode also mounts a plaintext test-case editor.
+  // When only that one is mounted (the code panel is hidden), the code's
+  // model still exists among all models.
   const mounted = (monaco.editor.getEditors?.() ?? [])
     .map((editor) => editor.getModel())
     .filter((model): model is MonacoModel => model != null);
-  const candidates = mounted.length > 0 ? mounted : (monaco.editor.getModels?.() ?? []);
-  return candidates.find((model) => !model.isDisposed?.() && model.getLanguageId() !== "plaintext") ?? null;
+  return mounted.find(isCode) ?? (monaco.editor.getModels?.() ?? []).find(isCode) ?? null;
 }
 
 window.addEventListener("message", (event) => {
@@ -35,6 +37,8 @@ window.addEventListener("message", (event) => {
       type: RESPONSE,
       id: data.id,
       editor: model ? { language: model.getLanguageId(), code: model.getValue() } : null,
+      // Why there's no editor, for the panel's notice.
+      reason: model ? null : (window as unknown as { monaco?: unknown }).monaco ? "no_code_model" : "no_monaco",
     },
     window.location.origin,
   );
