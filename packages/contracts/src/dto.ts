@@ -9,6 +9,17 @@ import type {
   QuizItem,
 } from "./schemas";
 
+/** What the Coach's model picker offers. With the server's starter key the
+ *  model is fixed, so `models` is empty. */
+export type CoachModelsDto = {
+  source: "user" | "starter";
+  provider: string;
+  /** The Settings model and level, used when the panel picks nothing. */
+  defaultModel: string;
+  defaultReasoningLevel: string;
+  models: { id: string; reasoningLevels: string[] }[];
+};
+
 export type AgentSessionDto = {
   id: string;
   title: string | null;

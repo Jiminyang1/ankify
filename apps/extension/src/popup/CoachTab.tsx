@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createAiJobClient } from "@ankify/api-client";
 import type {
   WeaknessDto,
@@ -8,6 +8,8 @@ import type {
   AgentSessionSnapshotDto,
   AgentStepDto,
   AgentStreamEvent,
+  AgentModelChoice,
+  CoachModelsDto,
   DocEdit,
   PublicAiJobDto,
 } from "@ankify/contracts";
@@ -37,6 +39,12 @@ export type CoachCopy = {
   stop: string;
   newChat: string;
   history: string;
+  modelMenu: string;
+  modelHeading: string;
+  thinkingHeading: string;
+  /** Marks the model chosen in Settings. */
+  fromSettings: string;
+  reasoningLevel: (level: string) => string;
   noHistory: string;
   untitled: string;
   includeCode: string;
@@ -63,6 +71,8 @@ export type CoachCopy = {
 };
 
 const SESSION_KEY = "ankify.coachSessionId";
+/** The model and thinking level picked in the panel; Settings' when unset. */
+const MODEL_KEY = "ankify.coachModel";
 /** Each problem keeps its own conversation; off a problem, the latest one. */
 const sessionKeyFor = (slug: string | null) => (slug ? `ankify.coachSession:${slug}` : SESSION_KEY);
 
@@ -123,6 +133,10 @@ export function CoachTab({
   const [historyOpen, setHistoryOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const historyRef = useRef<HTMLDivElement | null>(null);
+  const [models, setModels] = useState<CoachModelsDto | null>(null);
+  const [modelChoice, setModelChoice] = useState<AgentModelChoice | null>(null);
+  const [modelOpen, setModelOpen] = useState(false);
+  const modelRef = useRef<HTMLDivElement | null>(null);
   const debriefed = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
@@ -365,12 +379,21 @@ export function CoachTab({
     setError(null);
     setNotice(null);
     setDraft("");
+    // A pick only counts on the user's own key (the server checks too).
+    const activeChoice = models?.source === "user" ? modelChoice : null;
     try {
       const context = await buildContext();
       const response = await api("/api/agent/turns", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId, requestId: crypto.randomUUID(), message: text, context, ...(trigger ? { trigger } : {}) }),
+        body: JSON.stringify({
+          sessionId,
+          requestId: crypto.randomUUID(),
+          message: text,
+          context,
+          ...(trigger ? { trigger } : {}),
+          ...(activeChoice ? { model: activeChoice } : {}),
+        }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -486,22 +509,40 @@ export function CoachTab({
     }
   }
 
-  // The history menu closes on a click outside it or Escape.
+  // Menus close on a click outside them or Escape.
+  useDismiss(historyOpen, historyRef, () => setHistoryOpen(false));
+  useDismiss(modelOpen, modelRef, () => setModelOpen(false));
+
+  // What the model picker offers. The pick is kept across problems and
+  // dropped when Settings move to another provider or it's no longer offered.
   useEffect(() => {
-    if (!historyOpen) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!historyRef.current?.contains(event.target as Node)) setHistoryOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setHistoryOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api("/api/agent/models", { cache: "no-store" });
+        if (!res.ok) return;
+        const dto = (await res.json()) as CoachModelsDto;
+        const stored = (await chrome.storage.local.get(MODEL_KEY))[MODEL_KEY] as
+          | (AgentModelChoice & { provider?: string })
+          | undefined;
+        if (cancelled) return;
+        setModels(dto);
+        if (stored && stored.provider === dto.provider && dto.models.some((model) => model.id === stored.id)) {
+          setModelChoice({ id: stored.id, ...(stored.reasoningLevel ? { reasoningLevel: stored.reasoningLevel } : {}) });
+        }
+      } catch {
+        /* no picker; turns use the Settings model */
+      }
+    })();
     return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
+      cancelled = true;
     };
-  }, [historyOpen]);
+  }, [api]);
+
+  function pickModel(choice: AgentModelChoice) {
+    setModelChoice(choice);
+    if (models) void chrome.storage.local.set({ [MODEL_KEY]: { ...choice, provider: models.provider } });
+  }
 
   // The composer grows with its text, up to a few lines, then scrolls.
   useEffect(() => {
@@ -547,6 +588,14 @@ export function CoachTab({
 
   const runs = snapshot?.runs ?? [];
   const busy = streaming || remoteRunActive;
+  // Only the user's own key can switch models; the starter key's is fixed.
+  const pickable = models && models.source === "user" && models.models.length > 0 ? models : null;
+  const currentModelId = modelChoice?.id ?? pickable?.defaultModel ?? null;
+  const currentLevel =
+    modelChoice?.reasoningLevel ??
+    (currentModelId === pickable?.defaultModel ? pickable?.defaultReasoningLevel : "default") ??
+    "default";
+  const currentLevels = pickable?.models.find((model) => model.id === currentModelId)?.reasoningLevels ?? [];
   const quickPrompts = page
     ? [copy.quick.failing, copy.quick.hint, ...(savedHere ? [copy.quick.history] : [])]
     : [];
@@ -651,8 +700,71 @@ export function CoachTab({
     </form>
   );
 
+  const modelPicker =
+    pickable && currentModelId ? (
+      <div className="coach-history" ref={modelRef}>
+        <button
+          type="button"
+          className="coach-model"
+          aria-label={copy.modelMenu}
+          title={copy.modelMenu}
+          aria-expanded={modelOpen}
+          disabled={streaming}
+          onClick={() => setModelOpen((open) => !open)}
+        >
+          <span className="coach-model-name">{currentModelId}</span>
+          {currentLevels.length > 0 && currentLevel !== "default" && (
+            <span className="coach-model-level">{copy.reasoningLevel(currentLevel)}</span>
+          )}
+          <ChevronDownIcon />
+        </button>
+        {modelOpen && (
+          <div className="coach-history-menu coach-model-menu scroll-area" role="menu">
+            <p className="coach-menu-heading">{copy.modelHeading}</p>
+            {pickable.models.map((model) => (
+              <button
+                key={model.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={model.id === currentModelId}
+                className="coach-history-item"
+                onClick={() => {
+                  // A new model starts at its own default thinking level.
+                  if (model.id !== currentModelId) pickModel({ id: model.id });
+                }}
+              >
+                <span className="coach-history-title">{model.id}</span>
+                {model.id === pickable.defaultModel && <span className="coach-history-date">{copy.fromSettings}</span>}
+              </button>
+            ))}
+            {currentLevels.length > 0 && (
+              <>
+                <p className="coach-menu-heading">{copy.thinkingHeading}</p>
+                <div className="coach-levels">
+                  {["default", ...currentLevels].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      className="coach-tool"
+                      aria-pressed={level === currentLevel}
+                      onClick={() =>
+                        pickModel({ id: currentModelId, ...(level === "default" ? {} : { reasoningLevel: level }) })
+                      }
+                    >
+                      {copy.reasoningLevel(level)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    ) : null;
+
   const headerActions = (
     <div className="coach-bar-actions">
+      {mode === "dock" && modelPicker}
       <div className="coach-history" ref={historyRef}>
         <button
           type="button"
@@ -760,7 +872,8 @@ export function CoachTab({
       <div className="coach-bar">
         <div className="coach-context">
           {mode === "full" ? (
-            <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>
+            // The model picker leads the problem view's bar; past titles live in history.
+            (modelPicker ?? <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>)
           ) : page ? (
             <>
               <span className="coach-context-title">{copy.onProblem(savedHere?.title ?? page.title ?? page.slug)}</span>
@@ -1092,4 +1205,25 @@ function ChevronDownIcon({ up = false }: { up?: boolean }) {
       <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+/** Calls `close` on a pointer down outside `ref` or on Escape while `open`. */
+function useDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: () => void) {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) closeRef.current();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeRef.current();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, ref]);
 }

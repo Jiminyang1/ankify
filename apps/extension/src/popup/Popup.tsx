@@ -313,6 +313,14 @@ const EXT_I18N = {
       stop: "Stop",
       newChat: "New chat",
       history: "Past conversations",
+      modelMenu: "Model and thinking for the next replies",
+      modelHeading: "Model",
+      thinkingHeading: "Thinking",
+      fromSettings: "Settings",
+      reasoningLevel: (level: string) =>
+        ({ default: "Auto", off: "Off", none: "None", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" })[
+          level
+        ] ?? level,
       noHistory: "No conversations yet.",
       untitled: "Untitled conversation",
       includeCode: "Include my code",
@@ -617,6 +625,13 @@ const EXT_I18N = {
       stop: "停止",
       newChat: "新对话",
       history: "历史对话",
+      modelMenu: "接下来回复用的模型和思考强度",
+      modelHeading: "模型",
+      thinkingHeading: "思考强度",
+      fromSettings: "设置里的",
+      reasoningLevel: (level: string) =>
+        ({ default: "自动", off: "关闭", none: "无", low: "低", medium: "中", high: "高", xhigh: "超高", max: "最高" })[level] ??
+        level,
       noHistory: "还没有对话。",
       untitled: "未命名对话",
       includeCode: "附上我的代码",

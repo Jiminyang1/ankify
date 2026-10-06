@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { agentTurnRequestSchema, type AgentStreamEvent } from "@ankify/contracts";
-import { getActiveModel } from "@/server/ai";
+import { buildModel, getActiveModel } from "@/server/ai";
+import { applyModelChoice } from "@/server/ai/model-choice";
 import { consumeStarterAiCredit, StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { classifyAgentError, logAgentError } from "@/server/agent/errors";
 import { runStudyCoach } from "@/server/agent/runtime";
@@ -66,6 +67,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ai_key_missing", message: message.slice(16) }, { status: 400 });
     }
     throw error;
+  }
+  if (parsed.data.model) {
+    const settings = applyModelChoice(activeModel.settings, parsed.data.model);
+    if (settings !== activeModel.settings) activeModel = { settings, model: buildModel(settings) };
   }
 
   if (activeModel.settings.source === "starter") {

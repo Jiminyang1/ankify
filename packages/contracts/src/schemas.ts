@@ -123,6 +123,14 @@ export const agentPageContextSchema = z
   .strict();
 export type AgentPageContext = z.infer<typeof agentPageContextSchema>;
 
+export const agentModelChoiceSchema = z
+  .object({
+    id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/),
+    reasoningLevel: z.string().regex(/^[a-z]{1,16}$/).optional(),
+  })
+  .strict();
+export type AgentModelChoice = z.infer<typeof agentModelChoiceSchema>;
+
 export const agentTurnRequestSchema = z
   .object({
     sessionId: z.string().min(1).max(64).nullable(),
@@ -142,6 +150,9 @@ export const agentTurnRequestSchema = z
         message: "practiceSessionId is required",
       })
       .optional(),
+    /** A model and reasoning level for this turn instead of the Settings ones.
+     *  Only honored with the user's own key, on the same provider. */
+    model: agentModelChoiceSchema.optional(),
   })
   .strict();
 export type AgentTurnRequestInput = z.infer<typeof agentTurnRequestSchema>;
