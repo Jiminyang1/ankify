@@ -610,6 +610,64 @@ export function CoachTab({
   const canPractice = savedHere != null && !practiceActive && !streaming;
   const canRate = canPractice && savedHere.due && ratingPanel != null;
 
+  const modelPicker =
+    pickable && currentModelId ? (
+      <div className="coach-model-wrap" ref={modelRef}>
+        <button
+          type="button"
+          className="coach-icon coach-model"
+          aria-label={copy.modelMenu}
+          title={`${currentModelId} · ${copy.reasoningLevel(currentLevel)}`}
+          aria-expanded={modelOpen}
+          disabled={streaming}
+          onClick={() => setModelOpen((open) => !open)}
+        >
+          <TuneIcon />
+        </button>
+        {modelOpen && (
+          <div className="coach-history-menu coach-model-menu scroll-area" role="menu">
+            <p className="coach-menu-heading">{copy.modelHeading}</p>
+            {pickable.models.map((model) => (
+              <button
+                key={model.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={model.id === currentModelId}
+                className="coach-history-item"
+                onClick={() => {
+                  // A new model starts at its own default thinking level.
+                  if (model.id !== currentModelId) pickModel({ id: model.id });
+                }}
+              >
+                <span className="coach-history-title">{model.id}</span>
+                {model.id === pickable.defaultModel && <span className="coach-history-date">{copy.fromSettings}</span>}
+              </button>
+            ))}
+            {currentLevels.length > 0 && (
+              <>
+                <p className="coach-menu-heading">{copy.thinkingHeading}</p>
+                <div className="coach-levels">
+                  {["default", ...currentLevels].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      className="coach-tool"
+                      aria-pressed={level === currentLevel}
+                      onClick={() =>
+                        pickModel({ id: currentModelId, ...(level === "default" ? {} : { reasoningLevel: level }) })
+                      }
+                    >
+                      {copy.reasoningLevel(level)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    ) : null;
+
   const composer = (
     <form
       className="coach-composer"
@@ -674,97 +732,37 @@ export function CoachTab({
               </button>
             )}
           </div>
-          {streaming ? (
-            <button
-              type="button"
-              className="coach-send"
-              aria-label={copy.stop}
-              title={copy.stop}
-              onClick={() => abortRef.current?.abort()}
-            >
-              <StopIcon />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="coach-send"
-              aria-label={copy.send}
-              title={copy.send}
-              disabled={!draft.trim() || busy}
-            >
-              <SendIcon />
-            </button>
-          )}
+          <div className="coach-send-group">
+            {modelPicker}
+            {streaming ? (
+              <button
+                type="button"
+                className="coach-send"
+                aria-label={copy.stop}
+                title={copy.stop}
+                onClick={() => abortRef.current?.abort()}
+              >
+                <StopIcon />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="coach-send"
+                aria-label={copy.send}
+                title={copy.send}
+                disabled={!draft.trim() || busy}
+              >
+                <SendIcon />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </form>
   );
 
-  const modelPicker =
-    pickable && currentModelId ? (
-      <div className="coach-history" ref={modelRef}>
-        <button
-          type="button"
-          className="coach-model"
-          aria-label={copy.modelMenu}
-          title={copy.modelMenu}
-          aria-expanded={modelOpen}
-          disabled={streaming}
-          onClick={() => setModelOpen((open) => !open)}
-        >
-          <span className="coach-model-name">{currentModelId}</span>
-          {currentLevels.length > 0 && currentLevel !== "default" && (
-            <span className="coach-model-level">{copy.reasoningLevel(currentLevel)}</span>
-          )}
-          <ChevronDownIcon />
-        </button>
-        {modelOpen && (
-          <div className="coach-history-menu coach-model-menu scroll-area" role="menu">
-            <p className="coach-menu-heading">{copy.modelHeading}</p>
-            {pickable.models.map((model) => (
-              <button
-                key={model.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={model.id === currentModelId}
-                className="coach-history-item"
-                onClick={() => {
-                  // A new model starts at its own default thinking level.
-                  if (model.id !== currentModelId) pickModel({ id: model.id });
-                }}
-              >
-                <span className="coach-history-title">{model.id}</span>
-                {model.id === pickable.defaultModel && <span className="coach-history-date">{copy.fromSettings}</span>}
-              </button>
-            ))}
-            {currentLevels.length > 0 && (
-              <>
-                <p className="coach-menu-heading">{copy.thinkingHeading}</p>
-                <div className="coach-levels">
-                  {["default", ...currentLevels].map((level) => (
-                    <button
-                      key={level}
-                      type="button"
-                      className="coach-tool"
-                      aria-pressed={level === currentLevel}
-                      onClick={() =>
-                        pickModel({ id: currentModelId, ...(level === "default" ? {} : { reasoningLevel: level }) })
-                      }
-                    >
-                      {copy.reasoningLevel(level)}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    ) : null;
-
   const headerActions = (
     <div className="coach-bar-actions">
-      {mode === "dock" && modelPicker}
       <div className="coach-history" ref={historyRef}>
         <button
           type="button"
@@ -872,8 +870,7 @@ export function CoachTab({
       <div className="coach-bar">
         <div className="coach-context">
           {mode === "full" ? (
-            // The model picker leads the problem view's bar; past titles live in history.
-            (modelPicker ?? <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>)
+            <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>
           ) : page ? (
             <>
               <span className="coach-context-title">{copy.onProblem(savedHere?.title ?? page.title ?? page.slug)}</span>
@@ -1226,4 +1223,15 @@ function useDismiss(open: boolean, ref: RefObject<HTMLElement | null>, close: ()
       document.removeEventListener("keydown", onKey);
     };
   }, [open, ref]);
+}
+
+/** Sliders: the model and thinking menu next to Send. */
+function TuneIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="10" cy="4.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="6" cy="11.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
 }

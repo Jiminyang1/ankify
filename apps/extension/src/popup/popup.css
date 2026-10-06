@@ -2934,44 +2934,28 @@ a:focus-visible,
   box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.35), var(--shadow);
 }
 
-.coach-model {
-  display: inline-flex;
+.coach-send-group {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  max-width: 220px;
-  height: 28px;
-  padding: 0 8px 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.coach-model:hover:not(:disabled),
-.coach-model[aria-expanded="true"] {
-  background: var(--subtle);
-  color: var(--fg);
-}
-
-.coach-model:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.coach-model svg { flex-shrink: 0; }
-
-.coach-model-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.coach-model-level {
+  gap: 2px;
   flex-shrink: 0;
-  color: var(--accent-strong);
+  min-width: 0;
+}
+
+/* The menu hangs from the composer box and opens upward. */
+.coach-model-wrap {
+  position: static;
+  min-width: 0;
+}
+
+.coach-model-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.coach-model {
+  width: 30px;
+  height: 30px;
 }
 
 .coach-menu-heading {
@@ -3216,6 +3200,7 @@ a:focus-visible,
 }
 
 .coach-composer-box {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -3254,7 +3239,7 @@ a:focus-visible,
 
 .coach-composer-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
 }
@@ -3263,6 +3248,7 @@ a:focus-visible,
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
   min-width: 0;
   flex-wrap: wrap;
 }
