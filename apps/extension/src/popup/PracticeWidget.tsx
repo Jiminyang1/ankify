@@ -30,7 +30,8 @@ export type PracticeCopy = {
   correct: string;
   incorrect: string;
   score: (points: number, total: number) => string;
-  suggested: (rating: string) => string;
+  /** Marks the suggested rating's button. */
+  suggestedTag: string;
   rate: string;
   rated: (rating: string) => string;
   ratings: [string, string, string, string];
@@ -172,38 +173,42 @@ export function PracticeWidget({
     );
   }
 
-  const ratingBlock = (
-    <>
-      {rated ? (
-        <p className="popup-muted">{copy.rated(copy.ratings[rated - 1]!)}</p>
-      ) : (
-        <>
-          {session.suggestedRating && (
-            <p className="popup-muted">{copy.suggested(copy.ratings[session.suggestedRating - 1]!)}</p>
-          )}
-          <div className="practice-ratings" role="radiogroup" aria-label={copy.rate}>
-            {([1, 2, 3, 4] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={rating === value}
-                className="practice-rating"
-                data-rating={value}
-                data-active={rating === value}
-                onClick={() => setRating(value)}
-              >
-                {copy.ratings[value - 1]}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="btn btn-primary btn-inline" disabled={!rating || busy} onClick={() => void rate()}>
-            {busy && <span className="btn-spinner" />}
-            {copy.rate}
-          </button>
-        </>
-      )}
-    </>
+  // Same look as the panel's quick rating: four plain buttons and a check.
+  // The suggested one is marked under its label instead of a separate line.
+  const ratingBlock = rated ? (
+    <p className="popup-muted">{copy.rated(copy.ratings[rated - 1]!)}</p>
+  ) : (
+    <div className="rate-row" role="radiogroup" aria-label={copy.rate}>
+      {([1, 2, 3, 4] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={rating === value}
+          className={`rate-btn rate-btn-flat${rating === value ? " rate-btn-active" : ""}`}
+          onClick={() => setRating(value)}
+        >
+          <span className="rate-btn-label">{copy.ratings[value - 1]}</span>
+          <span className="rate-btn-interval">{session.suggestedRating === value ? copy.suggestedTag : "\u00a0"}</span>
+        </button>
+      ))}
+      <button
+        type="button"
+        className="btn btn-primary rate-submit-inline"
+        disabled={!rating || busy}
+        aria-label={copy.rate}
+        title={copy.rate}
+        onClick={() => void rate()}
+      >
+        {busy ? (
+          <span className="btn-spinner" />
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="m3.5 8.5 3 3 6-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+    </div>
   );
 
   if (session.mode === "talk") {

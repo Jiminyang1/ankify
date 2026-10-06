@@ -3576,40 +3576,12 @@ a:focus-visible,
 
 .practice-summary p { margin: 0; }
 
+.practice-summary .rate-row { align-self: stretch; }
+
 .practice-score {
   font-size: 15px;
   font-weight: 700;
   color: var(--fg);
-}
-
-.practice-ratings {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  align-self: stretch;
-}
-
-.practice-rating {
-  padding: 7px 0;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.practice-rating[data-rating="1"] { border-left-color: var(--danger); }
-.practice-rating[data-rating="2"] { border-left-color: var(--warning); }
-.practice-rating[data-rating="3"] { border-left-color: var(--success); }
-.practice-rating[data-rating="4"] { border-left-color: var(--accent); }
-
-.practice-rating[data-active="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
 }
 
 /* On a problem the chat is the main area; the strip above it only holds
