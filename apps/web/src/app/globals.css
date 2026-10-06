@@ -296,3 +296,18 @@ select:focus-visible,
     display: none;
   }
 }
+
+/* Inline code in Markdown is marked in the theme's gold, mixed toward the text
+ * color so it stays readable (4.5:1+) in the light theme. Mirrors
+ * .popup-md-inline-code in the extension. */
+.md-inline-code {
+  background: rgb(var(--accent) / 0.13);
+  color: color-mix(in srgb, rgb(var(--accent)) 60%, rgb(var(--fg)));
+}
+
+/* A fence without a language renders through the inline branch; keep it plain. */
+pre .md-inline-code {
+  background: none;
+  color: inherit;
+  padding: 0;
+}

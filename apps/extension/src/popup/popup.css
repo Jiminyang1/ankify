@@ -744,10 +744,20 @@ label, button, th, .font-ui {
   font-size: 0.88em;
 }
 
+/* Inline code is marked in the theme's gold (like Claude's red). Mixed toward
+ * the text color so it stays readable (4.5:1+) in the light theme too. */
 .popup-md-inline-code {
   border-radius: 4px;
-  background: var(--subtle);
-  padding: 1px 4px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: color-mix(in srgb, var(--accent) 60%, var(--fg));
+  padding: 1px 5px;
+}
+
+/* A fence without a language renders through the inline branch; keep it plain. */
+.popup-md pre .popup-md-inline-code {
+  background: none;
+  color: inherit;
+  padding: 0;
 }
 
 .popup-md-table-scroll {
