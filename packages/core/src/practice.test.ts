@@ -156,4 +156,15 @@ describe("talk-through targets and score", () => {
     expect(scoreTalk(["correct"], { endedEarly: true })).toEqual({ score: 1, rating: 3 });
     expect(scoreTalk(["missed"], { endedEarly: true }).rating).toBe(1);
   });
+
+  it("follows up before an incomplete answer is graded", async () => {
+    const { decideTalkGrade } = await import("./practice");
+    expect(decideTalkGrade("partial", 0)).toEqual({ ok: false, error: "follow_up_first" });
+    expect(decideTalkGrade("missed", 0)).toEqual({ ok: false, error: "follow_up_first" });
+    expect(decideTalkGrade("missed", 0, true)).toEqual({ ok: true, grade: "missed" });
+    expect(decideTalkGrade("correct", 0)).toEqual({ ok: true, grade: "correct" });
+    // Getting there with a follow-up is partial at best.
+    expect(decideTalkGrade("correct", 1)).toEqual({ ok: true, grade: "partial" });
+    expect(decideTalkGrade("missed", 2)).toEqual({ ok: true, grade: "missed" });
+  });
 });

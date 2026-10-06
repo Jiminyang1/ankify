@@ -9,11 +9,11 @@ import {
   type AgentStepDto,
   type DocEdit,
 } from "@ankify/contracts";
-import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
+import { MAX_TALK_FOLLOW_UPS, WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
-import { gradeTalkTarget, startPractice } from "@/server/practice";
+import { gradeTalkTarget, recordTalkFollowUp, startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { loadProfile, type PlanItem } from "@/server/profile";
@@ -518,27 +518,62 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
 
+    follow_up: tool({
+      description: `Before grading an incomplete or wrong answer: note what's missing, then ask the user one narrower question about just that part (no hint that gives it away). At most ${MAX_TALK_FOLLOW_UPS} per target; after that, grade it.`,
+      inputSchema: z.object({
+        targetId: z.string().max(80).describe("The target id from runtimeContext.practiceActive"),
+        gap: z.string().min(1).max(200).describe("What the answer is missing, for the record; not shown as the answer"),
+      }),
+      execute: async ({ targetId, gap }) => {
+        if (!context.problemId) return { recorded: false, error: "no_active_practice" };
+        const result = await recordTalkFollowUp(context.userId, context.problemId, targetId);
+        if (!result.ok) {
+          return {
+            recorded: false,
+            error: result.error,
+            ...(result.error === "follow_ups_used" ? { next: "Grade this target now with grade_answer." } : {}),
+          };
+        }
+        const followUps = result.session.targets.find((target) => target.id === targetId)?.followUps ?? 0;
+        // The gap stays in the tool call: shown in the chat it would give the answer away.
+        void gap;
+        await record({ kind: "read", toolName: "follow_up", status: "completed", summary: "Asked a follow-up" });
+        return { recorded: true, followUps, left: MAX_TALK_FOLLOW_UPS - followUps };
+      },
+    }),
+
     grade_answer: tool({
       description:
-        "Grade the user's answer about one practice target: correct (complete and right), partial (right idea, missing or shaky on a key part), or missed (wrong or no idea). The reason is one sentence. The last grade completes the session and returns the score and suggested rating.",
+        "Grade one practice target once it's settled: correct (complete and right on the first answer), partial (got there only with a follow-up, or still partly right), or missed (still wrong or no idea after follow-ups). An incomplete first answer needs follow_up first, unless the user said they don't know or want to skip (userGaveUp). A correct after a follow-up is recorded as partial. The reason is one sentence. The last grade completes the session and returns the score and suggested rating.",
       inputSchema: z.object({
         targetId: z.string().max(80).describe("The target id from runtimeContext.practiceActive"),
         grade: z.enum(["correct", "partial", "missed"]),
         reason: z.string().min(1).max(300),
+        userGaveUp: z.boolean().optional().describe("The user said they don't know or asked to skip this one"),
       }),
-      execute: async ({ targetId, grade, reason }) => {
+      execute: async ({ targetId, grade, reason, userGaveUp }) => {
         if (!context.problemId) return { graded: false, error: "no_active_practice" };
-        const result = await gradeTalkTarget(context.userId, context.problemId, targetId, { grade, reason });
-        if (!result.ok) return { graded: false, error: result.error };
+        const result = await gradeTalkTarget(context.userId, context.problemId, targetId, { grade, reason }, { userGaveUp });
+        if (!result.ok) {
+          return {
+            graded: false,
+            error: result.error,
+            ...(result.error === "follow_up_first"
+              ? { next: "Call follow_up with what's missing and ask about just that part; grade after they answer." }
+              : {}),
+          };
+        }
         const remaining = result.session.targets.filter((target) => !target.grade);
+        const recorded = result.session.targets.find((target) => target.id === targetId)?.grade?.grade ?? grade;
         await record({
           kind: "read",
           toolName: "grade_answer",
           status: "completed",
-          summary: `${grade}: ${reason}`,
+          summary: `${recorded}: ${reason}`,
         });
         return {
           graded: true,
+          recordedGrade: recorded,
           completed: result.session.status === "completed",
           remaining: remaining.map(({ id, kind, category, label }) => ({ id, kind, category, label })),
           ...(result.session.status === "completed"

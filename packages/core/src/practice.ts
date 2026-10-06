@@ -94,6 +94,28 @@ export function selectPracticeTargets(args: {
 export const GRADE_POINTS = { correct: 1, partial: 0.5, missed: 0 } as const;
 
 /** Talk-through score and suggestion: every target correct suggests Easy. */
+/** Follow-up questions the Coach may ask on one talk-through target. */
+export const MAX_TALK_FOLLOW_UPS = 2;
+
+export type TalkGradeDecision =
+  | { ok: true; grade: "correct" | "partial" | "missed" }
+  | { ok: false; error: "follow_up_first" };
+
+/**
+ * The grade a talk-through target gets. An incomplete answer earns a follow-up
+ * before it's graded (unless the user gave up), and an answer that needed a
+ * follow-up is at best partial: "correct" means right on the first try.
+ */
+export function decideTalkGrade(
+  grade: "correct" | "partial" | "missed",
+  followUps: number,
+  userGaveUp = false,
+): TalkGradeDecision {
+  if (grade !== "correct" && followUps === 0 && !userGaveUp) return { ok: false, error: "follow_up_first" };
+  if (grade === "correct" && followUps > 0) return { ok: true, grade: "partial" };
+  return { ok: true, grade };
+}
+
 export function scoreTalk(
   grades: ("correct" | "partial" | "missed")[],
   options: { endedEarly?: boolean } = {},

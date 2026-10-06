@@ -1,8 +1,10 @@
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
+  MAX_TALK_FOLLOW_UPS,
   WEAKNESS_RESOLVE_STREAK,
   computeWeaknessProfile,
+  decideTalkGrade,
   parseCards,
   scoreTalk,
   selectPracticeCards,
@@ -30,7 +32,9 @@ export type PracticeError =
   | "check_not_ready"
   | "item_not_found"
   | "already_answered"
-  | "target_not_found";
+  | "target_not_found"
+  | "follow_up_first"
+  | "follow_ups_used";
 
 export type PracticeResult = { ok: true; session: PracticeSessionDto } | { ok: false; error: PracticeError; message?: string };
 
@@ -44,6 +48,8 @@ export const PRACTICE_ERROR_STATUS: Record<PracticeError, number> = {
   item_not_found: 404,
   already_answered: 409,
   target_not_found: 404,
+  follow_up_first: 409,
+  follow_ups_used: 409,
 };
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
@@ -63,6 +69,7 @@ export function toPracticeDto(session: PracticeSession): PracticeSessionDto {
       category: target.category ?? null,
       label: target.label,
       grade: talk[target.id] ?? null,
+      followUps: results.followUps?.[target.id] ?? 0,
     })),
     recall: session.recallJson.map((card) => ({ ...card, result: results.recall[card.key] ?? null })),
     check: {
@@ -469,39 +476,73 @@ export async function getActiveTalkContext(userId: string, problemId: string) {
       category: target.category ?? null,
       label: target.label.slice(0, 400),
       grade: talk[target.id]?.grade ?? null,
+      followUps: session.resultsJson.followUps?.[target.id] ?? 0,
     })),
   };
 }
 
-/** The Coach's grade for one target. The last grade completes the session. */
+async function loadActiveTalk(tx: Tx, userId: string, problemId: string) {
+  const [session] = await tx
+    .select()
+    .from(schema.practiceSessions)
+    .where(
+      and(
+        eq(schema.practiceSessions.userId, userId),
+        eq(schema.practiceSessions.problemId, problemId),
+        eq(schema.practiceSessions.status, "active"),
+      ),
+    )
+    .limit(1);
+  return session && session.mode === "talk" ? session : null;
+}
+
+/** The Coach asks a follow-up on a target whose answer was incomplete. */
+export async function recordTalkFollowUp(userId: string, problemId: string, targetId: string): Promise<PracticeResult> {
+  return getDb().transaction(async (tx) => {
+    const session = await loadActiveTalk(tx, userId, problemId);
+    if (!session) return { ok: false, error: "practice_not_active" } as const;
+    if (!(session.targetsJson ?? []).some((target) => target.id === targetId)) {
+      return { ok: false, error: "target_not_found" } as const;
+    }
+    if (session.resultsJson.talk?.[targetId]) return { ok: false, error: "already_answered" } as const;
+    const followUps = session.resultsJson.followUps ?? {};
+    const count = followUps[targetId] ?? 0;
+    if (count >= MAX_TALK_FOLLOW_UPS) return { ok: false, error: "follow_ups_used" } as const;
+    const [updated] = await tx
+      .update(schema.practiceSessions)
+      .set({
+        resultsJson: { ...session.resultsJson, followUps: { ...followUps, [targetId]: count + 1 } },
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.practiceSessions.id, session.id))
+      .returning();
+    return { ok: true, session: toPracticeDto(updated!) } as const;
+  });
+}
+
+/** The Coach's grade for one target (see decideTalkGrade). The last grade
+ *  completes the session. */
 export async function gradeTalkTarget(
   userId: string,
   problemId: string,
   targetId: string,
   grade: PracticeGrade,
+  options: { userGaveUp?: boolean } = {},
 ): Promise<PracticeResult> {
   return getDb().transaction(async (tx) => {
-    const [session] = await tx
-      .select()
-      .from(schema.practiceSessions)
-      .where(
-        and(
-          eq(schema.practiceSessions.userId, userId),
-          eq(schema.practiceSessions.problemId, problemId),
-          eq(schema.practiceSessions.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (!session || session.mode !== "talk") return { ok: false, error: "practice_not_active" } as const;
+    const session = await loadActiveTalk(tx, userId, problemId);
+    if (!session) return { ok: false, error: "practice_not_active" } as const;
     if (!(session.targetsJson ?? []).some((target) => target.id === targetId)) {
       return { ok: false, error: "target_not_found" } as const;
     }
     const talk = session.resultsJson.talk ?? {};
     if (talk[targetId]) return { ok: false, error: "already_answered" } as const;
+    const decision = decideTalkGrade(grade.grade, session.resultsJson.followUps?.[targetId] ?? 0, options.userGaveUp);
+    if (!decision.ok) return { ok: false, error: decision.error } as const;
     await tx
       .update(schema.practiceSessions)
       .set({
-        resultsJson: { ...session.resultsJson, talk: { ...talk, [targetId]: grade } },
+        resultsJson: { ...session.resultsJson, talk: { ...talk, [targetId]: { ...grade, grade: decision.grade } } },
         updatedAt: new Date(),
       })
       .where(eq(schema.practiceSessions.id, session.id));

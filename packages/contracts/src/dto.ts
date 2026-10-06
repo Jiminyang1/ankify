@@ -336,6 +336,8 @@ export type PracticeSessionDto = {
     category: string | null;
     label: string;
     grade: { grade: "correct" | "partial" | "missed"; reason: string } | null;
+    /** Follow-up questions the Coach has asked on it so far. */
+    followUps: number;
   }[];
   recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
   check: {

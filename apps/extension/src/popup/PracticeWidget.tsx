@@ -16,6 +16,8 @@ export type PracticeCopy = {
   keepGoing: string;
   endedEarly: string;
   abandoned: string;
+  /** A target the Coach is still asking about after an incomplete answer. */
+  followingUp: string;
   showDetails: string;
   hideDetails: string;
   close: string;
@@ -218,7 +220,7 @@ export function PracticeWidget({
     const active = session.status === "active";
     const tray = variant === "tray";
     const stateOf = (target: PracticeSessionDto["targets"][number]) =>
-      target.grade?.grade ?? (session.status === "completed" ? "skipped" : "open");
+      target.grade?.grade ?? (session.status === "completed" ? "skipped" : target.followUps > 0 ? "probing" : "open");
     if (session.status === "abandoned") {
       return (
         <div className="practice practice-talk practice-ended">
@@ -266,6 +268,8 @@ export function PracticeWidget({
                     </span>
                   ) : state === "skipped" ? (
                     <span className="practice-target-grade">{copy.grades.skipped}</span>
+                  ) : state === "probing" ? (
+                    <span className="practice-target-grade">{copy.followingUp}</span>
                   ) : null}
                 </span>
               </li>

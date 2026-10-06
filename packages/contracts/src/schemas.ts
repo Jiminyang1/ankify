@@ -112,6 +112,7 @@ export const agentPageContextSchema = z
                 category: z.string().max(40).nullable(),
                 label: z.string().max(400),
                 grade: z.enum(["correct", "partial", "missed"]).nullable(),
+                followUps: z.number().int().min(0).max(5).optional(),
               })
               .strict(),
           )

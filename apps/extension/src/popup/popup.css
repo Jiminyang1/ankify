@@ -3878,6 +3878,12 @@ a:focus-visible,
 .practice-tray-dot[data-grade="partial"] { background: var(--warning); border-color: var(--warning); }
 .practice-tray-dot[data-grade="missed"] { background: var(--danger); border-color: var(--danger); }
 .practice-tray-dot[data-grade="skipped"] { border-style: dashed; }
+/* Still being asked about: half filled in the accent. */
+.practice-tray-dot[data-grade="probing"],
+.practice-target[data-grade="probing"] .practice-target-mark {
+  border-color: var(--accent);
+  background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+}
 
 .practice-tray-toggle .practice-progress {
   margin-left: auto;
