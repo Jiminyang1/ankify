@@ -450,6 +450,9 @@ export function CoachTab({
           })
           .catch(() => {});
       }
+    } else if (event.type === "practice") {
+      // The reply was judged: progress shows before the Coach answers.
+      setLocalPractice((current) => (current?.id === event.session.id ? event.session : current));
     } else if (event.type === "done") {
       setPartial("");
       setSnapshot((current) =>

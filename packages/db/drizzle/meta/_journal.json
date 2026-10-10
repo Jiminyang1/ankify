@@ -162,6 +162,13 @@
       "when": 1791230602215,
       "tag": "0022_practice_talk",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791663953790,
+      "tag": "0023_solutions_doc",
+      "breakpoints": true
     }
   ]
 }

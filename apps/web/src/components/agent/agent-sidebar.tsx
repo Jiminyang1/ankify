@@ -311,6 +311,8 @@ export function AgentSidebar({
       setPartialResponse("");
       return;
     }
+    // Practice progress is shown in the extension; the web sidebar only chats.
+    if (event.type === "practice") return;
     setSnapshot((current) =>
       current ? { ...current, runs: replaceById(current.runs, event.run) } : current,
     );

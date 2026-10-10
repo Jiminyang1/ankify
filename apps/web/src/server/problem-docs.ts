@@ -1,19 +1,21 @@
 import {
   CARDS_DOC_MAX_CHARS,
   NOTES_DOC_MAX_CHARS,
+  SOLUTIONS_DOC_MAX_CHARS,
   applyCardsEdit,
   applyNotesEdit,
   notesSections,
   parseCards,
+  parseSolutions,
   type DocEditError,
 } from "@ankify/core";
 import { docEditTarget, type DocEdit, type ProblemDocTarget, type ProblemDocsDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 
-/** The problem's Notes and Cards docs (docs/coach-practice.md). Every write
- *  checks the doc's version, so a stale editor tab or Coach proposal can't
- *  overwrite newer text. */
+/** The problem's Notes, Cards, and Solutions docs (docs/coach-practice.md).
+ *  Every write checks the doc's version, so a stale editor tab or Coach
+ *  proposal can't overwrite newer text. */
 
 export type DocWriteError = DocEditError | "problem_not_found" | "version_conflict";
 export type DocWriteResult = { ok: true; docs: ProblemDocsDto } | { ok: false; error: DocWriteError };
@@ -24,6 +26,8 @@ type DocRow = {
   notesVersion: number;
   cardsMd: string | null;
   cardsVersion: number;
+  solutionsMd: string | null;
+  solutionsVersion: number;
 };
 
 async function loadRow(userId: string, problemId: string): Promise<DocRow | null> {
@@ -34,6 +38,8 @@ async function loadRow(userId: string, problemId: string): Promise<DocRow | null
       notesVersion: schema.problems.notesVersion,
       cardsMd: schema.problems.cardsMd,
       cardsVersion: schema.problems.cardsVersion,
+      solutionsMd: schema.problems.solutionsMd,
+      solutionsVersion: schema.problems.solutionsVersion,
     })
     .from(schema.problems)
     .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)))
@@ -44,11 +50,19 @@ async function loadRow(userId: string, problemId: string): Promise<DocRow | null
 export function toProblemDocsDto(row: DocRow): ProblemDocsDto {
   const notes = row.notes ?? "";
   const cards = row.cardsMd ?? "";
+  const solutions = row.solutionsMd ?? "";
   const parsed = parseCards(cards);
+  const parsedSolutions = parseSolutions(solutions);
   return {
     problemId: row.id,
     notes: { markdown: notes, version: row.notesVersion, sections: notesSections(notes) },
     cards: { markdown: cards, version: row.cardsVersion, cards: parsed.cards, issues: parsed.issues },
+    solutions: {
+      markdown: solutions,
+      version: row.solutionsVersion,
+      approaches: parsedSolutions.approaches,
+      issues: parsedSolutions.issues,
+    },
   };
 }
 
@@ -65,14 +79,20 @@ async function writeDoc(
   markdown: string,
   expectedVersion: number,
 ): Promise<DocWriteResult> {
-  const versionColumn = target === "notes" ? schema.problems.notesVersion : schema.problems.cardsVersion;
+  const versionColumn = {
+    notes: schema.problems.notesVersion,
+    cards: schema.problems.cardsVersion,
+    solutions: schema.problems.solutionsVersion,
+  }[target];
   const nextVersion = expectedVersion + 1;
   const updated = await getDb()
     .update(schema.problems)
     .set(
       target === "notes"
         ? { notes: markdown, notesVersion: nextVersion, updatedAt: new Date() }
-        : { cardsMd: markdown, cardsVersion: nextVersion, updatedAt: new Date() },
+        : target === "cards"
+          ? { cardsMd: markdown, cardsVersion: nextVersion, updatedAt: new Date() }
+          : { solutionsMd: markdown, solutionsVersion: nextVersion, updatedAt: new Date() },
     )
     .where(
       and(
@@ -88,7 +108,9 @@ async function writeDoc(
     docs: toProblemDocsDto(
       target === "notes"
         ? { ...row, notes: markdown, notesVersion: nextVersion }
-        : { ...row, cardsMd: markdown, cardsVersion: nextVersion },
+        : target === "cards"
+          ? { ...row, cardsMd: markdown, cardsVersion: nextVersion }
+          : { ...row, solutionsMd: markdown, solutionsVersion: nextVersion },
     ),
   };
 }
@@ -105,6 +127,8 @@ export async function saveProblemDoc(
   const row = await loadRow(userId, problemId);
   if (!row) return { ok: false, error: "problem_not_found" };
   if (target === "notes" && markdown.length > NOTES_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
+  // A session in progress keeps the copy it started with; edits apply next time.
+  if (target === "solutions" && markdown.length > SOLUTIONS_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
   if (target === "cards") {
     if (markdown.length > CARDS_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
     if (parseCards(markdown).issues.some((issue) => issue.kind === "too_many_cards")) {

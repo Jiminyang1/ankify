@@ -134,6 +134,14 @@ export async function POST(req: Request) {
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),
             onStep: (step) => emit({ type: "step", step }),
             analyzeAttempts: trigger?.type === "analyze_attempts",
+            practice: !context.practiceActive
+              ? undefined
+              : trigger?.type === "practice_start"
+                ? { kind: "start" }
+                : trigger
+                  ? undefined
+                  : { kind: "reply", message: parsed.data.message },
+            onPractice: (session) => emit({ type: "practice", session }),
           });
           emit({ type: "done", ...completed });
         } catch (error) {

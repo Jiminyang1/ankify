@@ -18,6 +18,21 @@ export type PracticeCopy = {
   abandoned: string;
   /** A target the Coach is still asking about after an incomplete answer. */
   followingUp: string;
+  /** Key points covered so far on the open question. */
+  pointsProgress: (covered: number, total: number) => string;
+  /** How a settled question went; `complete` by the help it needed. */
+  settledBy: {
+    complete: readonly [string, string, string];
+    newApproach: string;
+    gaveUp: string;
+    notRecalled: string;
+  };
+  /** The approach a settled question was checked against. */
+  checkedAgainst: (approach: string) => string;
+  covered: string;
+  notCovered: string;
+  dispute: string;
+  disputeHint: string;
   showDetails: string;
   hideDetails: string;
   close: string;
@@ -91,6 +106,10 @@ export function PracticeWidget({
     if (finished) setOpen(true);
   }, [finished]);
   const completedReported = useRef(false);
+  // The chat pushes progress after each judged reply.
+  useEffect(() => {
+    if (initial) setSession(initial);
+  }, [initial]);
 
   const load = useCallback(async () => {
     const res = await apiFetch(settings, `/api/practice/${sessionId}`, { cache: "no-store" });
@@ -129,8 +148,10 @@ export function PracticeWidget({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = (await res.json().catch(() => null)) as { session?: PracticeSessionDto; error?: string } | null;
-      if (!res.ok || !json?.session) throw new Error(json?.error ?? copy.actionFailed);
+      const json = (await res.json().catch(() => null)) as
+        | { session?: PracticeSessionDto; error?: string; message?: string }
+        | null;
+      if (!res.ok || !json?.session) throw new Error(json?.message ?? copy.actionFailed);
       setSession(json.session);
       return json.session;
     } catch (actionError) {
@@ -145,6 +166,12 @@ export function PracticeWidget({
     const next = await post("end", {});
     setConfirmEnd(false);
     if (next?.status === "abandoned") onAbandoned(next);
+  }
+
+  async function dispute(targetId: string) {
+    const next = await post("dispute", { targetId });
+    // A finished session is scored again.
+    if (next?.status === "completed" && !rated) setRating(next.suggestedRating);
   }
 
   async function rate() {
@@ -219,8 +246,25 @@ export function PracticeWidget({
     const partial = graded.filter((target) => target.grade!.grade === "partial").length;
     const active = session.status === "active";
     const tray = variant === "tray";
-    const stateOf = (target: PracticeSessionDto["targets"][number]) =>
-      target.grade?.grade ?? (session.status === "completed" ? "skipped" : target.followUps > 0 ? "probing" : "open");
+    type Target = PracticeSessionDto["targets"][number];
+    const stateOf = (target: Target) =>
+      target.grade?.grade ?? (session.status === "completed" ? "skipped" : target.nudges > 0 ? "probing" : "open");
+    const settledText = (target: Target) => {
+      if (!target.grade) return null;
+      const how =
+        target.settledBy === "complete"
+          ? copy.settledBy.complete[target.help]
+          : target.settledBy === "new_approach"
+            ? copy.settledBy.newApproach
+            : target.settledBy === "gave_up"
+              ? copy.settledBy.gaveUp
+              : target.settledBy === "not_recalled"
+                ? copy.settledBy.notRecalled
+                : target.grade.reason;
+      return `${copy.grades[target.grade.grade]} · ${how}`;
+    };
+    const openTarget = session.targets.find((target) => !target.grade);
+    const openProgress = active && openTarget?.progress && openTarget.progress.covered > 0 ? openTarget.progress : null;
     if (session.status === "abandoned") {
       return (
         <div className="practice practice-talk practice-ended">
@@ -263,14 +307,45 @@ export function PracticeWidget({
                   </span>
                   {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
                   {target.grade ? (
-                    <span className="practice-target-grade">
-                      {copy.grades[target.grade.grade]} · {target.grade.reason}
-                    </span>
+                    <span className="practice-target-grade">{settledText(target)}</span>
                   ) : state === "skipped" ? (
                     <span className="practice-target-grade">{copy.grades.skipped}</span>
+                  ) : target.progress && target.progress.covered > 0 ? (
+                    <span className="practice-target-grade">
+                      {copy.pointsProgress(target.progress.covered, target.progress.total)}
+                    </span>
                   ) : state === "probing" ? (
                     <span className="practice-target-grade">{copy.followingUp}</span>
                   ) : null}
+                  {target.kind === "core" && target.review && target.review.points.length > 0 && (
+                    <span className="practice-points">
+                      {target.review.approach && (
+                        <span className="practice-points-approach">{copy.checkedAgainst(target.review.approach)}</span>
+                      )}
+                      {target.review.points.map((point, index) => (
+                        <span key={index} className="practice-point" data-covered={point.covered}>
+                          <span
+                            className="practice-point-mark"
+                            role="img"
+                            aria-label={point.covered ? copy.covered : copy.notCovered}
+                          />
+                          <PopupMarkdown className="popup-md-inline">{point.text}</PopupMarkdown>
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {target.canDispute && (
+                    <button
+                      type="button"
+                      className="practice-dispute"
+                      disabled={busy}
+                      title={copy.disputeHint}
+                      onClick={() => void dispute(target.id)}
+                    >
+                      {busy && <span className="btn-spinner" />}
+                      {copy.dispute}
+                    </button>
+                  )}
                 </span>
               </li>
             );
@@ -328,6 +403,7 @@ export function PracticeWidget({
                 {session.status === "completed"
                   ? copy.talkScore(correct, partial, graded.length)
                   : copy.progress(graded.length, session.targets.length)}
+                {openProgress && ` · ${copy.pointsProgress(openProgress.covered, openProgress.total)}`}
               </span>
             </button>
             {endButton}

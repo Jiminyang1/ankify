@@ -5,13 +5,14 @@ import {
   type LanguageModel,
   type ModelMessage,
 } from "ai";
-import type { AgentStepDto } from "@ankify/contracts";
+import type { AgentStepDto, PracticeSessionDto } from "@ankify/contracts";
 import { aiCallOptions } from "@/server/ai/call-options";
 import type { AiRuntimeSettings } from "@/server/settings";
 import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
 import { finishAgentRun, getAgentModelMessages } from "./store";
+import { judgeTalkTurn, recordTutorLine, startTalkTurn } from "@/server/practice";
 import { analyzeAttempts } from "./analyze-attempts";
 import { createStudyCoachTools } from "./tools";
 
@@ -29,8 +30,15 @@ export async function runStudyCoach(args: {
   onStep: (step: AgentStepDto) => void;
   /** "Analyze my attempts": record weak spots server-side before the Coach explains them. */
   analyzeAttempts?: boolean;
+  /** A talk-through is active on the problem: this turn opens it (start) or
+   *  answers its current question (reply), judged before the Coach replies. */
+  practice?: { kind: "start" } | { kind: "reply"; message: string };
+  onPractice?: (session: PracticeSessionDto) => void;
 }) {
-  const runState: { navigationStep: AgentStepDto | null } = { navigationStep: null };
+  const runState: { navigationStep: AgentStepDto | null; startedPractice: boolean } = {
+    navigationStep: null,
+    startedPractice: false,
+  };
   await compactAgentSessionIfNeeded({
     userId: args.userId,
     sessionId: args.sessionId,
@@ -43,10 +51,12 @@ export async function runStudyCoach(args: {
     userId: args.userId,
     problemId: args.problemId,
     runId: args.runId,
+    ai: { model: args.model, settings: args.settings },
     emitStep: (step) => {
       // A reply that only opens a problem or starts practice has no text;
       // the step's summary stands in for it.
       if (step.kind === "navigation" || step.kind === "practice") runState.navigationStep = step;
+      if (step.kind === "practice") runState.startedPractice = true;
       args.onStep(step);
     },
   });
@@ -93,6 +103,25 @@ export async function runStudyCoach(args: {
       });
     }
   }
+  if (args.practice && args.problemId) {
+    // The judge reads the reply first; the Coach gets the decided move as its
+    // instruction in this turn's runtimeContext (docs/coach-practice.md, v3).
+    const turn =
+      args.practice.kind === "start"
+        ? await startTalkTurn(args.userId, args.problemId)
+        : await judgeTalkTurn({
+            userId: args.userId,
+            problemId: args.problemId,
+            message: args.practice.message,
+            model: args.model,
+            settings: args.settings,
+            abortSignal: args.abortSignal,
+          });
+    if (turn) {
+      args.onPractice?.(turn.session);
+      replaceRuntimeContext(messages, (context) => ({ ...context, practiceActive: turn.context }));
+    }
+  }
   const result = await agent.stream({
     messages,
     abortSignal: args.abortSignal,
@@ -118,6 +147,11 @@ export async function runStudyCoach(args: {
     content = runState.navigationStep.summary;
   }
 
+  // What the Coach asked goes in the question's log for the judge.
+  if (args.problemId && (args.practice || runState.startedPractice)) {
+    await recordTutorLine(args.userId, args.problemId, content);
+  }
+
   const usage = await result.usage;
   const responseMessages = await result.responseMessages;
   return finishAgentRun({
@@ -129,4 +163,16 @@ export async function runStudyCoach(args: {
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
   });
+}
+
+/** Rewrites the newest user turn's runtimeContext before the model sees it. */
+function replaceRuntimeContext(
+  messages: ModelMessage[],
+  update: (context: Record<string, unknown>) => Record<string, unknown>,
+) {
+  const last = messages.at(-1);
+  if (!last || last.role !== "user" || typeof last.content !== "string") return;
+  const content = JSON.parse(last.content) as Record<string, unknown>;
+  const context = (content.runtimeContext ?? {}) as Record<string, unknown>;
+  last.content = JSON.stringify({ ...content, runtimeContext: update(context) });
 }

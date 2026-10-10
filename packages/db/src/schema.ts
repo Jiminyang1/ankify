@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import type { TalkHelp, TalkSettledBy, TalkTarget, TalkTargetState } from "@ankify/core";
 import type {
   AgentNavigation,
   AgentPageContext,
@@ -127,6 +128,10 @@ export const problems = sqliteTable(
     notesVersion: integer("notes_version").notNull().default(0),
     cardsMd: text("cards_md"),
     cardsVersion: integer("cards_version").notNull().default(0),
+    /** The grading standard for practice (version 3): approaches, their key
+     *  points, and cost. Written on the first practice, then the user's. */
+    solutionsMd: text("solutions_md"),
+    solutionsVersion: integer("solutions_version").notNull().default(0),
     /** Practice stats per card key: when it was last shown and how it went. */
     cardStats: text("card_stats", { mode: "json" })
       .$type<Record<string, CardStat>>()
@@ -345,24 +350,42 @@ export const quizSessions = sqliteTable(
  * history. At most one active session per problem.
  * ──────────────────────────────────────────────────────────────────────────── */
 export type PracticeRecallItem = { key: string; prompt: string; answer: string };
-export type PracticeTarget = {
-  id: string;
-  /** weakness: a recorded mistake on this problem; category: a weak category
-   *  from other problems, applied here; core: approach or complexity. */
-  kind: "weakness" | "category" | "core";
-  weaknessId?: string;
-  category?: string;
-  /** What to ask about: the weakness detail, or the category / core key. */
-  label: string;
-};
+export type PracticeTarget = TalkTarget;
 export type PracticeGrade = { grade: "correct" | "partial" | "missed"; reason: string };
+/** One line of a talk-through target's conversation, for the judge. */
+export type TalkLogEntry = {
+  role: "tutor" | "learner";
+  text: string;
+  /** Learner lines: the help given before this reply. */
+  help?: TalkHelp;
+};
+/** A judged target's progress (version 3). */
+export type TalkTargetRecord = TalkTargetState & {
+  log: TalkLogEntry[];
+  /** How it was settled, once it is. */
+  settledBy?: TalkSettledBy;
+  /** The judge failed on it, so the Coach grades it (grade_answer). */
+  fallback?: boolean;
+  /** The user disputed the grade and it was judged again. */
+  disputed?: boolean;
+};
+/** A weak spot as it was before a practice result changed it, so a disputed
+ *  grade can be applied again. */
+export type WeaknessSnapshot = Pick<
+  Weakness,
+  "status" | "resolvedAt" | "correctStreak" | "hitCount" | "lastSeenAt" | "evidenceJson"
+>;
 export type PracticeResults = {
   recall: Record<string, "got_it" | "missed">;
   check: Record<string, { choice: number; correct: boolean }>;
   /** Talk-through grades by target id. */
   talk?: Record<string, PracticeGrade>;
-  /** Follow-up questions asked per talk-through target, before its grade. */
+  /** Follow-up questions asked per talk-through target (version 2). */
   followUps?: Record<string, number>;
+  /** Judged progress per talk-through target (version 3). */
+  talkState?: Record<string, TalkTargetRecord>;
+  /** Weak spots before this session's result changed them, by target id. */
+  weaknessBefore?: Record<string, WeaknessSnapshot>;
   /** The user ended it before every target was graded; the rest were skipped. */
   endedEarly?: boolean;
 };

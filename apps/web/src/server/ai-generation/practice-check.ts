@@ -35,12 +35,12 @@ export class PracticeCheckInvalidError extends Error {
   }
 }
 
-function clip(text: string | null | undefined, max: number) {
+export function clip(text: string | null | undefined, max: number) {
   const value = (text ?? "").trim();
   return value.length <= max ? value : `${value.slice(0, max)}\n... (truncated)`;
 }
 
-function plainText(html: string | null | undefined) {
+export function plainText(html: string | null | undefined) {
   return (html ?? "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")

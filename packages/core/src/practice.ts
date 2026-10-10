@@ -1,5 +1,6 @@
-import type { DocCard } from "./problem-docs";
+import type { DocCard, SolutionApproach } from "./problem-docs";
 import { normalizeCardPrompt } from "./problem-docs";
+import type { TalkGrade, TalkReference } from "./practice-talk";
 import type { FsrsRating } from "./types";
 
 /**
@@ -46,82 +47,101 @@ export function suggestPracticeRating(points: number, items: number, easyMinItem
   return items >= easyMinItems ? 4 : 3;
 }
 
-/* ── Talk-through practice (docs/coach-practice.md, version 2) ── */
+/* ── Talk-through practice (docs/coach-practice.md, versions 2 and 3) ── */
 
 export const TALK_TARGET_COUNT = 3;
 const MAX_PROBLEM_WEAKNESS_TARGETS = 2;
-const MAX_CATEGORY_TARGETS = 1;
-const CORE_TARGETS = ["approach", "complexity"] as const;
 
 export type TalkTarget = {
   id: string;
+  /** core: the approach and its cost (version 3 always asks it first);
+   *  weakness: a recorded mistake on this problem; category: a weak category
+   *  from other problems (version 2 sessions only). */
   kind: "weakness" | "category" | "core";
   weaknessId?: string;
   category?: string;
   label: string;
+  /** What the judge checks the answer against. Missing: the Coach grades
+   *  (version 2 sessions, or no Solutions doc). */
+  reference?: TalkReference;
 };
 
-/** What a talk-through session asks about, decided by code: this problem's
- *  active weak spots (most recent first), then the user's weakest category
- *  from other problems, then approach and complexity. */
+export const APPROACH_TARGET_ID = "k-approach";
+
+/** What a talk-through asks about, decided by code: how they'd solve it and
+ *  what it costs (the thing the problem's review schedules), then up to two
+ *  of this problem's active weak spots, most recent first. */
 export function selectPracticeTargets(args: {
   problemWeaknesses: { id: string; category: string; detail: string; lastSeenAt: Date }[];
-  /** Categories with active weak spots, weakest first (from the profile). */
-  weakCategories: string[];
 }): TalkTarget[] {
-  const targets: TalkTarget[] = [];
   const weaknesses = [...args.problemWeaknesses]
     .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
     .slice(0, MAX_PROBLEM_WEAKNESS_TARGETS);
-  for (const weakness of weaknesses) {
-    targets.push({ id: `w-${weakness.id}`, kind: "weakness", weaknessId: weakness.id, category: weakness.category, label: weakness.detail });
-  }
-  const covered = new Set(targets.map((target) => target.category));
-  for (const category of args.weakCategories) {
-    if (targets.length >= TALK_TARGET_COUNT || targets.filter((t) => t.kind === "category").length >= MAX_CATEGORY_TARGETS) break;
-    if (covered.has(category)) continue;
-    targets.push({ id: `c-${category}`, kind: "category", category, label: category });
-    covered.add(category);
-  }
-  for (const core of CORE_TARGETS) {
-    if (targets.length >= TALK_TARGET_COUNT) break;
-    if (core === "complexity" && covered.has("complexity")) continue;
-    targets.push({ id: `k-${core}`, kind: "core", label: core });
-  }
-  return targets.slice(0, TALK_TARGET_COUNT);
+  return [
+    { id: APPROACH_TARGET_ID, kind: "core" as const, label: "approach" },
+    ...weaknesses.map((weakness) => ({
+      id: `w-${weakness.id}`,
+      kind: "weakness" as const,
+      weaknessId: weakness.id,
+      category: weakness.category,
+      label: weakness.detail,
+    })),
+  ].slice(0, TALK_TARGET_COUNT);
+}
+
+/** Attaches each target's reference: the approach target gets the Solutions
+ *  doc's approaches (cost as the last point), a weak spot gets its detail as
+ *  the one point. With no approaches the approach target has none. */
+export function withTalkReferences(targets: TalkTarget[], approaches: SolutionApproach[]): TalkTarget[] {
+  return targets.map((target) => {
+    if (target.kind === "core") {
+      if (approaches.length === 0) return target;
+      return {
+        ...target,
+        reference: {
+          mode: "key_points",
+          approaches: approaches.map((approach) => ({
+            id: approach.id,
+            name: approach.name,
+            mine: approach.mine,
+            points: [...approach.points, ...(approach.complexity ? [`Complexity: ${approach.complexity}`] : [])].map(
+              (text, index) => ({ id: `p${index + 1}`, text }),
+            ),
+          })),
+        },
+      };
+    }
+    if (target.kind === "weakness") {
+      return {
+        ...target,
+        reference: {
+          mode: "avoid_mistake",
+          approaches: [{ id: "w", name: target.category ?? "", mine: false, points: [{ id: "p1", text: target.label }] }],
+        },
+      };
+    }
+    return target;
+  });
 }
 
 export const GRADE_POINTS = { correct: 1, partial: 0.5, missed: 0 } as const;
 
-/** Talk-through score and suggestion: every target correct suggests Easy. */
-/** Follow-up questions the Coach may ask on one talk-through target. */
-export const MAX_TALK_FOLLOW_UPS = 2;
-
-export type TalkGradeDecision =
-  | { ok: true; grade: "correct" | "partial" | "missed" }
-  | { ok: false; error: "follow_up_first" };
-
-/**
- * The grade a talk-through target gets. An incomplete answer earns a follow-up
- * before it's graded (unless the user gave up), and an answer that needed a
- * follow-up is at best partial: "correct" means right on the first try.
- */
-export function decideTalkGrade(
-  grade: "correct" | "partial" | "missed",
-  followUps: number,
-  userGaveUp = false,
-): TalkGradeDecision {
-  if (grade !== "correct" && followUps === 0 && !userGaveUp) return { ok: false, error: "follow_up_first" };
-  if (grade === "correct" && followUps > 0) return { ok: true, grade: "partial" };
-  return { ok: true, grade };
-}
-
+/** Talk-through score and suggestion: every target correct suggests Easy.
+ *  The approach target caps it: the review schedules "can you come up with
+ *  the solution", so a partial one suggests at most Good, a missed one at most
+ *  Hard, and Again with any other miss. */
 export function scoreTalk(
-  grades: ("correct" | "partial" | "missed")[],
+  grades: { grade: TalkGrade; approach?: boolean }[],
   options: { endedEarly?: boolean } = {},
 ): { score: number; rating: FsrsRating } {
-  const points = grades.reduce((sum, grade) => sum + GRADE_POINTS[grade], 0);
-  const rating = suggestPracticeRating(points, grades.length, grades.length);
+  const points = grades.reduce((sum, entry) => sum + GRADE_POINTS[entry.grade], 0);
+  let rating = suggestPracticeRating(points, grades.length, grades.length);
+  const approach = grades.find((entry) => entry.approach);
+  if (approach?.grade === "partial") rating = Math.min(rating, 3) as FsrsRating;
+  if (approach?.grade === "missed") {
+    const otherMiss = grades.some((entry) => !entry.approach && entry.grade === "missed");
+    rating = otherMiss ? 1 : (Math.min(rating, 2) as FsrsRating);
+  }
   return {
     score: grades.length ? points / grades.length : 0,
     // Ending early skipped part of the check, so it can't suggest Easy.

@@ -9,11 +9,11 @@ import {
   type AgentStepDto,
   type DocEdit,
 } from "@ankify/contracts";
-import { MAX_TALK_FOLLOW_UPS, WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
+import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
-import { gradeTalkTarget, recordTalkFollowUp, startPractice } from "@/server/practice";
+import { firstTalkInstruction, gradeTalkTarget, startPractice, type PracticeAi } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { loadProfile, type PlanItem } from "@/server/profile";
@@ -28,6 +28,8 @@ type AgentToolContext = {
   problemId: string | null;
   runId: string;
   emitStep: (step: AgentStepDto) => void;
+  /** Writes a problem's Solutions doc when practice starts on it. */
+  ai?: PracticeAi;
 };
 
 /** Code-enforced cap; the prompt asks for one per ordinary reply. */
@@ -498,11 +500,11 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     start_practice: tool({
       description:
-        "Start a talk-through practice session on a saved problem. The server picks 2 to 3 targets (the user's weak spots on this problem, a weak category from other problems, or approach and complexity); you then ask about them one at a time and grade each answer with grade_answer. Call when the user asks to practice, review, or be quizzed.",
+        "Start a talk-through practice session on a saved problem. The server picks the questions (how they'd solve it and its cost, then this problem's weak spots) and checks each answer; you get an instruction for every reply and only phrase it. Call when the user asks to practice, review, or be quizzed.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
-        const result = await startPractice(context.userId, target.id, { agentRunId: context.runId });
+        const result = await startPractice(context.userId, target.id, { agentRunId: context.runId, ai: context.ai });
         if (!result.ok) return { started: false, error: result.error, message: result.message ?? null };
         await record({
           kind: "practice",
@@ -514,52 +516,28 @@ export function createStudyCoachTools(context: AgentToolContext) {
         return {
           started: true,
           targets: result.session.targets.map(({ id, kind, category, label, grade }) => ({ id, kind, category, label, graded: grade?.grade ?? null })),
+          instruction: firstTalkInstruction(result.session),
         };
-      },
-    }),
-
-    follow_up: tool({
-      description: `Before grading an incomplete or wrong answer: note what's missing, then ask the user one narrower question about just that part (no hint that gives it away). At most ${MAX_TALK_FOLLOW_UPS} per target; after that, grade it.`,
-      inputSchema: z.object({
-        targetId: z.string().max(80).describe("The target id from runtimeContext.practiceActive"),
-        gap: z.string().min(1).max(200).describe("What the answer is missing, for the record; not shown as the answer"),
-      }),
-      execute: async ({ targetId, gap }) => {
-        if (!context.problemId) return { recorded: false, error: "no_active_practice" };
-        const result = await recordTalkFollowUp(context.userId, context.problemId, targetId);
-        if (!result.ok) {
-          return {
-            recorded: false,
-            error: result.error,
-            ...(result.error === "follow_ups_used" ? { next: "Grade this target now with grade_answer." } : {}),
-          };
-        }
-        const followUps = result.session.targets.find((target) => target.id === targetId)?.followUps ?? 0;
-        // The gap stays in the tool call: shown in the chat it would give the answer away.
-        void gap;
-        await record({ kind: "read", toolName: "follow_up", status: "completed", summary: "Asked a follow-up" });
-        return { recorded: true, followUps, left: MAX_TALK_FOLLOW_UPS - followUps };
       },
     }),
 
     grade_answer: tool({
       description:
-        "Grade one practice target once it's settled: correct (complete and right on the first answer), partial (got there only with a follow-up, or still partly right), or missed (still wrong or no idea after follow-ups). An incomplete first answer needs follow_up first, unless the user said they don't know or want to skip (userGaveUp). A correct after a follow-up is recorded as partial. The reason is one sentence. The last grade completes the session and returns the score and suggested rating.",
+        "Only when runtimeContext.practiceActive.instruction says the automatic check isn't available for a question: grade it once it's settled. correct: complete and right without help; partial: needed a narrower question, or still partly right; missed: still wrong, or they gave up. The reason is one sentence. The last grade completes the session and returns the score and suggested rating.",
       inputSchema: z.object({
         targetId: z.string().max(80).describe("The target id from runtimeContext.practiceActive"),
         grade: z.enum(["correct", "partial", "missed"]),
         reason: z.string().min(1).max(300),
-        userGaveUp: z.boolean().optional().describe("The user said they don't know or asked to skip this one"),
       }),
-      execute: async ({ targetId, grade, reason, userGaveUp }) => {
+      execute: async ({ targetId, grade, reason }) => {
         if (!context.problemId) return { graded: false, error: "no_active_practice" };
-        const result = await gradeTalkTarget(context.userId, context.problemId, targetId, { grade, reason }, { userGaveUp });
+        const result = await gradeTalkTarget(context.userId, context.problemId, targetId, { grade, reason });
         if (!result.ok) {
           return {
             graded: false,
             error: result.error,
-            ...(result.error === "follow_up_first"
-              ? { next: "Call follow_up with what's missing and ask about just that part; grade after they answer." }
+            ...(result.error === "judged_target"
+              ? { next: "This question is checked automatically; follow runtimeContext.practiceActive.instruction instead." }
               : {}),
           };
         }
@@ -575,6 +553,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
           graded: true,
           recordedGrade: recorded,
           completed: result.session.status === "completed",
+          next: firstTalkInstruction(result.session),
           remaining: remaining.map(({ id, kind, category, label }) => ({ id, kind, category, label })),
           ...(result.session.status === "completed"
             ? {

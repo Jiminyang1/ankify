@@ -90,6 +90,8 @@ export type AgentStreamEvent =
   | { type: "text_delta"; delta: string }
   | { type: "step"; step: AgentStepDto }
   | { type: "done"; session: AgentSessionDto; message: AgentMessageDto; run: AgentRunDto }
+  /** A practice reply was judged; the session's progress before the Coach replies. */
+  | { type: "practice"; session: PracticeSessionDto }
   | { type: "error"; run: AgentRunDto; message: string };
 
 export type CardDto = {
@@ -303,10 +305,21 @@ export type LeetcodeAccountDto = {
   profile: LeetcodeProfileDto | null;
 };
 
-/** A problem's Notes and Cards docs (docs/coach-practice.md). */
+/** A problem's Notes, Cards, and Solutions docs (docs/coach-practice.md). */
 export type ProblemDocsDto = {
   problemId: string;
   notes: { markdown: string; version: number; sections: string[] };
+  solutions: {
+    markdown: string;
+    version: number;
+    approaches: { id: string; name: string; mine: boolean; points: string[]; complexity: string | null }[];
+    issues: (
+      | { kind: "no_points"; approach: string }
+      | { kind: "too_many_points"; approach: string; limit: number }
+      | { kind: "too_many_approaches"; limit: number }
+      | { kind: "too_long"; limit: number }
+    )[];
+  };
   cards: {
     markdown: string;
     version: number;
@@ -336,8 +349,19 @@ export type PracticeSessionDto = {
     category: string | null;
     label: string;
     grade: { grade: "correct" | "partial" | "missed"; reason: string } | null;
-    /** Follow-up questions the Coach has asked on it so far. */
-    followUps: number;
+    /** Times the Coach asked again on it (follow-ups, hints). */
+    nudges: number;
+    /** Judged against a reference (version 3); false when the Coach grades. */
+    judged: boolean;
+    /** Reference points covered so far, while it's open. */
+    progress: { covered: number; total: number } | null;
+    /** How it was settled: the help it needed caps the grade. */
+    settledBy: "complete" | "new_approach" | "gave_up" | "not_recalled" | null;
+    help: 0 | 1 | 2;
+    /** Once settled: the approach it was judged against and each point. */
+    review: { approach: string | null; points: { text: string; covered: boolean }[] } | null;
+    /** "I did say that" can re-judge it (once). */
+    canDispute: boolean;
   }[];
   recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
   check: {

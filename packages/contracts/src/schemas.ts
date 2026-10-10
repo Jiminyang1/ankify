@@ -117,6 +117,9 @@ export const agentPageContextSchema = z
               .strict(),
           )
           .max(5),
+        /** What the Coach does with this reply, decided by the server from
+         *  the judge's reading (version 3). Plain text. */
+        instruction: z.string().max(6_000).optional(),
       })
       .strict()
       .optional(),
@@ -167,7 +170,7 @@ export type AgentSessionPatchInput = z.infer<typeof agentSessionPatchSchema>;
 
 /* ── Problem docs (docs/coach-practice.md) ── */
 
-export const problemDocTargetEnum = z.enum(["notes", "cards"]);
+export const problemDocTargetEnum = z.enum(["notes", "cards", "solutions"]);
 export type ProblemDocTarget = z.infer<typeof problemDocTargetEnum>;
 
 const docSection = z.string().trim().min(1).max(60);
@@ -409,6 +412,9 @@ export const practiceCheckDraftSchema = z.object({
     .length(3),
 });
 export type PracticeCheckDraft = z.infer<typeof practiceCheckDraftSchema>;
+
+/** POST /api/practice/:id/dispute: "I did say that" on a settled target. */
+export const practiceDisputeSchema = z.object({ targetId: z.string().min(1).max(80) }).strict();
 
 export const practiceRecallSchema = z
   .object({ key: z.string().regex(/^[0-9a-f]{16}$/), result: z.enum(["got_it", "missed"]) })

@@ -119,7 +119,7 @@ describe("validateCheckItems with unsectioned notes", () => {
 
 describe("talk-through targets and score", () => {
   const at = (days: number) => new Date(Date.UTC(2026, 9, 5) - days * 86_400_000);
-  it("takes this problem's weak spots first, then a weak category, then core", async () => {
+  it("asks the approach first, then this problem's two most recent weak spots", async () => {
     const { selectPracticeTargets } = await import("./practice");
     const targets = selectPracticeTargets({
       problemWeaknesses: [
@@ -127,44 +127,62 @@ describe("talk-through targets and score", () => {
         { id: "b", category: "efficiency", detail: "no memo, TLE", lastSeenAt: at(1) },
         { id: "c", category: "edge_cases", detail: "empty input", lastSeenAt: at(9) },
       ],
-      weakCategories: ["init_sentinel", "boundary_index", "complexity"],
     });
-    expect(targets.map((t) => t.id)).toEqual(["w-b", "w-a", "c-boundary_index"]);
+    expect(targets.map((t) => t.id)).toEqual(["k-approach", "w-b", "w-a"]);
+    expect(selectPracticeTargets({ problemWeaknesses: [] }).map((t) => t.id)).toEqual(["k-approach"]);
   });
 
-  it("fills with approach and complexity when there are no weak spots", async () => {
-    const { selectPracticeTargets } = await import("./practice");
-    expect(selectPracticeTargets({ problemWeaknesses: [], weakCategories: [] }).map((t) => t.id)).toEqual([
-      "k-approach",
-      "k-complexity",
-    ]);
-    expect(
-      selectPracticeTargets({ problemWeaknesses: [], weakCategories: ["complexity"] }).map((t) => t.id),
-    ).toEqual(["c-complexity", "k-approach"]);
+  it("attaches the Solutions doc to the approach and the detail to a weak spot", async () => {
+    const { selectPracticeTargets, withTalkReferences } = await import("./practice");
+    const targets = withTalkReferences(
+      selectPracticeTargets({
+        problemWeaknesses: [{ id: "a", category: "init_sentinel", detail: "dp starts at 0", lastSeenAt: at(1) }],
+      }),
+      [{ id: "a1", name: "DP", mine: true, points: ["dp[x]: fewest coins for x"], complexity: "O(n·amount)" }],
+    );
+    expect(targets[0]!.reference).toEqual({
+      mode: "key_points",
+      approaches: [
+        {
+          id: "a1",
+          name: "DP",
+          mine: true,
+          points: [
+            { id: "p1", text: "dp[x]: fewest coins for x" },
+            { id: "p2", text: "Complexity: O(n·amount)" },
+          ],
+        },
+      ],
+    });
+    expect(targets[1]!.reference?.mode).toBe("avoid_mistake");
+    expect(targets[1]!.reference?.approaches[0]!.points).toEqual([{ id: "p1", text: "dp starts at 0" }]);
+    // No Solutions doc: the Coach grades the approach itself.
+    expect(withTalkReferences(targets.slice(0, 1).map(({ reference: _r, ...t }) => t), [])[0]!.reference).toBeUndefined();
   });
+
+  const g = (...grades: ("correct" | "partial" | "missed")[]) =>
+    grades.map((grade, index) => ({ grade, approach: index === 0 }));
 
   it("scores grades, with Easy only for all correct", async () => {
     const { scoreTalk } = await import("./practice");
-    expect(scoreTalk(["correct", "correct", "correct"])).toEqual({ score: 1, rating: 4 });
-    expect(scoreTalk(["correct", "partial", "correct"]).rating).toBe(3);
-    expect(scoreTalk(["missed", "partial", "correct"]).rating).toBe(2);
-    expect(scoreTalk(["missed", "missed", "partial"]).rating).toBe(1);
+    expect(scoreTalk(g("correct", "correct", "correct"))).toEqual({ score: 1, rating: 4 });
+    expect(scoreTalk(g("correct", "partial", "correct")).rating).toBe(3);
+    expect(scoreTalk(g("correct", "missed", "partial")).rating).toBe(2);
+    expect(scoreTalk(g("correct"))).toEqual({ score: 1, rating: 4 });
+  });
+
+  it("caps the suggestion by the approach", async () => {
+    const { scoreTalk } = await import("./practice");
+    expect(scoreTalk(g("partial", "correct", "correct")).rating).toBe(3);
+    // Averaging would say Good; not recalling the approach is at most Hard.
+    expect(scoreTalk(g("missed", "correct", "correct")).rating).toBe(2);
+    expect(scoreTalk(g("missed", "missed", "correct")).rating).toBe(1);
+    expect(scoreTalk(g("missed")).rating).toBe(1);
   });
 
   it("never suggests Easy for a talk-through ended early", async () => {
     const { scoreTalk } = await import("./practice");
-    expect(scoreTalk(["correct"], { endedEarly: true })).toEqual({ score: 1, rating: 3 });
-    expect(scoreTalk(["missed"], { endedEarly: true }).rating).toBe(1);
-  });
-
-  it("follows up before an incomplete answer is graded", async () => {
-    const { decideTalkGrade } = await import("./practice");
-    expect(decideTalkGrade("partial", 0)).toEqual({ ok: false, error: "follow_up_first" });
-    expect(decideTalkGrade("missed", 0)).toEqual({ ok: false, error: "follow_up_first" });
-    expect(decideTalkGrade("missed", 0, true)).toEqual({ ok: true, grade: "missed" });
-    expect(decideTalkGrade("correct", 0)).toEqual({ ok: true, grade: "correct" });
-    // Getting there with a follow-up is partial at best.
-    expect(decideTalkGrade("correct", 1)).toEqual({ ok: true, grade: "partial" });
-    expect(decideTalkGrade("missed", 2)).toEqual({ ok: true, grade: "missed" });
+    expect(scoreTalk(g("correct"), { endedEarly: true })).toEqual({ score: 1, rating: 3 });
+    expect(scoreTalk(g("missed"), { endedEarly: true }).rating).toBe(1);
   });
 });

@@ -21,10 +21,19 @@ export type DocsCopy = {
   issueDuplicate: (prompt: string) => string;
   issueTooMany: (limit: number) => string;
   issueTooLong: (limit: number) => string;
+  solutions: string;
+  emptySolutions: string;
+  solutionsFormat: string;
+  mine: string;
+  complexity: string;
+  issueNoPoints: (approach: string) => string;
+  issueTooManyPoints: (approach: string, limit: number) => string;
+  issueTooManyApproaches: (limit: number) => string;
+  issueSolutionsTooLong: (limit: number) => string;
 };
 
-/** The problem's Notes and Cards docs (docs/coach-practice.md): rendered,
- *  with an edit mode. Saves are version-checked, so an edit can't silently
+/** The problem's Notes, Cards, and Solutions docs (docs/coach-practice.md):
+ *  rendered, with an edit mode. Saves are version-checked, so an edit can't silently
  *  overwrite a Coach change applied meanwhile. `revision` bumps when the Coach
  *  applies an edit. */
 export function DocsPanel({
@@ -101,8 +110,8 @@ export function DocsPanel({
   return (
     <div className="docs-panel">
       <div className="docs-head">
-        <div className="docs-switch" role="tablist" aria-label={`${copy.notes} / ${copy.cards}`}>
-          {(["notes", "cards"] as const).map((key) => (
+        <div className="docs-switch" role="tablist" aria-label={`${copy.notes} / ${copy.cards} / ${copy.solutions}`}>
+          {(["notes", "cards", "solutions"] as const).map((key) => (
             <button
               key={key}
               type="button"
@@ -112,7 +121,11 @@ export function DocsPanel({
               disabled={editing}
               onClick={() => setTarget(key)}
             >
-              {key === "notes" ? copy.notes : `${copy.cards}${docs ? ` · ${docs.cards.cards.length}` : ""}`}
+              {key === "notes"
+                ? copy.notes
+                : key === "cards"
+                  ? `${copy.cards}${docs ? ` · ${docs.cards.cards.length}` : ""}`
+                  : copy.solutions}
             </button>
           ))}
         </div>
@@ -147,11 +160,12 @@ export function DocsPanel({
       {editing ? (
         <>
           {target === "cards" && <p className="docs-hint">{copy.cardsFormat}</p>}
+          {target === "solutions" && <p className="docs-hint">{copy.solutionsFormat}</p>}
           <textarea
             className="textarea-card docs-editor scroll-area"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            aria-label={target === "notes" ? copy.notes : copy.cards}
+            aria-label={target === "notes" ? copy.notes : target === "cards" ? copy.cards : copy.solutions}
           />
         </>
       ) : !docs ? (
@@ -164,6 +178,44 @@ export function DocsPanel({
         ) : (
           <p className="popup-muted">{copy.emptyNotes}</p>
         )
+      ) : target === "solutions" ? (
+        <div className="docs-solutions">
+          {docs.solutions.issues.map((issue, index) => (
+            <p key={index} className="docs-issue">
+              {issue.kind === "no_points"
+                ? copy.issueNoPoints(issue.approach)
+                : issue.kind === "too_many_points"
+                  ? copy.issueTooManyPoints(issue.approach, issue.limit)
+                  : issue.kind === "too_many_approaches"
+                    ? copy.issueTooManyApproaches(issue.limit)
+                    : copy.issueSolutionsTooLong(issue.limit)}
+            </p>
+          ))}
+          {docs.solutions.approaches.length === 0 ? (
+            <p className="popup-muted">{copy.emptySolutions}</p>
+          ) : (
+            docs.solutions.approaches.map((approach) => (
+              <section key={approach.id} className="docs-approach">
+                <h3 className="docs-approach-name">
+                  {approach.name}
+                  {approach.mine && <span className="docs-approach-mine">{copy.mine}</span>}
+                </h3>
+                <ul className="docs-approach-points">
+                  {approach.points.map((point, index) => (
+                    <li key={index}>
+                      <PopupMarkdown className="popup-md-inline">{point}</PopupMarkdown>
+                    </li>
+                  ))}
+                </ul>
+                {approach.complexity && (
+                  <p className="docs-approach-cost">
+                    {copy.complexity}: <PopupMarkdown className="popup-md-inline">{approach.complexity}</PopupMarkdown>
+                  </p>
+                )}
+              </section>
+            ))
+          )}
+        </div>
       ) : (
         <div className="docs-cards">
           {docs.cards.issues.map((issue, index) => (

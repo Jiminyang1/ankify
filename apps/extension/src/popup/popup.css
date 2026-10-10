@@ -3454,6 +3454,52 @@ a:focus-visible,
   font-size: 13px;
 }
 
+/* Solutions: one block per approach, its points, and its cost. */
+.docs-solutions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docs-approach {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.docs-approach-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.docs-approach-mine {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.docs-approach-points {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.docs-approach-cost {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .coach-proposal-preview {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -3802,6 +3848,62 @@ a:focus-visible,
   margin: 0;
   font-size: 11px;
 }
+
+/* A settled question's key points, each said or not. */
+.practice-points {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.practice-points-approach {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.practice-point {
+  display: flex;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.practice-point-mark {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--danger);
+}
+
+.practice-point[data-covered="true"] .practice-point-mark {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.practice-point[data-covered="false"] {
+  color: var(--muted);
+}
+
+.practice-dispute {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.practice-dispute:hover:not(:disabled) { text-decoration: underline; }
+.practice-dispute:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* A talk-through as a tray on top of the composer: inset, rounded on top,
  * tucked under the box so the two read as one control. */
