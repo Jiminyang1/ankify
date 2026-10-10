@@ -1,11 +1,14 @@
 /**
- * The two markdown documents each problem keeps (docs/coach-practice.md):
+ * The markdown documents each problem keeps (docs/coach-practice.md):
  *
  * - Notes: free-form understanding. The Coach targets `##` sections
  *   (Approach, Key insight, Pitfalls, Complexity, My attempts) so its edits
  *   stay small.
  * - Cards: each `##` heading is a prompt; the text under it, up to the next
  *   `##`, is the answer. Text before the first heading is ignored.
+ * - Solutions: each `##` heading is an approach, its key points are the
+ *   top-level bullets, and a `Complexity:` line gives its cost. Practice is
+ *   judged against it (version 3).
  *
  * Pure functions, shared by the server, the extension, and the web app.
  */
@@ -224,4 +227,98 @@ export function applyNotesEdit(markdown: string | null | undefined, edit: NotesE
 /** The `##` section headings in a Notes doc, for citations. */
 export function notesSections(markdown: string | null | undefined): string[] {
   return splitH2(markdown).blocks.map((block) => block.heading).filter(Boolean);
+}
+
+/* ── Solutions ── */
+
+export const SOLUTIONS_DOC_MAX_CHARS = 12_000;
+export const SOLUTIONS_MAX_APPROACHES = 4;
+export const SOLUTION_MAX_POINTS = 6;
+
+/** One approach in the Solutions doc. Ids ("a1", "a2"...) follow the doc's
+ *  order, so they're stable only within one version of it. */
+export type SolutionApproach = {
+  id: string;
+  name: string;
+  /** From the user's own Accepted code: the heading ends with "(mine)". */
+  mine: boolean;
+  points: string[];
+  complexity: string | null;
+};
+
+export type SolutionsDocIssue =
+  | { kind: "no_points"; approach: string }
+  | { kind: "too_many_points"; approach: string; limit: number }
+  | { kind: "too_many_approaches"; limit: number }
+  | { kind: "too_long"; limit: number };
+
+const MINE = /\s*[(（]\s*(?:mine|my ac|我的)\s*[)）]\s*$/i;
+const BULLET = /^ {0,1}[-*+]\s+(.*)$/;
+const CONTINUATION = /^\s{2,}\S/;
+const COMPLEXITY = /^(?:complexity|复杂度)\s*[:：]\s*(.+)$/i;
+
+export function parseSolutions(markdown: string | null | undefined): {
+  approaches: SolutionApproach[];
+  issues: SolutionsDocIssue[];
+} {
+  const text = markdown ?? "";
+  const issues: SolutionsDocIssue[] = [];
+  if (text.length > SOLUTIONS_DOC_MAX_CHARS) issues.push({ kind: "too_long", limit: SOLUTIONS_DOC_MAX_CHARS });
+  const approaches: SolutionApproach[] = [];
+  for (const block of splitH2(text).blocks) {
+    if (!block.heading) continue;
+    const mine = MINE.test(block.heading);
+    const name = block.heading.replace(MINE, "").trim();
+    const points: string[] = [];
+    let complexity: string | null = null;
+    let lastWasPoint = false;
+    for (const line of block.body) {
+      const bullet = line.match(BULLET);
+      const content = (bullet ? bullet[1]! : line).trim();
+      const cost = content.match(COMPLEXITY);
+      if (cost) {
+        complexity = cost[1]!.trim();
+        lastWasPoint = false;
+      } else if (bullet && content) {
+        points.push(content);
+        lastWasPoint = true;
+      } else if (lastWasPoint && CONTINUATION.test(line)) {
+        points[points.length - 1] = `${points.at(-1)} ${content}`;
+      } else {
+        lastWasPoint = false;
+      }
+    }
+    if (points.length === 0) {
+      issues.push({ kind: "no_points", approach: name });
+      continue;
+    }
+    if (points.length > SOLUTION_MAX_POINTS) {
+      issues.push({ kind: "too_many_points", approach: name, limit: SOLUTION_MAX_POINTS });
+      points.length = SOLUTION_MAX_POINTS;
+    }
+    approaches.push({ id: `a${approaches.length + 1}`, name, mine, points, complexity });
+  }
+  if (approaches.length > SOLUTIONS_MAX_APPROACHES) {
+    issues.push({ kind: "too_many_approaches", limit: SOLUTIONS_MAX_APPROACHES });
+    approaches.length = SOLUTIONS_MAX_APPROACHES;
+  }
+  return { approaches, issues };
+}
+
+export function serializeSolutions(
+  approaches: { name: string; mine: boolean; points: string[]; complexity: string | null }[],
+  language: "en" | "zh" = "en",
+): string {
+  const mineLabel = language === "zh" ? "(我的)" : "(mine)";
+  const complexityLabel = language === "zh" ? "复杂度" : "Complexity";
+  return joinH2({
+    preamble: [],
+    blocks: approaches.map((approach) => ({
+      heading: `${cleanPrompt(approach.name)}${approach.mine ? ` ${mineLabel}` : ""}`,
+      body: [
+        ...approach.points.map((point) => `- ${cleanPrompt(point)}`),
+        ...(approach.complexity ? [`${complexityLabel}: ${cleanPrompt(approach.complexity)}`] : []),
+      ],
+    })),
+  });
 }

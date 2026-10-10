@@ -6,7 +6,9 @@ import {
   cardKey,
   notesSections,
   parseCards,
+  parseSolutions,
   serializeCards,
+  serializeSolutions,
 } from "./problem-docs";
 
 const CARDS = `Things I keep forgetting.
@@ -121,5 +123,56 @@ describe("applyNotesEdit", () => {
       ok: false,
       error: "invalid_section",
     });
+  });
+});
+
+const SOLUTIONS = `Approaches I know for this one.
+
+## lo/hi range (mine)
+- lo/hi track the fewest and most unmatched \`(\`
+- \`*\` widens both ends by 1,
+  covering all three meanings at once
+- hi < 0 fails early; at the end, lo must be 0
+Complexity: O(n) time, O(1) space
+
+## DP
+- dp[i][j]: can s[i..j] be valid
+- Complexity: O(n^3) time, O(n^2) space
+
+## 栈（我的）
+- 两个栈分别存 ( 和 * 的下标
+复杂度：O(n)
+
+## Empty one
+Some prose without bullets.
+`;
+
+describe("Solutions doc", () => {
+  it("parses approaches, their points, and their cost", () => {
+    const { approaches, issues } = parseSolutions(SOLUTIONS);
+    expect(approaches).toEqual([
+      {
+        id: "a1",
+        name: "lo/hi range",
+        mine: true,
+        points: [
+          "lo/hi track the fewest and most unmatched `(`",
+          "`*` widens both ends by 1, covering all three meanings at once",
+          "hi < 0 fails early; at the end, lo must be 0",
+        ],
+        complexity: "O(n) time, O(1) space",
+      },
+      { id: "a2", name: "DP", mine: false, points: ["dp[i][j]: can s[i..j] be valid"], complexity: "O(n^3) time, O(n^2) space" },
+      { id: "a3", name: "栈", mine: true, points: ["两个栈分别存 ( 和 * 的下标"], complexity: "O(n)" },
+    ]);
+    expect(issues).toEqual([{ kind: "no_points", approach: "Empty one" }]);
+  });
+
+  it("round-trips through serializeSolutions", () => {
+    const { approaches } = parseSolutions(SOLUTIONS);
+    const markdown = serializeSolutions(approaches);
+    expect(markdown.startsWith("## lo/hi range (mine)\n- lo/hi track")).toBe(true);
+    expect(parseSolutions(markdown).approaches).toEqual(approaches);
+    expect(serializeSolutions(approaches.slice(2), "zh")).toBe("## 栈 (我的)\n- 两个栈分别存 ( 和 * 的下标\n复杂度: O(n)\n");
   });
 });
