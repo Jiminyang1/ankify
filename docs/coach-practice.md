@@ -1,46 +1,61 @@
 # Coach-led practice (design)
 
-Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web review and cleanup) and stage 4 not yet. Version 3 (below) is designed, not built. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web review and cleanup) and stage 4 not yet. Version 3 (below) is built (2026-10-10), in its first, smaller scope. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
-## Version 3: practice judged against a solutions doc (2026-10-06; design agreed, not built)
+## Version 3: practice judged against a solutions doc (designed 2026-10-06, first scope built 2026-10-10)
 
 Decided with Jimin after trying talk-through practice: the Coach graded the
 first reply and moved on even when half the answer was missing. Version 2's
 practice let one chat model judge the answer, choose the next move, grade,
 and talk. Version 3 splits those jobs. (The interim fix, commit 44dd28c,
-added a `follow_up` tool with at most 2 follow-ups and "correct after a
-follow-up is partial"; version 3 replaces it.)
+added a `follow_up` tool; version 3 removed it.)
 
-**Research behind it.**
-- AutoTutor (mean gain 0.81 SD over 10 experiments): each question has
+The design was reviewed on 2026-10-10 by a second model with the sources
+checked; the changes it led to are folded in below, and the scope was cut to
+what tests the core idea: does a separate judge plus a code-owned grade stop
+premature grading?
+
+**Research behind it** (checked 2026-10-10).
+- AutoTutor (mean gain 0.81 SD over 10 experiments, against reading
+  controls, with human-written expectations): each question has
   *expectations* (key points) and likely misconceptions; replies are checked
   against them, and missing ones get "what else?" → hint → prompt → telling.
 - Bridge (Wang et al., NAACL 2024): deciding the error type, the strategy, and
   the intention *before* writing the reply made GPT-4's replies 76% more
-  preferred; random decisions made them 97% worse.
-- Splitting sequencing, dialogue, and judging beat one LLM doing all three
-  (78–82% vs 3–23%, simulated students); tutors also agree with wrong
-  answers about 1 in 7 times under pressure, so the judge is a separate call
-  the user isn't talking to.
+  preferred, and random decisions 97% less. The gain came from *expert*
+  decisions; GPT-4 was poor at making them itself. So the decisions here come
+  from code, not from a model.
+- Splitting long-horizon control from dialogue beat one LLM doing both
+  (78–82% vs 3–23% curriculum success, simulated students, same model in both
+  roles). Tutors also agree with wrong answers about 1 in 7 times under
+  pressure, so the judge is a separate call the user isn't talking to.
 - LLM grading agrees with humans on binary checks and drifts on fine rubrics:
   the judge ticks yes/no per point, never scores.
-- Anki/FSRS: needing a hint to recall is usually Again; Hard means recalled
-  alone with effort.
+- Reference quality matters more than judge size: a small judge with a good
+  reference beat GPT-4o with a synthetic one, and a reference flips judge
+  decisions. So the effort goes into the Solutions doc, and the judge runs at
+  the lightest setting.
+- Anki: Again for a failed or partial recall ("be strict"); Hard means
+  recalled with effort. A hint doesn't hurt learning much, but it voids the
+  measurement, so a content hint means missed.
 - Feedback after errors must include the correct answer (Pashler et al.
   2005); right/wrong alone works about as well as none.
 - Khanmigo: the checker looks only at what the student did (half the answer
-  giveaways); plain text beats JSON for context.
+  giveaways); plain text beats JSON for context, so the Coach's instruction is
+  plain text.
 
 ### The solutions doc (third problem doc)
 
-Next to Notes and Cards, each problem gets **Solutions**: markdown the user
-can read and edit behind the book icon. One `##` section per approach, its
-key points as bullets, and its complexity:
+Next to Notes and Cards, each problem has **Solutions**
+(`problems.solutions_md`, `solutions_version`): markdown the user reads and
+edits behind the book icon. One `##` section per approach, `(mine)` on the
+user's own, its key points as bullets, and a `Complexity:` line
+(`parseSolutions()` in `packages/core/src/problem-docs.ts`):
 
 ```markdown
-## lo/hi range (my AC)
+## lo/hi range (mine)
 - lo/hi track the fewest and most unmatched `(`
 - `*` widens both ends by 1, covering all three meanings at once
 - hi < 0 fails early; at the end, lo must be 0
@@ -52,32 +67,60 @@ Complexity: O(n) time, O(1) space
 ```
 
 - **Per approach**, never one list per problem: the user may answer with any
-  approach. Approaches from the user's Accepted submissions are marked as
-  theirs; common other approaches are added by the model.
-- **Created** the first time the problem is practiced, from the Accepted
-  code, Notes, and the problem: saved directly as the first version (the
-  judge needs it right away). Later changes follow the rules below.
-- **Weakness targets** don't need it: the weakness detail is the point to
-  answer.
-- Point stats (answered, needed a prompt, missed, when) are kept per point
-  next to the doc, like `card_stats`, keyed by a hash of the point.
-- During practice the panel shows progress per question ("2/3 points"),
-  never the points themselves. After practice the doc is readable.
+  approach. The one in the user's Accepted code is marked as theirs; at most
+  2 genuinely different others are added (boundary variants of one algorithm
+  are one approach).
+- **Written** the first time the problem is practiced
+  (`server/practice-solutions.ts`), from the Accepted code, Notes, and the
+  problem, at the user's reasoning level, and saved directly as the first
+  version (the judge needs it right away). The user's own text is never
+  overwritten. Without AI, or if it fails, the approach question falls back to
+  the Coach grading it.
+- **Points are ideas, not syntax**: 2 to 4 per approach, the first is the core
+  idea as someone would say it, then what's tracked, the transition, the easy
+  mistake. Trivia (returning -1, output order), one language's details, and
+  implementation advice belong in Notes. A point that's too specific fails
+  learners who clearly know the solution. (Trying it showed this is the part
+  that most needs care: the first prompts produced `while left <= right` and
+  "return an empty array" as points.)
+- **Weak-spot targets** don't need it: the weakness detail is their one point,
+  covered when the user states the correct handling.
+- A session **copies** the reference it's judged against into its targets, so
+  a grade is always traceable to the text it was judged on, and editing the
+  doc mid-session applies from the next one.
+- During practice the panel shows progress per question ("2 of 4 points"),
+  never the points themselves. Once a question settles, its points show as
+  said or not.
 
 ### One reply, three steps
 
-1. **Judge** (a structured call at the lightest reasoning setting, run by the
-   server on every practice reply, like Analyze my attempts): which approach
-   the reply describes (or a valid new one), which of that approach's points
-   are now covered (cumulative, yes/no each), whether a known misconception
-   appears, and whether the reply is an answer at all, a misread question, a
-   hint request, or giving up. It sees only what the user said plus the
-   reference; it doesn't work the answer out for them.
-2. **Code** (a state machine per question) decides the next move and the
-   grade from the judge's ticks and the help given so far.
-3. **Coach** gets one plain-text instruction for that move ("ask only about
-   why `*` needs no enumeration; don't say it") and phrases it. It never
-   grades and never decides the flow.
+1. **Judge** (`server/practice-judge.ts`, a structured call at the lightest
+   reasoning setting, run by the server before the Coach on every practice
+   reply): which approach the replies follow (or a valid new one, too slow, or
+   invalid), which of its points are covered (cumulative, yes/no each), a
+   wrong claim in the latest reply, and whether the reply is an answer, blank,
+   a misread question, a side question, a hint request, or giving up. It sees
+   the problem, the reference, and the question's conversation: the Coach's
+   lines tell it what was asked, and only the user's lines count as evidence.
+   "skip" / "I don't know" need no call. One retry if the JSON doesn't fit.
+2. **Code** (`advanceTalk()` in `packages/core/src/practice-talk.ts`, a state
+   machine per question) decides the next move and the grade from the judge's
+   ticks and the help given so far.
+3. **Coach** gets one plain-text instruction for that move in
+   `runtimeContext.practiceActive.instruction` (`server/practice-instructions.ts`)
+   and phrases it. It never grades and never decides the flow. The Coach's
+   reply is logged on the question so the next judge call knows what was
+   asked.
+
+If the judge fails, that question falls back to version 2: the Coach grades
+it with `grade_answer` (still capped by the help given).
+
+### Questions
+
+How they'd solve it **and what it costs** is always the first question: it's
+what the problem's review schedules. Then up to 2 of this problem's active weak
+spots, most recent first. (Version 2's cross-problem category targets are
+dropped: there's no reference to judge them against.)
 
 ### Moves and grades
 
@@ -85,42 +128,66 @@ The grade answers one question: did the user recall it themselves?
 
 | Help given so far | Example | Best grade |
 | --- | --- | --- |
-| None, or content-free nudges | "Say more?" "Anything else?" "Can it be faster?" | correct |
+| None, or content-free nudges | "Anything else?" "Why does that work?" "Can it be faster?" | correct |
 | Naming the missing part without its content | "Why doesn't `*` need enumerating?" | partial |
 | A hint with content, or a counterexample | "Try amount = 0" | missed |
 | Explaining it | | missed |
 
-- All points of the approach covered: the question is settled at the cap
-  above; the Coach fills in nothing (or a one-line confirmation) and asks the
-  next question.
-- Some covered: ask about the first missing point (naming it, no content).
-- A misconception: a counterexample input; the mistake is recorded as a weak
-  spot.
-- Valid but too slow for the constraints (would time out): "can it be
-  faster?" (content-free). Any approach that would pass counts; when a better
-  one exists, the Coach mentions it once after settling, optional and
-  ungraded.
-- Nothing recalled: the smallest content hint; still nothing, explain and ask
-  the user to say it back in their own words.
-- Misread the question: rephrase it, no penalty. Not an answer (a side
-  question): answer it without giving the target away, then re-ask.
-- Gives up or asks to skip: explain the full answer, move on.
-- After 3 nudges on one question: explain and move on.
-- A missed question always ends with the full answer.
+("Can it be faster?" does reveal that something faster exists; it's still
+counted as content-free.)
 
-### After practice
+Four moves, plus re-asking:
+- **Probe** (free): one "anything else?" per question, and one "can it be
+  faster?" for a working but too-slow approach.
+- **Name the gap**: the first missing point, by name, not content.
+- **Hint**: a named gap still missing gets the smallest hint with content; a
+  wrong claim gets a counterexample (and, if it's a specific mistake, a weak
+  spot); asking for a hint gets one; nothing recalled gets the smallest hint
+  toward their own approach.
+- **Settle**: every point covered and no wrong claim settles at the cap
+  above, with a one-line confirmation; a valid approach the doc doesn't have
+  settles too (mentioning it can be added to the doc). Still missing after its
+  hint, after 3 nudges, or giving up settles as missed with the full answer.
+- **Re-ask**: a side question is answered without giving the target away; a
+  misread question is restated. Neither costs anything.
 
-Automatic (no approval): point stats; weak spots for misconceptions (as now).
-Proposals in the summary (apply or dismiss, like doc edits): add an approach
-the user described that isn't in the doc; reword a point the user disputed or
-the judge found ambiguous; turn a missed point into a card. The Coach never
-rewrites the doc on its own: it's the grading standard, and the user owns it.
-Next practice asks first about the points missed most.
+### Rating
+
+Grades score as before (correct 1, partial 0.5), but the approach question
+caps the suggestion: partial at most Good, missed at most Hard, and Again
+with any other miss.
+
+### "I did say that"
+
+A settled question that isn't correct can be re-judged once
+(`POST /api/practice/:id/dispute`): the judge reads every reply again, at the
+user's reasoning level, and says which reply first stated each point. The
+grade only goes up, capped by the help given before those replies. A finished
+session is scored again, and a weak spot it covered is replayed from the
+state the session started from (`results_json.weaknessBefore`).
 
 ### Cost
 
-One extra lightweight call per practice reply (about 1–3 s) and one call to
-write the doc the first time a problem is practiced.
+One extra lightweight call per practice reply (about 1 s with DeepSeek's
+fast model) and one call to write the doc the first time a problem is
+practiced. Neither spends a starter credit: the Coach turn around them
+already does.
+
+### Checking the judge
+
+`pnpm eval:judge` runs the judge on hand-labeled replies
+(`server/practice-judge.cases.ts`: complete, paraphrased, code only, half, a
+wrong idea, brute force, vague, a narrowed follow-up, side question, giving
+up, Chinese answers to an English doc, answers built over several replies,
+other approaches, weak spots). On 2026-10-10, DeepSeek's fast model at the
+lightest setting agreed on 73 of 74 calls (points precision and recall 1.00,
+p50 0.8 s). Add a case whenever a real session shows a misjudgment.
+
+### Not built yet
+
+- Point stats and "next practice asks the most-missed points first".
+- Proposals after practice: add an approach the user described, reword a
+  disputed point, turn a missed point into a card.
 
 ## Version 2: weakness-driven practice (2026-10-05; weak spots and talk-through practice built, web profile next)
 
