@@ -17,9 +17,11 @@ import {
   CircleAlert,
   LoaderCircle,
   Pencil,
+  Play,
   Plus,
   Send,
   Sparkles,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -30,6 +32,7 @@ import type {
   AgentStepDto,
   AgentStreamEvent,
   DocEdit,
+  PracticeSessionDto,
   PublicAiJobDto,
 } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -37,19 +40,23 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/field";
 import { Markdown } from "@/components/ui/markdown";
-import { IconSwap, MotionPresence } from "@/components/ui/motion";
-import { notifyAgentJobUpdated } from "@/lib/agent-events";
+import { MotionPresence } from "@/components/ui/motion";
+import {
+  notifyAgentJobUpdated,
+  notifyPracticeUpdated,
+  notifyProblemDocsUpdated,
+  notifyWeaknessesUpdated,
+} from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
-import type { AgentClientContext } from "./agent-shell";
+import { useAgentShellControls, type AgentClientContext, type AgentPrompt } from "./agent-shell";
+import { ModelMenu, useCoachModel } from "./model-menu";
+import { PracticeTray } from "./practice-tray";
 
 type AgentSidebarProps = {
   open: boolean;
   onClose: () => void;
   pageContext: AgentClientContext;
   embedded?: boolean;
-  /** A question to send as soon as the session is ready (see AgentShell.ask). */
-  queuedPrompt?: string | null;
-  onQueuedPromptSent?: () => void;
 };
 
 const ACTIVE_SESSION_KEY = "ankify:agent-session-id";
@@ -61,10 +68,20 @@ export function AgentSidebar({
   onClose,
   pageContext,
   embedded = false,
-  queuedPrompt = null,
-  onQueuedPromptSent,
 }: AgentSidebarProps) {
   const { t } = useLanguage();
+  // A question a page button asked on the user's behalf (see AgentShell.ask).
+  const { queuedPrompt, clearQueuedPrompt } = useAgentShellControls();
+  const coachModel = useCoachModel();
+  const problemId = pageContext.problemId;
+  const problemIdRef = useRef(problemId);
+  useEffect(() => {
+    problemIdRef.current = problemId;
+  }, [problemId]);
+  // The talk-through on this problem: active, or just finished and not closed.
+  const [practice, setPractice] = useState<PracticeSessionDto | null>(null);
+  const [practiceStarting, setPracticeStarting] = useState(false);
+  const [removedWeaknesses, setRemovedWeaknesses] = useState<Set<string>>(new Set());
   const router = useRouter();
   const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -259,6 +276,44 @@ export function AgentSidebar({
     }
   }, [jobs, router]);
 
+  const showPractice = useCallback((session: PracticeSessionDto | null) => {
+    setPractice(session);
+    if (session) notifyPracticeUpdated(session);
+  }, []);
+
+  // The session to resume when the problem changes: active, or finished but
+  // not yet debriefed.
+  // A session of another problem stays in state but isn't shown (see below).
+  useEffect(() => {
+    if (!problemId) return;
+    let cancelled = false;
+    void fetch(`/api/problems/${encodeURIComponent(problemId)}/practice`, { cache: "no-store" })
+      .then(async (res) => (res.ok ? ((await res.json()) as { session: PracticeSessionDto | null }).session : null))
+      .then((session) => {
+        if (!cancelled && session?.mode === "talk") setPractice(session);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [problemId]);
+
+  const refreshPractice = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/practice/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const session = ((await res.json()) as { session: PracticeSessionDto }).session;
+      if (session.problemId !== problemIdRef.current) return;
+      showPractice(session.status === "abandoned" ? null : session);
+    } catch {
+      /* the tray keeps its last state */
+    }
+  }, [showPractice]);
+  const practiceIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    practiceIdRef.current = practice?.id ?? null;
+  }, [practice?.id]);
+
   const handleStreamEvent = useCallback((event: AgentStreamEvent) => {
     if (event.type === "run_started") {
       const storedBoundary = sessionStorage.getItem(boundaryDismissedKey(event.session.id));
@@ -284,11 +339,18 @@ export function AgentSidebar({
         current ? { ...current, steps: mergeById(current.steps, event.step) } : current,
       );
       if (event.step.kind === "navigation" && event.step.navigation) {
-        const problemId = encodeURIComponent(event.step.navigation.problemId);
+        const target = encodeURIComponent(event.step.navigation.problemId);
         const href = event.step.navigation.destination === "review"
-          ? `/review?problemId=${problemId}`
-          : `/problems/${problemId}`;
+          ? `/review?problemId=${target}`
+          : `/problems/${target}`;
         router.push(href);
+      }
+      if (event.step.kind === "weakness") notifyWeaknessesUpdated(problemIdRef.current);
+      // The Coach started a talk-through: show its tray. Its first one on a
+      // problem also wrote the Solutions doc.
+      if (event.step.kind === "practice" && event.step.practiceSessionId) {
+        void refreshPractice(event.step.practiceSessionId);
+        if (problemIdRef.current) notifyProblemDocsUpdated(problemIdRef.current);
       }
       return;
     }
@@ -309,17 +371,22 @@ export function AgentSidebar({
           : current,
       );
       setPartialResponse("");
+      // A grade the Coach gave itself (no judge) or the summary turn.
+      if (practiceIdRef.current) void refreshPractice(practiceIdRef.current);
       return;
     }
-    // Practice progress is shown in the extension; the web sidebar only chats.
-    if (event.type === "practice") return;
+    // The reply was judged: progress shows before the Coach answers.
+    if (event.type === "practice") {
+      if (event.session.problemId === problemIdRef.current) showPractice(event.session);
+      return;
+    }
     setSnapshot((current) =>
       current ? { ...current, runs: replaceById(current.runs, event.run) } : current,
     );
     setPartialResponse("");
-  }, [router]);
+  }, [refreshPractice, router, showPractice]);
 
-  const sendMessage = useCallback(async (message: string) => {
+  const sendMessage = useCallback(async (message: string, trigger?: AgentPrompt["trigger"]) => {
     if (streaming || persistedRunActive || !message.trim()) return;
     const controller = new AbortController();
     turnAbortRef.current = controller;
@@ -340,6 +407,8 @@ export function AgentSidebar({
             activePanel: pageContext.activePanel,
             problemId: pageContext.problemId,
           },
+          ...(trigger ? { trigger } : {}),
+          ...(coachModel.choice ? { model: coachModel.choice } : {}),
         }),
         signal: controller.signal,
       });
@@ -356,13 +425,58 @@ export function AgentSidebar({
       setStreaming(false);
       setActiveRunId(null);
     }
-  }, [activeSessionId, handleStreamEvent, pageContext, persistedRunActive, streaming, t.agent.sendFailed]);
+  }, [activeSessionId, coachModel.choice, handleStreamEvent, pageContext, persistedRunActive, streaming, t.agent.sendFailed]);
 
   useEffect(() => {
     if (!queuedPrompt || !open || !sessionsLoaded || loading || streaming || persistedRunActive) return;
-    onQueuedPromptSent?.();
-    queueMicrotask(() => void sendMessage(queuedPrompt));
-  }, [loading, onQueuedPromptSent, open, persistedRunActive, queuedPrompt, sendMessage, sessionsLoaded, streaming]);
+    clearQueuedPrompt();
+    queueMicrotask(() => void sendMessage(queuedPrompt.message, queuedPrompt.trigger));
+  }, [clearQueuedPrompt, loading, open, persistedRunActive, queuedPrompt, sendMessage, sessionsLoaded, streaming]);
+
+  /** Starts a talk-through on this problem; the Coach asks the first question. */
+  const startPractice = useCallback(async () => {
+    if (!problemId || practiceStarting || streaming || persistedRunActive) return;
+    setPracticeStarting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/problems/${encodeURIComponent(problemId)}/practice`, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as {
+        session?: PracticeSessionDto;
+        message?: string;
+        error?: string;
+      } | null;
+      if (!res.ok || !body?.session) throw new Error(body?.message ?? body?.error ?? t.practice.actionFailed);
+      showPractice(body.session);
+      // The first practice on a problem writes its Solutions doc.
+      notifyProblemDocsUpdated(problemId);
+      if (body.session.status === "active") {
+        await sendMessage(t.practice.startMessage, { type: "practice_start", practiceSessionId: body.session.id });
+      }
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : t.practice.actionFailed);
+    } finally {
+      setPracticeStarting(false);
+    }
+  }, [persistedRunActive, practiceStarting, problemId, sendMessage, showPractice, streaming, t.practice]);
+
+  const removeWeakness = useCallback(async (step: AgentStepDto) => {
+    if (!step.weaknessId) return;
+    setActionBusy(step.id);
+    try {
+      const res = await fetch(`/api/weaknesses/${encodeURIComponent(step.weaknessId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+      if (!res.ok) throw new Error(t.weakSpots.actionFailed);
+      setRemovedWeaknesses((current) => new Set(current).add(step.weaknessId!));
+      notifyWeaknessesUpdated(problemIdRef.current);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : t.weakSpots.actionFailed);
+    } finally {
+      setActionBusy(null);
+    }
+  }, [t.weakSpots.actionFailed]);
 
   const createSession = useCallback(() => {
     if (streaming || persistedRunActive || !activeSessionId) return;
@@ -531,6 +645,8 @@ export function AgentSidebar({
         current ? { ...current, steps: replaceById(current.steps, body.step!) } : current,
       );
       if (body.job) setJobs((current) => ({ ...current, [body.job!.id]: body.job! }));
+      if (step.proposal?.action === "doc_edit") notifyProblemDocsUpdated(step.proposal.problemId);
+      if (step.proposal?.action === "weakness_category") notifyWeaknessesUpdated(null);
       if (docEdit) router.refresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t.agent.sendFailed);
@@ -565,6 +681,7 @@ export function AgentSidebar({
   };
 
   const runs = snapshot?.runs ?? [];
+  const currentPractice = practice && practice.problemId === problemId ? practice : null;
   const activeSessionTitle = snapshot?.session.title ?? t.agent.untitledSession;
 
   return (
@@ -821,6 +938,8 @@ export function AgentSidebar({
                   actionBusy={actionBusy}
                   onApprove={approveProposal}
                   onDismiss={dismissProposal}
+                  removedWeaknesses={removedWeaknesses}
+                  onRemoveWeakness={removeWeakness}
                 />
               ))}
             </div>
@@ -864,7 +983,18 @@ export function AgentSidebar({
         )}
 
         <form onSubmit={submit} className="shrink-0 border-t border-border bg-surface p-3">
-          <div className="flex items-end gap-2 rounded-xl border border-border bg-bg p-2 focus-within:border-accent/45">
+          {currentPractice && (
+            <div className="mb-2">
+              <PracticeTray
+                key={currentPractice.id}
+                session={currentPractice}
+                onChange={showPractice}
+                onClose={() => setPractice(null)}
+                showRating={pageContext.page !== "review"}
+              />
+            </div>
+          )}
+          <div className="rounded-xl border border-border bg-bg p-2 focus-within:border-accent/45">
             <textarea
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -873,23 +1003,59 @@ export function AgentSidebar({
               maxLength={12_000}
               disabled={streaming || persistedRunActive}
               placeholder={pageContext.problemId ? t.agent.placeholder : t.agent.globalPlaceholder}
-              className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm leading-relaxed text-fg outline-none placeholder:text-muted disabled:opacity-60"
+              className="max-h-36 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 text-sm leading-relaxed text-fg outline-none placeholder:text-muted disabled:opacity-60"
             />
-            <Button
-              type="submit"
-              variant="primary"
-              size="icon"
-              disabled={streaming || persistedRunActive || !draft.trim()}
-              aria-label={t.agent.send}
-            >
-              <IconSwap swapKey={streaming ? "streaming" : "ready"}>
-                {streaming ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-                ) : (
-                  <Send className="h-4 w-4" aria-hidden />
+            <div className="mt-1 flex items-center gap-1.5">
+              {problemId && currentPractice?.status !== "active" && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  title={t.practice.startHint}
+                  disabled={practiceStarting || streaming || persistedRunActive}
+                  onClick={() => void startPractice()}
+                >
+                  {practiceStarting ? (
+                    <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden />
+                  ) : (
+                    <Play className="h-3 w-3" aria-hidden />
+                  )}
+                  {t.practice.start}
+                </Button>
+              )}
+              <div className="ml-auto flex items-center gap-1">
+                {coachModel.pickable && (
+                  <ModelMenu
+                    pickable={coachModel.pickable}
+                    choice={coachModel.choice}
+                    onPick={coachModel.pick}
+                    disabled={streaming}
+                  />
                 )}
-              </IconSwap>
-            </Button>
+                {streaming ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    aria-label={t.agent.stop}
+                    title={t.agent.stop}
+                    onClick={() => turnAbortRef.current?.abort()}
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" aria-hidden />
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="icon"
+                    disabled={persistedRunActive || !draft.trim()}
+                    aria-label={t.agent.send}
+                  >
+                    <Send className="h-4 w-4" aria-hidden />
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </form>
     </aside>
@@ -904,6 +1070,8 @@ function AgentTurn({
   actionBusy,
   onApprove,
   onDismiss,
+  removedWeaknesses,
+  onRemoveWeakness,
 }: {
   run: AgentRunDto;
   snapshot: AgentSessionSnapshotDto;
@@ -912,6 +1080,8 @@ function AgentTurn({
   actionBusy: string | null;
   onApprove: (step: AgentStepDto) => void;
   onDismiss: (step: AgentStepDto) => void;
+  removedWeaknesses: Set<string>;
+  onRemoveWeakness: (step: AgentStepDto) => void;
 }) {
   const { t } = useLanguage();
   const userMessage = snapshot.messages.find(
@@ -942,6 +1112,8 @@ function AgentTurn({
               busy={actionBusy === step.id}
               onApprove={() => onApprove(step)}
               onDismiss={() => onDismiss(step)}
+              removed={Boolean(step.weaknessId && removedWeaknesses.has(step.weaknessId))}
+              onRemove={() => onRemoveWeakness(step)}
             />
           ))}
         </div>
@@ -983,12 +1155,16 @@ function AgentStep({
   busy,
   onApprove,
   onDismiss,
+  removed,
+  onRemove,
 }: {
   step: AgentStepDto;
   job?: PublicAiJobDto;
   busy: boolean;
   onApprove: () => void;
   onDismiss: () => void;
+  removed: boolean;
+  onRemove: () => void;
 }) {
   const { t } = useLanguage();
   const toolLabel = t.agent.tools[step.toolName as keyof typeof t.agent.tools] ?? step.summary;
@@ -1009,7 +1185,20 @@ function AgentStep({
     return (
       <div className="flex items-start gap-2 px-1 text-[11px] text-muted">
         <CircleAlert className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
-        <span>{t.agent.weaknessNoted(step.summary)}</span>
+        <span className={cn("min-w-0 flex-1", removed && "line-through")}>{t.agent.weaknessNoted(step.summary)}</span>
+        {step.weaknessId &&
+          (removed ? (
+            <span className="shrink-0">{t.agent.weaknessRemoved}</span>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRemove}
+              className="shrink-0 font-medium text-muted transition-colors hover:text-danger disabled:opacity-50"
+            >
+              {t.weakSpots.remove}
+            </button>
+          ))}
       </div>
     );
   }
