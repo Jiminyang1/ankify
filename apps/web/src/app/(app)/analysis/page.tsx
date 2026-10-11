@@ -8,6 +8,9 @@ import { Stat, Surface } from "@/components/ui/surface";
 import { formatRelative, recallToneClass } from "@/lib/utils";
 import { PageFrame, PageHeader } from "@/components/ui/page";
 import { loadAnalysis, type AnalysisData } from "@/server/analysis";
+import { loadWeaknessProfile } from "@/server/weaknesses";
+import { weaknessCategoryName } from "@/lib/weakness-names";
+import type { WeaknessProfileDto } from "@ankify/contracts";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -52,8 +55,9 @@ export default async function AnalysisPage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
   let data: AnalysisData;
+  let weakSpots: WeaknessProfileDto | null = null;
   try {
-    data = await loadAnalysis(user.id);
+    [data, weakSpots] = await Promise.all([loadAnalysis(user.id), loadWeaknessProfile(user.id).catch(() => null)]);
   } catch {
     return (
       <PageFrame width="wide">
@@ -181,6 +185,9 @@ export default async function AnalysisPage() {
         )}
       </section>
 
+      {/* Weak spots across problems — which kinds of mistakes recur */}
+      {weakSpots && <WeakSpotsSection profile={weakSpots} language={language} t={t} />}
+
       {/* Memory breakdown */}
       {totalStates > 0 && (
         <section>
@@ -253,5 +260,64 @@ export default async function AnalysisPage() {
         </section>
       )}
     </PageFrame>
+  );
+}
+
+function WeakSpotsSection({
+  profile,
+  language,
+  t,
+}: {
+  profile: WeaknessProfileDto;
+  language: "en" | "zh";
+  t: Awaited<ReturnType<typeof getRequestTranslations>>;
+}) {
+  const categories = profile.categories.filter((entry) => entry.active > 0 || entry.resolved > 0);
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold">{t.analysis.weakSpots.title}</h2>
+        <p className="mt-1 text-sm text-muted">{t.analysis.weakSpots.description}</p>
+      </div>
+      {categories.length === 0 ? (
+        <Surface className="p-6 text-sm text-muted">{t.analysis.weakSpots.empty}</Surface>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {categories.map((entry) => (
+            <Surface key={entry.category} className="p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-semibold">
+                  {weaknessCategoryName(entry.category, entry.categoryName, language)}
+                </h3>
+                <span className="shrink-0 text-xs text-muted tabular-nums">
+                  {entry.active > 0 && (
+                    <span className="font-medium text-warning">{t.analysis.weakSpots.active(entry.active)}</span>
+                  )}
+                  {entry.active > 0 && entry.resolved > 0 && " · "}
+                  {entry.resolved > 0 && t.analysis.weakSpots.resolved(entry.resolved)}
+                </span>
+              </div>
+              {entry.recent > 0 && (
+                <p className="mt-0.5 text-xs text-muted tabular-nums">{t.analysis.weakSpots.recent(entry.recent)}</p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {entry.problems.slice(0, 6).map((problem) => (
+                  <Link
+                    key={problem.id}
+                    href={`/problems/${problem.id}`}
+                    className="rounded-md border border-border bg-subtle px-2 py-0.5 text-xs text-fg transition hover:border-accent/40"
+                  >
+                    {problem.title}
+                  </Link>
+                ))}
+                {entry.problems.length > 6 && (
+                  <span className="px-1 py-0.5 text-xs text-muted">{t.analysis.weakSpots.more(entry.problems.length - 6)}</span>
+                )}
+              </div>
+            </Surface>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

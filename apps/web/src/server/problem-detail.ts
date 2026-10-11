@@ -1,10 +1,8 @@
 import { getDb, schema } from "@ankify/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import {
-  publicCardColumns,
-  publicSubmissionColumns,
-  toSubmissionDto,
-} from "./public-dto";
+import { loadProblemDocs } from "./problem-docs";
+import { publicSubmissionColumns, toSubmissionDto } from "./public-dto";
+import { listProblemWeaknesses } from "./weaknesses";
 
 export async function loadProblemDetail(userId: string, problemId: string) {
   const db = getDb();
@@ -15,25 +13,15 @@ export async function loadProblemDetail(userId: string, problemId: string) {
     .limit(1);
   if (!problem) return null;
 
-  const [submissions, cards, reviewHistory] = await Promise.all([
+  const [submissions, docs, weaknesses, reviewHistory] = await Promise.all([
     db
       .select(publicSubmissionColumns)
       .from(schema.submissions)
       .where(and(eq(schema.submissions.userId, userId), eq(schema.submissions.problemId, problemId)))
       .orderBy(desc(schema.submissions.submittedAt))
       .limit(10),
-    db
-      .select(publicCardColumns)
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problemId),
-          eq(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(50),
+    loadProblemDocs(userId, problemId),
+    listProblemWeaknesses(userId, problemId),
     db
       .select()
       .from(schema.reviewEvents)
@@ -52,7 +40,8 @@ export async function loadProblemDetail(userId: string, problemId: string) {
   return {
     problem,
     submissions: submissions.map(toSubmissionDto),
-    cards,
+    docs: docs!,
+    weaknesses,
     reviewHistory,
   };
 }

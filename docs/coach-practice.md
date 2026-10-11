@@ -1,8 +1,28 @@
 # Coach-led practice (design)
 
-Status: stages 1 and 2 implemented (2026-10-05) in the extension; stage 3 (web review and cleanup) and stage 4 not yet. Version 3 (below) is built (2026-10-10), in its first, smaller scope. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; stage 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
+
+## Stage 3: the web app follows the extension (2026-10-11)
+
+Decided with Jimin after v3 shipped: the web had kept its own review (Quiz,
+card rows, autosaved notes) while the extension moved to docs and practice.
+
+- **One copy of a card**: the web reads and writes the Cards doc; card rows
+  are legacy (only older extension builds and the export read them).
+  Migration `0024_cards_doc_sync` appended ready rows written after 0019.
+- **One way to review**: the review page's Quiz tab is gone. Its workspace is
+  Docs (Notes / Cards / Solutions), Weak spots, and Submissions; practice runs
+  in the Coach panel next to it, and a finished practice preselects its
+  suggested rating in the rating bar. The problem page has the same Docs and
+  Weak spots panels.
+- **One Coach**: the web sidebar has what the extension's composer has:
+  Practice, the model and thinking menu, Stop, the practice tray (points,
+  "I did say that", End, rating), and removable weak spots.
+- **Weak spots across problems** show on Analysis, ranked by category with
+  the problems behind each.
+- Quiz and AI card candidate APIs stay for extension builds before 0.3.0.
 
 ## Version 3: practice judged against a solutions doc (designed 2026-10-06, first scope built 2026-10-10)
 

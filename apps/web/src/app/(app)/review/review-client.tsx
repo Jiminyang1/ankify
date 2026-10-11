@@ -6,15 +6,11 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MutableRefObject,
-  type SetStateAction,
 } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import type {
-  CardDto,
   ReviewPayloadDto,
   ReviewProblemDto,
   ReviewRateResponseDto,
@@ -35,57 +31,23 @@ import {
   useAgentShellControls,
   useEmbeddedAgentPanel,
 } from "@/components/agent/agent-shell";
+import { ProblemDocs } from "@/components/problem-docs";
+import { WeakSpots } from "@/components/weak-spots";
+import { PRACTICE_UPDATED_EVENT, type PracticeUpdatedEvent } from "@/lib/agent-events";
 import { cn, formatInterval } from "@/lib/utils";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 import { ShortcutsHelp } from "./shortcuts-help";
 import type { ReviewWorkspaceLayoutProps } from "./review-workspace-layout";
-import type { QuizKeyInterface } from "./quiz-panel";
 
 type RateResult = ReviewRateResponseDto;
 type Stage = "loading" | "review" | "result" | "empty";
-type WorkspaceTab = "quiz" | "cards" | "submissions" | "notes";
-type WorkspaceResource = Exclude<WorkspaceTab, "quiz">;
+type WorkspaceTab = "docs" | "weakSpots" | "submissions";
+type WorkspaceResource = "submissions";
 
 type ReviewLabels = ReturnType<typeof useLanguage>["t"];
 
-const LazyQuizPanel = dynamic(
-  () => import("./quiz-panel").then((module) => module.QuizPanel),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    ),
-  },
-);
-
 const LazySubmissionList = dynamic(
   () => import("@/components/submission-list").then((module) => module.SubmissionList),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    ),
-  },
-);
-
-const LazyCardReviewPanel = dynamic(
-  () => import("./card-review-panel").then((module) => module.CardReviewPanel),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    ),
-  },
-);
-
-const LazyNotesEditor = dynamic(
-  () => import("./notes-panel").then((module) => module.NotesEditor),
   {
     ssr: false,
     loading: () => (
@@ -117,16 +79,14 @@ function getRatingButtons(t: ReviewLabels): { rating: FsrsRating; label: string;
   ];
 }
 
-function suggestedRatingForScore(score: number): FsrsRating {
-  if (score <= 1) return 1;
-  if (score === 2) return 2;
-  if (score <= 4) return 3;
-  return 4;
-}
-
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
-const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "cards";
+const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "docs";
 const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
+
+/** The open tab, as the Coach's page context names it. */
+function agentPanel(tab: WorkspaceTab) {
+  return tab === "weakSpots" ? ("weak_spots" as const) : tab;
+}
 
 function subscribeReviewTags(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
@@ -158,11 +118,9 @@ export default function ReviewPage({
     initialData.problem ? "review" : "empty",
   );
   const [userFsrsRating, setUserFsrsRating] = useState<FsrsRating | null>(null);
-  const [quizSuggestedRating, setQuizSuggestedRating] = useState<FsrsRating | null>(null);
+  const [practiceSuggestedRating, setPracticeSuggestedRating] = useState<FsrsRating | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(DEFAULT_WORKSPACE_TAB);
-  const [cards, setCards] = useState<CardDto[] | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionDto[] | null>(null);
-  const [notes, setNotes] = useState<string | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState<
     Partial<Record<WorkspaceResource, boolean>>
   >({});
@@ -170,12 +128,9 @@ export default function ReviewPage({
     Partial<Record<WorkspaceResource, string>>
   >({});
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [cardIdx, setCardIdx] = useState(0);
-  const [flipped, setFlipped] = useState(false);
   const [result, setResult] = useState<RateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const quizKeysRef = useRef<QuizKeyInterface | null>(null);
   const ratingRequestRef = useRef<{ problemId: string; requestId: string } | null>(null);
   const workspaceRequestsRef = useRef(new Set<string>());
   const currentProblemIdRef = useRef(initialData.problem?.id ?? null);
@@ -185,7 +140,7 @@ export default function ReviewPage({
         problemId: data.problem.id,
         problemTitle: data.problem.title,
         page: "review" as const,
-        activePanel: workspaceTab,
+        activePanel: agentPanel(workspaceTab),
       }
     : null;
   useAgentPageContext(agentPageContext);
@@ -196,15 +151,11 @@ export default function ReviewPage({
     setStage("loading");
     currentProblemIdRef.current = null;
     setUserFsrsRating(null);
-    setQuizSuggestedRating(null);
-    setCards(null);
+    setPracticeSuggestedRating(null);
     setSubmissions(null);
-    setNotes(null);
     setWorkspaceLoading({});
     setWorkspaceErrors({});
     workspaceRequestsRef.current.clear();
-    setCardIdx(0);
-    setFlipped(false);
     setResult(null);
     setError(null);
     const url = targetId
@@ -240,13 +191,7 @@ export default function ReviewPage({
     const problemId = currentProblemIdRef.current;
     if (!problemId) return;
 
-    const alreadyLoaded =
-      resource === "cards"
-        ? cards !== null
-        : resource === "submissions"
-          ? submissions !== null
-          : notes !== null;
-    if (!force && alreadyLoaded) return;
+    if (!force && submissions !== null) return;
 
     const requestKey = `${problemId}:${resource}`;
     if (workspaceRequestsRef.current.has(requestKey)) return;
@@ -264,9 +209,7 @@ export default function ReviewPage({
         { cache: "no-store" },
       );
       const json = (await res.json().catch(() => null)) as {
-        cards?: CardDto[];
         submissions?: SubmissionDto[];
-        notes?: string;
         error?: string;
       } | null;
       if (!res.ok || !json) {
@@ -274,15 +217,7 @@ export default function ReviewPage({
       }
       if (currentProblemIdRef.current !== problemId) return;
 
-      if (resource === "cards") {
-        setCards(json.cards ?? []);
-        setCardIdx(0);
-        setFlipped(false);
-      } else if (resource === "submissions") {
-        setSubmissions(json.submissions ?? []);
-      } else {
-        setNotes(json.notes ?? "");
-      }
+      setSubmissions(json.submissions ?? []);
     } catch (loadError) {
       if (currentProblemIdRef.current !== problemId) return;
       setWorkspaceErrors((current) => ({
@@ -301,26 +236,39 @@ export default function ReviewPage({
         }));
       }
     }
-  }, [cards, notes, submissions, t.review.workspaceLoadFailed]);
+  }, [submissions, t.review.workspaceLoadFailed]);
 
   const selectWorkspaceTab = useCallback((tab: WorkspaceTab) => {
     setWorkspaceTab(tab);
     try {
       localStorage.setItem(LAST_WORKSPACE_TAB_KEY, tab);
     } catch {}
-    if (tab !== "quiz") void loadWorkspaceResource(tab);
+    if (tab === "submissions") void loadWorkspaceResource(tab);
   }, [loadWorkspaceResource]);
 
   useEffect(() => {
     let preferred = DEFAULT_WORKSPACE_TAB;
     try {
       const stored = localStorage.getItem(LAST_WORKSPACE_TAB_KEY);
-      if (stored === "quiz" || stored === "cards" || stored === "submissions" || stored === "notes") {
-        preferred = stored;
-      }
+      // Older builds stored quiz, cards, or notes: those live under Docs now.
+      if (stored === "weakSpots" || stored === "submissions") preferred = stored;
     } catch {}
     selectWorkspaceTab(preferred);
   }, [selectWorkspaceTab, data?.problem?.id]);
+
+  // A talk-through finished in the Coach panel: its suggested rating is
+  // preselected here, where the rating is submitted.
+  useEffect(() => {
+    const onPractice = (event: Event) => {
+      const session = (event as PracticeUpdatedEvent).detail;
+      if (session.problemId !== currentProblemIdRef.current) return;
+      if (session.status !== "completed" || !session.suggestedRating) return;
+      setPracticeSuggestedRating(session.suggestedRating);
+      setUserFsrsRating((current) => current ?? session.suggestedRating);
+    };
+    window.addEventListener(PRACTICE_UPDATED_EVENT, onPractice);
+    return () => window.removeEventListener(PRACTICE_UPDATED_EVENT, onPractice);
+  }, []);
 
   const submitRating = useCallback(async () => {
     if (!data?.problem || !userFsrsRating) return;
@@ -338,7 +286,6 @@ export default function ReviewPage({
           problemId: data.problem.id,
           rating: userFsrsRating,
           requestId,
-          ...(notes !== null ? { notes } : {}),
         }),
       });
       if (res.status === 409) {
@@ -361,7 +308,7 @@ export default function ReviewPage({
       setError(t.review.networkTryAgain);
     }
     setSubmitting(false);
-  }, [data, userFsrsRating, notes, loadNext, t.review.networkTryAgain, t.review.ratedElsewhere]);
+  }, [data, userFsrsRating, loadNext, t.review.networkTryAgain, t.review.ratedElsewhere]);
 
   const undoRating = useCallback(async () => {
     if (!data?.problem || submitting) return;
@@ -392,9 +339,7 @@ export default function ReviewPage({
   }, [data, submitting, loadNext, t.review.undoFailed, t.review.networkTryAgain]);
 
   // Page-level shortcuts: 1-4 select rating, Enter submits (or advances the
-  // result screen), A-D answer the quiz, Space flips cards / continues quiz
-  // feedback, arrows navigate cards. All ignored while typing.
-  const cardCount = cards?.length ?? 0;
+  // result screen). All ignored while typing.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -428,42 +373,6 @@ export default function ReviewPage({
       }
       if (stage !== "review") return;
 
-      if (workspaceTab === "quiz") {
-        const quiz = quizKeysRef.current;
-        const choice = "abcd".indexOf(e.key.toLowerCase());
-        if (quiz && choice >= 0 && e.key.length === 1) {
-          e.preventDefault();
-          quiz.answer(choice);
-          return;
-        }
-        if ((isEnter || isSpace) && quiz?.advance()) {
-          e.preventDefault();
-          return;
-        }
-        // Inside the quiz, Enter never falls through to rating submit.
-        if (isEnter || isSpace) return;
-      }
-
-      if (workspaceTab === "cards") {
-        if (isSpace) {
-          e.preventDefault();
-          setFlipped((f) => !f);
-          return;
-        }
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          setCardIdx((i) => Math.max(0, i - 1));
-          setFlipped(false);
-          return;
-        }
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          setCardIdx((i) => Math.min(Math.max(0, cardCount - 1), i + 1));
-          setFlipped(false);
-          return;
-        }
-      }
-
       if (e.key >= "1" && e.key <= "4") {
         e.preventDefault();
         setUserFsrsRating(Number(e.key) as FsrsRating);
@@ -476,15 +385,7 @@ export default function ReviewPage({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [stage, workspaceTab, cardCount, loadNext, submitRating, userFsrsRating]);
-
-  const handleQuizCardSaved = useCallback((card: CardDto) => {
-    setCards((current) => {
-      if (!current) return current;
-      if (current.some((existing) => existing.id === card.id)) return current;
-      return [card, ...current];
-    });
-  }, []);
+  }, [stage, loadNext, submitRating, userFsrsRating]);
 
   if (stage === "loading" || !data) return <p className="text-muted p-8 text-center">{t.common.loading}</p>;
 
@@ -501,7 +402,6 @@ export default function ReviewPage({
   }
 
   const problem = data.problem;
-  const currentCard = cards?.[cardIdx] ?? null;
 
   return (
     <div className="space-y-4">
@@ -515,13 +415,12 @@ export default function ReviewPage({
               previews={data.previews}
               previewedAt={data.previewedAt}
               userFsrsRating={userFsrsRating}
-              quizSuggestedRating={quizSuggestedRating}
+              practiceSuggestedRating={practiceSuggestedRating}
               setUserFsrsRating={setUserFsrsRating}
               error={error}
               submitting={submitting}
               onSubmitRating={submitRating}
               onOpenShortcuts={() => setShortcutsOpen(true)}
-              cardTotal={cards?.length ?? null}
               dueCount={data.queue?.dueCount ?? 0}
               language={language}
             />
@@ -530,22 +429,11 @@ export default function ReviewPage({
             <WorkspacePanel
               activeTab={workspaceTab}
               onTabChange={selectWorkspaceTab}
-              cards={cards}
-              currentCard={currentCard}
-              cardIdx={cardIdx}
-              setCardIdx={setCardIdx}
-              flipped={flipped}
-              setFlipped={setFlipped}
               submissions={submissions}
-              notes={notes}
-              setNotes={setNotes}
               loading={workspaceLoading}
               errors={workspaceErrors}
               onRetry={(resource) => void loadWorkspaceResource(resource, true)}
               problemId={problem.id}
-              onQuizCardSaved={handleQuizCardSaved}
-              quizKeysRef={quizKeysRef}
-              onQuizCompleted={(score) => setQuizSuggestedRating(suggestedRatingForScore(score))}
             />
           )}
           coach={(
@@ -557,7 +445,7 @@ export default function ReviewPage({
                 problemId: problem.id,
                 problemTitle: problem.title,
                 page: "review",
-                activePanel: workspaceTab,
+                activePanel: agentPanel(workspaceTab),
               }}
             />
           )}
@@ -579,7 +467,6 @@ export default function ReviewPage({
         <div className="space-y-4">
           <ReviewHeader
             problem={problem}
-            cardTotal={cards?.length ?? null}
             dueCount={result.queue?.dueCount ?? 0}
             language={language}
           />
@@ -608,10 +495,9 @@ export default function ReviewPage({
 }
 
 function ReviewHeader({
-  problem, cardTotal, dueCount, language,
+  problem, dueCount, language,
 }: {
   problem: ReviewProblemDto;
-  cardTotal: number | null;
   dueCount: number;
   language: "en" | "zh";
 }) {
@@ -650,9 +536,6 @@ function ReviewHeader({
         {!tagsHidden && problem.topicTags.slice(0, 3).map((tag) => (
           <span key={tag} className="shrink-0 text-xs text-muted">#{leetcodeTagName(tag)}</span>
         ))}
-        {cardTotal !== null && (
-          <span className="shrink-0 text-xs text-muted">· {t.common.cards(cardTotal)}</span>
-        )}
         <button
           type="button"
           onClick={toggleTags}
@@ -671,13 +554,12 @@ function StatementPanel({
   previews,
   previewedAt,
   userFsrsRating,
-  quizSuggestedRating,
+  practiceSuggestedRating,
   setUserFsrsRating,
   error,
   submitting,
   onSubmitRating,
   onOpenShortcuts,
-  cardTotal,
   dueCount,
   language,
 }: {
@@ -685,13 +567,12 @@ function StatementPanel({
   previews: ReviewPayloadDto["previews"];
   previewedAt: string;
   userFsrsRating: FsrsRating | null;
-  quizSuggestedRating: FsrsRating | null;
+  practiceSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
   error: string | null;
   submitting: boolean;
   onSubmitRating: () => void;
   onOpenShortcuts: () => void;
-  cardTotal: number | null;
   dueCount: number;
   language: "en" | "zh";
 }) {
@@ -701,7 +582,6 @@ function StatementPanel({
       <div className="shrink-0 border-b border-border px-5 py-4">
         <ReviewHeader
           problem={problem}
-          cardTotal={cardTotal}
           dueCount={dueCount}
           language={language}
         />
@@ -719,7 +599,7 @@ function StatementPanel({
         previews={previews}
         previewedAt={previewedAt}
         userFsrsRating={userFsrsRating}
-        quizSuggestedRating={quizSuggestedRating}
+        practiceSuggestedRating={practiceSuggestedRating}
         setUserFsrsRating={setUserFsrsRating}
         error={error}
         submitting={submitting}
@@ -733,48 +613,25 @@ function StatementPanel({
 function WorkspacePanel({
   activeTab,
   onTabChange,
-  cards,
-  currentCard,
-  cardIdx,
-  setCardIdx,
-  flipped,
-  setFlipped,
   submissions,
-  notes,
-  setNotes,
   loading,
   errors,
   onRetry,
   problemId,
-  onQuizCardSaved,
-  quizKeysRef,
-  onQuizCompleted,
 }: {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
-  cards: CardDto[] | null;
-  currentCard: CardDto | null;
-  cardIdx: number;
-  setCardIdx: Dispatch<SetStateAction<number>>;
-  flipped: boolean;
-  setFlipped: Dispatch<SetStateAction<boolean>>;
   submissions: SubmissionDto[] | null;
-  notes: string | null;
-  setNotes: (value: string) => void;
   loading: Partial<Record<WorkspaceResource, boolean>>;
   errors: Partial<Record<WorkspaceResource, string>>;
   onRetry: (resource: WorkspaceResource) => void;
   problemId: string;
-  onQuizCardSaved: (card: CardDto) => void;
-  quizKeysRef: MutableRefObject<QuizKeyInterface | null>;
-  onQuizCompleted: (score: number) => void;
 }) {
   const { t } = useLanguage();
   const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
-    { id: "quiz", label: t.review.quiz },
-    { id: "cards", label: t.review.cards, count: cards?.length },
+    { id: "docs", label: t.review.docs },
+    { id: "weakSpots", label: t.review.weakSpots },
     { id: "submissions", label: t.review.submissions, count: submissions?.length },
-    { id: "notes", label: t.review.notes },
   ];
 
   return (
@@ -805,31 +662,12 @@ function WorkspacePanel({
         aria-labelledby={`review-tab-${activeTab}`}
         className="min-h-0 flex-1 overflow-hidden"
       >
-        {activeTab === "quiz" && (
-          <LazyQuizPanel
-            problemId={problemId}
-            onCardSaved={onQuizCardSaved}
-            quizKeysRef={quizKeysRef}
-            onCompleted={onQuizCompleted}
-          />
-        )}
+        {activeTab === "docs" && <ProblemDocs key={problemId} problemId={problemId} className="h-full" />}
 
-        {activeTab === "cards" && (
-          <WorkspaceResourceState
-            loading={loading.cards === true}
-            error={errors.cards}
-            onRetry={() => onRetry("cards")}
-          >
-            <LazyCardReviewPanel
-              cards={cards ?? []}
-              currentCard={currentCard}
-              cardIdx={cardIdx}
-              setCardIdx={setCardIdx}
-              flipped={flipped}
-              setFlipped={setFlipped}
-              problemId={problemId}
-            />
-          </WorkspaceResourceState>
+        {activeTab === "weakSpots" && (
+          <div className="h-full overflow-y-auto p-4">
+            <WeakSpots key={problemId} problemId={problemId} />
+          </div>
         )}
 
         {activeTab === "submissions" && (
@@ -847,20 +685,6 @@ function WorkspacePanel({
                 <LazySubmissionList submissions={submissions ?? []} />
               )}
             </div>
-          </WorkspaceResourceState>
-        )}
-
-        {activeTab === "notes" && (
-          <WorkspaceResourceState
-            loading={loading.notes === true}
-            error={errors.notes}
-            onRetry={() => onRetry("notes")}
-          >
-            <LazyNotesEditor
-              notes={notes ?? ""}
-              setNotes={setNotes}
-              problemId={problemId}
-            />
           </WorkspaceResourceState>
         )}
       </div>
@@ -952,7 +776,7 @@ function CompactRating({
   previews,
   previewedAt,
   userFsrsRating,
-  quizSuggestedRating,
+  practiceSuggestedRating,
   setUserFsrsRating,
   error,
   submitting,
@@ -962,7 +786,7 @@ function CompactRating({
   previews: ReviewPayloadDto["previews"];
   previewedAt: string;
   userFsrsRating: FsrsRating | null;
-  quizSuggestedRating: FsrsRating | null;
+  practiceSuggestedRating: FsrsRating | null;
   setUserFsrsRating: (rating: FsrsRating) => void;
   error: string | null;
   submitting: boolean;
@@ -975,10 +799,10 @@ function CompactRating({
     <div className="shrink-0 border-t border-border bg-surface/70 p-3">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{t.review.rating}</span>
-        {quizSuggestedRating !== null && (
+        {practiceSuggestedRating !== null && (
           <span className="text-[10px] font-medium text-accent" role="status">
-            {t.review.quizSuggestion(
-              ratingButtons.find((button) => button.rating === quizSuggestedRating)?.label ?? "",
+            {t.review.practiceSuggestion(
+              ratingButtons.find((button) => button.rating === practiceSuggestedRating)?.label ?? "",
             )}
           </span>
         )}

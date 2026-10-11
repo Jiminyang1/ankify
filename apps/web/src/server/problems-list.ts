@@ -4,7 +4,6 @@ import {
   and,
   desc,
   eq,
-  inArray,
   isNotNull,
   isNull,
   like,
@@ -13,6 +12,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { dueProblemCondition } from "./due-problems";
+import { countDocCards } from "./problem-docs";
 
 export const DEFAULT_PROBLEMS_PAGE_SIZE = 50;
 const MAX_PROBLEMS_PAGE_SIZE = 100;
@@ -114,25 +114,7 @@ export async function loadProblemsList(
   const problems = hasMore ? problemRows.slice(0, limit) : problemRows;
   const problemIds = problems.map((problem) => problem.id);
 
-  const cardStats =
-    problemIds.length === 0
-      ? []
-      : await db
-          .select({
-            problemId: schema.cards.problemId,
-            total: sql<number>`count(*)`,
-          })
-          .from(schema.cards)
-          .where(
-            and(
-              eq(schema.cards.userId, userId),
-              eq(schema.cards.aiStatus, "ready"),
-              inArray(schema.cards.problemId, problemIds),
-            ),
-          )
-          .groupBy(schema.cards.problemId);
-
-  const cardByProblem = new Map(cardStats.map((row) => [row.problemId, row.total]));
+  const cardByProblem = await countDocCards(userId, problemIds);
   const lastProblem = problems.at(-1);
 
   return {

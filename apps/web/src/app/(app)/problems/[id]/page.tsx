@@ -12,11 +12,10 @@ import { ProblemDetailLayout } from "./problem-detail-layout";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { cn, formatRelative } from "@/lib/utils";
-import { UserCardButton } from "./user-card-button";
-import { CardList } from "./card-list";
+import { ProblemDocs } from "@/components/problem-docs";
+import { WeakSpots } from "@/components/weak-spots";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
-import { NotesEditor } from "./notes-editor";
 import { loadProblemDetail } from "@/server/problem-detail";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
@@ -41,7 +40,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
-  const { problem, submissions, cards, reviewHistory } = detail;
+  const { problem, submissions, docs, weaknesses, reviewHistory } = detail;
+  const cardCount = docs.cards.cards.length;
+  const activeWeaknesses = weaknesses.filter((weakness) => weakness.status === "active").length;
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
 
@@ -53,35 +54,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       description={t.detail.statementHelp}
     />
   );
-
-  const cardsPanel =
-    cards.length === 0 ? (
-      <EmptyState
-        title={t.detail.noCards}
-        description={t.detail.cardsHelp}
-        action={
-          <UserCardButton
-            problemId={problem.id}
-            problemTitle={problem.title}
-            problemDescription={problem.descriptionMd}
-          />
-        }
-      />
-    ) : (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted">
-            {t.detail.savedCards(cards.length)}
-          </p>
-          <UserCardButton
-            problemId={problem.id}
-            problemTitle={problem.title}
-            problemDescription={problem.descriptionMd}
-          />
-        </div>
-        <CardList cards={cards} />
-      </div>
-    );
 
   const submissionsPanel =
     submissions.length === 0 ? (
@@ -109,14 +81,22 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       </ul>
     );
 
-  const notesPanel = <NotesEditor problemId={problem.id} initialNotes={problem.notes ?? ""} />;
-
   const panels: WorkspacePanel[] = [
     { id: "statement", label: t.detail.statement, node: statementPanel },
-    { id: "cards", label: t.review.cards, count: cards.length, node: cardsPanel },
+    {
+      id: "docs",
+      label: t.docs.title,
+      node: <ProblemDocs problemId={problem.id} initialDocs={docs} className="h-full" />,
+      flush: true,
+    },
+    {
+      id: "weak_spots",
+      label: t.weakSpots.title,
+      count: activeWeaknesses || undefined,
+      node: <WeakSpots problemId={problem.id} initialWeaknesses={weaknesses} />,
+    },
     { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
     { id: "history", label: t.detail.history, count: reviewHistory.length, node: historyPanel },
-    { id: "notes", label: t.review.notes, node: notesPanel },
   ];
 
   return (
@@ -174,7 +154,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                 }
               />
               <MetaRow label={t.detail.lastReviewed} value={formatRelative(problem.fsrsLastReview)} />
-              <MetaRow label={t.review.cards} value={cards.length} />
+              <MetaRow label={t.review.cards} value={cardCount} />
             </dl>
           </Surface>
 

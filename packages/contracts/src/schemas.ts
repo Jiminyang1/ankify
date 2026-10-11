@@ -54,7 +54,7 @@ export const agentPageEnum = z.enum([
   "profile",
   "leetcode",
 ]);
-export const agentPanelEnum = z.enum(["quiz", "cards", "submissions", "notes", "overview"]);
+export const agentPanelEnum = z.enum(["quiz", "cards", "submissions", "notes", "docs", "weak_spots", "overview"]);
 export const agentRunStatusEnum = z.enum(["running", "succeeded", "failed"]);
 export const agentStepStatusEnum = z.enum([
   "completed",

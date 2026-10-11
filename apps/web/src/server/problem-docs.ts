@@ -11,7 +11,7 @@ import {
 } from "@ankify/core";
 import { docEditTarget, type DocEdit, type ProblemDocTarget, type ProblemDocsDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 /** The problem's Notes, Cards, and Solutions docs (docs/coach-practice.md).
  *  Every write checks the doc's version, so a stale editor tab or Coach
@@ -195,3 +195,13 @@ export const DOC_WRITE_STATUS: Record<DocWriteError, number> = {
   too_long: 400,
 };
 
+
+/** Cards per problem, counted from each problem's Cards doc. */
+export async function countDocCards(userId: string, problemIds: string[]): Promise<Map<string, number>> {
+  if (problemIds.length === 0) return new Map();
+  const rows = await getDb()
+    .select({ id: schema.problems.id, cardsMd: schema.problems.cardsMd })
+    .from(schema.problems)
+    .where(and(eq(schema.problems.userId, userId), inArray(schema.problems.id, problemIds)));
+  return new Map(rows.map((row) => [row.id, parseCards(row.cardsMd).cards.length]));
+}
