@@ -1,6 +1,7 @@
 import { getDb, schema } from "@ankify/db";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { dueProblemCondition } from "@/server/due-problems";
+import { countDocCards } from "@/server/problem-docs";
 import { getReviewQueueStatus } from "@/server/review-queue";
 
 export async function loadToday(userId: string) {
@@ -23,22 +24,7 @@ export async function loadToday(userId: string) {
 
     const dueProblems = allDueProblems.slice(0, Math.min(8, queue.remaining));
     const dueProblemIds = dueProblems.map((problem) => problem.id);
-    const cardStats = dueProblemIds.length
-      ? await db
-          .select({
-            problemId: schema.cards.problemId,
-            total: sql<number>`count(*)`,
-          })
-          .from(schema.cards)
-          .where(
-            and(
-              eq(schema.cards.userId, userId),
-              eq(schema.cards.aiStatus, "ready"),
-              inArray(schema.cards.problemId, dueProblemIds),
-            ),
-          )
-          .groupBy(schema.cards.problemId)
-      : [];
+    const cardsByProblem = await countDocCards(userId, dueProblemIds);
 
     return {
       totalProblems: totalRows[0]?.count ?? 0,
@@ -47,7 +33,7 @@ export async function loadToday(userId: string) {
       doneToday: queue.doneToday,
       dailyReviewLimit: queue.dailyReviewLimit,
       dueProblems,
-      cardsByProblem: new Map(cardStats.map((row) => [row.problemId, row.total ?? 0])),
+      cardsByProblem,
     };
   } catch {
     return {

@@ -1,7 +1,8 @@
 import type { ReviewQueuePayloadDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { dueProblemCondition } from "@/server/due-problems";
+import { countDocCards } from "@/server/problem-docs";
 import { getReviewQueueStatus } from "@/server/review-queue";
 
 export async function loadReviewQueueData(
@@ -35,26 +36,7 @@ export async function loadReviewQueueData(
     .limit(limit);
 
   const problemIds = dueProblems.map((problem) => problem.id);
-  const cardCounts = problemIds.length
-    ? await db
-        .select({
-          problemId: schema.cards.problemId,
-          total: sql<number>`count(*)`,
-        })
-        .from(schema.cards)
-        .where(
-          and(
-            eq(schema.cards.userId, userId),
-            eq(schema.cards.aiStatus, "ready"),
-            inArray(schema.cards.problemId, problemIds),
-          ),
-        )
-        .groupBy(schema.cards.problemId)
-    : [];
-
-  const cardCountByProblem = new Map(
-    cardCounts.map((row) => [row.problemId, row.total]),
-  );
+  const cardCountByProblem = await countDocCards(userId, problemIds);
 
   return {
     queue,
