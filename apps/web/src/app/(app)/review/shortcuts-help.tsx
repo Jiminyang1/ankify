@@ -73,22 +73,6 @@ export function ShortcutsHelp({ open, onClose }: { open: boolean; onClose: () =>
           </section>
 
           <section>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted">{groups.quiz}</h3>
-            <div className="mt-1 divide-y divide-border">
-              <Row keys={["A", "B", "C", "D"]} label={keys.quizAnswer} />
-              <Row keys={["Space"]} label={keys.quizAdvance} />
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted">{groups.cards}</h3>
-            <div className="mt-1 divide-y divide-border">
-              <Row keys={["Space"]} label={keys.cardFlip} />
-              <Row keys={["←", "→"]} label={keys.cardNav} />
-            </div>
-          </section>
-
-          <section>
             <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted">{groups.result}</h3>
             <div className="mt-1 divide-y divide-border">
               <Row keys={["Enter"]} label={keys.resultNext} />

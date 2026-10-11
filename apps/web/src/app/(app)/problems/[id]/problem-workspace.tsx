@@ -10,6 +10,8 @@ export type WorkspacePanel = {
   label: string;
   count?: number;
   node: React.ReactNode;
+  /** Fills the panel edge to edge (it has its own toolbar and scrolling). */
+  flush?: boolean;
 };
 
 /**
@@ -32,9 +34,11 @@ export function ProblemWorkspace({
   const { t } = useLanguage();
   const [active, setActive] = useState(defaultTab ?? panels[0]?.id);
   const activePanel =
-    active === "cards" || active === "submissions" || active === "notes"
+    active === "docs" || active === "submissions"
       ? active
-      : "overview";
+      : active === "weak_spots"
+        ? "weak_spots"
+        : "overview";
   useAgentPageContext({
     problemId,
     problemTitle,
@@ -116,7 +120,7 @@ export function ProblemWorkspace({
             role="tabpanel"
             aria-labelledby={`tab-${p.id}`}
             hidden={p.id !== active}
-            className="p-4 sm:p-5"
+            className={p.flush ? "h-full" : "p-4 sm:p-5"}
           >
             {p.node}
           </div>
