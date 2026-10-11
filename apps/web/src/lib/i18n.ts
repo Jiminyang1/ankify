@@ -325,7 +325,7 @@ export const translations = {
       interfaceLanguage: "Interface language",
       interfaceLanguageHelp: "Changes the web interface in this browser after you save. It does not control AI-generated study content.",
       generationLanguage: "Generation language",
-      generationLanguageHelp: "Used for new AI-generated cards and quizzes. Existing cards and quiz sessions remain unchanged.",
+      generationLanguageHelp: "Used for AI-written docs, like a problem's Solutions doc. Existing docs stay as they are.",
       generationLanguageEnglish: "English (default)",
       generationLanguageChinese: "Simplified Chinese",
       saveLanguageRegion: "Save language & region",
@@ -337,8 +337,8 @@ export const translations = {
       keySecurity: "API keys are encrypted before they are stored. Your own key always takes priority over free credits.",
       starterActive: (remaining: number, limit: number) =>
         remaining > 0
-          ? `You're using free AI credits: ${remaining} of ${limit} left. Each quiz, AI card, or Study Coach message uses one. Add your own key below to keep using AI after that.`
-          : `You've used all ${limit} free AI credits. Add your own key below to keep generating quizzes and cards and to keep using Study Coach.`,
+          ? `You're using free AI credits: ${remaining} of ${limit} left. Each Study Coach message uses one. Add your own key below to keep using AI after that.`
+          : `You've used all ${limit} free AI credits. Add your own key below to keep using the Study Coach.`,
       provider: "Provider",
       chooseProvider: "Choose a provider",
       model: "Model",
@@ -458,6 +458,15 @@ export const translations = {
     },
     analysis: {
       title: "Analysis",
+      weakSpots: {
+        title: "Weak spots",
+        description: "The kinds of mistakes you keep making, across problems. The Coach records them from your submissions and practice.",
+        empty: "No weak spots yet. Ask the Coach to analyze your attempts on a problem, or practice one.",
+        active: (count: number) => `${count} active`,
+        resolved: (count: number) => `${count} resolved`,
+        recent: (count: number) => `${count} in the last 2 weeks`,
+        more: (count: number) => `+${count} more`,
+      },
       subtitle: "How well your reviews are sticking, based on the FSRS memory model.",
       backToday: "Back to today",
       headlines: {
@@ -968,7 +977,7 @@ export const translations = {
       interfaceLanguage: "界面语言",
       interfaceLanguageHelp: "保存后更改当前浏览器里的 Web 界面，不控制 AI 生成的学习内容。",
       generationLanguage: "生成内容语言",
-      generationLanguageHelp: "用于之后新生成的 AI 卡片和测验；已有卡片和测验记录保持不变。",
+      generationLanguageHelp: "用于 AI 写的文档，比如题目的解法文档；已有的文档保持不变。",
       generationLanguageEnglish: "英语（默认）",
       generationLanguageChinese: "简体中文",
       saveLanguageRegion: "保存语言与地区",
@@ -980,8 +989,8 @@ export const translations = {
       keySecurity: "API key 会加密后存储。配置了自己的 key 后会优先使用，不再消耗免费额度。",
       starterActive: (remaining: number, limit: number) =>
         remaining > 0
-          ? `你正在使用免费 AI 额度：剩余 ${remaining} / ${limit} 次。每生成一次测验、一张 AI 卡片或发一条 Study Coach 消息消耗 1 次。用完后可在下方填入自己的 key 继续使用。`
-          : `${limit} 次免费 AI 额度已用完。在下方填入自己的 key，就能继续生成测验、卡片和使用 Study Coach。`,
+          ? `你正在使用免费 AI 额度：剩余 ${remaining} / ${limit} 次。每发一条 Study Coach 消息消耗 1 次。用完后可在下方填入自己的 key 继续使用。`
+          : `${limit} 次免费 AI 额度已用完。在下方填入自己的 key，就能继续使用 Study Coach。`,
       provider: "提供商",
       chooseProvider: "选择提供商",
       model: "模型",
@@ -1100,6 +1109,15 @@ export const translations = {
     },
     analysis: {
       title: "分析",
+      weakSpots: {
+        title: "弱点",
+        description: "你在不同题目上反复犯的同一类错误。教练会从你的提交和练习里记录下来。",
+        empty: "还没有弱点。可以让教练分析某道题的提交，或者做一次练习。",
+        active: (count: number) => `${count} 个未解决`,
+        resolved: (count: number) => `${count} 个已解决`,
+        recent: (count: number) => `最近两周 ${count} 次`,
+        more: (count: number) => `还有 ${count} 道`,
+      },
       subtitle: "基于 FSRS 记忆模型，查看你的复习掌握情况。",
       backToday: "回到今日",
       headlines: {
