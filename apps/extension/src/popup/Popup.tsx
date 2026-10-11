@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createAiJobClient } from "@ankify/api-client";
-import { formatQuizMarkdown, type FsrsRating } from "@ankify/core";
+import type { FsrsRating } from "@ankify/core";
 import type {
-  AiJobCreateRequestInput,
   AuthUserDto as AuthAccount,
   CaptureProblemInput,
   CaptureResultDto as CaptureResult,
@@ -10,30 +8,21 @@ import type {
   FsrsPreviewsDto as Previews,
   ProblemDto as ApiProblem,
   ProblemLookupPayloadDto,
-  PublicAiJobDto,
   QueueProblemDto as QueueProblem,
-  QuizAnswer,
-  QuizItem,
-  QuizSessionDto as QuizSession,
   ReviewQueuePayloadDto as QueueResponse,
 } from "@ankify/contracts";
-import type { BackgroundRequest, ContentResponse, ExtSettings, SolvedSyncState } from "../shared/messages";
+import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
-  clearCardDraft,
-  getCardDraft,
   getSettings,
   getSolvedSyncState,
-  setCardDraft,
   setSettings,
 } from "../shared/storage";
+import { AUTH_REQUIRED_EVENT, apiFetch } from "./api";
+import { CoachTab } from "./CoachTab";
+import { DocsPanel } from "./DocsPanel";
 import { PopupMarkdown } from "./PopupMarkdown";
 
-type LocalCandidate = ApiCard & {
-  instruction: string;
-  busy: string | null;
-  localError: string | null;
-};
 type ThemePreference = "system" | "light" | "dark";
 type Language = ExtSettings["language"];
 
@@ -62,12 +51,13 @@ type Sticky = {
   previews: Previews;
 };
 
-type NavTab = "today" | "problem" | "settings";
+type PanelView = "auto" | "today" | "settings" | "docs";
 
 const EXT_I18N = {
   en: {
     nav: { today: "Today", problem: "Problem", settings: "Settings" },
     common: {
+      back: "Back",
       navigation: "Primary navigation",
       cancel: "Cancel",
       retry: "Retry",
@@ -199,6 +189,7 @@ const EXT_I18N = {
       sources: { statement: "Statement", submission: "Submission", notes: "Notes", card: "Card" },
     },
     cards: {
+      manage: "Manage cards",
       add: "Add a card",
       savedCount: (count: number) => `${count} saved card${count === 1 ? "" : "s"}`,
       noSaved: "No saved cards yet.",
@@ -238,8 +229,11 @@ const EXT_I18N = {
     capture: {
       notInDeck: "Not in your deck",
       notCaptured: (slug: string) => `Problem ${slug} hasn't been captured.`,
+      autoHint: "It's added automatically the next time you submit here, pass or fail. Submissions from before you opened this page don't count, so browsing old problems never fills your queue.",
+      addNow: "Add now",
       helperUnavailable:
-        "Ankify was rebuilt, but Chrome is still using its old LeetCode helper. Reload Ankify in chrome://extensions, then refresh this LeetCode tab.",
+        "ankify can't reach this LeetCode tab yet. Chrome only adds the extension to pages opened or refreshed after it loads, so refresh this tab.",
+      refreshTab: "Refresh LeetCode tab",
       reading: "Reading...",
       captureThis: "Capture this problem",
       saving: "Saving...",
@@ -249,6 +243,151 @@ const EXT_I18N = {
       saving: "Saving...",
       saved: "Saved",
       placeholder: "What tripped you up, key insights, alternative approaches...",
+    },
+    docs: {
+      title: "Docs",
+      notes: "Notes",
+      cards: "Cards",
+      edit: "Edit",
+      save: "Save",
+      cancel: "Cancel",
+      reload: "Load latest",
+      emptyNotes: "No notes yet. Write your approach and pitfalls here, or ask the Coach to draft them.",
+      emptyCards: "No cards yet. Add questions worth recalling, or ask the Coach to suggest some.",
+      cardsFormat: "Each line starting with ## is a question; the text under it is the answer.",
+      conflict: "This doc changed since you opened it. Load the latest, then edit again.",
+      loadFailed: "Couldn't load this problem's docs.",
+      saveFailed: "Couldn't save. Try again.",
+      issueEmptyAnswer: (prompt: string) => `"${prompt}" has no answer yet, so it isn't a card.`,
+      issueDuplicate: (prompt: string) => `"${prompt}" appears twice; only the first counts.`,
+      issueTooMany: (limit: number) => `Only the first ${limit} cards are used.`,
+      issueTooLong: (limit: number) => `Cards are limited to ${limit} characters.`,
+      solutions: "Solutions",
+      emptySolutions:
+        "Written on your first practice of this problem: each approach with its key points. Practice answers are checked against it, and you can edit it.",
+      solutionsFormat:
+        "Each ## line is an approach (end yours with (mine)); the bullets under it are its key points; a Complexity: line gives its cost.",
+      mine: "yours",
+      complexity: "Complexity",
+      issueNoPoints: (approach: string) => `"${approach}" has no bullet points, so practice skips it.`,
+      issueTooManyPoints: (approach: string, limit: number) => `Only the first ${limit} points of "${approach}" are used.`,
+      issueTooManyApproaches: (limit: number) => `Only the first ${limit} approaches are used.`,
+      issueSolutionsTooLong: (limit: number) => `Solutions are limited to ${limit} characters.`,
+    },
+    coach: {
+      weakSpots: {
+        title: "Weak spots on this problem",
+        analyze: "Analyze my attempts",
+        analyzePrompt: "Analyze my attempts on this problem and find where I tend to go wrong.",
+        empty: "No weak spots recorded yet. The Coach can read your submissions and find them.",
+        remove: "Remove",
+        resolved: (count: number) => `${count} resolved`,
+        timesSeen: (count: number) => `${count} times`,
+        noted: (detail: string) => `Noted a weak spot: ${detail}`,
+      },
+      practice: {
+        title: "Practice",
+        talkHint: "Answer the Coach's questions in the chat below.",
+        talkScore: (correct: number, partial: number, total: number) =>
+          `${correct} of ${total} right${partial ? `, ${partial} partly` : ""}`,
+        core: { approach: "The approach and its cost", complexity: "Complexity" },
+        grades: { correct: "Right", partial: "Partly", missed: "Missed", skipped: "Skipped" },
+        end: "End",
+        endConfirm: "End this practice? What you've answered still counts; the rest are skipped.",
+        endNow: "End practice",
+        keepGoing: "Keep going",
+        endedEarly: "ended early",
+        abandoned: "Practice ended. Nothing was answered, so nothing changed.",
+        followingUp: "Following up on what was missing",
+        pointsProgress: (covered: number, total: number) => `${covered} of ${total} points`,
+        settledBy: {
+          complete: ["on your own", "once the missing part was named", "after a hint"],
+          newApproach: "another valid approach",
+          gaveUp: "skipped",
+          notRecalled: "explained",
+        },
+        checkedAgainst: (approach: string) => `Checked against: ${approach}`,
+        covered: "Said",
+        notCovered: "Not said",
+        dispute: "I did say that",
+        disputeHint: "Check my answers on this question again",
+        showDetails: "Show practice details",
+        hideDetails: "Hide practice details",
+        close: "Close",
+        startMessage: "Let's practice this problem.",
+        progress: (done: number, total: number) => `${done} of ${total}`,
+        showAnswer: "Show answer",
+        gotIt: "Got it",
+        missed: "Missed it",
+        preparing: "Preparing your questions",
+        noQuestions: (reason: string) => `No AI questions this time: ${reason}`,
+        next: "Next",
+        correct: "Correct",
+        incorrect: "Not quite. The answer:",
+        score: (points: number, total: number) => `${points} of ${total} right`,
+        suggestedTag: "suggested",
+        rate: "Rate this review",
+        rated: (rating: string) => `Rated ${rating}.`,
+        ratings: ["Again", "Hard", "Good", "Easy"] as [string, string, string, string],
+        loadFailed: "Couldn't load this practice session.",
+        actionFailed: "That didn't save. Try again.",
+      },
+      startPractice: "Practice",
+      rateDirectly: "Rate",
+      dueForReview: "Due for review",
+      practiceFinished: (points: number, total: number) => `Practice finished: ${points} of ${total}. Go over what I missed.`,
+      title: "Study Coach",
+      showChat: "Show chat",
+      hideChat: "Hide chat",
+      intro:
+        "Ask about the problem you're on. With Code on (below), the Coach also sees what's in LeetCode's editor right now, so it can point at the bug instead of guessing.",
+      placeholder: "Ask the Study Coach",
+      send: "Send",
+      stop: "Stop",
+      newChat: "New chat",
+      history: "Past conversations",
+      modelMenu: "Model and thinking for the next replies",
+      modelHeading: "Model",
+      thinkingHeading: "Thinking",
+      fromSettings: "Settings",
+      reasoningLevel: (level: string) =>
+        ({ default: "Auto", off: "Off", none: "None", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" })[
+          level
+        ] ?? level,
+      noHistory: "No conversations yet.",
+      untitled: "Untitled conversation",
+      includeCode: "Include my code",
+      codeLabel: "Code",
+      onProblem: (title: string) => `On ${title}`,
+      notSaved: "Not saved in ankify",
+      offPage: "Open a LeetCode problem to talk about it, or ask about your reviews.",
+      thinking: "Thinking",
+      quick: {
+        failing: "Why is my code failing?",
+        hint: "Give me a hint, not the answer",
+        history: "What did I get wrong on this before?",
+      },
+      approve: "Approve",
+      apply: "Apply",
+      applied: "Applied.",
+      dismiss: "Dismiss",
+      dismissed: "Dismissed.",
+      jobRunning: "Generating",
+      jobDone: "Done. Find it in the Problem tab.",
+      jobFailed: "Generation failed.",
+      openReview: "Open review in ankify",
+      openProblem: "Open in ankify",
+      noCode: (reason: EditorReadFailure) =>
+        `Sent without your code: ${
+          {
+            no_receiver: "ankify isn't running in this LeetCode tab yet. Reload the tab.",
+            no_page_script: "ankify's editor reader didn't answer in this tab. Reload the tab; if it keeps happening, reload ankify in chrome://extensions too.",
+            no_monaco: "LeetCode's code editor isn't on this page.",
+            no_code_model: "LeetCode's editor has no code open.",
+          }[reason]
+        } (${reason})`,
+      loadFailed: "Couldn't load the Study Coach.",
+      sendFailed: "Couldn't reach the Study Coach. Try again.",
     },
     settings: {
       appearance: "Appearance",
@@ -262,9 +401,9 @@ const EXT_I18N = {
       resetCode: "Reset code on problem pages",
       resetCodeHelp: "When any LeetCode problem opens, restore the default starter code once.",
       leetcodeSync: "LeetCode sync",
-      autoCapture: "Auto-capture on Accepted",
+      autoCapture: "Collect problems when you submit",
       autoCaptureHelp:
-        "When you get Accepted on a problem that isn't in ankify yet, capture it automatically. New submissions on problems you've captured always sync.",
+        "The first time you submit on a problem that isn't in ankify, pass or fail, it's added automatically and comes up for review the next day. New submissions on collected problems always sync.",
       solvedSynced: (count: number, when: string) => `Solved list synced ${when}: ${count} problems.`,
       solvedNever: "Your LeetCode solved list syncs once a day when you open a problem page.",
       solvedFailed: (error: string) => `Last sync failed (${error}).`,
@@ -290,6 +429,7 @@ const EXT_I18N = {
   zh: {
     nav: { today: "今日", problem: "题目", settings: "设置" },
     common: {
+      back: "返回",
       navigation: "主导航",
       cancel: "取消",
       retry: "重试",
@@ -409,6 +549,7 @@ const EXT_I18N = {
       sources: { statement: "题目", submission: "提交", notes: "笔记", card: "卡片" },
     },
     cards: {
+      manage: "管理卡片",
       add: "添加卡片",
       savedCount: (count: number) => `${count} 张已保存卡片`,
       noSaved: "还没有已保存卡片。",
@@ -448,12 +589,156 @@ const EXT_I18N = {
     capture: {
       notInDeck: "不在你的题库中",
       notCaptured: (slug: string) => `题目 ${slug} 还没有捕获。`,
-      helperUnavailable: "Ankify 已重新构建，但 Chrome 仍在使用旧的 LeetCode 助手。请先到 chrome://extensions 重新加载 Ankify，再刷新当前题目页。",
+      autoHint: "下次在这里提交时（不管通过没通过）会自动收录。打开页面之前的提交不算，所以翻看以前做过的题不会塞满复习队列。",
+      addNow: "现在收录",
+      helperUnavailable: "ankify 还连不上这个 LeetCode 页面。Chrome 只会把扩展加到它加载之后打开或刷新的页面里，刷新一下这个页面就好。",
+      refreshTab: "刷新 LeetCode 页面",
       reading: "读取中...",
       captureThis: "捕获这道题",
       saving: "保存中...",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
+    docs: {
+      title: "文档",
+      notes: "笔记",
+      cards: "卡片",
+      edit: "编辑",
+      save: "保存",
+      cancel: "取消",
+      reload: "加载最新",
+      emptyNotes: "还没有笔记。在这里写下思路和易错点，或者让教练帮你起草。",
+      emptyCards: "还没有卡片。加几个值得记住的问题，或者让教练建议一些。",
+      cardsFormat: "以 ## 开头的一行是问题，下面的文字是答案。",
+      conflict: "你打开之后这个文档被改过了。先加载最新版本，再编辑。",
+      loadFailed: "加载这道题的文档失败。",
+      saveFailed: "保存失败，请重试。",
+      issueEmptyAnswer: (prompt: string) => `「${prompt}」还没有答案，暂时不算一张卡片。`,
+      issueDuplicate: (prompt: string) => `「${prompt}」出现了两次，只算第一个。`,
+      issueTooMany: (limit: number) => `只使用前 ${limit} 张卡片。`,
+      issueTooLong: (limit: number) => `卡片文档最多 ${limit} 个字符。`,
+      solutions: "解法",
+      emptySolutions: "第一次练习这道题时自动生成：每种解法和它的要点。练习时的回答会对照它检查，你也可以自己改。",
+      solutionsFormat: "以 ## 开头的一行是一种解法（你自己的在末尾加 (我的)）；下面的列表是要点；复杂度: 一行写代价。",
+      mine: "你的",
+      complexity: "复杂度",
+      issueNoPoints: (approach: string) => `「${approach}」没有列表要点，练习时会跳过。`,
+      issueTooManyPoints: (approach: string, limit: number) => `「${approach}」只使用前 ${limit} 个要点。`,
+      issueTooManyApproaches: (limit: number) => `只使用前 ${limit} 种解法。`,
+      issueSolutionsTooLong: (limit: number) => `解法文档最多 ${limit} 个字符。`,
+    },
+    coach: {
+      weakSpots: {
+        title: "这题的弱点",
+        analyze: "分析我的提交",
+        analyzePrompt: "分析我在这道题上的提交，找出我容易出错的地方。",
+        empty: "还没有记录弱点。教练可以读你的提交，帮你找出来。",
+        remove: "删除",
+        resolved: (count: number) => `已解决 ${count}`,
+        timesSeen: (count: number) => `出现 ${count} 次`,
+        noted: (detail: string) => `已记下弱点：${detail}`,
+      },
+      practice: {
+        title: "练习",
+        talkHint: "在下面的聊天里回答教练的问题。",
+        talkScore: (correct: number, partial: number, total: number) =>
+          `答对 ${correct} / ${total}${partial ? `，部分对 ${partial}` : ""}`,
+        core: { approach: "解法和复杂度", complexity: "复杂度" },
+        grades: { correct: "对", partial: "部分对", missed: "没答上", skipped: "跳过" },
+        end: "结束",
+        endConfirm: "结束这次练习？已经答过的照样算，没答的跳过。",
+        endNow: "结束练习",
+        keepGoing: "继续练",
+        endedEarly: "提前结束",
+        abandoned: "练习已结束。一题都没答，所以什么都没变。",
+        followingUp: "还在追问没答到的部分",
+        pointsProgress: (covered: number, total: number) => `要点 ${covered} / ${total}`,
+        settledBy: {
+          complete: ["自己答出", "点出缺的部分后答出", "给了提示后答出"],
+          newApproach: "另一种可行解法",
+          gaveUp: "跳过",
+          notRecalled: "已讲解",
+        },
+        checkedAgainst: (approach: string) => `对照：${approach}`,
+        covered: "说到了",
+        notCovered: "没说到",
+        dispute: "我说过了",
+        disputeHint: "重新检查我在这题上的回答",
+        showDetails: "展开练习详情",
+        hideDetails: "收起练习详情",
+        close: "关闭",
+        startMessage: "开始练习这道题。",
+        progress: (done: number, total: number) => `${done} / ${total}`,
+        showAnswer: "显示答案",
+        gotIt: "记得",
+        missed: "没想起来",
+        preparing: "正在准备题目",
+        noQuestions: (reason: string) => `这次没有 AI 题目：${reason}`,
+        next: "下一题",
+        correct: "答对了",
+        incorrect: "不对。正确答案：",
+        score: (points: number, total: number) => `答对 ${points} / ${total}`,
+        suggestedTag: "建议",
+        rate: "给这次复习评分",
+        rated: (rating: string) => `已评分：${rating}。`,
+        ratings: ["重来", "困难", "良好", "简单"] as [string, string, string, string],
+        loadFailed: "练习加载失败。",
+        actionFailed: "没保存上，请重试。",
+      },
+      startPractice: "练习",
+      rateDirectly: "评分",
+      dueForReview: "该复习了",
+      practiceFinished: (points: number, total: number) => `练习完成：${points} / ${total}。帮我过一下错的地方。`,
+      title: "学习教练",
+      showChat: "展开对话",
+      hideChat: "收起对话",
+      intro: "问问你正在做的这道题。打开下方的「代码」后，教练还能看到 LeetCode 编辑器里现在的代码，直接指出问题在哪。",
+      placeholder: "问学习教练",
+      send: "发送",
+      stop: "停止",
+      newChat: "新对话",
+      history: "历史对话",
+      modelMenu: "接下来回复用的模型和思考强度",
+      modelHeading: "模型",
+      thinkingHeading: "思考强度",
+      fromSettings: "设置里的",
+      reasoningLevel: (level: string) =>
+        ({ default: "自动", off: "关闭", none: "无", low: "低", medium: "中", high: "高", xhigh: "超高", max: "最高" })[level] ??
+        level,
+      noHistory: "还没有对话。",
+      untitled: "未命名对话",
+      includeCode: "附上我的代码",
+      codeLabel: "代码",
+      onProblem: (title: string) => `当前题目：${title}`,
+      notSaved: "还没存进 ankify",
+      offPage: "打开一道 LeetCode 题就能聊这道题，也可以问复习安排。",
+      thinking: "思考中",
+      quick: {
+        failing: "我的代码哪里错了？",
+        hint: "给我一点提示，别直接给答案",
+        history: "我以前这题错在哪？",
+      },
+      approve: "同意",
+      apply: "应用",
+      applied: "已应用。",
+      dismiss: "不用了",
+      dismissed: "已忽略。",
+      jobRunning: "生成中",
+      jobDone: "好了，在「题目」页里看。",
+      jobFailed: "生成失败。",
+      openReview: "在 ankify 里打开复习",
+      openProblem: "在 ankify 里打开",
+      noCode: (reason: EditorReadFailure) =>
+        `这次没附上代码：${
+          {
+            no_receiver: "ankify 还没在这个 LeetCode 页面里运行，刷新一下页面。",
+            no_page_script: "这个页面里 ankify 的编辑器读取没响应。刷新页面；还不行的话，也在 chrome://extensions 里重新加载 ankify。",
+            no_monaco: "这个页面上没有 LeetCode 的代码编辑器。",
+            no_code_model: "LeetCode 编辑器里没有打开的代码。",
+          }[reason]
+        }（${reason}）`,
+      loadFailed: "学习教练加载失败。",
+      sendFailed: "连不上学习教练，请重试。",
+    },
     settings: {
       appearance: "外观",
       appearanceHelp: "扩展里的语言和主题。",
@@ -466,8 +751,8 @@ const EXT_I18N = {
       resetCode: "打开题目时重置代码",
       resetCodeHelp: "进入任意 LeetCode 题目页时，自动恢复一次默认代码模板。",
       leetcodeSync: "LeetCode 同步",
-      autoCapture: "AC 后自动收录",
-      autoCaptureHelp: "在还没收录的题上拿到 Accepted 时，自动收录这道题。已收录题目的新提交会一直自动同步。",
+      autoCapture: "提交后自动收录",
+      autoCaptureHelp: "在还没收录的题上第一次提交（不管通过没通过），就自动收录这道题，第二天安排复习。已收录题目的新提交会一直自动同步。",
       solvedSynced: (count: number, when: string) => `已同步做题记录（${when}）：共 ${count} 道。`,
       solvedNever: "打开 LeetCode 题目页时，每天自动同步一次你的做题记录。",
       solvedFailed: (error: string) => `上次同步失败（${error}）。`,
@@ -494,24 +779,6 @@ const EXT_I18N = {
 
 function getExtText(settings: ExtSettings) {
   return EXT_I18N[settings.language === "zh" ? "zh" : "en"];
-}
-
-function movePopupTabFocus(event: React.KeyboardEvent<HTMLElement>) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const tabs = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-  );
-  const currentIndex = tabs.indexOf(event.target as HTMLButtonElement);
-  if (currentIndex < 0 || tabs.length === 0) return;
-  event.preventDefault();
-  const nextIndex =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? tabs.length - 1
-        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-  tabs[nextIndex]?.focus();
-  tabs[nextIndex]?.click();
 }
 
 /** Chevron for glyph-only controls. A drawn icon scales with the button and
@@ -574,22 +841,11 @@ function fsrsLabel(state: ApiProblem["fsrsState"], t: ReturnType<typeof getExtTe
   return t.fsrs[state];
 }
 
-function quizScopeLabel(scope: QuizItem["scope"], t: ReturnType<typeof getExtText>) {
-  return t.quiz.scopes[scope];
-}
-
-function quizSourceLabel(source: QuizItem["source"], t: ReturnType<typeof getExtText>) {
-  return t.quiz.sources[source];
-}
-
 const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" }[] = [
   { value: "system", key: "system" },
   { value: "light", key: "light" },
   { value: "dark", key: "dark" },
 ];
-
-const CARD_GENERATION_TARGET_SECONDS = 60;
-const AUTH_REQUIRED_EVENT = "ankify:auth-required";
 
 /* ── helpers ── */
 
@@ -601,35 +857,6 @@ function jsonHeaders(settings: ExtSettings): HeadersInit {
 function authHeaders(settings: ExtSettings): HeadersInit {
   void settings;
   return {};
-}
-
-async function apiFetch(settings: ExtSettings, path: string, init?: RequestInit) {
-  const base = settings.apiBaseUrl.replace(/\/+$/, "");
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    credentials: "include",
-  });
-  if (response.status === 401) {
-    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
-  }
-  return response;
-}
-
-function aiJobs(settings: ExtSettings) {
-  return createAiJobClient((path, init) => apiFetch(settings, path, init));
-}
-
-function startAiJob(settings: ExtSettings, input: AiJobCreateRequestInput) {
-  return aiJobs(settings).start(input);
-}
-
-function getActiveAiJobs(settings: ExtSettings, problemId: string, kind: "card" | "quiz") {
-  return aiJobs(settings).listActive(problemId, kind);
-}
-
-async function waitForAiJob(settings: ExtSettings, initial: PublicAiJobDto) {
-  const client = aiJobs(settings);
-  return client.requireSucceeded(await client.wait(initial));
 }
 
 async function loadSessionAccount(apiBaseUrl: string): Promise<AuthAccount | null> {
@@ -703,37 +930,8 @@ async function saveCapturedProblem(settings: ExtSettings, problem: CaptureProble
   return (await res.json()) as CaptureResult;
 }
 
-function useElapsedSeconds(active: boolean, startedAt: number | null) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!active || !startedAt) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active, startedAt]);
-  if (!active || !startedAt) return 0;
-  return Math.max(0, Math.floor((now - startedAt) / 1000));
-}
-
-function formatElapsedSeconds(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 function apiErrorMessage(json: { error?: string; message?: string } | null, fallback: string) {
   return json?.message ?? json?.error ?? fallback;
-}
-
-function mergeCandidatePendingState(
-  card: ApiCard,
-  previous: LocalCandidate | undefined,
-): Pick<LocalCandidate, "instruction" | "busy" | "localError"> {
-  return {
-    instruction: previous?.instruction ?? "",
-    busy: previous?.busy ?? null,
-    localError: previous?.localError ?? null,
-  };
 }
 
 function applyThemePreference(preference: ThemePreference) {
@@ -787,23 +985,6 @@ async function fetchProblemBySlug(
   return (await res.json()) as ProblemLookupPayloadDto;
 }
 
-/* ── Collapse (used only for ready cards) ── */
-
-function Collapse({ header, defaultOpen, children }: { header: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  return (
-    <div className="collapse">
-      <button type="button" className="collapse-head" onClick={() => setOpen((v) => !v)}>
-        <span className="collapse-chevron">{open ? "▾" : "▸"}</span>
-        <span className="collapse-label">{header}</span>
-      </button>
-      <div className={`collapse-body scroll-area${open ? " collapse-body-open" : ""}`}>
-        <div className="collapse-inner">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Popup ── */
 
 export function Popup() {
@@ -811,7 +992,11 @@ export function Popup() {
   const [sticky, setSticky] = useState<Sticky | null>(null);
   const [settings, setLocalSettings] = useState<ExtSettings | null>(null);
   const [authState, setAuthState] = useState<AuthState>({ kind: "loading" });
-  const [tab, setTab] = useState<NavTab>("today");
+  /** "auto" shows the problem in the active tab, or Today when there is none. */
+  const [view, setView] = useState<PanelView>("auto");
+  const [coachExpanded, setCoachExpanded] = useState(false);
+  /** Bumps when the Coach applies a doc edit, so the Docs tab reloads. */
+  const [docsRevision, setDocsRevision] = useState(0);
   const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -890,7 +1075,8 @@ export function Popup() {
       // Skip when this isn't the first detect, slug hasn't changed, and the
       // caller didn't explicitly force a refresh. Avoids tearing the UI down
       // every time LeetCode fires a "complete" tab event.
-      if (!force && hasDetectedOnceRef.current && slug === currentSlugRef.current) {
+      const sameSlug = hasDetectedOnceRef.current && slug === currentSlugRef.current;
+      if (!force && sameSlug) {
         return;
       }
       hasDetectedOnceRef.current = true;
@@ -901,7 +1087,10 @@ export function Popup() {
         return;
       }
 
-      setState({ kind: "loading", slug });
+      // Refreshing the problem already on screen revalidates in place: a
+      // loading placeholder would unmount the workspace (and its quiz or card
+      // form), and some of those refresh again when they mount.
+      if (!sameSlug) setState({ kind: "loading", slug });
       try {
         const data = await fetchProblemBySlug(settings, slug);
         // User navigated away while we were fetching: discard the result.
@@ -946,8 +1135,31 @@ export function Popup() {
     };
   }, [settings, authState.kind, detect]);
 
+  // The background collected the open problem on a submission: show it.
+  useEffect(() => {
+    const onMessage = (message: PanelEvent) => {
+      if (message?.type === "problem_collected" && message.slug === currentSlugRef.current) {
+        void detect({ force: true });
+      }
+    };
+    chrome.runtime.onMessage.addListener(onMessage);
+    return () => chrome.runtime.onMessage.removeListener(onMessage);
+  }, [detect]);
+
   const captured = state.kind === "captured" ? state : null;
   const text = settings ? getExtText(settings) : EXT_I18N.en;
+  const pageSlug =
+    state.kind === "loading" || state.kind === "not-saved"
+      ? state.slug
+      : state.kind === "captured"
+        ? state.problem.leetcodeSlug
+        : null;
+  const dueCount = useDueCount(settings, authState.kind === "signed-in");
+
+  // Moving to another problem brings the panel back to it.
+  useEffect(() => {
+    setView((current) => (current === "settings" ? current : "auto"));
+  }, [pageSlug]);
 
   // Jump back to the LeetCode tab where the sticky problem was last seen.
   // Hooks must run before the loading / signed-out early returns so the hook
@@ -998,92 +1210,250 @@ export function Popup() {
     );
   }
 
+  const showSettings = view === "settings";
+  const headerProblem = captured ?? (state.kind === "off-page" ? sticky : null);
+  const showDocs = view === "docs" && headerProblem != null;
+  const showToday = !showSettings && !showDocs && (view === "today" || (state.kind === "off-page" && !sticky));
+  // On a problem the Coach chat is the main area; elsewhere it docks below.
+  const problemView = !showSettings && !showDocs && !showToday;
+  const canReturnToProblem = (view === "today" || showDocs) && (state.kind !== "off-page" || sticky != null);
+  const ratingPanel =
+    headerProblem && isDue(headerProblem.problem.fsrsDue) ? (
+      <QuickRate
+        problemId={headerProblem.problem.id}
+        previews={headerProblem.previews}
+        settings={settings}
+        onRated={() => void detect({ force: true })}
+      />
+    ) : null;
+
   return (
     <div className="popup-shell">
-      {/* Nav */}
-      <nav className="popup-nav">
-        <div
-          className="popup-nav-tabs"
-          role="tablist"
-          aria-label={text.common.navigation}
-          onKeyDown={movePopupTabFocus}
-        >
-          {(["today", "problem", "settings"] as NavTab[]).map((navTab) => (
+      <header className="panel-bar">
+        <div className="panel-bar-main">
+          {showSettings || canReturnToProblem ? (
             <button
-              key={navTab}
-              id={`popup-nav-tab-${navTab}`}
               type="button"
-              role="tab"
-              aria-selected={tab === navTab}
-              aria-controls={`popup-nav-panel-${navTab}`}
-              tabIndex={tab === navTab ? 0 : -1}
-              className="popup-nav-tab"
-              data-active={tab === navTab}
-              onClick={() => setTab(navTab)}
+              className="panel-bar-icon"
+              aria-label={text.common.back}
+              title={text.common.back}
+              onClick={() => setView("auto")}
             >
-              {text.nav[navTab]}
+              <ChevronIcon direction="left" />
             </button>
-          ))}
+          ) : null}
+          {showSettings ? (
+            <h1 className="panel-bar-title">{text.nav.settings}</h1>
+          ) : showDocs ? (
+            <h1 className="panel-bar-title">{headerProblem!.problem.title}</h1>
+          ) : showToday ? (
+            <h1 className="panel-bar-title">{text.nav.today}</h1>
+          ) : headerProblem ? (
+            <ProblemHeading problem={headerProblem.problem} settings={settings} />
+          ) : (
+            <h1 className="panel-bar-title">{pageSlug ?? text.nav.problem}</h1>
+          )}
         </div>
-      </nav>
+        <div className="panel-bar-actions">
+          {problemView && headerProblem && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.docs.title}
+              title={text.docs.title}
+              onClick={() => setView("docs")}
+            >
+              <BookIcon />
+            </button>
+          )}
+          {problemView && headerProblem && (
+            <a
+              href={`${settings.apiBaseUrl}/problems/${headerProblem.problem.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="panel-bar-icon"
+              title={text.problem.openWeb}
+              aria-label={text.problem.openWeb}
+            >
+              <ExternalIcon />
+            </a>
+          )}
+          {!showSettings && !showToday && !showDocs && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.nav.today}
+              title={text.nav.today}
+              onClick={() => setView("today")}
+            >
+              <ListIcon />
+              {dueCount > 0 && <span className="panel-bar-count">{dueCount}</span>}
+            </button>
+          )}
+          {!showSettings && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.nav.settings}
+              title={text.nav.settings}
+              onClick={() => setView("settings")}
+            >
+              <GearIcon />
+            </button>
+          )}
+        </div>
+      </header>
 
-      {/* Content */}
-      <main className="popup-main">
-        {tab === "today" && settings && (
-          <div
-            id="popup-nav-panel-today"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-today"
-            className="tab-pane"
-            key="today"
-          >
-            <TodayTab
-              settings={settings}
-              onJumpToProblem={() => setTab("problem")}
-            />
+      <main
+        className={`popup-main scroll-area${problemView ? " is-strip" : ""}${
+          showToday && coachExpanded ? " is-covered" : ""
+        }`}
+      >
+        {showSettings ? (
+          <SettingsTab
+            settings={settings}
+            account={authState.account}
+            theme={theme}
+            onThemeChange={setThemePreference}
+            onSave={saveLocalSettings}
+          />
+        ) : showDocs ? (
+          <div className="content-card">
+            <DocsPanel settings={settings} problemId={headerProblem!.problem.id} revision={docsRevision} copy={text.docs} />
           </div>
-        )}
-
-        {tab === "problem" && settings && (
-          <div
-            id="popup-nav-panel-problem"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-problem"
-            className="tab-pane"
-            key="problem"
-          >
-            <ProblemTab
-              state={state}
-              settings={settings}
-              captured={captured}
-              sticky={sticky}
-              onJumpToSticky={jumpToSticky}
-              onRefresh={() => detect({ force: true })}
-              onError={(msg) => setState({ kind: "error", msg })}
-            />
-          </div>
-        )}
-
-        {tab === "settings" && settings && (
-          <div
-            id="popup-nav-panel-settings"
-            role="tabpanel"
-            aria-labelledby="popup-nav-tab-settings"
-            className="tab-pane"
-            key="settings"
-          >
-            <SettingsTab
-              settings={settings}
-              account={authState.account}
-              theme={theme}
-              onThemeChange={setThemePreference}
-              onSave={saveLocalSettings}
-            />
-          </div>
+        ) : showToday ? (
+          <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} />
+        ) : (
+          <ProblemTab
+            state={state}
+            settings={settings}
+            captured={captured}
+            sticky={sticky}
+            onJumpToSticky={jumpToSticky}
+            onRefresh={() => detect({ force: true })}
+            onError={(msg) => setState({ kind: "error", msg })}
+          />
         )}
       </main>
+
+      {(problemView || showToday) && (
+        <CoachTab
+          settings={settings}
+          saved={
+            captured
+              ? {
+                  slug: captured.problem.leetcodeSlug,
+                  problemId: captured.problem.id,
+                  title: captured.problem.title,
+                  due: isDue(captured.problem.fsrsDue),
+                }
+              : null
+          }
+          copy={text.coach}
+          mode={problemView ? "full" : "dock"}
+          expanded={problemView || coachExpanded}
+          onExpandedChange={setCoachExpanded}
+          ratingPanel={ratingPanel}
+          onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
+          onProblemChanged={() => void detect({ force: true })}
+        />
+      )}
     </div>
   );
+}
+
+/** Problem title and status, shown in the top bar. */
+function ProblemHeading({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+  const t = getExtText(settings);
+  const due = isDue(problem.fsrsDue);
+  return (
+    <div className="problem-card-info">
+      <h1 className="problem-card-title">
+        {problem.leetcodeId != null && <span className="problem-card-num">{problem.leetcodeId}. </span>}
+        {problem.title}
+      </h1>
+      <div className="problem-card-tags">
+        <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{difficultyLabel(problem.difficulty, t)}</span>
+        {due ? (
+          <span className="pill pill-due">{t.common.due}</span>
+        ) : (
+          <span className="problem-card-next">
+            {t.problem.next} {formatInterval(problem.fsrsDue)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M6 4h7M6 8h7M6 12h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="3" cy="4" r="1" fill="currentColor" />
+      <circle cx="3" cy="8" r="1" fill="currentColor" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 3.2c1.8-.6 3.6-.4 5.5.8 1.9-1.2 3.7-1.4 5.5-.8v9.3c-1.8-.6-3.6-.4-5.5.8-1.9-1.2-3.7-1.4-5.5-.8V3.2ZM8 4v9.3"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V13H3V5h3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Reviews left today, for the Today button's badge. */
+function useDueCount(settings: ExtSettings | null, signedIn: boolean) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!settings || !signedIn) return;
+    const load = async () => {
+      try {
+        const res = await apiFetch(settings, "/api/review/queue?limit=1", { cache: "no-store" });
+        if (res.ok) setCount(((await res.json()) as QueueResponse).queue.remaining);
+      } catch {
+        /* the badge just stays as it was */
+      }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    const timer = window.setInterval(() => void load(), 60_000);
+    return () => {
+      window.removeEventListener("focus", load);
+      window.clearInterval(timer);
+    };
+  }, [settings, signedIn]);
+  return count;
 }
 
 /* ── TodayTab ── */
@@ -1243,6 +1613,15 @@ function TodayTab({
   );
 }
 
+/** Reloads the active LeetCode tab so the extension's content script loads,
+ *  then waits a moment for the page to come up. */
+async function refreshLeetcodeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (tab?.id == null) return;
+  await chrome.tabs.reload(tab.id).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 2_500));
+}
+
 /* ── ProblemTab ── */
 
 function ProblemTab({
@@ -1268,79 +1647,27 @@ function ProblemTab({
   onError: (msg: string) => void;
 }) {
   const t = getExtText(settings);
-  const [mode, setMode] = useState<"review" | "manage">("review");
-  const [syncState, setSyncState] = useState<{
-    busy: boolean;
-    message: string | null;
-    tone: "success" | "error";
-  }>({ busy: false, message: null, tone: "success" });
-  const lastProblemIdRef = useRef<string | null>(null);
 
   // When the active tab has no slug but we have a sticky pin from earlier,
   // keep showing that problem instead of the bare "off-page" placeholder.
   const isStickyView = state.kind === "off-page" && sticky !== null;
   const displayCaptured = captured ?? (isStickyView ? sticky : null);
 
-  // Auto-select mode when problem changes: due → review, otherwise → manage
-  useEffect(() => {
-    if (!displayCaptured) return;
-    const newId = displayCaptured.problem.id;
-    if (lastProblemIdRef.current !== newId) {
-      setMode(isDue(displayCaptured.problem.fsrsDue) ? "review" : "manage");
-      setSyncState({ busy: false, message: null, tone: "success" });
-      lastProblemIdRef.current = newId;
-    }
-  }, [displayCaptured]);
-
-  async function syncLatestSubmissions() {
-    if (!displayCaptured || syncState.busy) return;
-
-    setSyncState({ busy: true, message: null, tone: "success" });
-    try {
-      const capturedProblem = await readActiveProblem(settings);
-      if (capturedProblem.leetcodeSlug !== displayCaptured.problem.leetcodeSlug) {
-        throw new Error(`Active tab is ${capturedProblem.leetcodeSlug}, not ${displayCaptured.problem.leetcodeSlug}.`);
-      }
-      const result = await saveCapturedProblem(settings, capturedProblem);
-      setSyncState({
-        busy: false,
-        message:
-          result.importedSubmissions === 1
-            ? t.problem.syncOne
-            : result.importedSubmissions > 1
-              ? t.problem.syncMany(result.importedSubmissions)
-              : t.problem.upToDate,
-        tone: "success",
-      });
-      onRefresh();
-    } catch (e) {
-      setSyncState({
-        busy: false,
-        message: e instanceof Error ? e.message : t.problem.syncFailed,
-        tone: "error",
-      });
-    }
-  }
-
   if (state.kind === "detecting") return <p className="popup-muted">{t.problem.connecting}</p>;
   if (state.kind === "loading") return <p className="popup-muted">{t.problem.syncing(state.slug)}</p>;
 
-  if (state.kind === "off-page" && !sticky) {
-    return (
-      <div className="panel panel-quiet">
-        <p className="popup-muted" style={{ margin: 0 }}>
-          {t.problem.offPage}
-        </p>
-      </div>
-    );
-  }
-
   if (state.kind === "error") {
+    // The tab predates the extension: refreshing it is the fix, so offer it.
+    const needsTabRefresh = state.msg === t.capture.helperUnavailable;
     return (
       <div className="stack">
         <div className="err-banner">{state.msg}</div>
-        <button type="button" onClick={onRefresh} className="btn btn-primary">
-          {t.common.retry}
+        <button
+          type="button"
+          onClick={() => (needsTabRefresh ? void refreshLeetcodeTab().then(() => onRefresh()) : void onRefresh())}
+          className="btn btn-primary"
+        >
+          {needsTabRefresh ? t.capture.refreshTab : t.common.retry}
         </button>
       </div>
     );
@@ -1359,1213 +1686,15 @@ function ProblemTab({
 
   if (!displayCaptured) return null;
 
-  const { problem, cards, candidates, previews } = displayCaptured;
-  const due = isDue(problem.fsrsDue);
-
+  // The Coach chat below is the problem view; only a pinned problem from
+  // another tab needs a note here.
+  if (!isStickyView) return null;
   return (
-    <>
-      {isStickyView && (
-        <div className="sticky-banner">
-          <span className="sticky-banner-text">
-            {t.problem.activeTabNotOn(problem.title)}
-          </span>
-          <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
-            {t.problem.openIt}
-          </button>
-        </div>
-      )}
-      {mode === "review" ? (
-        <div id="problem-mode-panel-review" role="tabpanel" aria-labelledby="problem-mode-tab-review">
-          <ReviewView
-            problem={problem}
-            cards={cards}
-            previews={previews}
-            settings={settings}
-            due={due}
-            mode={mode}
-            onModeChange={setMode}
-            onSync={syncLatestSubmissions}
-            syncBusy={syncState.busy}
-            syncMessage={syncState.message}
-            syncTone={syncState.tone}
-            canSync={!isStickyView}
-            onRefresh={onRefresh}
-            onRated={onRefresh}
-          />
-        </div>
-      ) : (
-        <div id="problem-mode-panel-manage" role="tabpanel" aria-labelledby="problem-mode-tab-manage">
-          <ManageView
-            problem={problem}
-            cards={cards}
-            candidates={candidates}
-            settings={settings}
-            due={due}
-            mode={mode}
-            onModeChange={setMode}
-            onSync={syncLatestSubmissions}
-            syncBusy={syncState.busy}
-            syncMessage={syncState.message}
-            syncTone={syncState.tone}
-            canSync={!isStickyView}
-            onRefresh={onRefresh}
-          />
-        </div>
-      )}
-    </>
-  );
-}
-
-/* ── ProblemCard (Module 1: context + mode toggle) ── */
-
-function ProblemCard({
-  problem,
-  settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
-}: {
-  problem: ApiProblem;
-  settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-}) {
-  const t = getExtText(settings);
-  return (
-    <div className="problem-card">
-      <div className="problem-card-top">
-        <div className="problem-card-info">
-          <h2 className="problem-card-title">
-            {problem.leetcodeId != null && (
-              <span className="problem-card-num">{problem.leetcodeId}. </span>
-            )}
-            {problem.title}
-          </h2>
-          <div className="problem-card-tags">
-            <span className={`pill pill-${problem.difficulty.toLowerCase()}`}>{difficultyLabel(problem.difficulty, t)}</span>
-            {due ? (
-              <span className="pill pill-due">{t.common.due}</span>
-            ) : (
-              <span className="problem-card-next">{t.problem.next} {formatInterval(problem.fsrsDue)}</span>
-            )}
-          </div>
-        </div>
-        <div className="problem-card-actions">
-          <button
-            type="button"
-            className="problem-header-web"
-            title={t.problem.syncTitle}
-            aria-label={t.problem.syncTitle}
-            disabled={!canSync || syncBusy}
-            onClick={onSync}
-          >
-            {syncBusy ? "…" : "↻"}
-          </button>
-          <a
-            href={`${settings.apiBaseUrl}/problems/${problem.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="problem-header-web"
-            title={t.problem.openWeb}
-            aria-label={t.problem.openWeb}
-          >
-            ↗
-          </a>
-        </div>
-      </div>
-      {syncMessage && <div className={`problem-card-sync problem-card-sync-${syncTone}`}>{syncMessage}</div>}
-      <div
-        className="problem-card-mode"
-        role="tablist"
-        aria-label={t.problem.review}
-        onKeyDown={movePopupTabFocus}
-      >
-        <button
-          id="problem-mode-tab-review"
-          type="button"
-          role="tab"
-          aria-selected={mode === "review"}
-          aria-controls="problem-mode-panel-review"
-          tabIndex={mode === "review" ? 0 : -1}
-          className={`problem-card-mode-btn${mode === "review" ? " active" : ""}`}
-          onClick={() => onModeChange("review")}
-        >
-          {t.problem.review}
-        </button>
-        <button
-          id="problem-mode-tab-manage"
-          type="button"
-          role="tab"
-          aria-selected={mode === "manage"}
-          aria-controls="problem-mode-panel-manage"
-          tabIndex={mode === "manage" ? 0 : -1}
-          className={`problem-card-mode-btn${mode === "manage" ? " active" : ""}`}
-          onClick={() => onModeChange("manage")}
-        >
-          {t.problem.manage}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ── ReviewView ── */
-
-function ReviewView({
-  problem,
-  cards,
-  previews,
-  settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
-  onRefresh,
-  onRated,
-}: {
-  problem: ApiProblem;
-  cards: ApiCard[];
-  previews: Previews;
-  settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-  onRefresh: () => void;
-  onRated: () => void;
-}) {
-  const t = getExtText(settings);
-  const [view, setView] = useState<"quiz" | "card" | "notes">("quiz");
-
-  return (
-    <div className="review-workspace">
-      {/* Module 1 — problem context */}
-      <ProblemCard
-        problem={problem}
-        settings={settings}
-        due={due}
-        mode={mode}
-        onModeChange={onModeChange}
-        onSync={onSync}
-        syncBusy={syncBusy}
-        syncMessage={syncMessage}
-        syncTone={syncTone}
-        canSync={canSync}
-      />
-
-      {/* Module 2 — content */}
-      <div className="content-card">
-        <div
-          className="content-card-tabs"
-          role="tablist"
-          aria-label={t.review.workspace}
-          onKeyDown={movePopupTabFocus}
-        >
-          {(["quiz", "card", "notes"] as const).map((v) => (
-            <button
-              key={v}
-              id={`extension-review-tab-${v}`}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              aria-controls={`extension-review-panel-${v}`}
-              tabIndex={view === v ? 0 : -1}
-              className="content-card-tab"
-              data-active={view === v}
-              onClick={() => setView(v)}
-            >
-              {v === "quiz" ? t.review.quiz : v === "card" ? t.review.cards : t.review.notes}
-            </button>
-          ))}
-        </div>
-
-        <div className="review-stage-body">
-          {view === "quiz" && (
-            <div
-              id="extension-review-panel-quiz"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-quiz"
-              className="review-stage-pane tab-pane"
-              key="quiz"
-            >
-              <QuizPanel
-                problem={problem}
-                settings={settings}
-                onRefresh={onRefresh}
-              />
-            </div>
-          )}
-
-          {view === "card" && (
-            <div
-              id="extension-review-panel-card"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-card"
-              className="review-stage-pane tab-pane"
-              key="card"
-            >
-              {cards.length === 0 ? (
-                <div className="review-empty">
-                  <p className="popup-muted" style={{ margin: 0, marginBottom: 12, textAlign: "center" }}>
-                    {t.review.noCards}
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => onModeChange("manage")}
-                  >
-                    {t.review.goManage}
-                  </button>
-                </div>
-              ) : (
-                <CardFlipper cards={cards} settings={settings} />
-              )}
-            </div>
-          )}
-
-          {view === "notes" && (
-            <div
-              id="extension-review-panel-notes"
-              role="tabpanel"
-              aria-labelledby="extension-review-tab-notes"
-              className="review-stage-pane tab-pane"
-              key="notes"
-            >
-              <NotesPanel problem={problem} settings={settings} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Module 3 — rating */}
-      {due && (
-        <div className="rating-card">
-          <QuickRate
-            problemId={problem.id}
-            previews={previews}
-            settings={settings}
-            onRated={onRated}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── QuizPanel ── */
-
-function QuizPanel({ problem, settings, onRefresh }: { problem: ApiProblem; settings: ExtSettings; onRefresh: () => void }) {
-  const t = getExtText(settings);
-  const [session, setSession] = useState<QuizSession | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
-  const [submittingItem, setSubmittingItem] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [feedback, setFeedback] = useState<{ item: QuizItem; answer: QuizAnswer } | null>(null);
-  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
-  const [savingItemId, setSavingItemId] = useState<string | null>(null);
-  const [savingMissed, setSavingMissed] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmingReset, setConfirmingReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const generationElapsedSeconds = useElapsedSeconds(generating, generationStartedAt);
-
-  const loadSession = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setLoading(true);
-    setError(null);
-    setFeedback(null);
-    setSavedItemIds(new Set());
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
-        headers: authHeaders(settings),
-      });
-      const json = (await res.json().catch(() => null)) as { session?: QuizSession | null; error?: string } | null;
-      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      const nextSession = json?.session ?? null;
-      const pendingFeedback = getStoredQuizFeedback(problem.id, nextSession);
-      setSession(nextSession);
-      setFeedback(pendingFeedback);
-      setCurrentIndex(pendingFeedback ? getQuizItemIndex(nextSession, pendingFeedback.item.id) : getFirstUnansweredQuizIndex(nextSession));
-      setSavingMissed(false);
-      setShowResults(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedLoad);
-    } finally {
-      if (!opts?.silent) setLoading(false);
-    }
-  }, [problem.id, settings]);
-
-  useEffect(() => {
-    void (async () => {
-      let generationError: string | null = null;
-      try {
-        const [job] = await getActiveAiJobs(settings, problem.id, "quiz");
-        if (job) {
-          setLoading(false);
-          setGenerating(true);
-          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
-          await waitForAiJob(settings, job);
-        }
-      } catch (e) {
-        generationError = e instanceof Error ? e.message : t.quiz.failedGenerate;
-      } finally {
-        setGenerating(false);
-        setGenerationStartedAt(null);
-        await loadSession();
-        if (generationError) setError(generationError);
-      }
-    })();
-  }, [loadSession, problem.id, settings]);
-
-  async function generateQuiz(action: "generate" | "regenerate" | "nextBatch") {
-    setGenerating(true);
-    setGenerationStartedAt(Date.now());
-    setError(null);
-    setFeedback(null);
-    setShowResults(false);
-    try {
-      const job = await startAiJob(settings, {
-        action: action === "generate"
-          ? "quiz_generate"
-          : action === "regenerate"
-            ? "quiz_regenerate"
-            : "quiz_next_batch",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        expectedQuizSessionId: session?.id ?? null,
-      });
-      await waitForAiJob(settings, job);
-      if (session) clearStoredQuizFeedback(problem.id, session.id);
-      await loadSession();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedGenerate);
-    } finally {
-      setGenerating(false);
-      setGenerationStartedAt(null);
-    }
-  }
-
-  async function resetHistory() {
-    setResetting(true);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz`, {
-        method: "DELETE",
-        headers: authHeaders(settings),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
-      }
-      if (session) clearStoredQuizFeedback(problem.id, session.id);
-      setSession(null);
-      setSavedItemIds(new Set());
-      setFeedback(null);
-      setCurrentIndex(0);
-      setShowResults(false);
-      setConfirmingReset(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedReset);
-    } finally {
-      setResetting(false);
-    }
-  }
-
-  const resetConfirmation = confirmingReset ? (
-    <div className="popup-confirm" role="group" aria-label={t.quiz.confirmReset}>
-      <p role="alert">{t.quiz.resetConfirm}</p>
-      <div className="popup-confirm-actions">
-        <button
-          type="button"
-          className="btn btn-secondary btn-inline"
-          disabled={resetting}
-          onClick={() => setConfirmingReset(false)}
-        >
-          {t.common.cancel}
-        </button>
-        <button
-          type="button"
-          className="btn-xs btn-xs-danger"
-          disabled={resetting}
-          onClick={() => void resetHistory()}
-        >
-          {resetting ? t.quiz.resetting : t.quiz.confirmReset}
-        </button>
-      </div>
-    </div>
-  ) : null;
-
-  async function submitAnswer(item: QuizItem, selectedIndex: number) {
-    if (!session || isQuizItemAnswered(session, item.id) || submittingItem) return;
-    setSubmittingItem(true);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}`, {
-        method: "PATCH",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ itemId: item.id, selectedIndex }),
-      });
-      if (res.status === 409) {
-        setError(t.quiz.changed);
-        await loadSession({ silent: true });
-        return;
-      }
-      const json = (await res.json().catch(() => null)) as {
-        session?: QuizSession;
-        item?: QuizItem;
-        answer?: QuizAnswer;
-        error?: string;
-      } | null;
-      if (!res.ok || !json?.session || !json.item || !json.answer) {
-        throw new Error(json?.error ?? `HTTP ${res.status}`);
-      }
-      setSession(json.session);
-      storeQuizFeedback(problem.id, json.session.id, json.item.id);
-      setFeedback({ item: json.item, answer: json.answer });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedSubmit);
-    } finally {
-      setSubmittingItem(false);
-    }
-  }
-
-  async function saveAsCard(item: QuizItem) {
-    if (!session) return;
-    setSavingItemId(item.id);
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/quiz/${session.id}/save-card`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ itemId: item.id }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-      setSavedItemIds((prev) => new Set(prev).add(item.id));
-      void onRefresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedSave);
-    } finally {
-      setSavingItemId(null);
-    }
-  }
-
-  async function saveMissedAsCards() {
-    if (!session || savingMissed) return;
-    const missedItems = getMissedQuizItems(session).filter((item) => !savedItemIds.has(item.id));
-    if (missedItems.length === 0) return;
-    setSavingMissed(true);
-    try {
-      for (const item of missedItems) {
-        await saveAsCard(item);
-      }
-    } finally {
-      setSavingMissed(false);
-    }
-  }
-
-  function goNext() {
-    if (!session) return;
-    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
-    setFeedback(null);
-    setCurrentIndex(getNextUnansweredQuizIndex(session, currentIndex));
-  }
-
-  function goToQuestion(index: number) {
-    if (!session) return;
-    if (feedback) clearStoredQuizFeedback(problem.id, session.id);
-    setFeedback(null);
-    setCurrentIndex(clampNumber(index, 0, session.itemsJson.length - 1));
-  }
-
-  if (loading) {
-    return <div className="quiz-empty"><p className="popup-muted">{t.quiz.loading}</p></div>;
-  }
-
-  if (generating) {
-    return (
-      <div className="quiz-empty">
-        <div className="quiz-pending-bar"><span /></div>
-        <div className="quiz-empty-title">{t.quiz.generating}</div>
-        <p className="popup-muted">{t.quiz.switchHint}</p>
-        <div className="quiz-pending-timer">{t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds))}</div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="quiz-empty">
-        <div className="quiz-empty-kicker">{t.review.quiz}</div>
-        <div className="quiz-empty-title">{t.quiz.noQuiz}</div>
-        <p className="popup-muted">{t.quiz.noQuizBody}</p>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={generating}
-          onClick={() => void generateQuiz("generate")}
-        >
-          {generating ? t.quiz.generating : t.quiz.generate}
-        </button>
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    );
-  }
-
-  if (session.status === "completed" && !feedback) {
-    const suggested = getSuggestedRating(session.score ?? 0, t);
-    const missedItems = getMissedQuizItems(session);
-    const unsavedMissedCount = missedItems.filter((item) => !savedItemIds.has(item.id)).length;
-    const accuracy = Math.round(((session.score ?? 0) / Math.max(1, session.itemsJson.length)) * 100);
-    const scopeBreakdown = getQuizBreakdown(session, "scope", t);
-    const sourceBreakdown = getQuizBreakdown(session, "source", t);
-    const missedScopes = Array.from(new Set(missedItems.map((item) => item.scope))).map((scope) => quizScopeLabel(scope, t));
-    return (
-      <div className="quiz-panel">
-        <div className="quiz-results scroll-area">
-          <div className="quiz-overview-card">
-            <div className="quiz-overview-main">
-              <div className="quiz-score-card">
-                <div className="quiz-score-value">
-                  {session.score ?? 0}<span>/{session.itemsJson.length}</span>
-                </div>
-                <div className="quiz-score-label">{accuracy}% · {suggested.label}</div>
-              </div>
-              <div className="quiz-overview-copy">
-                <div className="quiz-overview-title">{t.quiz.batchComplete}</div>
-                <div className="quiz-overview-meta">
-                  {missedItems.length === 0 ? t.quiz.noMisses : t.quiz.missed(missedItems.length)} · {t.quiz.coverageBalanced}
-                </div>
-              </div>
-              <div className="quiz-overview-actions">
-                <button
-                  type="button"
-                  className="quiz-link-btn quiz-link-muted"
-                  disabled={generating || resetting}
-                  onClick={() => setConfirmingReset(true)}
-                  title={t.quiz.resetConfirm}
-                >
-                  {t.quiz.reset}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-inline quiz-next-batch"
-                  disabled={generating}
-                  onClick={() => void generateQuiz("nextBatch")}
-                >
-                  {generating ? t.quiz.generating : t.quiz.newBatch}
-                </button>
-              </div>
-            </div>
-            {resetConfirmation}
-
-            <div className="quiz-overview-rows">
-              <QuizBreakdown label={t.quiz.scope} items={scopeBreakdown} />
-              <QuizBreakdown label={t.quiz.source} items={sourceBreakdown} />
-            </div>
-
-            <div className="quiz-missed-row">
-              <div>
-                <span className="quiz-missed-label">{t.quiz.missedLabel}</span>
-                <span>{missedScopes.length > 0 ? missedScopes.join(" · ") : t.quiz.none}</span>
-              </div>
-              <button
-                type="button"
-                className="quiz-missed-save"
-                disabled={unsavedMissedCount === 0 || savingMissed}
-                onClick={() => void saveMissedAsCards()}
-              >
-                {savingMissed ? t.quiz.creating : unsavedMissedCount === 0 ? t.quiz.cardsSaved : t.quiz.createCards}
-                {unsavedMissedCount > 0 && !savingMissed && <span>{unsavedMissedCount}</span>}
-              </button>
-            </div>
-          </div>
-
-          <div className="quiz-review-toggle-wrap">
-            <button type="button" className="quiz-review-toggle" onClick={() => setShowResults((value) => !value)}>
-              <span>{showResults ? t.quiz.hideQuiz : t.quiz.reviewQuiz}</span>
-              <span>{showResults ? t.quiz.hideAnswers : t.quiz.expandQuestions}</span>
-            </button>
-          </div>
-          {showResults && session.itemsJson.map((item, index) => {
-            const answer = session.answersJson.find((a) => a.itemId === item.id) ?? null;
-            const correctChoice = item.choices[item.answerIndex] ?? "";
-            const selectedChoice = answer ? item.choices[answer.selectedIndex] : null;
-            const saved = savedItemIds.has(item.id);
-            const saving = savingItemId === item.id;
-            return (
-              <div key={item.id} className="quiz-result-item">
-                <div className="quiz-result-meta">
-                  <span>{t.quiz.question(index + 1, session.itemsJson.length)}</span>
-                  <span className={answer?.correct ? "quiz-ok" : "quiz-bad"}>
-                    {answer?.correct ? t.quiz.correct : t.quiz.incorrect}
-                  </span>
-                </div>
-                <div className="quiz-result-tags">
-                  <span>{quizSourceLabel(item.source, t)}</span>
-                  <span>{quizScopeLabel(item.scope, t)}</span>
-                </div>
-                <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
-                {selectedChoice && (
-                  <div className="quiz-result-line">
-                    {t.quiz.yourAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(selectedChoice)}</PopupMarkdown>
-                  </div>
-                )}
-                <div className="quiz-result-line">
-                  {t.quiz.correctAnswer} <PopupMarkdown className="popup-md-inline">{formatQuizMarkdown(correctChoice)}</PopupMarkdown>
-                </div>
-                <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
-                <button
-                  type="button"
-                  className={`quiz-result-save${saved ? " is-saved" : ""}`}
-                  disabled={saved || saving}
-                  onClick={() => void saveAsCard(item)}
-                >
-                  {saved ? t.quiz.saved : saving ? t.quiz.saving : t.quiz.save}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    );
-  }
-
-  const item = session.itemsJson[currentIndex] ?? session.itemsJson[0];
-  if (!item) {
-    return (
-      <div className="quiz-empty">
-        <p className="popup-muted">{t.quiz.noQuestions}</p>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={generating}
-          onClick={() => void generateQuiz("regenerate")}
-        >
-          {generating ? t.quiz.regenerating : t.quiz.regenerate}
-        </button>
-      </div>
-    );
-  }
-
-  const answeredCount = session.answersJson.length;
-  const activeAnswer = session.answersJson.find((answer) => answer.itemId === item.id) ?? null;
-  const activeFeedback = feedback?.item.id === item.id ? feedback : activeAnswer ? { item, answer: activeAnswer } : null;
-  const canGoPrev = currentIndex > 0;
-  const canGoNext = currentIndex < session.itemsJson.length - 1;
-  const progressPct = Math.max(8, (answeredCount / session.itemsJson.length) * 100);
-
-  return (
-    <div className="quiz-panel">
-      <div className="quiz-panel-head">
-        <div>
-          <div className="quiz-head-title">{t.quiz.question(currentIndex + 1, session.itemsJson.length)}</div>
-          <div className="quiz-head-meta">{t.quiz.answered(answeredCount, session.itemsJson.length)}</div>
-          <div className="quiz-progress"><span style={{ width: `${progressPct}%` }} /></div>
-        </div>
-        <div className="quiz-nav-row">
-          <button
-            type="button"
-            className="quiz-link-btn"
-            disabled={!canGoPrev}
-            onClick={() => goToQuestion(currentIndex - 1)}
-          >
-            {t.quiz.prev}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn"
-            disabled={!canGoNext}
-            onClick={() => goToQuestion(currentIndex + 1)}
-          >
-            {t.quiz.next}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn quiz-link-muted"
-            disabled={generating}
-            onClick={() => void generateQuiz("regenerate")}
-          >
-            {t.quiz.regenerate}
-          </button>
-          <button
-            type="button"
-            className="quiz-link-btn quiz-link-muted"
-            disabled={generating || resetting}
-            onClick={() => setConfirmingReset(true)}
-            title={t.quiz.resetConfirm}
-          >
-            {t.quiz.reset}
-          </button>
-        </div>
-      </div>
-      {resetConfirmation}
-      <div className="quiz-active scroll-area">
-        <div className="quiz-question">
-          <PopupMarkdown>{formatQuizMarkdown(item.question)}</PopupMarkdown>
-        </div>
-        <div className="quiz-choices">
-          {item.choices.map((choice, index) => {
-            const wasSelected = activeFeedback?.answer.selectedIndex === index;
-            const isCorrect = activeFeedback && item.answerIndex === index;
-            return (
-              <button
-                key={index}
-                type="button"
-                disabled={!!activeFeedback || submittingItem}
-                onClick={() => void submitAnswer(item, index)}
-                className={`quiz-choice${isCorrect ? " is-correct" : ""}${activeFeedback && wasSelected && !isCorrect ? " is-wrong" : ""}`}
-              >
-                <span className="quiz-choice-letter">{String.fromCharCode(65 + index)}</span>
-                <PopupMarkdown>{formatQuizMarkdown(choice)}</PopupMarkdown>
-              </button>
-            );
-          })}
-        </div>
-        {activeFeedback ? (
-          <div className={`quiz-feedback${activeFeedback.answer.correct ? " is-correct" : " is-wrong"}`}>
-            <div className="quiz-feedback-head">
-              <div className="quiz-feedback-title">{activeFeedback.answer.correct ? t.quiz.correct : t.quiz.wrong}</div>
-              <span>{quizSourceLabel(item.source, t)} · {quizScopeLabel(item.scope, t)}</span>
-            </div>
-            <div className="quiz-feedback-body">
-              <PopupMarkdown>{formatQuizMarkdown(item.explanation)}</PopupMarkdown>
-            </div>
-            <div className="quiz-actions">
-              <button
-                type="button"
-                className="quiz-save-btn"
-                disabled={savedItemIds.has(item.id) || savingItemId === item.id}
-                onClick={() => void saveAsCard(item)}
-              >
-                {savedItemIds.has(item.id) ? t.quiz.saved : savingItemId === item.id ? t.quiz.saving : t.quiz.save}
-              </button>
-              <button type="button" className="btn btn-primary btn-inline" onClick={goNext}>
-                {session.status === "completed" ? t.quiz.results : t.quiz.next}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="quiz-hint-row">
-            <p className="quiz-hint">{submittingItem ? t.quiz.checking : t.quiz.answerHint}</p>
-            {answeredCount < session.itemsJson.length && !canGoNext && (
-              <button type="button" className="quiz-link-btn" onClick={() => goToQuestion(getFirstUnansweredQuizIndex(session))}>
-                {t.quiz.firstUnanswered}
-              </button>
-            )}
-          </div>
-        )}
-        {error && <div className="err-banner quiz-error">{error}</div>}
-      </div>
-    </div>
-  );
-}
-
-function getFirstUnansweredQuizIndex(session: QuizSession | null) {
-  if (!session) return 0;
-  const idx = session.itemsJson.findIndex((item) => !session.answersJson.some((answer) => answer.itemId === item.id));
-  return idx === -1 ? 0 : idx;
-}
-
-function getNextUnansweredQuizIndex(session: QuizSession, currentIndex: number) {
-  const afterCurrent = session.itemsJson.findIndex((item, index) => index > currentIndex && !isQuizItemAnswered(session, item.id));
-  if (afterCurrent !== -1) return afterCurrent;
-  return getFirstUnansweredQuizIndex(session);
-}
-
-function isQuizItemAnswered(session: QuizSession, itemId: string) {
-  return session.answersJson.some((answer) => answer.itemId === itemId);
-}
-
-function getQuizItemIndex(session: QuizSession | null, itemId: string) {
-  if (!session) return 0;
-  const idx = session.itemsJson.findIndex((item) => item.id === itemId);
-  return idx === -1 ? getFirstUnansweredQuizIndex(session) : idx;
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function quizFeedbackStorageKey(problemId: string, sessionId: string) {
-  return `ankify.quiz.pendingFeedback.${problemId}.${sessionId}`;
-}
-
-function storeQuizFeedback(problemId: string, sessionId: string, itemId: string) {
-  window.sessionStorage.setItem(quizFeedbackStorageKey(problemId, sessionId), itemId);
-}
-
-function clearStoredQuizFeedback(problemId: string, sessionId: string) {
-  window.sessionStorage.removeItem(quizFeedbackStorageKey(problemId, sessionId));
-}
-
-function getStoredQuizFeedback(problemId: string, session: QuizSession | null) {
-  if (!session) return null;
-  const itemId = window.sessionStorage.getItem(quizFeedbackStorageKey(problemId, session.id));
-  if (!itemId) return null;
-  const item = session.itemsJson.find((quizItem) => quizItem.id === itemId);
-  const answer = session.answersJson.find((quizAnswer) => quizAnswer.itemId === itemId);
-  if (!item || !answer) {
-    clearStoredQuizFeedback(problemId, session.id);
-    return null;
-  }
-  return { item, answer };
-}
-
-function QuizBreakdown({ label, items }: { label: string; items: { label: string; count: number }[] }) {
-  return (
-    <div className="quiz-breakdown-row">
-      <span className="quiz-breakdown-label">{label}</span>
-      <div className="quiz-breakdown">
-        {items.map((item) => (
-          <span key={item.label}>{item.label} <b>{item.count}</b></span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function getMissedQuizItems(session: QuizSession) {
-  return session.itemsJson.filter((item) => {
-    const answer = session.answersJson.find((a) => a.itemId === item.id);
-    return answer && !answer.correct;
-  });
-}
-
-function getQuizBreakdown(session: QuizSession, field: "scope" | "source", t: ReturnType<typeof getExtText>) {
-  const counts = new Map<string, number>();
-  session.itemsJson.forEach((item) => {
-    const key = field === "scope" ? quizScopeLabel(item.scope, t) : quizSourceLabel(item.source, t);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  });
-  return Array.from(counts.entries()).map(([label, count]) => ({ label, count }));
-}
-
-function getSuggestedRating(score: number, t: ReturnType<typeof getExtText>): { rating: FsrsRating; label: string } {
-  if (score <= 1) return { rating: 1, label: t.rating.again };
-  if (score === 2) return { rating: 2, label: t.rating.hard };
-  if (score <= 4) return { rating: 3, label: t.rating.good };
-  return { rating: 4, label: t.rating.easy };
-}
-
-/* ── ManageView ── */
-
-function ManageView({
-  problem,
-  cards,
-  candidates,
-  settings,
-  due,
-  mode,
-  onModeChange,
-  onSync,
-  syncBusy,
-  syncMessage,
-  syncTone,
-  canSync,
-  onRefresh,
-}: {
-  problem: ApiProblem;
-  cards: ApiCard[];
-  candidates: ApiCard[];
-  settings: ExtSettings;
-  due: boolean;
-  mode: "review" | "manage";
-  onModeChange: (m: "review" | "manage") => void;
-  onSync: () => void;
-  syncBusy: boolean;
-  syncMessage: string | null;
-  syncTone: "success" | "error";
-  canSync: boolean;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  return (
-    <div className="stack">
-      <ProblemCard
-        problem={problem}
-        settings={settings}
-        due={due}
-        mode={mode}
-        onModeChange={onModeChange}
-        onSync={onSync}
-        syncBusy={syncBusy}
-        syncMessage={syncMessage}
-        syncTone={syncTone}
-        canSync={canSync}
-      />
-
-      <div className="panel">
-        <div className="section-label">{t.cards.add}</div>
-        <AddCardForm problem={problem} settings={settings} onAdded={onRefresh} />
-      </div>
-
-      {candidates.length > 0 && (
-        <CandidateList
-          problem={problem}
-          candidates={candidates}
-          settings={settings}
-          onRefresh={onRefresh}
-        />
-      )}
-
-      <div>
-        <div className="section-label">
-          {t.cards.savedCount(cards.length)}
-        </div>
-        {cards.length === 0 ? (
-          <div className="panel panel-quiet">
-            <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
-              {t.cards.noSaved}
-            </p>
-          </div>
-        ) : (
-          <CardList cards={cards} settings={settings} onRefresh={onRefresh} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── CardFlipper ── */
-
-function CardFlipper({ cards, settings }: { cards: ApiCard[]; settings: ExtSettings }) {
-  const t = getExtText(settings);
-  const [idx, setIdx] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-
-  // Reset flip when card changes
-  useEffect(() => {
-    setFlipped(false);
-  }, [idx]);
-
-  // Keyboard: Space flips, ←/→ navigates (ignore when typing)
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      const target = e.target as HTMLElement;
-      if (
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLInputElement ||
-        target.isContentEditable
-      ) {
-        return;
-      }
-      if (e.key === " ") {
-        e.preventDefault();
-        setFlipped((f) => !f);
-      } else if (e.key === "ArrowLeft") {
-        setIdx((i) => Math.max(0, i - 1));
-      } else if (e.key === "ArrowRight") {
-        setIdx((i) => Math.min(cards.length - 1, i + 1));
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [cards.length]);
-
-  const card = cards[idx];
-  if (!card) return null;
-
-  return (
-    <div className="card-flipper">
-      <div
-        className="card-flipper-stage"
-        onClick={() => setFlipped((f) => !f)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          setFlipped((value) => !value);
-        }}
-        role="button"
-        tabIndex={0}
-        aria-label={flipped ? t.cards.showQuestion : t.cards.showAnswer}
-      >
-        <div className={`card-flipper-inner${flipped ? " is-flipped" : ""}`}>
-          <div className="card-face card-face-front">
-            <div className="card-face-label">{t.cards.question}</div>
-            <div className="card-face-content scroll-area">
-              <PopupMarkdown className="card-face-md">{card.question}</PopupMarkdown>
-            </div>
-            <div className="card-face-hint">{t.cards.flipHint}</div>
-          </div>
-          <div className="card-face card-face-back">
-            <div className="card-face-label card-face-label-answer">{t.cards.answer}</div>
-            <div className="card-face-content scroll-area">
-              <PopupMarkdown className="card-face-md">{card.answer}</PopupMarkdown>
-            </div>
-            <div className="card-face-hint">{t.cards.flipBackHint}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card-flipper-nav">
-        <button
-          type="button"
-          className="card-flipper-arrow"
-          disabled={idx === 0}
-          onClick={() => setIdx((i) => Math.max(0, i - 1))}
-          aria-label={t.common.previous}
-        >
-          <ChevronIcon direction="left" />
-        </button>
-        <span className="card-flipper-pos">
-          {idx + 1} / {cards.length}
-        </span>
-        <button
-          type="button"
-          className="card-flipper-arrow"
-          disabled={idx >= cards.length - 1}
-          onClick={() => setIdx((i) => Math.min(cards.length - 1, i + 1))}
-          aria-label={t.common.next}
-        >
-          <ChevronIcon direction="right" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ── NotesPanel (local-first auto-save) ── */
-
-type NotesDraft = { value: string; dirty: boolean; ts: number };
-
-function notesDraftKey(problemId: string) {
-  return `ankify.notes-draft.${problemId}`;
-}
-
-function readNotesDraft(problemId: string): NotesDraft | null {
-  try {
-    const raw = window.localStorage.getItem(notesDraftKey(problemId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as NotesDraft;
-    if (typeof parsed?.value !== "string" || typeof parsed?.dirty !== "boolean") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeNotesDraft(problemId: string, value: string, dirty: boolean) {
-  try {
-    const payload: NotesDraft = { value, dirty, ts: Date.now() };
-    window.localStorage.setItem(notesDraftKey(problemId), JSON.stringify(payload));
-  } catch {
-    // localStorage can fail on quota; never block typing
-  }
-}
-
-function NotesPanel({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
-  const t = getExtText(settings);
-  // Initial value: always prefer the local snapshot when it exists. It's the
-  // most recent text the user saw, whether or not it's been synced — `dirty`
-  // is for *syncing* decisions, not for *display* decisions. Falling back to
-  // `problem.notes` would show a stale prop (last fetched at popup-detect
-  // time) every time the tab is switched away and back.
-  const [notes, setNotes] = useState(() => {
-    const draft = readNotesDraft(problem.id);
-    if (draft) return draft.value;
-    return problem.notes ?? "";
-  });
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // Tracks the last value we believe the server has. Initialized from the
-  // freshly-fetched `problem.notes` prop (not from `notes`, which may be a
-  // local-only draft that was never confirmed). Updated on every successful
-  // PATCH so the dirty-detection logic stays accurate.
-  const savedRef = useRef(problem.notes ?? "");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  // If the popup picked up a dirty draft on mount whose value diverges from
-  // what the server returned, re-sync once so the server catches up. Compare
-  // against the live `problem.notes` prop (best signal for the server's
-  // current state) rather than savedRef.
-  useEffect(() => {
-    const draft = readNotesDraft(problem.id);
-    const serverValue = problem.notes ?? "";
-    if (draft?.dirty && draft.value !== serverValue) {
-      void persist(draft.value);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [problem.id]);
-
-  async function persist(value: string) {
-    if (value === savedRef.current) return;
-    setStatus("saving");
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}`, {
-        method: "PATCH",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ notes: value }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      savedRef.current = value;
-      writeNotesDraft(problem.id, value, false);
-      setStatus("saved");
-      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
-    } catch {
-      // Stay dirty so the next change retries.
-      setStatus("idle");
-    }
-  }
-
-  function handleChange(value: string) {
-    setNotes(value);
-    writeNotesDraft(problem.id, value, true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void persist(value), 1500);
-  }
-
-  function flushSave() {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    void persist(notes);
-  }
-
-  return (
-    <div className="notes-panel">
-      <div className="notes-panel-header">
-        <span className="section-label" style={{ margin: 0 }}>{t.notes.title}</span>
-        <span className={`notes-panel-status${status !== "idle" ? " is-visible" : ""}`}>
-          {status === "saving" ? t.notes.saving : status === "saved" ? t.notes.saved : ""}
-        </span>
-      </div>
-      <textarea
-        className="notes-panel-textarea scroll-area"
-        value={notes}
-        onChange={(e) => handleChange(e.target.value)}
-        onBlur={flushSave}
-        placeholder={t.notes.placeholder}
-      />
+    <div className="sticky-banner">
+      <span className="sticky-banner-text">{t.problem.activeTabNotOn(displayCaptured.problem.title)}</span>
+      <button type="button" className="btn btn-primary btn-inline" onClick={onJumpToSticky}>
+        {t.problem.openIt}
+      </button>
     </div>
   );
 }
@@ -2653,542 +1782,6 @@ function QuickRate({
   );
 }
 
-/* ── CardList (saved cards) ── */
-
-function CardList({
-  cards,
-  settings,
-  onRefresh,
-}: {
-  cards: ApiCard[];
-  settings: ExtSettings;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  async function deleteCard(cardId: string) {
-    setDeletingId(cardId);
-    setDeleteError(null);
-    try {
-      const res = await apiFetch(settings, "/api/cards", {
-        method: "DELETE",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ ids: [cardId] }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      setPendingDeleteId(null);
-      onRefresh();
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : t.cards.deleteFailed);
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  return (
-    <>
-      {cards.map((card) => (
-        <Collapse key={card.id} header={<span className="card-q-preview">{card.question}</span>}>
-          <div className="card-q-box">
-            <div className="card-q-label">{t.cards.question}</div>
-            <PopupMarkdown>{card.question}</PopupMarkdown>
-          </div>
-          <div className="card-a-box">
-            <div className="card-a-label">{t.cards.answer}</div>
-            <PopupMarkdown>{card.answer}</PopupMarkdown>
-          </div>
-          <button
-            type="button"
-            className="btn-xs btn-xs-danger"
-            style={{ marginTop: 10 }}
-            disabled={deletingId === card.id}
-            onClick={() => {
-              setDeleteError(null);
-              setPendingDeleteId(card.id);
-            }}
-          >
-            {deletingId === card.id ? "…" : t.cards.delete}
-          </button>
-        </Collapse>
-      ))}
-      {pendingDeleteId && (
-        <div className="popup-confirm" role="group" aria-label={t.cards.delete}>
-          <p role="alert">{t.cards.deleteConfirm}</p>
-          {deleteError && <div className="err-banner" role="alert">{deleteError}</div>}
-          <div className="popup-confirm-actions">
-            <button
-              type="button"
-              className="btn btn-secondary btn-inline"
-              disabled={deletingId === pendingDeleteId}
-              onClick={() => {
-                setPendingDeleteId(null);
-                setDeleteError(null);
-              }}
-            >
-              {t.common.cancel}
-            </button>
-            <button
-              type="button"
-              className="btn-xs btn-xs-danger"
-              disabled={deletingId === pendingDeleteId}
-              onClick={() => void deleteCard(pendingDeleteId)}
-            >
-              {deletingId === pendingDeleteId ? "…" : t.cards.delete}
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-/* ── AddCardForm ── */
-
-function AddCardForm({
-  problem,
-  settings,
-  onAdded,
-}: {
-  problem: ApiProblem;
-  settings: ExtSettings;
-  onAdded: () => void;
-}) {
-  const t = getExtText(settings);
-  const slug = problem.leetcodeSlug;
-  const [mode, setMode] = useState<"manual" | "ai">("ai");
-  const [busy, setBusy] = useState<false | "manual" | "auto" | "note">(false);
-  const [checkingJob, setCheckingJob] = useState(true);
-  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  /* manual */
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-
-  /* AI */
-  const [rawText, setRawText] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const userEditedRef = useRef(false);
-  const generationElapsedSeconds = useElapsedSeconds(
-    busy === "auto" || busy === "note",
-    generationStartedAt,
-  );
-
-  useEffect(() => {
-    userEditedRef.current = false;
-    let cancelled = false;
-    void getCardDraft(slug).then((saved) => {
-      if (cancelled) return;
-      if (!userEditedRef.current) setRawText(saved);
-      setHydrated(true);
-    });
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const t = setTimeout(() => void setCardDraft(slug, rawText), 380);
-    return () => clearTimeout(t);
-  }, [rawText, slug, hydrated]);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const jobs = await getActiveAiJobs(settings, problem.id, "card");
-        const job = jobs.find((candidate) => candidate.action === "card_generate");
-        if (job) {
-          setBusy("auto");
-          setGenerationStartedAt(Date.parse(job.startedAt ?? job.queuedAt));
-          await waitForAiJob(settings, job);
-        }
-        // Manage may have been unmounted while the job finished. Revalidate
-        // candidates even when there is no longer an active job to resume.
-        onAdded();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : t.cards.aiFailed);
-      } finally {
-        setBusy(false);
-        setGenerationStartedAt(null);
-        setCheckingJob(false);
-      }
-    })();
-  }, [problem.id, settings]);
-
-  const updateRawText = (v: string) => {
-    userEditedRef.current = true;
-    setRawText(v.slice(0, 6000));
-  };
-
-  async function clearLocalDraft() {
-    await clearCardDraft(slug);
-    userEditedRef.current = false;
-    setRawText("");
-  }
-
-  async function handleManualSave() {
-    if (!question.trim() || !answer.trim()) return;
-    setBusy("manual");
-    setError(null);
-    try {
-      const res = await apiFetch(settings, `/api/problems/${problem.id}/user-card`, {
-        method: "POST",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ mode: "manual", question: question.trim(), answer: answer.trim() }),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-        throw new Error(apiErrorMessage(j, `HTTP ${res.status}`));
-      }
-      setQuestion("");
-      setAnswer("");
-      onAdded();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAiGenerate(kind: "auto" | "note") {
-    if (kind === "note" && !rawText.trim()) return;
-    setBusy(kind);
-    setGenerationStartedAt(Date.now());
-    setError(null);
-    try {
-      const job = await startAiJob(settings, {
-        action: "card_generate",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        ...(kind === "note" ? { rawText: rawText.trim() } : {}),
-      });
-      await waitForAiJob(settings, job);
-      if (kind === "note") await clearLocalDraft();
-      onAdded();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.unknownError);
-    } finally {
-      setBusy(false);
-      setGenerationStartedAt(null);
-    }
-  }
-
-  return (
-    <div>
-      <div className="mode-tabs">
-        <button type="button" className={`mode-tab${mode === "ai" ? " active" : ""}`} onClick={() => setMode("ai")}>
-          {t.cards.aiFromNotes}
-        </button>
-        <button type="button" className={`mode-tab${mode === "manual" ? " active" : ""}`} onClick={() => setMode("manual")}>
-          {t.cards.manual}
-        </button>
-      </div>
-
-      {mode === "manual" && (
-        <div className="stack">
-          <label className="field-label">
-            {t.cards.question}
-            <textarea
-              className="textarea-card field-ta"
-              rows={3}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={t.cards.questionPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          <label className="field-label">
-            {t.cards.answer}
-            <textarea
-              className="textarea-card field-ta"
-              rows={4}
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder={t.cards.answerPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          {error && <div className="err-banner">{error}</div>}
-          <button
-            type="button"
-            onClick={handleManualSave}
-            disabled={checkingJob || !!busy || !question.trim() || !answer.trim()}
-            className="btn btn-primary"
-          >
-            {busy ? t.quiz.saving : t.cards.saveCard}
-          </button>
-        </div>
-      )}
-
-      {mode === "ai" && (
-        <div className="stack">
-          <label className="field-label">
-            {t.cards.yourNotes}
-            <textarea
-              className="textarea-card field-ta"
-              rows={5}
-              value={rawText}
-              onChange={(e) => updateRawText(e.target.value)}
-              placeholder={t.cards.notesPlaceholder}
-              disabled={checkingJob || !!busy}
-            />
-          </label>
-          <div className="ai-toolbar">
-            <span className="draft-hint">
-              {busy === "auto" || busy === "note" ? t.cards.generatingCandidate : `${rawText.length}/6000${rawText.trim() && hydrated ? ` · ${t.cards.autosaved}` : ""}`}
-            </span>
-            <div style={{ display: "flex", gap: 8 }}>
-              {rawText.trim() && (
-                <button type="button" className="link-quiet btn-inline" onClick={clearLocalDraft} disabled={checkingJob || !!busy}>
-                  {t.cards.clear}
-                </button>
-              )}
-              <button type="button" onClick={() => handleAiGenerate("auto")} disabled={checkingJob || !!busy} className="btn btn-ghost">
-                {busy === "auto" ? t.quiz.generating : t.cards.autoGenerate}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAiGenerate("note")}
-                disabled={checkingJob || !rawText.trim() || !!busy}
-                className="btn btn-primary"
-              >
-                {busy === "note" ? t.quiz.generating : t.cards.generateFromNote}
-              </button>
-            </div>
-          </div>
-          {(busy === "auto" || busy === "note") && (
-            <div className="operation-timer">
-              {t.quiz.pendingTimer(formatElapsedSeconds(generationElapsedSeconds)).replace("02:00", formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS))}
-            </div>
-          )}
-
-          {error && <div className="err-banner">{error}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── CandidateList ── */
-
-function CandidateList({
-  problem,
-  candidates,
-  settings,
-  onRefresh,
-}: {
-  problem: ApiProblem;
-  candidates: ApiCard[];
-  settings: ExtSettings;
-  onRefresh: () => void;
-}) {
-  const t = getExtText(settings);
-  const [local, setLocal] = useState<LocalCandidate[]>([]);
-  const [clock, setClock] = useState(Date.now());
-  const [jobStartedAt, setJobStartedAt] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    setLocal((prev) => {
-      const prevById = new Map(prev.map((c) => [c.id, c]));
-      return candidates.map((c) => ({
-        ...c,
-        ...mergeCandidatePendingState(c, prevById.get(c.id)),
-      }));
-    });
-  }, [candidates]);
-
-  useEffect(() => {
-    void getActiveAiJobs(settings, problem.id, "card")
-      .then((jobs) => {
-        const followups = jobs.filter((job) => job.action === "card_followup" && job.targetCardId);
-        for (const job of followups) {
-          const cardId = job.targetCardId!;
-          update(cardId, { busy: "followup", localError: null });
-          setJobStartedAt((prev) => ({
-            ...prev,
-            [cardId]: Date.parse(job.startedAt ?? job.queuedAt),
-          }));
-          void waitForAiJob(settings, job)
-            .then(() => {
-              update(cardId, { busy: null, instruction: "" });
-              onRefresh();
-            })
-            .catch((e) => update(cardId, {
-              busy: null,
-              localError: e instanceof Error ? e.message : t.cards.aiFailed,
-            }));
-        }
-      })
-      .catch((error) => console.error("[ai-job] failed to resume follow-up", error));
-  }, [problem.id, settings]);
-
-  useEffect(() => {
-    if (!local.some((card) => card.busy === "followup")) return;
-    const timer = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [local]);
-
-  function update(id: string, patch: Record<string, unknown>) {
-    setLocal((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  }
-
-  async function patchCard(id: string, body: Record<string, unknown>) {
-    const res = await apiFetch(settings, `/api/cards/${id}`, {
-      method: "PATCH",
-      headers: jsonHeaders(settings),
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const j = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(j?.error ?? `HTTP ${res.status}`);
-    }
-  }
-
-  async function runAi(
-    card: LocalCandidate,
-    instruction?: string,
-  ) {
-    update(card.id, { busy: "followup", localError: null });
-    setJobStartedAt((prev) => ({ ...prev, [card.id]: Date.now() }));
-    try {
-      const job = await startAiJob(settings, {
-        action: "card_followup",
-        problemId: problem.id,
-        requestId: crypto.randomUUID(),
-        cardId: card.id,
-        expectedCardVersion: card.version,
-        draft: { question: card.question.trim(), answer: card.answer.trim() },
-        instruction: instruction ?? "",
-      });
-      await waitForAiJob(settings, job);
-      update(card.id, { busy: null, instruction: "" });
-      onRefresh();
-    } catch (e) {
-      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.aiFailed });
-    }
-  }
-
-  async function confirm(card: LocalCandidate) {
-    update(card.id, { busy: "confirm", localError: null });
-    try {
-      await patchCard(card.id, {
-        expectedVersion: card.version,
-        aiStatus: "ready",
-        question: card.question.trim(),
-        answer: card.answer.trim(),
-      });
-      onRefresh();
-    } catch (e) {
-      update(card.id, { busy: null, localError: e instanceof Error ? e.message : t.cards.confirmFailed });
-    }
-  }
-
-  async function discard(id: string) {
-    update(id, { busy: "discard", localError: null });
-    try {
-      const res = await apiFetch(settings, "/api/cards", {
-        method: "DELETE",
-        headers: jsonHeaders(settings),
-        body: JSON.stringify({ ids: [id] }),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${res.status}`);
-      }
-      onRefresh();
-    } catch (e) {
-      update(id, { busy: null, localError: e instanceof Error ? e.message : t.cards.discardFailed });
-    }
-  }
-
-  return (
-    <div className="panel">
-      <div className="section-label">
-        {t.cards.candidateCount(candidates.length)}
-      </div>
-      {local.map((c) => {
-        const disabled = !!c.busy;
-        const startedAt = jobStartedAt[c.id];
-        const elapsedSeconds = startedAt
-          ? Math.max(0, Math.floor((clock - startedAt) / 1000))
-          : 0;
-        return (
-          <div key={c.id} className={`candidate-card${c.aiStatus === "failed" ? " candidate-failed" : ""}`}>
-            <div
-              className="candidate-status"
-              style={{
-                color: c.aiStatus === "failed" ? "var(--danger)" : "var(--muted)",
-              }}
-            >
-              {c.aiStatus === "failed" ? t.cards.failed : t.cards.candidate}
-            </div>
-            {c.errorMessage && <div className="err-banner" style={{ marginBottom: 8 }}>{c.errorMessage}</div>}
-
-            <label className="field-label">
-              Q
-              <textarea
-                className="textarea-card field-ta-sm"
-                rows={2}
-                value={c.question}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { question: e.target.value })}
-              />
-            </label>
-            <label className="field-label">
-              A
-              <textarea
-                className="textarea-card field-ta-sm"
-                rows={3}
-                value={c.answer}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { answer: e.target.value })}
-              />
-            </label>
-            <div className="candidate-followup">
-              <input
-                className="followup-input"
-                value={c.instruction}
-                disabled={disabled}
-                onChange={(e) => update(c.id, { instruction: e.target.value })}
-                placeholder={t.cards.followupPlaceholder}
-              />
-              <div className="candidate-actions">
-                <button
-                  type="button"
-                  className="btn-xs"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim() || !c.instruction.trim()}
-                  onClick={() => runAi(c, c.instruction)}
-                >
-                  {c.busy === "followup" ? "…" : t.cards.apply}
-                </button>
-                <button
-                  type="button"
-                  className="btn-xs btn-xs-accent"
-                  disabled={disabled || !c.question.trim() || !c.answer.trim()}
-                  onClick={() => confirm(c)}
-                >
-                  {c.busy === "confirm" ? "…" : t.cards.confirm}
-                </button>
-                <button type="button" className="btn-xs btn-xs-danger" disabled={!!c.busy} onClick={() => discard(c.id)}>
-                  ×
-                </button>
-              </div>
-              {c.busy === "followup" && (
-                <div className="operation-timer">
-                  {t.cards.applying} {formatElapsedSeconds(elapsedSeconds)} / {formatElapsedSeconds(CARD_GENERATION_TARGET_SECONDS)}
-                </div>
-              )}
-            </div>
-            {c.localError && <div className="err-banner" style={{ marginTop: 6 }}>{c.localError}</div>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ── CaptureView ── */
 
 function CaptureView({
@@ -3227,20 +1820,23 @@ function CaptureView({
     <div className="panel">
       <span className="section-label">{t.capture.notInDeck}</span>
       <p className="popup-muted" style={{ marginTop: 0 }}>
-        {t.capture.notCaptured(slug)}
+        {settings.autoCapture ? t.capture.autoHint : t.capture.notCaptured(slug)}
       </p>
       <button
         type="button"
         onClick={captureNow}
         disabled={busy}
-        className="btn btn-primary"
+        className={settings.autoCapture ? "btn btn-secondary" : "btn btn-primary"}
         style={{ marginTop: 14 }}
       >
+        {busy && <span className="btn-spinner" />}
         {phase === "reading"
           ? t.capture.reading
           : phase === "saving"
             ? t.capture.saving
-            : t.capture.captureThis}
+            : settings.autoCapture
+              ? t.capture.addNow
+              : t.capture.captureThis}
       </button>
     </div>
   );

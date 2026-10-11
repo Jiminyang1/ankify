@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { agentTurnRequestSchema, type AgentStreamEvent } from "@ankify/contracts";
-import { getActiveModel } from "@/server/ai";
+import { buildModel, getActiveModel } from "@/server/ai";
+import { applyModelChoice } from "@/server/ai/model-choice";
 import { consumeStarterAiCredit, StarterCreditsExhaustedError } from "@/server/starter-ai";
 import { classifyAgentError, logAgentError } from "@/server/agent/errors";
 import { runStudyCoach } from "@/server/agent/runtime";
@@ -10,6 +11,7 @@ import {
   failAgentRun,
 } from "@/server/agent/store";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
+import { getActiveTalkContext, getPracticeDebrief, markPracticeDebriefed } from "@/server/practice";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -19,11 +21,35 @@ export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
 
-  const body = await readJsonBody(req, 20_000);
+  // Room for a 12k-character message plus a 20k-character editor snapshot.
+  const body = await readJsonBody(req, 64_000);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
   const parsed = agentTurnRequestSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
+  }
+
+  // Practice results come from the server, never from the client.
+  const trigger = parsed.data.trigger;
+  let context = { ...parsed.data.context, practice: undefined, practiceActive: undefined } as typeof parsed.data.context;
+  if (trigger?.type === "practice_completed") {
+    const debrief = await getPracticeDebrief(user.id, trigger.practiceSessionId!);
+    if (!debrief) {
+      return NextResponse.json({ error: "practice_not_completed", message: "Finish the practice session first." }, { status: 409 });
+    }
+    const { problemId, ...practice } = debrief;
+    context = { ...context, problemId, practice };
+  }
+  // A talk-through in progress on this problem rides along with every turn.
+  if (context.problemId) {
+    const active = await getActiveTalkContext(user.id, context.problemId);
+    if (active) context = { ...context, practiceActive: active };
+  }
+  if (trigger?.type === "analyze_attempts" && !context.problemId) {
+    return NextResponse.json({ error: "problem_not_saved", message: "Add this problem to ankify first." }, { status: 400 });
+  }
+  if (trigger?.type === "practice_start" && context.practiceActive?.practiceSessionId !== trigger.practiceSessionId) {
+    return NextResponse.json({ error: "practice_not_active", message: "That practice session isn't active." }, { status: 409 });
   }
 
   const limit = await checkRateLimit(user.id, "agent", RATE_LIMITS.agent);
@@ -42,6 +68,10 @@ export async function POST(req: Request) {
     }
     throw error;
   }
+  if (parsed.data.model) {
+    const settings = applyModelChoice(activeModel.settings, parsed.data.model);
+    if (settings !== activeModel.settings) activeModel = { settings, model: buildModel(settings) };
+  }
 
   if (activeModel.settings.source === "starter") {
     try {
@@ -58,9 +88,13 @@ export async function POST(req: Request) {
   try {
     started = await beginAgentTurn({
       userId: user.id,
-      ...parsed.data,
+      sessionId: parsed.data.sessionId,
+      requestId: parsed.data.requestId,
+      message: parsed.data.message,
+      context,
       settings: activeModel.settings,
     });
+    if (trigger?.type === "practice_completed") await markPracticeDebriefed(user.id, trigger.practiceSessionId!);
   } catch (error) {
     if (error instanceof AgentRequestError) {
       return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
@@ -91,7 +125,7 @@ export async function POST(req: Request) {
         try {
           const completed = await runStudyCoach({
             userId: user.id,
-            problemId: parsed.data.context.problemId,
+            problemId: context.problemId,
             sessionId: started.session.id,
             runId: started.run.id,
             model: activeModel.model,
@@ -99,6 +133,15 @@ export async function POST(req: Request) {
             abortSignal: runAbortController.signal,
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),
             onStep: (step) => emit({ type: "step", step }),
+            analyzeAttempts: trigger?.type === "analyze_attempts",
+            practice: !context.practiceActive
+              ? undefined
+              : trigger?.type === "practice_start"
+                ? { kind: "start" }
+                : trigger
+                  ? undefined
+                  : { kind: "reply", message: parsed.data.message },
+            onPractice: (session) => emit({ type: "practice", session }),
           });
           emit({ type: "done", ...completed });
         } catch (error) {

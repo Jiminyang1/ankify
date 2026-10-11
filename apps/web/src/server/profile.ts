@@ -1,4 +1,5 @@
 import {
+  deepDivePlanFor,
   planProblemStatus,
   type LeetCodeDifficulty,
   type PlanProblemStatus,
@@ -22,12 +23,16 @@ export type PlanItem = {
   problemId: string | null;
   archived: boolean;
   due: string | null;
+  /** Times the user forgot it after learning it (FSRS lapses); 0 outside the deck. */
+  lapses: number;
 };
 
 export type PlanGroup = {
   name: string;
   items: PlanItem[];
   counts: Record<PlanProblemStatus, number>;
+  /** LeetCode's topic plan that goes deeper on this pattern, if any. */
+  deepDive: { slug: string; name: string; total: number } | null;
 };
 
 export type ProfileData = Awaited<ReturnType<typeof loadProfile>>;
@@ -43,6 +48,7 @@ export async function loadProfile(userId: string) {
         leetcodeSlug: schema.problems.leetcodeSlug,
         archivedAt: schema.problems.archivedAt,
         fsrsDue: schema.problems.fsrsDue,
+        fsrsLapses: schema.problems.fsrsLapses,
       })
       .from(schema.problems)
       .where(eq(schema.problems.userId, userId)),
@@ -86,9 +92,22 @@ export async function loadProfile(userId: string) {
         problemId: row?.id ?? null,
         archived,
         due: row?.fsrsDue?.toISOString() ?? null,
+        lapses: row?.fsrsLapses ?? 0,
       };
     });
-    return { name: group.name, items, counts: groupCounts };
+    const dive = deepDivePlanFor(group.name, plan.slug);
+    return {
+      name: group.name,
+      items,
+      counts: groupCounts,
+      deepDive: dive
+        ? {
+            slug: dive.slug,
+            name: dive.name,
+            total: dive.groups.reduce((sum, diveGroup) => sum + diveGroup.questions.length, 0),
+          }
+        : null,
+    };
   });
 
   // The plan is ordered, so the next problem is the first unsolved one.

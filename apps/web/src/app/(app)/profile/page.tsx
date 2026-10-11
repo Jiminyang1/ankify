@@ -8,6 +8,7 @@ import { cn, formatRelative } from "@/lib/utils";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { loadProfile } from "@/server/profile";
+import { AskCoachNext } from "./ask-coach";
 import { ProfileGuide } from "./guide";
 import { LeetcodeCard } from "./leetcode-card";
 import { PlanPicker } from "./plan-picker";
@@ -90,6 +91,7 @@ export default async function ProfilePage() {
               <p className="mt-1.5 text-sm text-muted">{copy.planComplete}</p>
             )}
           </div>
+          <AskCoachNext />
         </div>
       </Surface>
 

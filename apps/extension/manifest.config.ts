@@ -15,8 +15,8 @@ export default defineManifest(({ mode }) => {
     minimum_chrome_version: "116",
     name: "ankify",
     description:
-      "Capture LeetCode problems and submissions in one click, then review them with spaced repetition and AI quizzes.",
-    version: "0.2.2",
+      "A study coach beside LeetCode: it reads your code, keeps notes and cards per problem, and brings problems back for practice.",
+    version: "0.3.0",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
@@ -47,6 +47,13 @@ export default defineManifest(({ mode }) => {
         matches: ["https://leetcode.com/problems/*"],
         js: ["src/content/index.ts"],
         run_at: "document_idle",
+      },
+      {
+        // Reads LeetCode's code editor for the Study Coach; see editor-main.ts.
+        matches: ["https://leetcode.com/problems/*"],
+        js: ["src/content/editor-main.ts"],
+        run_at: "document_idle",
+        world: "MAIN",
       },
     ],
     background: {

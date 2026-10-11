@@ -1,12 +1,20 @@
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import type { TalkHelp, TalkSettledBy, TalkTarget, TalkTargetState } from "@ankify/core";
 import type {
   AgentNavigation,
   AgentPageContext,
   AgentProposal,
+  PracticeCheckItem,
   QuizAnswer,
   QuizItem,
 } from "@ankify/contracts";
+
+export type CardStat = {
+  lastShownAt: string;
+  lastResult: "got_it" | "missed";
+  missCount: number;
+};
 
 const ts = (name: string) =>
   integer(name, { mode: "timestamp_ms" }).notNull().default(sql`(unixepoch() * 1000)`);
@@ -115,6 +123,21 @@ export const problems = sqliteTable(
     topicTags: text("topic_tags", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
     similarSlugs: text("similar_slugs", { mode: "json" }).$type<string[]>().notNull().default(sql`(json('[]'))`),
     notes: text("notes"),
+    // The problem's two docs (docs/coach-practice.md). Versions bump on every
+    // write so a stale edit or Coach proposal can't overwrite newer text.
+    notesVersion: integer("notes_version").notNull().default(0),
+    cardsMd: text("cards_md"),
+    cardsVersion: integer("cards_version").notNull().default(0),
+    /** The grading standard for practice (version 3): approaches, their key
+     *  points, and cost. Written on the first practice, then the user's. */
+    solutionsMd: text("solutions_md"),
+    solutionsVersion: integer("solutions_version").notNull().default(0),
+    /** Practice stats per card key: when it was last shown and how it went. */
+    cardStats: text("card_stats", { mode: "json" })
+      .$type<Record<string, CardStat>>()
+      .notNull()
+      // A constant default: SQLite can't ADD COLUMN with json('{}').
+      .default(sql`'{}'`),
 
     // FSRS-6 state
     fsrsDue: optTs("fsrs_due"),
@@ -320,6 +343,156 @@ export const quizSessions = sqliteTable(
 );
 
 /* ────────────────────────────────────────────────────────────────────────────
+ * practice_sessions
+ * One Practice run on a problem (docs/coach-practice.md): a few cards from
+ * its Cards doc, then generated check questions, then a suggested rating.
+ * The cards' text is copied in as shown, so later doc edits don't rewrite
+ * history. At most one active session per problem.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type PracticeRecallItem = { key: string; prompt: string; answer: string };
+export type PracticeTarget = TalkTarget;
+export type PracticeGrade = { grade: "correct" | "partial" | "missed"; reason: string };
+/** One line of a talk-through target's conversation, for the judge. */
+export type TalkLogEntry = {
+  role: "tutor" | "learner";
+  text: string;
+  /** Learner lines: the help given before this reply. */
+  help?: TalkHelp;
+};
+/** A judged target's progress (version 3). */
+export type TalkTargetRecord = TalkTargetState & {
+  log: TalkLogEntry[];
+  /** How it was settled, once it is. */
+  settledBy?: TalkSettledBy;
+  /** The judge failed on it, so the Coach grades it (grade_answer). */
+  fallback?: boolean;
+  /** The user disputed the grade and it was judged again. */
+  disputed?: boolean;
+};
+/** A weak spot as it was before a practice result changed it, so a disputed
+ *  grade can be applied again. */
+export type WeaknessSnapshot = Pick<
+  Weakness,
+  "status" | "resolvedAt" | "correctStreak" | "hitCount" | "lastSeenAt" | "evidenceJson"
+>;
+export type PracticeResults = {
+  recall: Record<string, "got_it" | "missed">;
+  check: Record<string, { choice: number; correct: boolean }>;
+  /** Talk-through grades by target id. */
+  talk?: Record<string, PracticeGrade>;
+  /** Follow-up questions asked per talk-through target (version 2). */
+  followUps?: Record<string, number>;
+  /** Judged progress per talk-through target (version 3). */
+  talkState?: Record<string, TalkTargetRecord>;
+  /** Weak spots before this session's result changed them, by target id. */
+  weaknessBefore?: Record<string, WeaknessSnapshot>;
+  /** The user ended it before every target was graded; the rest were skipped. */
+  endedEarly?: boolean;
+};
+
+export const practiceSessions = sqliteTable(
+  "practice_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    /** The Coach run that started it, if any. */
+    agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    status: text("status", { enum: ["active", "completed", "abandoned"] }).notNull().default("active"),
+    /** talk: the Coach asks about weak spots (version 2); recall_check: cards
+     *  then generated questions (stage 2). */
+    mode: text("mode", { enum: ["recall_check", "talk"] }).notNull().default("recall_check"),
+    targetsJson: text("targets_json", { mode: "json" }).$type<PracticeTarget[]>(),
+    recallJson: text("recall_json", { mode: "json" }).$type<PracticeRecallItem[]>().notNull(),
+    checkStatus: text("check_status", { enum: ["pending", "ready", "failed", "skipped"] }).notNull(),
+    checkMessage: text("check_message"),
+    checkJobId: text("check_job_id"),
+    checkJson: text("check_json", { mode: "json" }).$type<PracticeCheckItem[]>(),
+    resultsJson: text("results_json", { mode: "json" })
+      .$type<PracticeResults>()
+      .notNull()
+      .default(sql`'{"recall":{},"check":{}}'`),
+    score: real("score"),
+    suggestedRating: integer("suggested_rating"),
+    /** Set once the Coach's debrief turn for this session started. */
+    debriefedAt: optTs("debriefed_at"),
+    createdAt: ts("created_at"),
+    updatedAt: ts("updated_at"),
+    completedAt: optTs("completed_at"),
+  },
+  (t) => ({
+    userProblemIdx: index("practice_sessions_user_problem_idx").on(t.userId, t.problemId, t.createdAt),
+    activeIdx: uniqueIndex("practice_sessions_user_problem_active_unique")
+      .on(t.userId, t.problemId)
+      .where(sql`${t.status} = 'active'`),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * weaknesses
+ * The specific mistakes a user makes on a problem (docs/coach-practice.md,
+ * version 2), each in one category with the evidence behind it. The Coach
+ * records them; the profile across problems is computed, never stored.
+ * ──────────────────────────────────────────────────────────────────────────── */
+export type WeaknessEvidence = {
+  kind: "submission" | "practice" | "conversation";
+  /** Submission id, practice session id, or Coach run id. */
+  ref: string;
+  note?: string;
+};
+
+export const weaknesses = sqliteTable(
+  "weaknesses",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    problemId: text("problem_id")
+      .notNull()
+      .references(() => problems.id, { onDelete: "cascade" }),
+    /** A built-in key (packages/core WEAKNESS_CATEGORIES) or the user's own. */
+    category: text("category").notNull(),
+    detail: text("detail").notNull(),
+    evidenceJson: text("evidence_json", { mode: "json" }).$type<WeaknessEvidence[]>().notNull(),
+    status: text("status", { enum: ["active", "resolved", "dismissed"] }).notNull().default("active"),
+    hitCount: integer("hit_count").notNull().default(1),
+    /** Later practice sessions answered correctly in a row. */
+    correctStreak: integer("correct_streak").notNull().default(0),
+    firstSeenAt: ts("first_seen_at"),
+    lastSeenAt: ts("last_seen_at"),
+    resolvedAt: optTs("resolved_at"),
+    updatedAt: ts("updated_at"),
+  },
+  (t) => ({
+    userProblemIdx: index("weaknesses_user_problem_idx").on(t.userId, t.problemId, t.status),
+    userCategoryIdx: index("weaknesses_user_category_idx").on(t.userId, t.category, t.status),
+  }),
+);
+
+/** Categories a user approved beyond the built-in ones. */
+export const weaknessCategories = sqliteTable(
+  "weakness_categories",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    createdAt: ts("created_at"),
+  },
+  (t) => ({
+    userKeyIdx: uniqueIndex("weakness_categories_user_key_unique").on(t.userId, t.key),
+  }),
+);
+
+/* ────────────────────────────────────────────────────────────────────────────
  * ai_jobs
  * Durable source of truth for asynchronous Card / Quiz generation. Queue
  * messages contain only the job id; all ownership, inputs and results live in
@@ -341,7 +514,7 @@ export const aiJobs = sqliteTable(
     problemId: text("problem_id")
       .notNull()
       .references(() => problems.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["card", "quiz"] }).notNull(),
+    kind: text("kind", { enum: ["card", "quiz", "practice"] }).notNull(),
     action: text("action", {
       enum: [
         "card_generate",
@@ -349,6 +522,7 @@ export const aiJobs = sqliteTable(
         "quiz_generate",
         "quiz_regenerate",
         "quiz_next_batch",
+        "practice_check",
       ],
     }).notNull(),
     status: text("status", {
@@ -500,7 +674,7 @@ export const agentSteps = sqliteTable(
       .notNull()
       .references(() => agentRuns.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
-    kind: text("kind", { enum: ["read", "navigation", "proposal"] }).notNull(),
+    kind: text("kind", { enum: ["read", "navigation", "proposal", "practice", "weakness"] }).notNull(),
     toolName: text("tool_name").notNull(),
     status: text("status", {
       enum: ["completed", "pending", "accepted", "dismissed", "failed"],
@@ -509,6 +683,10 @@ export const agentSteps = sqliteTable(
     navigationJson: text("navigation_json", { mode: "json" }).$type<AgentNavigation>(),
     proposalJson: text("proposal_json", { mode: "json" }).$type<AgentProposal>(),
     aiJobId: text("ai_job_id").references(() => aiJobs.id, { onDelete: "set null" }),
+    practiceSessionId: text("practice_session_id").references(() => practiceSessions.id, {
+      onDelete: "set null",
+    }),
+    weaknessId: text("weakness_id").references(() => weaknesses.id, { onDelete: "set null" }),
     createdAt: ts("created_at"),
     updatedAt: ts("updated_at"),
   },
@@ -549,6 +727,8 @@ export type ReviewEvent = typeof reviewEvents.$inferSelect;
 export type NewReviewEvent = typeof reviewEvents.$inferInsert;
 export type QuizSession = typeof quizSessions.$inferSelect;
 export type NewQuizSession = typeof quizSessions.$inferInsert;
+export type PracticeSession = typeof practiceSessions.$inferSelect;
+export type Weakness = typeof weaknesses.$inferSelect;
 export type AiJob = typeof aiJobs.$inferSelect;
 export type NewAiJob = typeof aiJobs.$inferInsert;
 export type AgentSession = typeof agentSessions.$inferSelect;

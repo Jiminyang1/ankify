@@ -29,6 +29,7 @@ import type {
   AgentSessionSnapshotDto,
   AgentStepDto,
   AgentStreamEvent,
+  DocEdit,
   PublicAiJobDto,
 } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -46,6 +47,9 @@ type AgentSidebarProps = {
   onClose: () => void;
   pageContext: AgentClientContext;
   embedded?: boolean;
+  /** A question to send as soon as the session is ready (see AgentShell.ask). */
+  queuedPrompt?: string | null;
+  onQueuedPromptSent?: () => void;
 };
 
 const ACTIVE_SESSION_KEY = "ankify:agent-session-id";
@@ -57,6 +61,8 @@ export function AgentSidebar({
   onClose,
   pageContext,
   embedded = false,
+  queuedPrompt = null,
+  onQueuedPromptSent,
 }: AgentSidebarProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -305,6 +311,8 @@ export function AgentSidebar({
       setPartialResponse("");
       return;
     }
+    // Practice progress is shown in the extension; the web sidebar only chats.
+    if (event.type === "practice") return;
     setSnapshot((current) =>
       current ? { ...current, runs: replaceById(current.runs, event.run) } : current,
     );
@@ -349,6 +357,12 @@ export function AgentSidebar({
       setActiveRunId(null);
     }
   }, [activeSessionId, handleStreamEvent, pageContext, persistedRunActive, streaming, t.agent.sendFailed]);
+
+  useEffect(() => {
+    if (!queuedPrompt || !open || !sessionsLoaded || loading || streaming || persistedRunActive) return;
+    onQueuedPromptSent?.();
+    queueMicrotask(() => void sendMessage(queuedPrompt));
+  }, [loading, onQueuedPromptSent, open, persistedRunActive, queuedPrompt, sendMessage, sessionsLoaded, streaming]);
 
   const createSession = useCallback(() => {
     if (streaming || persistedRunActive || !activeSessionId) return;
@@ -507,13 +521,17 @@ export function AgentSidebar({
         message?: string;
         error?: string;
       };
-      if (!response.ok || !body.step || !body.job) {
+      // A doc edit is applied at once and starts no job.
+      // Doc edits and new categories apply at once and start no job.
+      const docEdit = step.proposal?.action === "doc_edit" || step.proposal?.action === "weakness_category";
+      if (!response.ok || !body.step || (!docEdit && !body.job)) {
         throw new Error(body.message ?? body.error ?? t.agent.sendFailed);
       }
       setSnapshot((current) =>
         current ? { ...current, steps: replaceById(current.steps, body.step!) } : current,
       );
-      setJobs((current) => ({ ...current, [body.job!.id]: body.job! }));
+      if (body.job) setJobs((current) => ({ ...current, [body.job!.id]: body.job! }));
+      if (docEdit) router.refresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t.agent.sendFailed);
     } finally {
@@ -977,11 +995,30 @@ function AgentStep({
   const jobActive = job?.status === "running" || job?.status === "queued";
   const jobFailed =
     job?.status === "failed" || job?.status === "cancelled" || job?.status === "superseded";
+  const docEdit = step.proposal?.action === "doc_edit" ? step.proposal : null;
   if (step.kind === "read") {
     return (
       <div className="flex items-center gap-2 px-1 text-[11px] text-muted">
         <Check className="h-3 w-3 text-success" aria-hidden />
         <span>{toolLabel}</span>
+      </div>
+    );
+  }
+
+  if (step.kind === "weakness") {
+    return (
+      <div className="flex items-start gap-2 px-1 text-[11px] text-muted">
+        <CircleAlert className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
+        <span>{t.agent.weaknessNoted(step.summary)}</span>
+      </div>
+    );
+  }
+
+  if (step.kind === "practice") {
+    return (
+      <div className="flex items-center gap-2 px-1 text-[11px] text-muted">
+        <Check className="h-3 w-3 text-success" aria-hidden />
+        <span>{t.agent.practiceInPanel}</span>
       </div>
     );
   }
@@ -1011,10 +1048,13 @@ function AgentStep({
         {t.agent.proposalTitle} · {toolLabel}
       </div>
       <p className="mt-2 text-xs leading-relaxed text-muted">{step.summary}</p>
+      {docEdit && <DocEditPreview edit={docEdit.edit} reason={docEdit.reason} />}
       {step.status === "pending" && (
         <div className="mt-3 flex gap-2">
           <Button size="xs" variant="primary" onClick={onApprove} disabled={busy}>
-            {busy ? t.agent.confirming : t.agent.confirm}
+            {docEdit
+              ? busy ? t.agent.applying : t.agent.apply
+              : busy ? t.agent.confirming : t.agent.confirm}
           </Button>
           <Button size="xs" variant="ghost" onClick={onDismiss} disabled={busy}>
             {t.agent.notNow}
@@ -1031,9 +1071,9 @@ function AgentStep({
             ) : (
               <Check className="h-3 w-3 text-success" aria-hidden />
             )}
-            {job ? t.agent[job.status] : t.agent.accepted}
+            {job ? t.agent[job.status] : docEdit ? t.agent.applied : t.agent.accepted}
           </span>
-          {step.proposal && (
+          {step.proposal && "problemId" in step.proposal && (
             <Link
               href={`/problems/${step.proposal.problemId}`}
               className={buttonClasses({ variant: "ghost", size: "xs" })}
@@ -1046,6 +1086,28 @@ function AgentStep({
       {step.status === "dismissed" && (
         <p className="mt-3 text-xs text-muted">{t.agent.dismissed}</p>
       )}
+    </div>
+  );
+}
+
+/** What a doc-edit proposal would write, before the user applies it. */
+function DocEditPreview({ edit, reason }: { edit: DocEdit; reason: string }) {
+  const content =
+    edit.op === "append_section" || edit.op === "replace_section"
+      ? edit.markdown
+      : edit.op === "add_card"
+        ? `**${edit.prompt}**\n\n${edit.answer}`
+        : edit.op === "update_card"
+          ? [edit.prompt ? `**${edit.prompt}**` : null, edit.answer].filter(Boolean).join("\n\n")
+          : null;
+  return (
+    <div className="mt-2 space-y-2">
+      {content && (
+        <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs">
+          <Markdown className="break-words [&_pre]:max-w-full">{content}</Markdown>
+        </div>
+      )}
+      <p className="text-[11px] leading-relaxed text-muted">{reason}</p>
     </div>
   );
 }

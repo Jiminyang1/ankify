@@ -179,16 +179,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* A fixed-height column: top bar, scrolling content, docked Coach. */
 #root {
-  padding: 18px 20px 22px;
-  min-height: 100vh;
+  padding: 14px 20px 16px;
+  height: 100vh;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
 @media (min-width: 520px) {
   .textarea-card { min-height: 110px; }
-  #root { padding: 22px 24px 26px; }
+  #root { padding: 16px 28px 18px; }
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -295,6 +297,89 @@ label, button, th, .font-ui {
   gap: 10px;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+
+/* The expanded Coach covers the content; keep it mounted so a quiz in
+ * progress survives. */
+.popup-main.is-covered {
+  display: none;
+}
+
+/* ── top bar ── */
+
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.panel-bar-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.3;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.panel-bar-icon {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.panel-bar-icon:hover {
+  background: var(--subtle);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.panel-bar-count {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* When ThisProblemTab renders content, its top-level .stack should also flex-grow */
@@ -304,6 +389,11 @@ label, button, th, .font-ui {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* .popup-main scrolls, so its children keep their content height. */
+.popup-main > * {
+  flex-shrink: 0;
 }
 
 .popup-muted {
@@ -654,10 +744,20 @@ label, button, th, .font-ui {
   font-size: 0.88em;
 }
 
+/* Inline code is marked in the theme's gold (like Claude's red). Mixed toward
+ * the text color so it stays readable (4.5:1+) in the light theme too. */
 .popup-md-inline-code {
   border-radius: 4px;
-  background: var(--subtle);
-  padding: 1px 4px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: color-mix(in srgb, var(--accent) 60%, var(--fg));
+  padding: 1px 5px;
+}
+
+/* A fence without a language renders through the inline branch; keep it plain. */
+.popup-md pre .popup-md-inline-code {
+  background: none;
+  color: inherit;
+  padding: 0;
 }
 
 .popup-md-table-scroll {
@@ -2765,3 +2865,1155 @@ a:focus-visible,
 }
 
 .quick-rate { }
+
+/* ── Study Coach ── */
+
+/* Docked: a composer under the content. Expanded: covers the content. */
+.coach.coach-docked {
+  flex: none;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.coach.coach-expanded {
+  flex: 1;
+}
+
+.coach-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.coach-dock-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.coach-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.coach-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.coach-icon:hover:not(:disabled),
+.coach-icon[aria-expanded="true"] {
+  background: var(--subtle);
+  color: var(--fg);
+}
+
+.coach-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* The menu hangs from the Coach bar, so it never runs past the panel's edge. */
+.coach-history {
+  position: static;
+}
+
+.coach-history-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(300px, 100%);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.35), var(--shadow);
+}
+
+.coach-send-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* The menu hangs from the composer box and opens upward. */
+.coach-model-wrap {
+  position: static;
+  min-width: 0;
+}
+
+.coach-model-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.coach-model {
+  width: 30px;
+  height: 30px;
+}
+
+.coach-menu-heading {
+  margin: 0;
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.coach-history-item[aria-checked="true"] {
+  background: var(--accent-soft);
+}
+
+.coach-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 8px;
+}
+
+.coach-history-empty {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.coach-history-menu .coach-thinking {
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.coach-history-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coach-history-item:hover { background: var(--subtle); }
+
+.coach-history-item[aria-current="true"] {
+  background: var(--accent-soft);
+}
+
+.coach-history-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-history-date {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.coach-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-context {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.coach-context-title {
+  font-weight: 650;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-context-note {
+  color: var(--muted);
+}
+
+.coach-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-height: 160px;
+  overflow-y: auto;
+  padding: 4px 2px 8px;
+}
+
+.coach-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coach-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.coach-suggestion {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.coach-suggestion:hover:not(:disabled) {
+  background: var(--subtle);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+.coach-suggestion:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.coach-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coach-msg {
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.coach-msg-user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
+.coach-msg-assistant {
+  padding: 2px 2px 0;
+}
+
+.coach-thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.coach-step {
+  margin: 0;
+}
+
+.coach-step-read {
+  font-size: 11px;
+  color: var(--muted);
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.coach-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.coach-proposal p {
+  margin: 0;
+}
+
+.coach-proposal-summary {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.coach-proposal-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.coach-proposal-actions .btn-xs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.coach-run-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.coach-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+/* One rounded box: the text grows as you type; tools and send sit inside. */
+.coach-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.coach-composer-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.coach-composer-box:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.coach-input {
+  width: 100%;
+  min-height: 22px;
+  max-height: 168px;
+  padding: 2px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.coach-input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+
+/* The box shows focus; the bare textarea inside doesn't need its own ring. */
+.coach-input:focus-visible { outline: none; }
+
+.coach-composer-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.coach-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.coach-tool:hover:not(:disabled) {
+  background: var(--subtle);
+  color: var(--fg);
+}
+
+.coach-tool:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Keep Code, Practice, and Rate on one row in the narrowest panel. */
+@media (max-width: 359px) {
+  .coach-tools { gap: 3px; }
+  .coach-tool { gap: 4px; padding: 0 7px; }
+}
+
+.coach-tool[aria-pressed="true"],
+.coach-tool[aria-expanded="true"],
+.coach-tool-accent,
+.coach-tool-accent:hover:not(:disabled),
+.coach-tool[aria-pressed="true"]:hover:not(:disabled),
+.coach-tool[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-soft);
+}
+
+.coach-send {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, filter 0.15s ease;
+}
+
+.coach-send:hover:not(:disabled) { filter: brightness(0.95); }
+
+.coach-send:disabled {
+  background: var(--subtle);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.coach-rating {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ── Docs: the problem's Notes and Cards ── */
+
+.docs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docs-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--subtle);
+}
+
+.docs-switch button {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.docs-switch button[data-active="true"] {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.docs-switch button:disabled:not([data-active="true"]) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.docs-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.docs-actions .btn-xs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.docs-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docs-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Same type as the rendered markdown, so switching to edit doesn't jump. */
+.docs-editor {
+  min-height: 260px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.docs-body {
+  font-size: 13px;
+}
+
+.docs-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.docs-issue {
+  margin: 0;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.docs-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 10px;
+}
+
+.docs-card summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
+.docs-card[open] summary {
+  margin-bottom: 6px;
+}
+
+.docs-card-answer {
+  font-size: 13px;
+}
+
+/* Solutions: one block per approach, its points, and its cost. */
+.docs-solutions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docs-approach {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.docs-approach-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.docs-approach-mine {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.docs-approach-points {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.docs-approach-cost {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.coach-proposal-preview {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 8px 10px;
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* ── Practice (inside the Coach chat) ── */
+
+.practice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--surface);
+}
+
+.practice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.practice-progress {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.practice-prompt {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.practice-answer {
+  align-self: stretch;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--subtle);
+  font-size: 13px;
+}
+
+.practice-explanation {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.practice-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.practice-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+}
+
+.practice-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.practice-choice:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.practice-choice:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.practice-choice-letter {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.practice-verdict {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.practice-verdict.is-correct { color: var(--success); }
+.practice-verdict.is-wrong { color: var(--danger); }
+
+.practice-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.practice-summary p { margin: 0; }
+
+.practice-summary .rate-row { align-self: stretch; }
+
+.practice-score {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* On a problem the chat is the main area; the strip above it only holds
+ * status (loading, not in deck, pinned from another tab). */
+.popup-main.is-strip {
+  flex: none;
+  overflow: visible;
+}
+
+.popup-main.is-strip:empty {
+  display: none;
+}
+
+/* ── Weak spots (pinned above a problem's chat) ── */
+
+.weak-spots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface));
+}
+
+.weak-spots-empty {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weak-spots-empty p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.weak-spots-empty .btn-xs {
+  flex-shrink: 0;
+}
+
+.weak-spots-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.weak-spots-count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--warning);
+}
+
+.weak-spots-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weak-spot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "category remove" "detail remove";
+  column-gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.weak-spot-category {
+  grid-area: category;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.weak-spot-detail {
+  grid-area: detail;
+  color: var(--fg);
+}
+
+.weak-spot-remove {
+  grid-area: remove;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.weak-spot-remove:hover {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--subtle);
+}
+
+.coach-step-weakness {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--warning);
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--warning) 60%, var(--border));
+}
+
+/* ── Talk-through practice (pinned above the chat) ── */
+
+.practice-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.practice-target {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.practice-target-mark {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.practice-target[data-grade="correct"] .practice-target-mark { background: var(--success); border-color: var(--success); }
+.practice-target[data-grade="partial"] .practice-target-mark { background: var(--warning); border-color: var(--warning); }
+.practice-target[data-grade="missed"] .practice-target-mark { background: var(--danger); border-color: var(--danger); }
+
+.practice-target-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.practice-target-kind {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.practice-target-label {
+  color: var(--muted);
+}
+
+.practice-target-grade {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.practice-head-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.practice-end {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.practice-end:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: var(--surface);
+}
+
+.practice-end:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.practice-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.practice-confirm p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.practice-target[data-grade="skipped"] .practice-target-mark {
+  border-style: dashed;
+}
+
+.practice-target[data-grade="skipped"] .practice-target-text {
+  opacity: 0.6;
+}
+
+.practice-talk-hint {
+  margin: 0;
+  font-size: 11px;
+}
+
+/* A settled question's key points, each said or not. */
+.practice-points {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.practice-points-approach {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.practice-point {
+  display: flex;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.practice-point-mark {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--danger);
+}
+
+.practice-point[data-covered="true"] .practice-point-mark {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.practice-point[data-covered="false"] {
+  color: var(--muted);
+}
+
+.practice-dispute {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.practice-dispute:hover:not(:disabled) { text-decoration: underline; }
+.practice-dispute:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* A talk-through as a tray on top of the composer: inset, rounded on top,
+ * tucked under the box so the two read as one control. */
+.practice-tray {
+  display: flex;
+  flex-direction: column;
+  /* -18px = the composer's 8px gap plus 10px tucked under the box. */
+  margin: 0 12px -18px;
+  padding-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  background: var(--accent-soft);
+}
+
+/* The composer box sits over the tray's lower edge. */
+.practice-tray + .coach-composer-box {
+  position: relative;
+  z-index: 1;
+}
+
+.practice-tray-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 0 4px;
+}
+
+.practice-tray-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-align: left;
+}
+
+.practice-tray-toggle:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+.practice-tray-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.practice-tray[data-open="true"] .practice-tray-chevron { transform: rotate(180deg); }
+
+.practice-tray-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.practice-tray-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.practice-tray-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.practice-tray-dot[data-grade="correct"] { background: var(--success); border-color: var(--success); }
+.practice-tray-dot[data-grade="partial"] { background: var(--warning); border-color: var(--warning); }
+.practice-tray-dot[data-grade="missed"] { background: var(--danger); border-color: var(--danger); }
+.practice-tray-dot[data-grade="skipped"] { border-style: dashed; }
+/* Still being asked about: half filled in the accent. */
+.practice-tray-dot[data-grade="probing"],
+.practice-target[data-grade="probing"] .practice-target-mark {
+  border-color: var(--accent);
+  background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+}
+
+.practice-tray-toggle .practice-progress {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-tray-close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.practice-tray-close:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
+
+.practice-tray-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 6px 14px 8px;
+}

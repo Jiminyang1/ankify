@@ -11,26 +11,39 @@ export type ContentRequest =
   | { type: "fetch_submissions"; submissions: SubmissionSummary[] }
   /** Popup's "Sync now": read the solved list and hand it to the background. */
   | { type: "sync_solved_now" }
+  /** Side panel's Study Coach asks for the code in LeetCode's editor. */
+  | { type: "read_editor" }
   | { type: "ping" };
 
 export type ContentResponse =
   | { type: "captured"; data: CaptureProblemInput }
   | { type: "submissions"; data: CaptureSubmissionInput[] }
   | { type: "solved_synced"; result: SolvedSyncState }
+  | { type: "editor"; editor: EditorSnapshot | null; reason?: EditorReadFailure }
   | { type: "error"; message: string }
   | { type: "pong" };
+
+/** Broadcast by the background to extension pages (the side panel). */
+export type PanelEvent = { type: "problem_collected"; slug: string };
+
+/** What LeetCode's code editor holds right now. */
+export type EditorSnapshot = { language: string; code: string };
+/** Why the panel got no code: the tab has no content script (opened before
+ *  the extension loaded), the page script didn't answer, LeetCode's Monaco
+ *  isn't there, or no editor holds code. */
+export type EditorReadFailure = "no_receiver" | "no_page_script" | "no_monaco" | "no_code_model";
 
 /** Messages handled by the background service worker. */
 export type BackgroundRequest =
   /** Content script reports the problem page it's on and its recent
-   *  submissions. Background badges uncaptured solves, auto-captures new
-   *  Accepted problems, and syncs submissions ankify is missing. */
+   *  submissions. Background badges uncaptured solves, collects a problem on
+   *  its first new submission, and syncs submissions ankify is missing. */
   | {
       type: "problem_page_check";
       slug: string | null;
       submissions: SubmissionSummary[];
-      /** Accepted submissions made while this page was open (or just before). */
-      newAcceptedIds: string[];
+      /** Submissions (any verdict) made while this page was open, or just before. */
+      newSubmissionIds: string[];
     }
   /** Popup reports a successful capture so matching tabs lose their badge. */
   | { type: "capture_badge_captured"; slug: string }
@@ -54,6 +67,6 @@ export interface ExtSettings {
   apiBaseUrl: string;
   language: "en" | "zh";
   resetCodeOnProblemOpen: boolean;
-  /** Capture a problem automatically when a new Accepted lands on it. */
+  /** Collect a problem automatically on its first new submission. */
   autoCapture: boolean;
 }

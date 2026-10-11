@@ -40,6 +40,7 @@ export const aiJobActionEnum = z.enum([
   "quiz_generate",
   "quiz_regenerate",
   "quiz_next_batch",
+  "practice_check",
 ]);
 
 export const agentPageEnum = z.enum([
@@ -50,6 +51,8 @@ export const agentPageEnum = z.enum([
   "analysis",
   "settings",
   "extension",
+  "profile",
+  "leetcode",
 ]);
 export const agentPanelEnum = z.enum(["quiz", "cards", "submissions", "notes", "overview"]);
 export const agentRunStatusEnum = z.enum(["running", "succeeded", "failed"]);
@@ -61,14 +64,76 @@ export const agentStepStatusEnum = z.enum([
   "failed",
 ]);
 
+/** The LeetCode problem open next to the extension's side panel. The editor
+ *  snapshot is what the user is writing right now; only the newest turn keeps
+ *  it (see getAgentModelMessages). */
+export const agentLeetcodeContextSchema = z
+  .object({
+    slug: z.string().min(1).max(256),
+    title: z.string().min(1).max(512).optional(),
+    editor: z
+      .object({
+        language: z.string().min(1).max(64),
+        code: z.string().max(20_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type AgentLeetcodeContext = z.infer<typeof agentLeetcodeContextSchema>;
+
 export const agentPageContextSchema = z
   .object({
     page: agentPageEnum,
     activePanel: agentPanelEnum,
     problemId: z.string().min(1).max(64).nullable(),
+    leetcode: agentLeetcodeContextSchema.optional(),
+    /** Set by the server from a practice_completed trigger, never by clients. */
+    practice: z
+      .object({
+        practiceSessionId: z.string().min(1).max(64),
+        score: z.number().min(0).max(1),
+        suggestedRating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+        missed: z.array(z.string().max(4_000)).max(10),
+      })
+      .strict()
+      .optional(),
+    /** Set by the server while a talk-through practice session is active on
+     *  this problem: what to ask about and what's been graded. */
+    practiceActive: z
+      .object({
+        practiceSessionId: z.string().min(1).max(64),
+        targets: z
+          .array(
+            z
+              .object({
+                id: z.string().max(80),
+                kind: z.enum(["weakness", "category", "core"]),
+                category: z.string().max(40).nullable(),
+                label: z.string().max(400),
+                grade: z.enum(["correct", "partial", "missed"]).nullable(),
+                followUps: z.number().int().min(0).max(5).optional(),
+              })
+              .strict(),
+          )
+          .max(5),
+        /** What the Coach does with this reply, decided by the server from
+         *  the judge's reading (version 3). Plain text. */
+        instruction: z.string().max(6_000).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type AgentPageContext = z.infer<typeof agentPageContextSchema>;
+
+export const agentModelChoiceSchema = z
+  .object({
+    id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/),
+    reasoningLevel: z.string().regex(/^[a-z]{1,16}$/).optional(),
+  })
+  .strict();
+export type AgentModelChoice = z.infer<typeof agentModelChoiceSchema>;
 
 export const agentTurnRequestSchema = z
   .object({
@@ -76,6 +141,22 @@ export const agentTurnRequestSchema = z
     requestId: z.string().uuid(),
     message: z.string().trim().min(1).max(12_000),
     context: agentPageContextSchema,
+    /** Instead of typed text: a practice session just finished; the server
+     *  loads its results into the turn for the debrief. */
+    trigger: z
+      .object({
+        type: z.enum(["practice_completed", "practice_start", "analyze_attempts"]),
+        /** Required for the practice triggers. */
+        practiceSessionId: z.string().min(1).max(64).optional(),
+      })
+      .strict()
+      .refine((value) => value.type === "analyze_attempts" || Boolean(value.practiceSessionId), {
+        message: "practiceSessionId is required",
+      })
+      .optional(),
+    /** A model and reasoning level for this turn instead of the Settings ones.
+     *  Only honored with the user's own key, on the same provider. */
+    model: agentModelChoiceSchema.optional(),
   })
   .strict();
 export type AgentTurnRequestInput = z.infer<typeof agentTurnRequestSchema>;
@@ -86,6 +167,49 @@ export const agentSessionPatchSchema = z
   })
   .strict();
 export type AgentSessionPatchInput = z.infer<typeof agentSessionPatchSchema>;
+
+/* ── Problem docs (docs/coach-practice.md) ── */
+
+export const problemDocTargetEnum = z.enum(["notes", "cards", "solutions"]);
+export type ProblemDocTarget = z.infer<typeof problemDocTargetEnum>;
+
+const docSection = z.string().trim().min(1).max(60);
+const docMarkdown = z.string().max(20_000);
+
+/** One edit to a problem's Notes or Cards doc. The op implies the target. */
+export const docEditSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("append_section"), section: docSection, markdown: docMarkdown.min(1) }).strict(),
+  z.object({ op: z.literal("replace_section"), section: docSection, markdown: docMarkdown }).strict(),
+  z.object({ op: z.literal("add_card"), prompt: z.string().trim().min(1).max(300), answer: docMarkdown.min(1) }).strict(),
+  z
+    .object({
+      op: z.literal("update_card"),
+      key: z.string().regex(/^[0-9a-f]{16}$/),
+      prompt: z.string().trim().min(1).max(300).optional(),
+      answer: docMarkdown.min(1).optional(),
+    })
+    .strict(),
+  z.object({ op: z.literal("remove_card"), key: z.string().regex(/^[0-9a-f]{16}$/) }).strict(),
+]);
+export type DocEdit = z.infer<typeof docEditSchema>;
+
+export function docEditTarget(edit: DocEdit): ProblemDocTarget {
+  return edit.op === "append_section" || edit.op === "replace_section" ? "notes" : "cards";
+}
+
+/** PATCH /api/weaknesses/:id: the user removes, resolves, or reopens one. */
+export const weaknessPatchSchema = z
+  .object({ status: z.enum(["active", "resolved", "dismissed"]) })
+  .strict();
+
+/** PUT /api/problems/:id/docs: the user's own edit of one doc. */
+export const problemDocPutSchema = z
+  .object({
+    target: problemDocTargetEnum,
+    markdown: z.string().max(50_000),
+    expectedVersion: z.number().int().min(0),
+  })
+  .strict();
 
 export const agentProposalSchema = z.discriminatedUnion("action", [
   z.object({
@@ -99,6 +223,23 @@ export const agentProposalSchema = z.discriminatedUnion("action", [
     requestId: z.string().uuid(),
     problemId: z.string().min(1).max(64),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
+    reason: z.string().min(1).max(500),
+  }),
+  /** A new weakness category; added to the user's list on approval. */
+  z.object({
+    action: z.literal("weakness_category"),
+    key: z.string().regex(/^[a-z][a-z0-9_]{2,39}$/),
+    name: z.string().trim().min(1).max(60),
+    description: z.string().trim().min(1).max(200),
+    reason: z.string().min(1).max(500),
+  }),
+  /** An edit to the problem's Notes or Cards doc, applied on approval. */
+  z.object({
+    action: z.literal("doc_edit"),
+    problemId: z.string().min(1).max(64),
+    edit: docEditSchema,
+    /** The doc version the edit was checked against. */
+    baseVersion: z.number().int().min(0),
     reason: z.string().min(1).max(500),
   }),
 ]);
@@ -139,6 +280,10 @@ export const captureProblemSchema = z.object({
   similarSlugs: z.array(z.string().max(256)).max(64).default([]),
   notes: z.string().max(50_000).optional(),
   submissions: z.array(captureSubmissionSchema).max(20).default([]),
+  /** For a problem new to the deck: "next_day" when the extension collects it
+   *  right after the user worked on it, so it isn't due at once. Ignored for
+   *  problems already in the deck. */
+  firstReview: z.enum(["now", "next_day"]).optional(),
 });
 export type CaptureProblemInput = z.infer<typeof captureProblemSchema>;
 
@@ -229,6 +374,55 @@ export const userCardManualCreateSchema = z.object({
 
 export type UserCardManualCreateInput = z.infer<typeof userCardManualCreateSchema>;
 
+/* ── Practice (docs/coach-practice.md) ── */
+
+export const practiceSourceKindEnum = z.enum(["statement", "notes", "card", "submission"]);
+
+/** A generated check question as stored: the server keeps answerIndex and
+ *  only reveals it after the user answers. */
+export const practiceCheckItemSchema = z.object({
+  id: z.string().min(1).max(32),
+  question: z.string().min(1).max(4_000),
+  choices: z.array(z.string().min(1).max(2_000)).length(4),
+  answerIndex: z.number().int().min(0).max(3),
+  explanation: z.string().min(1).max(4_000),
+  scope: quizItemScopeEnum,
+  source: z.object({ kind: practiceSourceKindEnum, ref: z.string().max(200).nullable() }),
+});
+export type PracticeCheckItem = z.infer<typeof practiceCheckItemSchema>;
+
+/** What the model returns for check questions. The correct option is named
+ *  by text (mapped to an index server-side), and every item cites a source. */
+export const practiceCheckDraftSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        question: z.string().min(1).max(4_000),
+        choices: z.array(z.string().min(1).max(2_000)).length(4),
+        correctAnswer: z.string().min(1).max(2_000),
+        explanation: z.string().min(1).max(4_000),
+        scope: quizItemScopeEnum,
+        sourceKind: practiceSourceKindEnum,
+        sourceRef: z
+          .string()
+          .max(200)
+          .describe("Notes section heading, card key, or submission id; empty for the statement"),
+      }),
+    )
+    .length(3),
+});
+export type PracticeCheckDraft = z.infer<typeof practiceCheckDraftSchema>;
+
+/** POST /api/practice/:id/dispute: "I did say that" on a settled target. */
+export const practiceDisputeSchema = z.object({ targetId: z.string().min(1).max(80) }).strict();
+
+export const practiceRecallSchema = z
+  .object({ key: z.string().regex(/^[0-9a-f]{16}$/), result: z.enum(["got_it", "missed"]) })
+  .strict();
+export const practiceCheckAnswerSchema = z
+  .object({ itemId: z.string().min(1).max(32), choice: z.number().int().min(0).max(3) })
+  .strict();
+
 /** Durable async generation command shared by the web app and extension. */
 export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
   z.object({
@@ -251,6 +445,12 @@ export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
     problemId: z.string().min(1).max(64),
     requestId: z.string().uuid(),
     expectedQuizSessionId: z.string().min(1).max(64).nullable(),
+  }),
+  z.object({
+    action: z.literal("practice_check"),
+    problemId: z.string().min(1).max(64),
+    requestId: z.string().uuid(),
+    practiceSessionId: z.string().min(1).max(64),
   }),
 ]);
 export type AiJobCreateRequestInput = z.infer<typeof aiJobCreateRequestSchema>;

@@ -45,6 +45,14 @@ export function classifyAiJobError(error: unknown): AiJobExecutionError {
   ) {
     return new AiJobExecutionError(message, message.replaceAll("_", " "), false);
   }
+  if (message === "practice_check_invalid") {
+    // generatePracticeCheck already retried with feedback; another queue
+    // retry would only keep the user waiting.
+    return new AiJobExecutionError(message, "AI couldn't write valid questions for this problem.", false);
+  }
+  if (message === "practice_session_not_found") {
+    return new AiJobExecutionError(message, "Practice session not found.", false);
+  }
   if (
     message.startsWith("quiz_correct_answer_not_in_choices") ||
     message === "quiz_scope_coverage_failed"

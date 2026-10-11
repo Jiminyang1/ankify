@@ -9,6 +9,17 @@ import type {
   QuizItem,
 } from "./schemas";
 
+/** What the Coach's model picker offers. With the server's starter key the
+ *  model is fixed, so `models` is empty. */
+export type CoachModelsDto = {
+  source: "user" | "starter";
+  provider: string;
+  /** The Settings model and level, used when the panel picks nothing. */
+  defaultModel: string;
+  defaultReasoningLevel: string;
+  models: { id: string; reasoningLevels: string[] }[];
+};
+
 export type AgentSessionDto = {
   id: string;
   title: string | null;
@@ -47,12 +58,16 @@ export type AgentStepDto = {
   id: string;
   runId: string;
   sequence: number;
-  kind: "read" | "navigation" | "proposal";
+  kind: "read" | "navigation" | "proposal" | "practice" | "weakness";
   toolName: string;
   status: "completed" | "pending" | "accepted" | "dismissed" | "failed";
   summary: string;
   navigation: AgentNavigation | null;
   proposal: AgentProposal | null;
+  /** Set on `practice` steps: the session the Coach started. */
+  practiceSessionId: string | null;
+  /** Set on `weakness` steps: the weakness the Coach recorded. */
+  weaknessId: string | null;
   aiJobId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -75,6 +90,8 @@ export type AgentStreamEvent =
   | { type: "text_delta"; delta: string }
   | { type: "step"; step: AgentStepDto }
   | { type: "done"; session: AgentSessionDto; message: AgentMessageDto; run: AgentRunDto }
+  /** A practice reply was judged; the session's progress before the Coach replies. */
+  | { type: "practice"; session: PracticeSessionDto }
   | { type: "error"; run: AgentRunDto; message: string };
 
 export type CardDto = {
@@ -115,7 +132,7 @@ export type QuizSessionDto = {
 export type PublicAiJobDto = {
   id: string;
   problemId: string;
-  kind: "card" | "quiz";
+  kind: "card" | "quiz" | "practice";
   action: AiJobCreateRequestInput["action"];
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "superseded";
   attempt: number;
@@ -286,4 +303,113 @@ export type LeetcodeAccountDto = {
   linkedAt: string;
   fetchedAt: string | null;
   profile: LeetcodeProfileDto | null;
+};
+
+/** A problem's Notes, Cards, and Solutions docs (docs/coach-practice.md). */
+export type ProblemDocsDto = {
+  problemId: string;
+  notes: { markdown: string; version: number; sections: string[] };
+  solutions: {
+    markdown: string;
+    version: number;
+    approaches: { id: string; name: string; mine: boolean; points: string[]; complexity: string | null }[];
+    issues: (
+      | { kind: "no_points"; approach: string }
+      | { kind: "too_many_points"; approach: string; limit: number }
+      | { kind: "too_many_approaches"; limit: number }
+      | { kind: "too_long"; limit: number }
+    )[];
+  };
+  cards: {
+    markdown: string;
+    version: number;
+    cards: { key: string; prompt: string; answer: string }[];
+    issues: (
+      | { kind: "empty_answer"; prompt: string }
+      | { kind: "duplicate_prompt"; prompt: string }
+      | { kind: "too_many_cards"; limit: number }
+      | { kind: "too_long"; limit: number }
+    )[];
+  };
+};
+
+/** A practice session as the client sees it: check answers stay hidden until
+ *  each question is answered. */
+export type PracticeSessionDto = {
+  id: string;
+  problemId: string;
+  status: "active" | "completed" | "abandoned";
+  mode: "recall_check" | "talk";
+  /** Ended by the user before everything was answered. */
+  endedEarly: boolean;
+  /** Talk-through targets with their grades (mode "talk"). */
+  targets: {
+    id: string;
+    kind: "weakness" | "category" | "core";
+    category: string | null;
+    label: string;
+    grade: { grade: "correct" | "partial" | "missed"; reason: string } | null;
+    /** Times the Coach asked again on it (follow-ups, hints). */
+    nudges: number;
+    /** Judged against a reference (version 3); false when the Coach grades. */
+    judged: boolean;
+    /** Reference points covered so far, while it's open. */
+    progress: { covered: number; total: number } | null;
+    /** How it was settled: the help it needed caps the grade. */
+    settledBy: "complete" | "new_approach" | "gave_up" | "not_recalled" | null;
+    help: 0 | 1 | 2;
+    /** Once settled: the approach it was judged against and each point. */
+    review: { approach: string | null; points: { text: string; covered: boolean }[] } | null;
+    /** "I did say that" can re-judge it (once). */
+    canDispute: boolean;
+  }[];
+  recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
+  check: {
+    status: "pending" | "ready" | "failed" | "skipped";
+    /** Why there are no questions, when failed or skipped. */
+    message: string | null;
+    items: {
+      id: string;
+      question: string;
+      choices: string[];
+      scope: string;
+      source: { kind: "statement" | "notes" | "card" | "submission"; ref: string | null };
+      answer: { choice: number; correct: boolean; answerIndex: number; explanation: string } | null;
+    }[];
+  };
+  score: number | null;
+  suggestedRating: 1 | 2 | 3 | 4 | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+/** One specific mistake on a problem (docs/coach-practice.md, version 2). */
+export type WeaknessDto = {
+  id: string;
+  problemId: string;
+  category: string;
+  /** Display name: built-in names are localized on the client; custom ones come from here. */
+  categoryName: string | null;
+  detail: string;
+  evidence: { kind: "submission" | "practice" | "conversation"; ref: string; note?: string }[];
+  status: "active" | "resolved" | "dismissed";
+  hitCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  resolvedAt: string | null;
+};
+
+/** Weaknesses across problems, by category. */
+export type WeaknessProfileDto = {
+  categories: {
+    category: string;
+    categoryName: string | null;
+    active: number;
+    resolved: number;
+    hits: number;
+    recent: number;
+    recentlyResolved: number;
+    problems: { id: string; title: string; leetcodeSlug: string }[];
+  }[];
+  customCategories: { key: string; name: string; description: string }[];
 };

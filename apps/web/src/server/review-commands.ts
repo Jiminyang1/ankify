@@ -6,7 +6,7 @@ import type {
 } from "@ankify/contracts";
 import { rate, retrievability, type FsrsCardState } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { markFirstReview } from "./onboarding";
@@ -113,7 +113,9 @@ export async function rateProblemReview(
         fsrsState: next.state,
         fsrsLastReview: next.lastReview,
         updatedAt: now,
-        ...(input.notes !== undefined ? { notes: input.notes } : {}),
+        ...(input.notes !== undefined
+          ? { notes: input.notes, notesVersion: sql`${schema.problems.notesVersion} + 1` }
+          : {}),
       })
       .where(
         and(

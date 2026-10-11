@@ -1,3 +1,4 @@
+import { applyCardsEdit } from "@ankify/core";
 import type { CardDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, sql } from "drizzle-orm";
@@ -200,6 +201,9 @@ export async function saveQuizItemAsCard(
         eventType: "card_created",
         metadata: { source: "quiz", quizSessionId: session.id, quizItemId: item.id },
       });
+      // The extension reads cards from the problem's Cards doc; the web review
+      // page still reads rows. Write both until web review moves to the doc.
+      await appendToCardsDoc(tx, userId, problemId, item.question, answer);
       return { ok: true, card: inserted };
     }
 
@@ -211,4 +215,33 @@ export async function saveQuizItemAsCard(
     if (!idempotentCard) return { ok: false, error: "card_id_collision" };
     return { ok: true, card: idempotentCard };
   });
+}
+
+/** Adds one card to the problem's Cards doc. A prompt the doc can't hold (a
+ *  duplicate, too long, or a full doc) is skipped: the card row still exists. */
+async function appendToCardsDoc(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  userId: string,
+  problemId: string,
+  prompt: string,
+  answer: string,
+) {
+  const [problem] = await tx
+    .select({ cardsMd: schema.problems.cardsMd, cardsVersion: schema.problems.cardsVersion })
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, problemId), eq(schema.problems.userId, userId)))
+    .limit(1);
+  if (!problem) return;
+  const result = applyCardsEdit(problem.cardsMd, { op: "add_card", prompt, answer });
+  if (!result.ok) return;
+  await tx
+    .update(schema.problems)
+    .set({ cardsMd: result.markdown, cardsVersion: problem.cardsVersion + 1, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.problems.id, problemId),
+        eq(schema.problems.userId, userId),
+        eq(schema.problems.cardsVersion, problem.cardsVersion),
+      ),
+    );
 }

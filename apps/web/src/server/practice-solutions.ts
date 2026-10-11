@@ -1,0 +1,200 @@
+import { generateText, NoObjectGeneratedError, Output, type LanguageModel } from "ai";
+import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
+import { leetcodeTagName, parseSolutions, serializeSolutions, type SolutionApproach } from "@ankify/core";
+import { getDb, schema } from "@ankify/db";
+import { clip, plainText } from "@/server/ai-generation/practice-check";
+import { aiCallOptions } from "@/server/ai/call-options";
+import { getGenerationSettings, type AiRuntimeSettings } from "@/server/settings";
+
+/**
+ * The Solutions doc (docs/coach-practice.md, version 3): what talk-through
+ * practice is judged against. Written once, on the first practice of a
+ * problem, from the user's Accepted code, their Notes, and the problem, and
+ * saved directly because the judge needs it right away. After that it's the
+ * user's: they read and edit it behind the book icon.
+ */
+
+const TIMEOUT_MS = 90_000;
+const STATEMENT_MAX = 2_500;
+const CODE_MAX = 3_000;
+const NOTES_MAX = 2_000;
+
+// Lenient on purpose: an extra point or approach is trimmed below rather than
+// failing the whole doc.
+const solutionsSchema = z.object({
+  approaches: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(80),
+        mine: z.boolean(),
+        points: z.array(z.string().min(1).max(400)).min(1).max(10),
+        complexity: z.string().min(1).max(200),
+      }),
+    )
+    .min(1)
+    .max(6),
+});
+const MAX_APPROACHES = 3;
+const MAX_POINTS = 5;
+
+/** The problem's Solutions doc, written first if it's empty. Returns no
+ *  approaches when there's none and it couldn't be written; the user's own
+ *  text is never overwritten, even when it doesn't parse. */
+export async function ensureSolutionsDoc(args: {
+  userId: string;
+  problemId: string;
+  model: LanguageModel;
+  settings: AiRuntimeSettings;
+  abortSignal?: AbortSignal;
+}): Promise<SolutionApproach[]> {
+  const db = getDb();
+  const [problem] = await db
+    .select({
+      title: schema.problems.title,
+      difficulty: schema.problems.difficulty,
+      descriptionMd: schema.problems.descriptionMd,
+      topicTags: schema.problems.topicTags,
+      notes: schema.problems.notes,
+      solutionsMd: schema.problems.solutionsMd,
+      solutionsVersion: schema.problems.solutionsVersion,
+    })
+    .from(schema.problems)
+    .where(and(eq(schema.problems.id, args.problemId), eq(schema.problems.userId, args.userId)))
+    .limit(1);
+  if (!problem) return [];
+  if (problem.solutionsMd?.trim()) return parseSolutions(problem.solutionsMd).approaches;
+
+  const [accepted, generation] = await Promise.all([
+    db
+      .select({ code: schema.submissions.code, language: schema.submissions.language })
+      .from(schema.submissions)
+      .where(
+        and(
+          eq(schema.submissions.userId, args.userId),
+          eq(schema.submissions.problemId, args.problemId),
+          eq(schema.submissions.status, "Accepted"),
+        ),
+      )
+      .orderBy(desc(schema.submissions.submittedAt))
+      .limit(2),
+    getGenerationSettings(args.userId),
+  ]);
+  const approaches = await generateSolutions({
+    model: args.model,
+    settings: args.settings,
+    abortSignal: args.abortSignal,
+    language: generation.language === "zh" ? "zh" : "en",
+    problem: {
+      title: problem.title,
+      difficulty: problem.difficulty,
+      statement: plainText(problem.descriptionMd),
+      tags: problem.topicTags.map(leetcodeTagName),
+      notes: problem.notes,
+    },
+    accepted,
+  });
+  const markdown = serializeSolutions(approaches, generation.language === "zh" ? "zh" : "en");
+  const updated = await db
+    .update(schema.problems)
+    .set({ solutionsMd: markdown, solutionsVersion: problem.solutionsVersion + 1, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.problems.id, args.problemId),
+        eq(schema.problems.userId, args.userId),
+        eq(schema.problems.solutionsVersion, problem.solutionsVersion),
+      ),
+    )
+    .returning({ id: schema.problems.id });
+  if (updated.length === 0) {
+    // Written meanwhile (another tab, or the user): use that one.
+    const [current] = await db
+      .select({ solutionsMd: schema.problems.solutionsMd })
+      .from(schema.problems)
+      .where(and(eq(schema.problems.id, args.problemId), eq(schema.problems.userId, args.userId)))
+      .limit(1);
+    return parseSolutions(current?.solutionsMd).approaches;
+  }
+  return parseSolutions(markdown).approaches;
+}
+
+/** Writes the approaches for one problem (no saving). */
+export async function generateSolutions(args: {
+  model: LanguageModel;
+  settings: AiRuntimeSettings;
+  abortSignal?: AbortSignal;
+  language: "en" | "zh";
+  problem: { title: string; difficulty: string; statement: string; tags: string[]; notes: string | null };
+  accepted: { code: string; language: string }[];
+}): Promise<{ name: string; mine: boolean; points: string[]; complexity: string }[]> {
+  const { problem, accepted } = args;
+  const language = args.language === "zh" ? "Simplified Chinese" : "English";
+
+  const prompt = [
+    `# Problem: ${problem.title} (${problem.difficulty})`,
+    `Topics: ${problem.tags.join(", ") || "none"}`,
+    "",
+    "## Statement",
+    clip(problem.statement, STATEMENT_MAX) || "(not captured; use what you know about this LeetCode problem)",
+    "",
+    "## The learner's Notes",
+    clip(problem.notes, NOTES_MAX) || "(empty)",
+    "",
+    "## The learner's Accepted submissions, newest first",
+    accepted.length
+      ? accepted.map((submission) => `\`\`\`${submission.language}\n${clip(submission.code, CODE_MAX)}\n\`\`\``).join("\n\n")
+      : "(none)",
+    "",
+    "Return the JSON object now.",
+  ].join("\n");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const abort = () => controller.abort();
+  args.abortSignal?.addEventListener("abort", abort, { once: true });
+  const attempt = async () => {
+    const { output } = await generateText({
+      model: args.model,
+      output: Output.object({ schema: solutionsSchema }),
+      system: `You write the reference a learner's spoken review of one LeetCode problem is checked against. The learner will explain, in their own words, how they'd solve it, and each key point you write is checked as said or not said. A point that's too specific fails learners who clearly know the solution.
+
+Return one JSON object of this shape and nothing else:
+{"approaches": [{"name": "...", "mine": true, "points": ["...", "..."], "complexity": "..."}]}
+
+- First approach: the one in the learner's Accepted code (mine: true). If they have no Accepted submission, mine is false everywhere.
+- Then at most 2 genuinely different approaches that pass the constraints. Variants of one algorithm that differ only in details (boundary conventions, iterative vs recursive, a library container) are the same approach: don't list them separately. Leave out brute force that would time out. One approach is fine.
+- name: 2 to 5 words, e.g. "Two pointers", "Bottom-up DP".
+- points: 2 to 4 per approach (5 only for a genuinely intricate one), each one idea in one plain sentence:
+  1. The first point is the core idea, the thing that makes the approach work, the way someone would say it out loud ("compare with the middle element and throw away the half that can't hold the target").
+  2. Then what is tracked or defined, the order or transition, and the one case that's easy to get wrong, if there is one.
+  Say ideas, not syntax: no code expressions or exact loop conditions unless that specific formula is itself the insight. Leave out what any working solution does anyway (returning the result or -1, output order, inputs the problem guarantees, naming), details of one programming language (falsy checks, integer types, library calls), and implementation advice (recursion depth, sentinel nodes): those belong in Notes. Someone who explains the approach well should naturally say every point.
+- complexity: time and space, e.g. "O(n) time, O(1) space".
+- Write names and points in ${language}. Keep code identifiers and complexity notation as they are.`,
+      prompt,
+      ...aiCallOptions(args.settings, "user"),
+      abortSignal: controller.signal,
+    });
+    return output;
+  };
+  let output: z.infer<typeof solutionsSchema>;
+  try {
+    try {
+      output = await attempt();
+    } catch (error) {
+      // Without native structured output the JSON sometimes doesn't fit; one
+      // more try is cheaper than a practice without a reference.
+      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      output = await attempt();
+    }
+  } finally {
+    clearTimeout(timer);
+    args.abortSignal?.removeEventListener("abort", abort);
+  }
+
+  return output.approaches.slice(0, MAX_APPROACHES).map((approach, index) => ({
+    ...approach,
+    points: approach.points.slice(0, MAX_POINTS),
+    // Only the first can be theirs, and only with an Accepted submission.
+    mine: approach.mine && index === 0 && accepted.length > 0,
+  }));
+}

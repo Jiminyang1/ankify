@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@ankify/contracts": "workspace:*",
+    "@ankify/core": "workspace:*",
     "@libsql/client": "^0.17.4",
     "drizzle-orm": "^0.45.2"
   },

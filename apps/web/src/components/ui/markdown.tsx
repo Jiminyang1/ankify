@@ -38,7 +38,7 @@ const components: Components = {
     const isInline = !className;
     if (isInline) {
       return (
-        <code className="rounded bg-subtle px-1 py-0.5 font-mono text-[0.85em]" {...props}>
+        <code className="md-inline-code rounded px-1 py-0.5 font-mono text-[0.85em]" {...props}>
           {children}
         </code>
       );

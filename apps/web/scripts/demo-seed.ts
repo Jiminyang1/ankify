@@ -8,7 +8,7 @@
  * Problem statements are short paraphrases written for this demo, not copies
  * of LeetCode text.
  */
-import { normalizeLeetcodeTags } from "@ankify/core";
+import { normalizeLeetcodeTags, serializeCards } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { loadDbEnv } from "@ankify/db/client";
 import { and, eq } from "drizzle-orm";
@@ -740,6 +740,7 @@ async function main() {
     await tx.insert(schema.problems).values(problemRows);
     await tx.insert(schema.submissions).values(submissionRows);
     await tx.insert(schema.cards).values(cardRows);
+    await writeCardDocs(tx, cardRows);
     for (let i = 0; i < eventRows.length; i += 100) {
       await tx.insert(schema.reviewEvents).values(eventRows.slice(i, i + 100));
     }
@@ -809,3 +810,20 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+/** The panel reads cards from each problem's Cards doc; mirror the seeded rows. */
+async function writeCardDocs(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  rows: (typeof schema.cards.$inferInsert)[],
+) {
+  const byProblem = new Map<string, { prompt: string; answer: string }[]>();
+  for (const row of rows) {
+    byProblem.set(row.problemId, [...(byProblem.get(row.problemId) ?? []), { prompt: row.question, answer: row.answer }]);
+  }
+  for (const [problemId, cards] of byProblem) {
+    await tx
+      .update(schema.problems)
+      .set({ cardsMd: serializeCards(cards), cardsVersion: 1 })
+      .where(eq(schema.problems.id, problemId));
+  }
+}

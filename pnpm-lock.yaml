@@ -231,6 +231,9 @@ importers:
       '@ankify/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ankify/core':
+        specifier: workspace:*
+        version: link:../core
       '@libsql/client':
         specifier: ^0.17.4
         version: 0.17.4

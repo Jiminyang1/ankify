@@ -34,6 +34,7 @@ export function GroupDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [adding, setAdding] = useState<string[]>([]);
+  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, startRefresh] = useTransition();
 
@@ -48,7 +49,7 @@ export function GroupDialog({
   }, []);
 
   const addable = group.items.filter((item) => item.status === "solved").map((item) => item.slug);
-  const busy = adding.length > 0 || refreshing;
+  const busy = adding.length > 0 || switching || refreshing;
 
   async function addToReview(slugs: string[]) {
     if (slugs.length === 0 || busy) return;
@@ -67,6 +68,29 @@ export function GroupDialog({
       setError(copy.group.addFailed);
     } finally {
       setAdding([]);
+    }
+  }
+
+  async function goDeeper(plan: string) {
+    if (busy) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/study-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      if (!res.ok) {
+        setError(copy.group.switchFailed);
+        return;
+      }
+      onClose();
+      startRefresh(() => router.refresh());
+    } catch {
+      setError(copy.group.switchFailed);
+    } finally {
+      setSwitching(false);
     }
   }
 
@@ -125,6 +149,22 @@ export function GroupDialog({
             <p role="alert" className="mt-2 text-xs text-danger">
               {error}
             </p>
+          )}
+          {group.deepDive && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg bg-subtle px-3 py-2">
+              <p className="min-w-0 text-xs leading-5 text-muted">
+                {copy.group.deepDive(group.deepDive.name, group.deepDive.total)}
+              </p>
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={busy}
+                onClick={() => void goDeeper(group.deepDive!.slug)}
+              >
+                {switching && <Spinner />}
+                {copy.group.switchPlan}
+              </Button>
+            </div>
           )}
         </div>
 

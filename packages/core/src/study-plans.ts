@@ -66,6 +66,23 @@ export function findOfficialStudyPlan(slug: unknown): StudyPlan | null {
   return OFFICIAL_STUDY_PLANS.find((plan) => plan.slug === slug) ?? null;
 }
 
+/** Official topic plans and the group names they go deeper on, across every
+ *  plan's naming ("1D DP", "DP - 1D", "Graphs - BFS", "Graph General"). */
+const DEEP_DIVES: readonly { plan: string; match: RegExp }[] = [
+  { plan: "dynamic-programming", match: /\bdp\b|dynamic programming/i },
+  { plan: "graph-theory", match: /\bgraphs?\b/i },
+  // "Binary Search Tree" is a tree pattern, not a search one.
+  { plan: "binary-search", match: /binary search(?!\s*tree)/i },
+];
+
+/** The official topic plan that goes deeper on a roadmap group, or null when
+ *  there isn't one or the user is already in it. */
+export function deepDivePlanFor(groupName: string, currentPlan: string): StudyPlan | null {
+  const dive = DEEP_DIVES.find((entry) => entry.match.test(groupName));
+  if (!dive || dive.plan === currentPlan) return null;
+  return findOfficialStudyPlan(dive.plan);
+}
+
 /**
  * Two questions per problem, four answers:
  * - did you solve it? (LeetCode) → `todo` or `solved`
