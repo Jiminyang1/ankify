@@ -66,7 +66,7 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
 
 **Weaknesses** (`weaknesses`, `weakness_categories`; `docs/coach-practice.md` version 2): one row per specific mistake on a problem, with a category (13 built-in keys with descriptions in `packages/core/src/weaknesses.ts`, plus the user's approved custom ones), a one-line detail, evidence (submission ids, practice session ids, the Coach run), status `active | resolved | dismissed`, and a hit count. `server/weaknesses.ts` records them (category must exist, evidence must belong to the problem, a near-duplicate of an active one bumps it and reopens a resolved one) and computes the cross-problem profile on read (`computeWeaknessProfile`). `agent_steps.weakness_id` links a Coach `weakness` step.
 
-**Cards table** (legacy; the extension and the Coach use the Cards doc, the web review and problem pages still read rows) (10 columns): `id`, `userId`, `problemId`, `question` (front), `answer` (back), `aiStatus` (candidate/failed/ready), `errorMessage`, `version` (bumped on edit; AI follow-up jobs check it so they never overwrite a newer edit), `createdAt`, `updatedAt`. No extra metadata - just Q&A with lifecycle tracking.
+**Cards table** (legacy: the web app, the extension, and the Coach all use the Cards doc; rows are only read by the endpoints older extension builds call (`problems/by-slug`, `cards/`, `ai-cards/`, quiz save-as-card) and by the data export. Migration `0024_cards_doc_sync` appended ready rows written after 0019 to the doc) (10 columns): `id`, `userId`, `problemId`, `question` (front), `answer` (back), `aiStatus` (candidate/failed/ready), `errorMessage`, `version` (bumped on edit; AI follow-up jobs check it so they never overwrite a newer edit), `createdAt`, `updatedAt`. No extra metadata - just Q&A with lifecycle tracking.
 
 **AI jobs table**: one row per card/quiz generation (`card_generate | card_followup | quiz_generate | quiz_regenerate | quiz_next_batch`), status `queued | running | succeeded | failed | cancelled | superseded`. The input is stored encrypted; `activeDedupKey` allows one live job per logical slot, and at most one job per user runs at a time.
 
@@ -116,7 +116,7 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
   - `practice/[id]/` - GET session state (reconciles a check job that ended without questions, and completes the session when everything is answered). `practice/[id]/recall/` POST `{ key, result }` (also updates `problems.card_stats`); `practice/[id]/check/` POST `{ itemId, choice }`, graded on the server.
   - `problems/[id]/weaknesses/` - GET the problem's weak spots (active first; dismissed hidden). `weaknesses/[id]/` PATCH `{ status }` removes (dismissed), resolves, or reopens one. `weaknesses/profile/` GET the cross-problem profile by category.
   - `problems/[id]/docs/` - GET Notes, Cards, and Solutions (markdown, versions, parsed cards and approaches, parse issues); PUT `{ target: "notes" | "cards" | "solutions", markdown, expectedVersion }` saves the user's own edit (409 on a stale version). The Coach's `get_problem_docs` returns Notes and Cards only, so it can't read the reference during practice.
-  - `problems/[id]/review-resource/` - GET `?resource=cards|submissions|notes`: one review-workspace tab's data, loaded lazily.
+  - `problems/[id]/review-resource/` - GET `?resource=submissions`: the review workspace's Submissions tab, loaded lazily (the docs come from `problems/[id]/docs/`).
   - `ai-jobs/` - POST starts a card, quiz, or practice-check generation job (`card_generate` from auto or rawText, `card_followup` with an instruction and `expectedCardVersion`, `quiz_generate`, `quiz_regenerate`, `quiz_next_batch`). Idempotent by client `requestId`, rate-limited, returns 202 while queued/running. GET `?problemId=&kind=&active=true` lists a problem's jobs. `quiz_next_batch` requires the current session to be completed, archives it, and puts recent completed quiz history into the prompt.
   - `ai-jobs/[id]/` - GET polls one job; DELETE cancels it.
   - `queues/ai-generation/` - Vercel Queues consumer (topic `ankify-ai-generation`). Runs `processAiJob()` under a lease; transient provider failures retry with backoff up to `maxAttempts`.
@@ -162,11 +162,16 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
   - `/` - public landing page (the only indexable page); `/welcome`, `/login`, `/privacy`, `/terms` are public too. Signed-in users are redirected to `/today`.
   - `/today` - home: due queue, progress, daily stats, and the onboarding checklist (`today/onboarding-card.tsx`) until it's done
   - `/extension-connected` - landing tab after the extension's sign-in hand-off
-  - The Study Coach is a sidebar on every app page (`components/agent/agent-sidebar.tsx`); each turn carries the current page/problem as context.
-  - `/review` - left statement/rating panel plus right workspace tabs: Quiz, Cards, Submissions, Notes. Keyboard shortcuts (ignored while typing or when a control has focus): `1-4` select rating, `Enter` submits (never inside the Quiz tab), `A-D` answer the current quiz question, `Space` flips cards / advances quiz feedback, arrows navigate cards; on the result screen `Enter`/`Space` load the next problem. The result screen has an Undo button (`/api/review/undo`) that re-enters the same problem. The QuizPanel auto-starts generation on problem load: no session → `generate`, completed session → `nextBatch` (archiving it), active session → resume; failures stay manual so a broken AI config can't retry-loop, and a completed quiz preselects its suggested rating.
+  - The Study Coach is a sidebar on every app page (`components/agent/agent-sidebar.tsx`); each turn carries the current page/problem as context. It matches the extension's Coach (`docs/coach-practice.md`, stage 3):
+    - the composer has **Practice** on a problem page (starts a talk-through and sends the `practice_start` trigger), the model and thinking menu (`agent/model-menu.tsx`, own key only, kept in `localStorage` `ankify.coachModel`), and Send that turns into Stop while streaming;
+    - a talk-through shows as a tray above the composer (`agent/practice-tray.tsx`): questions as dots, "2 of 4 points", each settled question's points as said or not, "I did say that", End, and the rating once finished (on `/review` the rating bar takes the suggestion instead);
+    - a recorded weak spot in the chat can be removed;
+    - pages ask the Coach through `useAgentShellControls().ask(message, trigger?)` (e.g. `analyze_attempts`), and the sidebar tells pages what changed through window events in `lib/agent-events.ts` (docs, weak spots, practice).
+  - `components/problem-docs.tsx` (Notes / Cards / Solutions, rendered, with a version-checked editor; ⌘Enter saves) and `components/weak-spots.tsx` (a problem's weak spots: resolve, remove, reopen; "Analyze my attempts" when empty) are shared by `/review` and `/problems/[id]`.
+  - `/review` - left statement/rating panel, a middle workspace with Docs, Weak spots, and Submissions tabs, and the Coach panel on the right, where practice runs. A finished practice preselects its suggested rating in the rating bar. Keyboard shortcuts (ignored while typing or when a control has focus): `1-4` select rating, `Enter` submits, `?` opens the help; on the result screen `Enter`/`Space` load the next problem. The result screen has an Undo button (`/api/review/undo`) that re-enters the same problem.
   - `/problems` - list with difficulty/state/tag/search filters; the state filter's `Archived` option refetches with `?archived=1`
-  - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline, Archive/Unarchive (archived problems hide the Review button and show a notice)
-  - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
+  - `/problems/[id]` - problem detail: metadata, then Statement, Docs (Notes / Cards / Solutions), Weak spots, Submissions, and History tabs, Archive/Unarchive (archived problems hide the Review button and show a notice)
+  - `/analysis` - FSRS dashboard: memory score, lapse rate, risk table, weak spots across problems (`loadWeaknessProfile`: categories ranked, with the problems behind each), state/stability distributions, reviews/day chart, burden forecast, dev reset
   - `/profile` - study-plan roadmap. Includes:
     - a plan picker: LeetCode's plans, your imported lists, and "Import a LeetCode list";
     - summary: solved count, four-state bar, "Review N due", next problem, and "Ask Coach what's next" (opens the Study Coach with that question via `useAgentShellControls().ask()`; the Coach answers from its `get_study_plan` tool);
@@ -206,32 +211,28 @@ Monorepo: `apps/web` (Next.js), `apps/extension` (Chrome MV3), and four packages
 1. Open a LeetCode problem with the side panel open; it shows that problem.
 2. The extension sends credentialed requests to the exact API origin; Chrome includes the existing Better Auth web-session cookie.
 3. If the problem is unknown, the first new submission (any verdict) collects it automatically: the background reads page data through the content script and POSTs to `/api/capture` with `firstReview: "next_day"`. "Add now" in the panel captures it manually (due at once).
-4. If the problem is known, the panel shows its Quiz / Cards / Notes, due state, and rating; new submissions sync through the append-only endpoint.
+4. If the problem is known, the panel shows the Coach chat with its weak spots, Docs behind the book icon, due state, and rating; new submissions sync through the append-only endpoint.
 
-### Card creation
+### Docs
 
-**Manual**: Write question + answer directly -> POST `/api/problems/:id/user-card` -> saved as `ready`.
+Each problem's Notes, Cards, and Solutions are markdown docs (`docs/coach-practice.md`). The user edits them in the web app or the extension (PUT `/api/problems/:id/docs`, version-checked); the Coach changes them only through proposals the user applies; the first practice on a problem writes its Solutions doc. Cards are `##` prompts with their answers below; there is no separate card lifecycle any more.
 
-**AI**: Click Auto generate or write raw text -> POST `/api/ai-jobs` with `{ action: "card_generate", problemId, rawText? }`. The client polls the job; on success the job inserts one `candidate` card. User can edit, Follow-up (a `card_followup` job that rewrites with an instruction and fails if the card was edited meanwhile), Confirm (PATCH `aiStatus: "ready"`), or Discard (DELETE).
+### Practice
 
-One job creates one card: there is no AI-card batch generation, `polish`, or `generating` card status. Historical `generating` rows are removed by migration.
+1. Practice starts from the Coach composer (web sidebar or extension panel) or when the Coach calls `start_practice`.
+2. The Coach asks how the user would solve the problem and what it costs, then about up to two of the problem's weak spots. Each reply is judged against the Solutions doc (or the weak spot) before the Coach answers, and code decides the follow-up and the grade.
+3. When the last question settles, the session completes with a score and a suggested rating; the Coach summarizes.
+4. The rating is still the user's click (`/api/review/rate`), on the tray or the review page's rating bar.
 
-### Quiz review
+### Quiz (legacy)
 
-1. `GET /api/problems/:id/quiz` returns the current active/completed quiz session or `null`.
-2. `POST /api/ai-jobs` with `quiz_generate` queues a job that generates exactly 5 single-choice questions in the user's generation language. Each item has a source and scope. The client polls the job; a failed job leaves no quiz session behind.
-3. Answering a choice PATCHes `/api/problems/:id/quiz/:sessionId` immediately. The API stores correctness and returns the explanation.
-4. After 5 answers, the session becomes `completed`; score maps to suggested rating: `0-1 Again`, `2 Hard`, `3-4 Good`, `5 Easy`.
-5. Suggested rating is only guidance. FSRS is still updated only by manual rating.
-6. `Regenerate` (`quiz_regenerate`) archives existing non-archived sessions and creates a new active session.
-7. `New batch` (`quiz_next_batch`) is available only after completion. It archives the completed session, passes recent completed quiz history into the prompt, and creates a new active session without repeating prior questions.
-8. `Save as card` writes a ready card directly from quiz question + correct answer + explanation. Completed summaries can bulk-create cards for missed items.
+Quiz sessions (`/api/problems/:id/quiz`, `quiz_generate | quiz_regenerate | quiz_next_batch` jobs, 5 scoped single-choice questions) and AI card candidates (`card_generate | card_followup` jobs) remain only for extension builds before 0.3.0. Neither the web app nor the current extension shows them.
 
 ### Review session
 
-1. `GET /api/review/next` returns the next due problem with FSRS previews, ready cards, submissions, and notes.
-2. User reviews Quiz/Cards/Submissions/Notes, then self-rates recall (Again/Hard/Good/Easy).
-3. `POST /api/review/rate` records the rating and applies FSRS scheduling. Notes are saved to `problems.notes`.
+1. `GET /api/review/next` returns the next due problem with FSRS previews.
+2. The user reads the docs, weak spots, and submissions, practices with the Coach if they like, then self-rates recall (Again/Hard/Good/Easy).
+3. `POST /api/review/rate` records the rating and applies FSRS scheduling.
 4. Meaningful interactions write to `review_events`.
 5. The result screen offers Undo (`POST /api/review/undo`), which restores the pre-rating FSRS snapshot, marks the rating event undone, and re-enters the same problem.
 
@@ -241,12 +242,9 @@ One job creates one card: there is no AI-card batch generation, `polish`, or `ge
 - **Extension auth reuses the web session**: no separate ankify token is created, copied, or stored; signed-out users continue with Google in a web tab.
 - **User-owned AI keys, plus starter credits**: users save provider/model/key in Settings, and keys are encrypted before storage. When `ANKIFY_STARTER_AI_API_KEY` is set, users without a complete own configuration fall back to that server key for a small lifetime allowance (`server/starter-ai.ts`: 1 credit per quiz job, card job, or Coach turn; atomic counter in the `settings` row `starter-ai-usage`). A user's own key always wins and never spends credits. No other server env provider key is a runtime fallback.
 - **Problem-level scheduling**: FSRS state lives directly on the `problems` row. Cards and quizzes support recall, but only the problem gets scheduled.
-- **Cards are simple**: `question`, `answer`, lifecycle fields only. No explanation/rationale/source fields on the card row.
-- **AI card generation is user-gated**: AI card generation creates `candidate`; only confirmed cards become `ready`.
-- **Quiz save-as-card is direct**: quiz items are already answered/reviewed by the user, so saving one creates a `ready` card immediately.
-- **Candidate/failed cards excluded from review**: only `aiStatus='ready'` cards are served as review cards.
-- **AI generation runs as jobs**: quizzes and cards go through `ai_jobs` + Vercel Queues so a slow model never holds a request open. Jobs are idempotent by client `requestId`, one runs per user at a time, and only transient provider failures retry. The Study Coach is the exception: it streams directly in its request, and anything it wants to create is a proposal the user approves.
-- **Quiz batches are scoped**: each item carries `source` and `scope`; generated batches must cover at least 4 scopes and include complexity.
+- **Docs are the source of truth**: Notes, Cards, and Solutions are markdown on the problem row, edited by the user or applied from a Coach proposal, every write version-checked. Card rows and quizzes are legacy (see above).
+- **The Coach proposes, the user applies**: the Study Coach streams in its request, and anything it wants to change is a proposal the user approves; practice grades come from code over a separate judge call, never from the Coach.
+- **AI generation runs as jobs**: the legacy quiz and card generations go through `ai_jobs` + Vercel Queues so a slow model never holds a request open. Jobs are idempotent by client `requestId`, one runs per user at a time, and only transient provider failures retry.
 - **`review_events` is append-only**: snapshots of stability, difficulty, retrievability, and metadata are kept for dashboards/history. `/api/review/undo` never deletes the rating event — it stamps `undoneAt`, and done-today counts and dashboards exclude undone events.
 - **FSRS scheduler recomputes elapsed_days** from `last_review` and `now` in `init()` - stored `elapsed_days` is never trusted.
 - **AI defaults to empty**: without starter credits, provider/model/key must be configured before AI generation; errors should be clear. When starter credits run out, requests return `starter_credits_exhausted` (403).
