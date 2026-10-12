@@ -52,8 +52,9 @@
       "jsondiffpatch": "0.7.2",
       "minimatch@10": "10.2.6",
       "postcss": "8.5.26",
-      "sharp": "0.35.4",
-      "shell-quote": "1.10.0",
+      "sharp": "0.35.5",
+      "shell-quote": "1.11.0",
+      "source-map-js": "1.2.2",
       "undici@7": "7.29.1",
       "ws": "8.21.1"
     }
