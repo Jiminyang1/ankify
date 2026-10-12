@@ -611,6 +611,8 @@ export function AgentSidebar({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    // Typing is allowed while a reply streams; sending waits for it.
+    if (streaming || persistedRunActive || !draft.trim()) return;
     const message = draft;
     setDraft("");
     void sendMessage(message);
@@ -991,6 +993,7 @@ export function AgentSidebar({
                 onChange={showPractice}
                 onClose={() => setPractice(null)}
                 showRating={pageContext.page !== "review"}
+                busy={streaming || persistedRunActive}
               />
             </div>
           )}
@@ -1001,7 +1004,6 @@ export function AgentSidebar({
               onKeyDown={handleComposerKeyDown}
               rows={2}
               maxLength={12_000}
-              disabled={streaming || persistedRunActive}
               placeholder={pageContext.problemId ? t.agent.placeholder : t.agent.globalPlaceholder}
               className="max-h-36 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 text-sm leading-relaxed text-fg outline-none placeholder:text-muted disabled:opacity-60"
             />

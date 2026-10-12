@@ -13,7 +13,7 @@ import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
-import { firstTalkInstruction, gradeTalkTarget, startPractice, type PracticeAi } from "@/server/practice";
+import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { loadProfile, type PlanItem } from "@/server/profile";
@@ -28,8 +28,6 @@ type AgentToolContext = {
   problemId: string | null;
   runId: string;
   emitStep: (step: AgentStepDto) => void;
-  /** Writes a problem's Solutions doc when practice starts on it. */
-  ai?: PracticeAi;
 };
 
 /** Code-enforced cap; the prompt asks for one per ordinary reply. */
@@ -504,7 +502,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
-        const result = await startPractice(context.userId, target.id, { agentRunId: context.runId, ai: context.ai });
+        const result = await startPractice(context.userId, target.id, { agentRunId: context.runId });
         if (!result.ok) return { started: false, error: result.error, message: result.message ?? null };
         await record({
           kind: "practice",

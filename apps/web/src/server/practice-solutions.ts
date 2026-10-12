@@ -9,13 +9,15 @@ import { getGenerationSettings, type AiRuntimeSettings } from "@/server/settings
 
 /**
  * The Solutions doc (docs/coach-practice.md, version 3): what talk-through
- * practice is judged against. Written once, on the first practice of a
- * problem, from the user's Accepted code, their Notes, and the problem, and
- * saved directly because the judge needs it right away. After that it's the
- * user's: they read and edit it behind the book icon.
+ * practice is judged against. Written once, during the turn that asks a
+ * problem's first practice question (so the user reads and types meanwhile),
+ * from the user's Accepted code, their Notes, and the problem, and saved
+ * directly because the judge needs it for the first answer. After that it's
+ * the user's: they read and edit it behind the book icon.
  */
 
-const TIMEOUT_MS = 90_000;
+/** Per attempt. At "low" thinking a doc takes 15-35 s; "high" took over a minute. */
+const TIMEOUT_MS = 75_000;
 const STATEMENT_MAX = 2_500;
 const CODE_MAX = 3_000;
 const NOTES_MAX = 2_000;
@@ -148,15 +150,16 @@ export async function generateSolutions(args: {
     "Return the JSON object now.",
   ].join("\n");
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  const abort = () => controller.abort();
-  args.abortSignal?.addEventListener("abort", abort, { once: true });
   const attempt = async () => {
-    const { output } = await generateText({
-      model: args.model,
-      output: Output.object({ schema: solutionsSchema }),
-      system: `You write the reference a learner's spoken review of one LeetCode problem is checked against. The learner will explain, in their own words, how they'd solve it, and each key point you write is checked as said or not said. A point that's too specific fails learners who clearly know the solution.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const abort = () => controller.abort();
+    args.abortSignal?.addEventListener("abort", abort, { once: true });
+    try {
+      const { output } = await generateText({
+        model: args.model,
+        output: Output.object({ schema: solutionsSchema }),
+        system: `You write the reference a learner's spoken review of one LeetCode problem is checked against. The learner will explain, in their own words, how they'd solve it, and each key point you write is checked as said or not said. A point that's too specific fails learners who clearly know the solution.
 
 Return one JSON object of this shape and nothing else:
 {"approaches": [{"name": "...", "mine": true, "points": ["...", "..."], "complexity": "..."}]}
@@ -170,25 +173,25 @@ Return one JSON object of this shape and nothing else:
   Say ideas, not syntax: no code expressions or exact loop conditions unless that specific formula is itself the insight. Leave out what any working solution does anyway (returning the result or -1, output order, inputs the problem guarantees, naming), details of one programming language (falsy checks, integer types, library calls), and implementation advice (recursion depth, sentinel nodes): those belong in Notes. Someone who explains the approach well should naturally say every point.
 - complexity: time and space, e.g. "O(n) time, O(1) space".
 - Write names and points in ${language}. Keep code identifiers and complexity notation as they are.`,
-      prompt,
-      ...aiCallOptions(args.settings, "user"),
-      abortSignal: controller.signal,
-    });
-    return output;
+        prompt,
+        // Capped at "low": quality holds up, and it fits within the turn.
+        ...aiCallOptions(args.settings, "capped"),
+        abortSignal: controller.signal,
+      });
+      return output;
+    } finally {
+      clearTimeout(timer);
+      args.abortSignal?.removeEventListener("abort", abort);
+    }
   };
   let output: z.infer<typeof solutionsSchema>;
   try {
-    try {
-      output = await attempt();
-    } catch (error) {
-      // Without native structured output the JSON sometimes doesn't fit; one
-      // more try is cheaper than a practice without a reference.
-      if (!NoObjectGeneratedError.isInstance(error)) throw error;
-      output = await attempt();
-    }
-  } finally {
-    clearTimeout(timer);
-    args.abortSignal?.removeEventListener("abort", abort);
+    output = await attempt();
+  } catch (error) {
+    // Without native structured output the JSON sometimes doesn't fit; one
+    // more try is cheaper than a practice without a reference.
+    if (!NoObjectGeneratedError.isInstance(error)) throw error;
+    output = await attempt();
   }
 
   return output.approaches.slice(0, MAX_APPROACHES).map((approach, index) => ({

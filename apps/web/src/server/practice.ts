@@ -16,6 +16,7 @@ import {
   type TalkGrade,
   type TalkHelp,
   type TalkJudgement,
+  type SolutionApproach,
   type TalkSettledBy,
 } from "@ankify/core";
 import type { AgentPageContext, PracticeSessionDto } from "@ankify/contracts";
@@ -177,16 +178,14 @@ async function loadActive(userId: string, problemId: string) {
   return session ?? null;
 }
 
-export type PracticeAi = { model: LanguageModel; settings: AiRuntimeSettings };
-
 /** Starts a talk-through (docs/coach-practice.md, version 3): the approach
  *  first, then this problem's weak spots, each judged against a reference.
- *  The first practice of a problem writes its Solutions doc; without AI, or if
- *  that fails, the Coach grades the approach itself. */
+ *  It starts at once: a problem without a Solutions doc gets one during the
+ *  turn that asks the first question (prepareTalkReferences). */
 async function startTalkPractice(
   userId: string,
   problemId: string,
-  options: { agentRunId?: string; ai?: PracticeAi },
+  options: { agentRunId?: string },
 ): Promise<PracticeResult> {
   const db = getDb();
   const existing = await loadActive(userId, problemId);
@@ -206,14 +205,7 @@ async function startTalkPractice(
         eq(schema.weaknesses.status, "active"),
       ),
     );
-  let approaches = await currentSolutions(userId, problemId);
-  if (approaches.length === 0 && options.ai) {
-    try {
-      approaches = await ensureSolutionsDoc({ userId, problemId, ...options.ai });
-    } catch (error) {
-      console.error("[practice] couldn't write the Solutions doc; the Coach grades the approach", error);
-    }
-  }
+  const approaches = await currentSolutions(userId, problemId);
   const targets = withTalkReferences(selectPracticeTargets({ problemWeaknesses: weaknesses }), approaches);
   const id = nanoid(16);
   const now = new Date();
@@ -249,10 +241,67 @@ async function currentSolutions(userId: string, problemId: string) {
   return parseSolutions(row?.solutionsMd).approaches;
 }
 
+/** Attaches the problem's Solutions doc to an active session's approach
+ *  question, if it lacks one. Returns the updated session, or null when there
+ *  was nothing to attach. */
+async function attachSolutions(sessionId: string, approaches: SolutionApproach[]) {
+  if (approaches.length === 0) return null;
+  return getDb().transaction(async (tx) => {
+    const [fresh] = await tx
+      .select()
+      .from(schema.practiceSessions)
+      .where(eq(schema.practiceSessions.id, sessionId))
+      .limit(1);
+    if (!fresh || fresh.status !== "active") return null;
+    const targets = fresh.targetsJson ?? [];
+    if (!targets.some((target) => target.kind === "core" && !target.reference)) return null;
+    // Questions that already have a reference keep the one they started with.
+    const withReferences = targets.map((target) =>
+      target.reference ? target : withTalkReferences([target], approaches)[0]!,
+    );
+    const [updated] = await tx
+      .update(schema.practiceSessions)
+      .set({ targetsJson: withReferences, updatedAt: new Date() })
+      .where(eq(schema.practiceSessions.id, sessionId))
+      .returning();
+    return updated ?? null;
+  });
+}
+
+/**
+ * The first practice on a problem writes its Solutions doc. It runs during the
+ * turn that asks the first question, alongside the Coach, so the user reads and
+ * types meanwhile and their first answer is judged against it. Never throws:
+ * if the doc can't be written, that question falls back to the Coach grading
+ * it (the tray says so).
+ */
+export async function prepareTalkReferences(args: {
+  userId: string;
+  problemId: string;
+  model: LanguageModel;
+  settings: AiRuntimeSettings;
+  abortSignal?: AbortSignal;
+}): Promise<PracticeSessionDto | null> {
+  const session = await loadActive(args.userId, args.problemId);
+  if (!session || session.mode !== "talk") return null;
+  if (!(session.targetsJson ?? []).some((target) => target.kind === "core" && !target.reference)) return null;
+  let approaches = await currentSolutions(args.userId, args.problemId);
+  if (approaches.length === 0) {
+    try {
+      approaches = await ensureSolutionsDoc(args);
+    } catch (error) {
+      if (args.abortSignal?.aborted) return null;
+      console.error("[practice] couldn't write the Solutions doc; the Coach grades the approach", error);
+    }
+  }
+  const updated = await attachSolutions(session.id, approaches);
+  return updated ? toPracticeDto(updated) : null;
+}
+
 export async function startPractice(
   userId: string,
   problemId: string,
-  options: { agentRunId?: string; mode?: "talk" | "recall_check"; ai?: PracticeAi } = {},
+  options: { agentRunId?: string; mode?: "talk" | "recall_check" } = {},
 ): Promise<PracticeResult> {
   if ((options.mode ?? "talk") === "talk") {
     const [owned] = await getDb()
@@ -666,11 +715,20 @@ export async function judgeTalkTurn(args: {
   settings: AiRuntimeSettings;
   abortSignal?: AbortSignal;
 }): Promise<TalkTurn | null> {
-  const session = await loadActive(args.userId, args.problemId);
+  let session = await loadActive(args.userId, args.problemId);
   if (!session || session.mode !== "talk") return null;
-  const target = currentTarget(session);
+  let target = currentTarget(session);
   if (!target) return null;
   const record = talkRecord(session, target.id);
+  // A Solutions doc written since the session started (by its first turn, or
+  // the user) still judges a question nobody has answered yet.
+  if (target.kind === "core" && !target.reference && !record.fallback) {
+    const attached = await attachSolutions(session.id, await currentSolutions(args.userId, args.problemId));
+    if (attached) {
+      session = attached;
+      target = currentTarget(attached) ?? target;
+    }
+  }
   const log = appendLog(record.log, { role: "learner", text: args.message, help: record.help });
   const reference = target.reference;
 
