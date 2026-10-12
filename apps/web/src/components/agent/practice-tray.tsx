@@ -36,12 +36,15 @@ export function PracticeTray({
   onChange,
   onClose,
   showRating,
+  busy: turnBusy,
 }: {
   session: PracticeSessionDto;
   onChange: (session: PracticeSessionDto | null) => void;
   onClose: () => void;
   /** False on the review page, whose rating bar takes the suggestion instead. */
   showRating: boolean;
+  /** A Coach turn is running (it may be writing the Solutions doc). */
+  busy: boolean;
 }) {
   const { language, t } = useLanguage();
   const [open, setOpen] = useState(false);
@@ -121,6 +124,11 @@ export function PracticeTray({
   const correct = graded.filter((target) => target.grade!.grade === "correct").length;
   const partial = graded.filter((target) => target.grade!.grade === "partial").length;
   const openTarget = session.targets.find((target) => !target.grade);
+  // The approach question has no Solutions doc to be judged against yet: the
+  // first turn is writing it, or writing it failed.
+  const unjudgedApproach =
+    !completed && openTarget?.kind === "core" && !openTarget.judged && openTarget.nudges === 0 && !openTarget.grade;
+  const keyNote = unjudgedApproach ? (turnBusy ? t.practice.preparingKey : t.practice.notJudged) : null;
   const pointsNow =
     !completed && openTarget?.progress && openTarget.progress.covered > 0 ? openTarget.progress : null;
   const stateOf = (target: Target): TargetState =>
@@ -199,8 +207,21 @@ export function PracticeTray({
         )}
       </div>
 
+      {keyNote && !open && (
+        <p className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-[11px] text-muted">
+          {turnBusy && <Spinner />}
+          {keyNote}
+        </p>
+      )}
+
       {open && (
         <div className="max-h-[45vh] space-y-3 overflow-y-auto border-t border-border px-3 py-3">
+          {keyNote && (
+            <p className="flex items-center gap-1.5 text-[11px] text-muted">
+              {turnBusy && <Spinner />}
+              {keyNote}
+            </p>
+          )}
           <ul className="space-y-2.5">
             {session.targets.map((target) => {
               const state = stateOf(target);

@@ -12,7 +12,7 @@ import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
 import { finishAgentRun, getAgentModelMessages } from "./store";
-import { judgeTalkTurn, recordTutorLine, startTalkTurn } from "@/server/practice";
+import { judgeTalkTurn, prepareTalkReferences, recordTutorLine, startTalkTurn } from "@/server/practice";
 import { analyzeAttempts } from "./analyze-attempts";
 import { createStudyCoachTools } from "./tools";
 
@@ -35,10 +35,24 @@ export async function runStudyCoach(args: {
   practice?: { kind: "start" } | { kind: "reply"; message: string };
   onPractice?: (session: PracticeSessionDto) => void;
 }) {
-  const runState: { navigationStep: AgentStepDto | null; startedPractice: boolean } = {
+  const runState: {
+    navigationStep: AgentStepDto | null;
+    startedPractice: boolean;
+    /** A first practice's Solutions doc, written alongside this turn. */
+    preparing: Promise<PracticeSessionDto | null> | null;
+  } = {
     navigationStep: null,
     startedPractice: false,
+    preparing: null,
   };
+  const prepare = () =>
+    prepareTalkReferences({
+      userId: args.userId,
+      problemId: args.problemId!,
+      model: args.model,
+      settings: args.settings,
+      abortSignal: args.abortSignal,
+    });
   await compactAgentSessionIfNeeded({
     userId: args.userId,
     sessionId: args.sessionId,
@@ -51,12 +65,14 @@ export async function runStudyCoach(args: {
     userId: args.userId,
     problemId: args.problemId,
     runId: args.runId,
-    ai: { model: args.model, settings: args.settings },
     emitStep: (step) => {
       // A reply that only opens a problem or starts practice has no text;
       // the step's summary stands in for it.
       if (step.kind === "navigation" || step.kind === "practice") runState.navigationStep = step;
-      if (step.kind === "practice") runState.startedPractice = true;
+      if (step.kind === "practice") {
+        runState.startedPractice = true;
+        if (args.problemId && !runState.preparing) runState.preparing = prepare();
+      }
       args.onStep(step);
     },
   });
@@ -121,6 +137,8 @@ export async function runStudyCoach(args: {
       args.onPractice?.(turn.session);
       replaceRuntimeContext(messages, (context) => ({ ...context, practiceActive: turn.context }));
     }
+    // The Coach asks the first question meanwhile; it needs no doc.
+    if (args.practice.kind === "start") runState.preparing = prepare();
   }
   const result = await agent.stream({
     messages,
@@ -145,6 +163,13 @@ export async function runStudyCoach(args: {
   if (!content.trim()) {
     if (!runState.navigationStep) throw new Error("agent_empty_response");
     content = runState.navigationStep.summary;
+  }
+
+  // The turn ends once a first practice's Solutions doc is attached, so the
+  // user's first answer is judged against it.
+  if (runState.preparing) {
+    const prepared = await runState.preparing;
+    if (prepared) args.onPractice?.(prepared);
   }
 
   // What the Coach asked goes in the question's log for the judge.

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { aiCallOptions } from "./call-options";
 
 type Provider = "anthropic" | "openai" | "deepseek";
-const call = (provider: Provider, model: string, reasoningLevel: string, reasoning: "user" | "lightest" = "user") =>
+const call = (provider: Provider, model: string, reasoningLevel: string, reasoning: "user" | "lightest" | "capped" = "user") =>
   aiCallOptions({ provider, model, reasoningLevel }, reasoning).providerOptions;
 
 describe("aiCallOptions", () => {
@@ -51,5 +51,20 @@ describe("aiCallOptions", () => {
     expect(lightest("openai", "gpt-6-astra")).toEqual({ openai: { reasoningEffort: "low" } });
     expect(lightest("openai", "o3")).toEqual({ openai: { reasoningEffort: "low" } });
     expect(lightest("openai", "gpt-4o-mini")).toBeUndefined();
+  });
+
+  it("caps at low for one-time writing, keeping lighter choices", () => {
+    const capped = (provider: Provider, model: string, level: string) => call(provider, model, level, "capped");
+    const deepseekLow = { deepseek: { thinking: { type: "enabled" }, reasoningEffort: "low" } };
+    expect(capped("deepseek", "deepseek-v4-pro", "high")).toEqual(deepseekLow);
+    expect(capped("deepseek", "deepseek-v4-pro", "default")).toEqual(deepseekLow);
+    expect(capped("deepseek", "deepseek-v4-pro", "off")).toEqual({ deepseek: { thinking: { type: "disabled" } } });
+    expect(capped("anthropic", "claude-opus-5-5", "xhigh")).toEqual({
+      anthropic: { thinking: { type: "adaptive" }, effort: "low" },
+    });
+    expect(capped("openai", "gpt-6-sol", "none")).toEqual({ openai: { reasoningEffort: "none" } });
+    expect(capped("openai", "gpt-6-sol", "medium")).toEqual({ openai: { reasoningEffort: "low" } });
+    // No reasoning control: the provider default, as with "user".
+    expect(capped("anthropic", "claude-haiku-4-5", "high")).toBeUndefined();
   });
 });
