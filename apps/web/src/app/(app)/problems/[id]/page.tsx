@@ -12,7 +12,6 @@ import { ProblemDetailLayout } from "./problem-detail-layout";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { cn, formatRelative } from "@/lib/utils";
-import { ProblemDocs } from "@/components/problem-docs";
 import { WeakSpots } from "@/components/weak-spots";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
@@ -83,12 +82,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
 
   const panels: WorkspacePanel[] = [
     { id: "statement", label: t.detail.statement, node: statementPanel },
-    {
-      id: "docs",
-      label: t.docs.title,
-      node: <ProblemDocs problemId={problem.id} initialDocs={docs} className="h-full" />,
-      flush: true,
-    },
+    { id: "notes", label: t.docs.notes, doc: "notes" },
+    { id: "cards", label: t.docs.cards, doc: "cards" },
+    { id: "solutions", label: t.docs.solutions, doc: "solutions" },
     {
       id: "weak_spots",
       label: t.weakSpots.title,
@@ -182,6 +178,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
           <ProblemWorkspace
             defaultTab="statement"
             panels={panels}
+            docs={docs}
             problemId={problem.id}
             problemTitle={problem.title}
           />

@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs } from "@/components/ui/tabs";
 import { PROBLEM_DOCS_UPDATED_EVENT } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
 
@@ -21,29 +20,26 @@ export type DocTarget = "notes" | "cards" | "solutions";
  * edit can't silently overwrite a Coach change applied meanwhile; an applied
  * Coach edit reloads them. The same docs the extension's book icon shows.
  *
- * Pass `target` when the parent's own tab row picks the doc (the review
- * page): the component then drops its Notes / Cards / Solutions tabs and
- * renders Edit / Save into `actionsSlot`, an element in that row. A draft
- * belongs to its doc, so switching docs mid-edit keeps it for when you return.
+ * The parent's tab row picks the doc (`target`) and holds `actionsSlot`, where
+ * Edit / Save render. A draft belongs to its doc, so switching docs mid-edit
+ * keeps it for when you return.
  */
 export function ProblemDocs({
   problemId,
   initialDocs,
-  target: controlledTarget,
+  target,
   actionsSlot,
   className,
 }: {
   problemId: string;
   initialDocs?: ProblemDocsDto | null;
-  target?: DocTarget;
-  actionsSlot?: HTMLElement | null;
+  target: DocTarget;
+  actionsSlot: HTMLElement | null;
   className?: string;
 }) {
   const { t } = useLanguage();
   const { ask } = useAgentShellControls();
   const [docs, setDocs] = useState<ProblemDocsDto | null>(initialDocs ?? null);
-  const [ownTarget, setOwnTarget] = useState<DocTarget>("notes");
-  const target = controlledTarget ?? ownTarget;
   const [draft, setDraft] = useState<{ target: DocTarget; markdown: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ message: string; conflict: boolean } | null>(null);
@@ -135,36 +131,7 @@ export function ProblemDocs({
 
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
-      {controlledTarget ? (
-        actionsSlot && createPortal(actions, actionsSlot)
-      ) : (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-          <Tabs
-            active={target}
-            onChange={(id) => {
-              if (editing) return;
-              setOwnTarget(id as DocTarget);
-              setError(null);
-            }}
-            tabs={[
-              { id: "notes", label: t.docs.notes },
-              {
-                id: "cards",
-                label: (
-                  <span className="inline-flex items-center gap-1.5">
-                    {t.docs.cards}
-                    {docs && docs.cards.cards.length > 0 && (
-                      <span className="text-[10px] text-muted tabular-nums">{docs.cards.cards.length}</span>
-                    )}
-                  </span>
-                ),
-              },
-              { id: "solutions", label: t.docs.solutions },
-            ]}
-          />
-          {actions}
-        </div>
-      )}
+      {actionsSlot && createPortal(actions, actionsSlot)}
 
       {error && docs && (
         <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-lg border border-danger/25 bg-danger/8 px-3 py-2 text-xs text-danger">
