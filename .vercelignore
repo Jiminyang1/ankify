@@ -1,7 +1,9 @@
-.claude/
-.ds-sync/
-.pnpm-store/
-apps/web/ds-bundle/
-apps/web/dts/
-backups/
-docs/
+# Anchored to the repo root: an unanchored `docs/` also dropped
+# apps/web/src/app/api/problems/[id]/docs/ from every deployment.
+/.claude/
+/.ds-sync/
+/.pnpm-store/
+/apps/web/ds-bundle/
+/apps/web/dts/
+/backups/
+/docs/
