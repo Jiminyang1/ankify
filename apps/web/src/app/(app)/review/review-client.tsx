@@ -31,7 +31,7 @@ import {
   useAgentShellControls,
   useEmbeddedAgentPanel,
 } from "@/components/agent/agent-shell";
-import { ProblemDocs } from "@/components/problem-docs";
+import { ProblemDocs, type DocTarget } from "@/components/problem-docs";
 import { WeakSpots } from "@/components/weak-spots";
 import { PRACTICE_UPDATED_EVENT, type PracticeUpdatedEvent } from "@/lib/agent-events";
 import { cn, formatInterval } from "@/lib/utils";
@@ -41,7 +41,7 @@ import type { ReviewWorkspaceLayoutProps } from "./review-workspace-layout";
 
 type RateResult = ReviewRateResponseDto;
 type Stage = "loading" | "review" | "result" | "empty";
-type WorkspaceTab = "docs" | "weakSpots" | "submissions";
+type WorkspaceTab = DocTarget | "weakSpots" | "submissions";
 type WorkspaceResource = "submissions";
 
 type ReviewLabels = ReturnType<typeof useLanguage>["t"];
@@ -80,12 +80,18 @@ function getRatingButtons(t: ReviewLabels): { rating: FsrsRating; label: string;
 }
 
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
-const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "docs";
+const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "notes";
+const WORKSPACE_TABS: readonly WorkspaceTab[] = ["notes", "cards", "solutions", "weakSpots", "submissions"];
+
+function isDocTab(tab: WorkspaceTab): tab is DocTarget {
+  return tab === "notes" || tab === "cards" || tab === "solutions";
+}
 const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
 
 /** The open tab, as the Coach's page context names it. */
 function agentPanel(tab: WorkspaceTab) {
-  return tab === "weakSpots" ? ("weak_spots" as const) : tab;
+  if (tab === "weakSpots") return "weak_spots" as const;
+  return tab === "solutions" ? ("docs" as const) : tab;
 }
 
 function subscribeReviewTags(onStoreChange: () => void) {
@@ -250,8 +256,8 @@ export default function ReviewPage({
     let preferred = DEFAULT_WORKSPACE_TAB;
     try {
       const stored = localStorage.getItem(LAST_WORKSPACE_TAB_KEY);
-      // Older builds stored quiz, cards, or notes: those live under Docs now.
-      if (stored === "weakSpots" || stored === "submissions") preferred = stored;
+      // Older builds stored quiz or docs: those open on Notes.
+      if (WORKSPACE_TABS.includes(stored as WorkspaceTab)) preferred = stored as WorkspaceTab;
     } catch {}
     selectWorkspaceTab(preferred);
   }, [selectWorkspaceTab, data?.problem?.id]);
@@ -629,18 +635,23 @@ function WorkspacePanel({
 }) {
   const { t } = useLanguage();
   const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
-    { id: "docs", label: t.review.docs },
+    { id: "notes", label: t.docs.notes },
+    { id: "cards", label: t.docs.cards },
+    { id: "solutions", label: t.docs.solutions },
     { id: "weakSpots", label: t.review.weakSpots },
     { id: "submissions", label: t.review.submissions, count: submissions?.length },
   ];
 
+  // The docs' Edit / Save buttons render here, at the end of the tab row.
+  const [docActions, setDocActions] = useState<HTMLDivElement | null>(null);
+
   return (
     <Surface className="flex h-full min-h-[620px] flex-col overflow-hidden rounded-none border-0 shadow-none lg:min-h-0">
-      <div className="shrink-0 border-b border-border px-5 pt-2">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 pt-2">
         <div
           role="tablist"
           aria-label={t.review.workspace}
-          className="flex items-end gap-6 overflow-x-auto"
+          className="flex min-w-0 flex-1 items-end gap-4 overflow-x-auto sm:gap-6"
           onKeyDown={(event) => moveTabFocus(event)}
         >
           {tabs.map((tab) => (
@@ -654,6 +665,7 @@ function WorkspacePanel({
             />
           ))}
         </div>
+        <div ref={setDocActions} className={cn("shrink-0 pb-1", !isDocTab(activeTab) && "hidden")} />
       </div>
 
       <div
@@ -662,7 +674,14 @@ function WorkspacePanel({
         aria-labelledby={`review-tab-${activeTab}`}
         className="min-h-0 flex-1 overflow-hidden"
       >
-        {activeTab === "docs" && <ProblemDocs key={problemId} problemId={problemId} className="h-full" />}
+        {/* Stays mounted across tabs, so the docs load once and a draft survives. */}
+        <ProblemDocs
+          key={problemId}
+          problemId={problemId}
+          target={isDocTab(activeTab) ? activeTab : "notes"}
+          actionsSlot={docActions}
+          className={cn("h-full", !isDocTab(activeTab) && "hidden")}
+        />
 
         {activeTab === "weakSpots" && (
           <div className="h-full overflow-y-auto p-4">
