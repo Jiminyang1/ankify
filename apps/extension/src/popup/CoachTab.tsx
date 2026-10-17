@@ -54,6 +54,7 @@ export type CoachCopy = {
   notSaved: string;
   offPage: string;
   thinking: string;
+  thinkingFor: (seconds: number) => string;
   quick: { failing: string; hint: string; history: string };
   approve: string;
   apply: string;
@@ -114,6 +115,9 @@ export function CoachTab({
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [partial, setPartial] = useState("");
+  /** When the turn was sent, once the model is known to be thinking. */
+  const [thinkingSince, setThinkingSince] = useState<number | null>(null);
+  const sentAtRef = useRef(0);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -380,8 +384,10 @@ export function CoachTab({
     const controller = new AbortController();
     abortRef.current = controller;
     onExpandedChange(true);
+    sentAtRef.current = Date.now();
     setStreaming(true);
     setPartial("");
+    setThinkingSince(null);
     setPendingMessage(text);
     setError(null);
     setNotice(null);
@@ -417,6 +423,7 @@ export function CoachTab({
       abortRef.current = null;
       setStreaming(false);
       setPartial("");
+      setThinkingSince(null);
       setPendingMessage(null);
     }
   }
@@ -438,6 +445,8 @@ export function CoachTab({
       );
     } else if (event.type === "text_delta") {
       setPartial((current) => current + event.delta);
+    } else if (event.type === "thinking") {
+      setThinkingSince((current) => current ?? sentAtRef.current);
     } else if (event.type === "step") {
       setSnapshot((current) => (current ? { ...current, steps: upsert(current.steps, event.step) } : current));
       if (event.step.kind === "weakness") void loadWeaknesses();
@@ -963,6 +972,8 @@ export function CoachTab({
                   <div className="coach-msg coach-msg-assistant">
                     <PopupMarkdown>{partial}</PopupMarkdown>
                   </div>
+                ) : live && thinkingSince !== null ? (
+                  <ThinkingElapsed since={thinkingSince} label={copy.thinkingFor} />
                 ) : run.status === "running" ? (
                   <p className="popup-muted coach-thinking">
                     <span className="btn-spinner" /> {copy.thinking}
@@ -1000,6 +1011,20 @@ export function CoachTab({
 
       {composer}
     </section>
+  );
+}
+
+/** A long think, counted from when the turn was sent so it never looks stuck. */
+function ThinkingElapsed({ since, label }: { since: number; label: (seconds: number) => string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <p className="popup-muted coach-thinking coach-thinking-elapsed">
+      <span className="btn-spinner" /> {label(Math.max(0, Math.floor((now - since) / 1_000)))}
+    </p>
   );
 }
 

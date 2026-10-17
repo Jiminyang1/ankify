@@ -132,6 +132,7 @@ export async function POST(req: Request) {
             settings: activeModel.settings,
             abortSignal: runAbortController.signal,
             onTextDelta: (delta) => emit({ type: "text_delta", delta }),
+            onThinking: () => emit({ type: "thinking" }),
             onStep: (step) => emit({ type: "step", step }),
             analyzeAttempts: trigger?.type === "analyze_attempts",
             practice: !context.practiceActive

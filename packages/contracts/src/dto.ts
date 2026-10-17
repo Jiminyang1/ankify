@@ -88,6 +88,8 @@ export type AgentStreamEvent =
       message: AgentMessageDto;
     }
   | { type: "text_delta"; delta: string }
+  /** The model is still thinking: a liveness pulse, about one every 2s. Never carries its reasoning. */
+  | { type: "thinking" }
   | { type: "step"; step: AgentStepDto }
   | { type: "done"; session: AgentSessionDto; message: AgentMessageDto; run: AgentRunDto }
   /** A practice reply was judged; the session's progress before the Coach replies. */

@@ -3147,6 +3147,10 @@ a:focus-visible,
   gap: 7px;
 }
 
+.coach-thinking-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
 .coach-step {
   margin: 0;
 }
