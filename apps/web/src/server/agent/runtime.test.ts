@@ -20,6 +20,11 @@ describe("classifyAgentError", () => {
       message: "The Study Coach response was interrupted.",
     });
   });
+
+  it("names a reply that thought through the whole output budget", () => {
+    expect(classifyAgentError(new Error("agent_output_limit")).code).toBe("agent_output_limit");
+    expect(classifyAgentError(new Error("agent_empty_response")).code).toBe("agent_failed");
+  });
 });
 
 describe("Study Coach model context", () => {
