@@ -41,6 +41,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/field";
 import { Markdown } from "@/components/ui/markdown";
 import { MotionPresence } from "@/components/ui/motion";
+import { Spinner } from "@/components/ui/spinner";
 import {
   notifyAgentJobUpdated,
   notifyPracticeUpdated,
@@ -100,6 +101,9 @@ export function AgentSidebar({
   const [streaming, setStreaming] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [partialResponse, setPartialResponse] = useState("");
+  /** When the turn was sent, once the model is known to be thinking. */
+  const [thinkingSince, setThinkingSince] = useState<number | null>(null);
+  const turnSentAtRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
@@ -334,6 +338,10 @@ export function AgentSidebar({
       setPartialResponse((current) => current + event.delta);
       return;
     }
+    if (event.type === "thinking") {
+      setThinkingSince((current) => current ?? turnSentAtRef.current);
+      return;
+    }
     if (event.type === "step") {
       setSnapshot((current) =>
         current ? { ...current, steps: mergeById(current.steps, event.step) } : current,
@@ -390,8 +398,10 @@ export function AgentSidebar({
     if (streaming || persistedRunActive || !message.trim()) return;
     const controller = new AbortController();
     turnAbortRef.current = controller;
+    turnSentAtRef.current = Date.now();
     setStreaming(true);
     setPartialResponse("");
+    setThinkingSince(null);
     setError(null);
 
     try {
@@ -424,6 +434,7 @@ export function AgentSidebar({
       if (turnAbortRef.current === controller) turnAbortRef.current = null;
       setStreaming(false);
       setActiveRunId(null);
+      setThinkingSince(null);
     }
   }, [activeSessionId, coachModel.choice, handleStreamEvent, pageContext, persistedRunActive, streaming, t.agent.sendFailed]);
 
@@ -936,6 +947,7 @@ export function AgentSidebar({
                   run={run}
                   snapshot={snapshot!}
                   partialResponse={activeRunId === run.id ? partialResponse : ""}
+                  thinkingSince={activeRunId === run.id ? thinkingSince : null}
                   jobs={jobs}
                   actionBusy={actionBusy}
                   onApprove={approveProposal}
@@ -1068,6 +1080,7 @@ function AgentTurn({
   run,
   snapshot,
   partialResponse,
+  thinkingSince,
   jobs,
   actionBusy,
   onApprove,
@@ -1078,6 +1091,7 @@ function AgentTurn({
   run: AgentRunDto;
   snapshot: AgentSessionSnapshotDto;
   partialResponse: string;
+  thinkingSince: number | null;
   jobs: Record<string, PublicAiJobDto>;
   actionBusy: string | null;
   onApprove: (step: AgentStepDto) => void;
@@ -1136,10 +1150,14 @@ function AgentTurn({
       )}
 
       {run.status === "running" && !partialResponse && !assistantMessage && (
-        <div className="flex items-center gap-2 px-1 text-xs text-muted">
-          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
-          {t.agent.responding}
-        </div>
+        thinkingSince !== null ? (
+          <ThinkingElapsed since={thinkingSince} />
+        ) : (
+          <div className="flex items-center gap-2 px-1 text-xs text-muted">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            {t.agent.responding}
+          </div>
+        )
       )}
       {run.status === "failed" && (
         <div className="flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/8 px-3 py-2 text-xs text-danger">
@@ -1148,6 +1166,23 @@ function AgentTurn({
         </div>
       )}
     </section>
+  );
+}
+
+/** A long think, counted from when the turn was sent so it never looks stuck. */
+function ThinkingElapsed({ since }: { since: number }) {
+  const { t } = useLanguage();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - since) / 1_000));
+  return (
+    <div className="flex items-center gap-2 px-1 text-xs text-muted tabular-nums">
+      <Spinner />
+      {t.agent.thinkingFor(seconds)}
+    </div>
   );
 }
 

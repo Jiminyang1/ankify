@@ -362,6 +362,7 @@ const EXT_I18N = {
       notSaved: "Not saved in ankify",
       offPage: "Open a LeetCode problem to talk about it, or ask about your reviews.",
       thinking: "Thinking",
+      thinkingFor: (seconds: number) => `Thinking · ${seconds}s`,
       quick: {
         failing: "Why is my code failing?",
         hint: "Give me a hint, not the answer",
@@ -712,6 +713,7 @@ const EXT_I18N = {
       notSaved: "还没存进 ankify",
       offPage: "打开一道 LeetCode 题就能聊这道题，也可以问复习安排。",
       thinking: "思考中",
+      thinkingFor: (seconds: number) => `思考中 · ${seconds} 秒`,
       quick: {
         failing: "我的代码哪里错了？",
         hint: "给我一点提示，别直接给答案",

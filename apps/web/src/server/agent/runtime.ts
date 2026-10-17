@@ -11,6 +11,7 @@ import type { AiRuntimeSettings } from "@/server/settings";
 import { compactAgentSessionIfNeeded } from "./compaction";
 import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
+import { createThinkingPulse } from "./thinking-pulse";
 import { finishAgentRun, getAgentModelMessages } from "./store";
 import { judgeTalkTurn, prepareTalkReferences, recordTutorLine, startTalkTurn } from "@/server/practice";
 import { analyzeAttempts } from "./analyze-attempts";
@@ -31,6 +32,8 @@ export async function runStudyCoach(args: {
   settings: AiRuntimeSettings;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string) => void;
+  /** The model is reasoning: throttled pulses, never the reasoning itself. */
+  onThinking?: () => void;
   onStep: (step: AgentStepDto) => void;
   /** "Analyze my attempts": record weak spots server-side before the Coach explains them. */
   analyzeAttempts?: boolean;
@@ -151,10 +154,14 @@ export async function runStudyCoach(args: {
   });
 
   const text = createStepTextBuffer();
+  const thinking = createThinkingPulse(() => args.onThinking?.());
   let finishReason: string | undefined;
   for await (const part of result.stream) {
     if (part.type === "start-step") {
       text.startStep();
+      thinking.startStep();
+    } else if (part.type === "reasoning-delta") {
+      thinking.reasoning();
     } else if (part.type === "finish-step") {
       finishReason = part.finishReason;
     } else if (part.type === "text-delta") {
