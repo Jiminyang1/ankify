@@ -6,7 +6,13 @@ export function classifyAgentError(error: unknown) {
     return { code: "agent_interrupted", message: "The Study Coach response was interrupted." };
   }
   if (isAiTimeoutError(error)) {
-    return { code: "agent_timeout", message: "The Study Coach timed out. Try again." };
+    return { code: "agent_timeout", message: "The Study Coach timed out. Try again, or pick a faster model or a lower thinking level." };
+  }
+  if (error instanceof Error && error.message === "agent_output_limit") {
+    return {
+      code: "agent_output_limit",
+      message: "The Study Coach spent its whole budget thinking and wrote no reply. Try again, or pick a faster model or a lower thinking level.",
+    };
   }
   const failure = classifyProviderFailure(error);
   if (failure === "rate_limited") {

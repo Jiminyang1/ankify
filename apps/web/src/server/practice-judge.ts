@@ -139,7 +139,8 @@ async function call<T>(
       output: Output.object({ schema }),
       system,
       prompt: `${prompt}\n\nReturn the JSON object now.`,
-      maxOutputTokens: 1_500,
+      // Thinking counts against the cap, so a call at the user's level needs room.
+      maxOutputTokens: reasoning === "user" ? 16_000 : 1_500,
       ...aiCallOptions(args.settings, reasoning),
       abortSignal: controller.signal,
     });

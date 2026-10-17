@@ -17,6 +17,10 @@ import { analyzeAttempts } from "./analyze-attempts";
 import { createStudyCoachTools } from "./tools";
 
 const AGENT_TIMEOUT_MS = 175_000;
+// Thinking counts against the output cap on every provider. At 4k, DeepSeek
+// V4 Pro on high could think through the whole budget and write no reply; the
+// timeout above is the real bound.
+const AGENT_MAX_OUTPUT_TOKENS = 16_000;
 
 export async function runStudyCoach(args: {
   userId: string;
@@ -82,7 +86,7 @@ export async function runStudyCoach(args: {
     instructions: STUDY_COACH_INSTRUCTIONS,
     tools,
     stopWhen: [stepCountIs(8), hasToolCall("open_problem")],
-    maxOutputTokens: 4_000,
+    maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
     ...aiCallOptions(args.settings, "user"),
   });
   const messages: ModelMessage[] = await getAgentModelMessages(args.userId, args.sessionId);
@@ -147,9 +151,12 @@ export async function runStudyCoach(args: {
   });
 
   const text = createStepTextBuffer();
+  let finishReason: string | undefined;
   for await (const part of result.stream) {
     if (part.type === "start-step") {
       text.startStep();
+    } else if (part.type === "finish-step") {
+      finishReason = part.finishReason;
     } else if (part.type === "text-delta") {
       const delta = text.push(part.text);
       if (delta) args.onTextDelta(delta);
@@ -161,7 +168,9 @@ export async function runStudyCoach(args: {
   }
   let content = text.content;
   if (!content.trim()) {
-    if (!runState.navigationStep) throw new Error("agent_empty_response");
+    if (!runState.navigationStep) {
+      throw new Error(finishReason === "length" ? "agent_output_limit" : "agent_empty_response");
+    }
     content = runState.navigationStep.summary;
   }
 
