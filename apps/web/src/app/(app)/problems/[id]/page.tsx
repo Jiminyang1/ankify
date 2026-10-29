@@ -12,6 +12,7 @@ import { ProblemDetailLayout } from "./problem-detail-layout";
 import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { cn, formatRelative } from "@/lib/utils";
+import { SamePattern } from "@/components/same-pattern";
 import { WeakSpots } from "@/components/weak-spots";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
@@ -91,6 +92,7 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
       count: activeWeaknesses || undefined,
       node: <WeakSpots problemId={problem.id} initialWeaknesses={weaknesses} />,
     },
+    { id: "patterns", label: t.patterns.title, node: <SamePattern slug={problem.leetcodeSlug} /> },
     { id: "submissions", label: t.review.submissions, count: submissions.length, node: submissionsPanel },
     { id: "history", label: t.detail.history, count: reviewHistory.length, node: historyPanel },
   ];
