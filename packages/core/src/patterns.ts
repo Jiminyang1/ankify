@@ -1,0 +1,151 @@
+import { PATTERN_PROBLEM_DATA, PATTERN_TOPIC_DATA } from "./patterns.generated";
+import type { LeetCodeDifficulty } from "./types";
+
+/**
+ * Patterns come from 灵茶山艾府's twelve problem lists (used with his
+ * permission), snapshotted by `pnpm patterns:sync`. A pattern is one
+ * technique, such as "count subarrays with exactly k", and its problems are a
+ * ladder ordered by contest rating. Review uses them to suggest a new problem
+ * that needs the same technique once one is remembered.
+ *
+ * The data is large (~600 KB), so this module has its own entry point
+ * (`@ankify/core/patterns`) and only server code imports it.
+ */
+
+/** core = the section's main problems; advanced = 进阶/选做;
+ *  extension = 思维扩展, a stretch beyond the pattern. */
+export type PatternTier = "core" | "advanced" | "extension";
+
+/** [leetcode.com slug, contest rating or null, tier] */
+export type PatternLadderEntry = readonly [slug: string, rating: number | null, tier: PatternTier];
+
+export interface Pattern {
+  /** Stable `<topic>/<pattern>` key, e.g. `sliding-window/window-count-exact`. */
+  key: string;
+  /** His heading path, e.g. `不定长滑动窗口 / 求子数组个数 / 恰好型滑动窗口`. */
+  zh: string;
+  en: string;
+  problems: readonly PatternLadderEntry[];
+}
+
+export interface PatternTopic {
+  key: string;
+  /** The leetcode.cn discussion id of his list. */
+  source: string;
+  zh: string;
+  en: string;
+  patterns: readonly Pattern[];
+}
+
+export interface PatternProblem {
+  id: number;
+  title: string;
+  difficulty: LeetCodeDifficulty;
+  premium: boolean;
+}
+
+export interface PatternStep {
+  slug: string;
+  id: number;
+  title: string;
+  difficulty: LeetCodeDifficulty;
+  premium: boolean;
+  rating: number | null;
+  tier: PatternTier;
+}
+
+export const PATTERN_TOPICS: readonly PatternTopic[] = PATTERN_TOPIC_DATA;
+export const PATTERN_AUTHOR = { zh: "灵茶山艾府", en: "EndlessCheng (灵茶山艾府)" } as const;
+
+export function patternSourceUrl(topic: Pick<PatternTopic, "source">): string {
+  return `https://leetcode.cn/circle/discuss/${topic.source}/`;
+}
+
+let bySlug: Map<string, { topic: PatternTopic; pattern: Pattern }[]> | null = null;
+let byKey: Map<string, { topic: PatternTopic; pattern: Pattern }> | null = null;
+
+function indexes() {
+  if (!bySlug || !byKey) {
+    bySlug = new Map();
+    byKey = new Map();
+    for (const topic of PATTERN_TOPICS) {
+      for (const pattern of topic.patterns) {
+        byKey.set(pattern.key, { topic, pattern });
+        for (const [slug] of pattern.problems) {
+          const list = bySlug.get(slug) ?? [];
+          list.push({ topic, pattern });
+          bySlug.set(slug, list);
+        }
+      }
+    }
+  }
+  return { bySlug, byKey };
+}
+
+/** Every pattern a problem belongs to, in list order. */
+export function patternsForSlug(slug: string): { topic: PatternTopic; pattern: Pattern }[] {
+  return indexes().bySlug.get(slug) ?? [];
+}
+
+export function findPattern(key: string): { topic: PatternTopic; pattern: Pattern } | null {
+  return indexes().byKey.get(key) ?? null;
+}
+
+export function patternProblem(slug: string): PatternProblem | null {
+  return PATTERN_PROBLEM_DATA[slug] ?? null;
+}
+
+/** "Other …" sections collect leftovers that share no technique, so a
+ *  problem there says nothing about what to try next. */
+export function isMiscPattern(pattern: Pick<Pattern, "zh">): boolean {
+  const last = pattern.zh.split(" / ").at(-1) ?? "";
+  return last.startsWith("其他");
+}
+
+const TIER_ORDER: Record<PatternTier, number> = { core: 0, advanced: 1, extension: 2 };
+
+export function patternSteps(pattern: Pattern): PatternStep[] {
+  return pattern.problems
+    .map(([slug, rating, tier]) => {
+      const problem = PATTERN_PROBLEM_DATA[slug];
+      return problem ? { slug, ...problem, rating, tier } : null;
+    })
+    .filter((step): step is PatternStep => step !== null);
+}
+
+/**
+ * The next problems to try in a pattern: core first, then advanced, then
+ * extensions, each in the list's own (rating) order, skipping problems the
+ * user has done and, unless asked, premium ones.
+ */
+export function nextInPattern(
+  pattern: Pattern,
+  done: (slug: string) => boolean,
+  options: { limit?: number; includePremium?: boolean } = {},
+): PatternStep[] {
+  const { limit = 1, includePremium = false } = options;
+  return patternSteps(pattern)
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => !done(step.slug) && (includePremium || !step.premium))
+    .sort((a, b) => TIER_ORDER[a.step.tier] - TIER_ORDER[b.step.tier] || a.index - b.index)
+    .slice(0, limit)
+    .map(({ step }) => step);
+}
+
+/**
+ * After a problem is remembered: one new problem that needs the same
+ * technique. Patterns are tried in list order; "Other" sections and muted
+ * patterns are skipped.
+ */
+export function suggestSamePattern(
+  slug: string,
+  done: (slug: string) => boolean,
+  muted: ReadonlySet<string> = new Set(),
+): { topic: PatternTopic; pattern: Pattern; next: PatternStep } | null {
+  for (const { topic, pattern } of patternsForSlug(slug)) {
+    if (isMiscPattern(pattern) || muted.has(pattern.key)) continue;
+    const [next] = nextInPattern(pattern, (other) => other === slug || done(other));
+    if (next) return { topic, pattern, next };
+  }
+  return null;
+}

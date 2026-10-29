@@ -8,6 +8,7 @@ import { getReviewQueueStatus } from "./review-queue";
 const reviewProblemColumns = {
   id: schema.problems.id,
   leetcodeId: schema.problems.leetcodeId,
+  leetcodeSlug: schema.problems.leetcodeSlug,
   title: schema.problems.title,
   difficulty: schema.problems.difficulty,
   descriptionMd: schema.problems.descriptionMd,

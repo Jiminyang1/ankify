@@ -33,6 +33,7 @@ import {
 } from "@/components/agent/agent-shell";
 import { ProblemDocs, type DocTarget } from "@/components/problem-docs";
 import { WeakSpots } from "@/components/weak-spots";
+import { PatternSuggestion, SamePattern } from "@/components/same-pattern";
 import { PRACTICE_UPDATED_EVENT, type PracticeUpdatedEvent } from "@/lib/agent-events";
 import { cn, formatInterval } from "@/lib/utils";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
@@ -41,7 +42,7 @@ import type { ReviewWorkspaceLayoutProps } from "./review-workspace-layout";
 
 type RateResult = ReviewRateResponseDto;
 type Stage = "loading" | "review" | "result" | "empty";
-type WorkspaceTab = DocTarget | "weakSpots" | "submissions";
+type WorkspaceTab = DocTarget | "weakSpots" | "patterns" | "submissions";
 type WorkspaceResource = "submissions";
 
 type ReviewLabels = ReturnType<typeof useLanguage>["t"];
@@ -81,7 +82,7 @@ function getRatingButtons(t: ReviewLabels): { rating: FsrsRating; label: string;
 
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
 const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "notes";
-const WORKSPACE_TABS: readonly WorkspaceTab[] = ["notes", "cards", "solutions", "weakSpots", "submissions"];
+const WORKSPACE_TABS: readonly WorkspaceTab[] = ["notes", "cards", "solutions", "weakSpots", "patterns", "submissions"];
 
 function isDocTab(tab: WorkspaceTab): tab is DocTarget {
   return tab === "notes" || tab === "cards" || tab === "solutions";
@@ -91,6 +92,7 @@ const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
 /** The open tab, as the Coach's page context names it. */
 function agentPanel(tab: WorkspaceTab) {
   if (tab === "weakSpots") return "weak_spots" as const;
+  if (tab === "patterns") return "overview" as const;
   return tab === "solutions" ? ("docs" as const) : tab;
 }
 
@@ -440,6 +442,7 @@ export default function ReviewPage({
               errors={workspaceErrors}
               onRetry={(resource) => void loadWorkspaceResource(resource, true)}
               problemId={problem.id}
+              slug={problem.leetcodeSlug}
             />
           )}
           coach={(
@@ -493,6 +496,7 @@ export default function ReviewPage({
             </div>
             {error && <p className="mt-3 text-xs text-danger">{error}</p>}
           </Surface>
+          {result.suggestion && <PatternSuggestion key={problem.id} suggestion={result.suggestion} />}
         </div>
       )}
 
@@ -624,6 +628,7 @@ function WorkspacePanel({
   errors,
   onRetry,
   problemId,
+  slug,
 }: {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
@@ -632,6 +637,7 @@ function WorkspacePanel({
   errors: Partial<Record<WorkspaceResource, string>>;
   onRetry: (resource: WorkspaceResource) => void;
   problemId: string;
+  slug: string;
 }) {
   const { t } = useLanguage();
   const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
@@ -639,6 +645,7 @@ function WorkspacePanel({
     { id: "cards", label: t.docs.cards },
     { id: "solutions", label: t.docs.solutions },
     { id: "weakSpots", label: t.review.weakSpots },
+    { id: "patterns", label: t.patterns.title },
     { id: "submissions", label: t.review.submissions, count: submissions?.length },
   ];
 
@@ -686,6 +693,12 @@ function WorkspacePanel({
         {activeTab === "weakSpots" && (
           <div className="h-full overflow-y-auto p-4">
             <WeakSpots key={problemId} problemId={problemId} />
+          </div>
+        )}
+
+        {activeTab === "patterns" && (
+          <div className="h-full overflow-y-auto p-4">
+            <SamePattern key={slug} slug={slug} />
           </div>
         )}
 

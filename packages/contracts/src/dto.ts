@@ -221,6 +221,55 @@ export type ReviewRateResponseDto = {
   idempotentReplay: boolean;
   nextDue: string | null;
   queue: QueueStatsDto;
+  /** A new problem with the same technique, offered once a problem is
+   *  remembered (older servers omit it). */
+  suggestion?: PatternSuggestionDto | null;
+};
+
+/** A name in both languages the app speaks. Pattern names come from
+ *  灵茶山艾府's lists (zh) and ankify's own translations (en). */
+export type LocalizedNameDto = { en: string; zh: string };
+
+export type PatternStepDto = {
+  slug: string;
+  id: number;
+  title: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  premium: boolean;
+  /** Contest rating; null for problems that never appeared in a contest. */
+  rating: number | null;
+  tier: "core" | "advanced" | "extension";
+  /** Set when the problem is in the deck. */
+  problemId: string | null;
+  /** Solved on LeetCode or in the deck. */
+  done: boolean;
+};
+
+export type PatternRefDto = {
+  key: string;
+  name: LocalizedNameDto;
+  topic: { key: string; name: LocalizedNameDto; sourceUrl: string };
+};
+
+export type PatternSuggestionDto = {
+  pattern: PatternRefDto;
+  problem: PatternStepDto;
+};
+
+export type ProblemPatternDto = PatternRefDto & {
+  done: number;
+  total: number;
+  /** "Other" sections, where problems share no technique. */
+  misc: boolean;
+  /** The user turned off suggestions from this pattern. */
+  muted: boolean;
+  /** Every problem in ladder order (core, advanced, extension). */
+  steps: PatternStepDto[];
+};
+
+export type ProblemPatternsDto = {
+  slug: string;
+  patterns: ProblemPatternDto[];
 };
 
 export type ReviewUndoResponseDto = {
@@ -241,6 +290,7 @@ export type ProblemLookupPayloadDto = {
 export type ReviewProblemDto = {
   id: string;
   leetcodeId: number | null;
+  leetcodeSlug: string;
   title: string;
   difficulty: CaptureProblemInput["difficulty"];
   descriptionMd: string | null;
