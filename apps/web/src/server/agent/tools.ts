@@ -10,7 +10,6 @@ import {
 } from "@ankify/contracts";
 import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { getCurrentQuizSession } from "@/server/ai-generation/quiz";
 import { dueProblemCondition } from "@/server/due-problems";
 import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
@@ -19,7 +18,6 @@ import { getRequestLanguage } from "@/server/i18n";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
-import { toAgentSafeQuizState } from "./quiz-context";
 import { relativeTimeLabel } from "./time-labels";
 
 type AgentToolContext = {
@@ -343,24 +341,6 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
 
-    get_quiz_state: tool({
-      description:
-        "Load a problem's quiz state only when the user asks about quiz progress, an answered quiz result, or requests a quiz action that depends on current state. Never call it merely because the Quiz panel is open and never redirect unrelated teaching to Quiz. Omit problemId to use the current problem. Unanswered content is withheld.",
-      inputSchema: z.object({ problemId: problemIdInput }),
-      execute: async ({ problemId: requestedId }) => {
-        const target = await resolveProblem(requestedId);
-        const session = await getCurrentQuizSession(context.userId, target.id);
-        await record({
-          kind: "read",
-          toolName: "get_quiz_state",
-          status: "completed",
-          summary: session ? `Loaded ${session.status} quiz state` : "No current quiz",
-        });
-        if (!session) return { session: null };
-        return { session: toAgentSafeQuizState(session) };
-      },
-    }),
-
     get_problem_docs: tool({
       description:
         "Load the problem's Notes: the user's understanding, in ## sections such as Approach, Key insight, Pitfalls, Complexity, My attempts. Call before proposing a Notes edit, or when what the user already wrote down matters.",
@@ -604,60 +584,6 @@ export function createStudyCoachTools(context: AgentToolContext) {
       },
     }),
 
-    propose_quiz_generation: tool({
-      description:
-        "Propose generating a quiz batch. Call only when the user explicitly asks. Use generate when none exists, regenerate to replace the current batch, and next_batch only after a completed quiz. Nothing changes until the user confirms.",
-      inputSchema: z.object({
-        problemId: problemIdInput,
-        action: z.enum(["generate", "regenerate", "next_batch"]),
-        reason: z.string().min(1).max(500),
-      }),
-      execute: async ({ problemId: requestedId, action, reason }) => {
-        const target = await resolveProblem(requestedId);
-        const current = await getCurrentQuizSession(context.userId, target.id);
-        if (action === "generate" && current) {
-          await record({
-            kind: "read",
-            toolName: "propose_quiz_generation",
-            status: "completed",
-            summary: `A ${current.status} quiz already exists`,
-          });
-          return {
-            proposalCreated: false,
-            currentSessionId: current.id,
-            currentStatus: current.status,
-          };
-        }
-        if (action === "regenerate" && !current) throw new Error("quiz_not_found");
-        if (action === "next_batch" && current?.status !== "completed") {
-          throw new Error("quiz_session_not_completed");
-        }
-        const mappedAction = {
-          generate: "quiz_generate",
-          regenerate: "quiz_regenerate",
-          next_batch: "quiz_next_batch",
-        }[action] as "quiz_generate" | "quiz_regenerate" | "quiz_next_batch";
-        const proposal: AgentProposal = {
-          action: mappedAction,
-          requestId: crypto.randomUUID(),
-          problemId: target.id,
-          expectedQuizSessionId: current?.id ?? null,
-          reason,
-        };
-        const step = await record({
-          kind: "proposal",
-          toolName: "propose_quiz_generation",
-          status: "pending",
-          summary: reason,
-          proposal,
-        });
-        return {
-          proposalId: step.id,
-          action: proposal.action,
-          requiresUserConfirmation: true,
-        };
-      },
-    }),
   };
   return { tools, recordStep: record };
 }

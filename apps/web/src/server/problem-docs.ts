@@ -173,10 +173,6 @@ export async function applyProblemDocEdit(
 export const DOC_WRITE_STATUS: Record<DocWriteError, number> = {
   problem_not_found: 404,
   version_conflict: 409,
-  card_not_found: 409,
-  duplicate_prompt: 400,
-  invalid_prompt: 400,
-  empty_answer: 400,
   invalid_section: 400,
   too_many_cards: 400,
   too_long: 400,

@@ -1,12 +1,4 @@
-import type { PracticeSessionDto, PublicAiJobDto } from "@ankify/contracts";
-
-export const AGENT_JOB_UPDATED_EVENT = "ankify:agent-job-updated";
-
-export type AgentJobUpdatedEvent = CustomEvent<PublicAiJobDto>;
-
-export function notifyAgentJobUpdated(job: PublicAiJobDto) {
-  window.dispatchEvent(new CustomEvent(AGENT_JOB_UPDATED_EVENT, { detail: job }));
-}
+import type { PracticeSessionDto } from "@ankify/contracts";
 
 /** A problem's Notes or Solutions changed (a Coach edit was applied, or a
  *  first practice wrote Solutions). */

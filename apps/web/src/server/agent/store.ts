@@ -655,14 +655,14 @@ export async function getOwnedAgentStep(userId: string, stepId: string) {
   return step ?? null;
 }
 
-/** Marks a proposal accepted. `aiJobId` is the job it started, or null for a
- *  doc edit that was applied directly. */
-export async function acceptAgentProposal(userId: string, stepId: string, aiJobId: string | null) {
+/** Marks a proposal accepted once it has been applied. Accepting one that
+ *  already is returns it unchanged. */
+export async function acceptAgentProposal(userId: string, stepId: string) {
   const db = getDb();
   const now = new Date();
   const [step] = await db
     .update(schema.agentSteps)
-    .set({ status: "accepted", aiJobId, updatedAt: now })
+    .set({ status: "accepted", updatedAt: now })
     .where(
       and(
         eq(schema.agentSteps.id, stepId),
@@ -674,7 +674,7 @@ export async function acceptAgentProposal(userId: string, stepId: string, aiJobI
   if (step) return toAgentStepDto(step);
 
   const current = await getOwnedAgentStep(userId, stepId);
-  if (!current || current.status !== "accepted" || current.aiJobId !== aiJobId) {
+  if (!current || current.status !== "accepted") {
     throw new AgentRequestError("proposal_not_pending", "This proposal is no longer pending.", 409);
   }
   return toAgentStepDto(current);

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { createAiJobClient } from "@ankify/api-client";
 import type {
   WeaknessDto,
   PracticeSessionDto,
@@ -12,7 +11,6 @@ import type {
   CoachModelsDto,
   DocEdit,
   LegacyCardEdit,
-  PublicAiJobDto,
 } from "@ankify/contracts";
 import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
@@ -30,7 +28,6 @@ export type CoachCopy = {
   startPractice: string;
   rateDirectly: string;
   dueForReview: string;
-  practiceFinished: (points: number, total: number) => string;
   title: string;
   showChat: string;
   hideChat: string;
@@ -62,9 +59,9 @@ export type CoachCopy = {
   applied: string;
   dismiss: string;
   dismissed: string;
-  jobRunning: string;
-  jobDone: string;
-  jobFailed: string;
+  /** An approved proposal that isn't a Notes edit: a new weak-spot category,
+   *  or a card or quiz proposal from before those were removed. */
+  approved: string;
   openReview: string;
   openProblem: string;
   noCode: (reason: EditorReadFailure) => string;
@@ -126,7 +123,6 @@ export function CoachTab({
   /** undefined until the active tab is known. */
   const [page, setPage] = useState<PageInfo | undefined>(undefined);
   const [busyStep, setBusyStep] = useState<string | null>(null);
-  const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
   const abortRef = useRef<AbortController | null>(null);
   /** A session started from the button, or resumed, that no Coach step shows. */
   const [localPractice, setLocalPractice] = useState<PracticeSessionDto | null>(null);
@@ -142,9 +138,9 @@ export function CoachTab({
   const [modelChoice, setModelChoice] = useState<AgentModelChoice | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const modelRef = useRef<HTMLDivElement | null>(null);
-  const debriefed = useRef(new Set<string>());
+  /** Finished sessions already handled, so their weak spots reload once. */
+  const completedSeen = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const jobClient = useRef(createAiJobClient((path, init) => apiFetch(settings, path, init))).current;
 
   const api = useCallback((path: string, init?: RequestInit) => apiFetch(settings, path, init), [settings]);
 
@@ -180,7 +176,6 @@ export function CoachTab({
         if (cancelled) return;
         setSessionId(id);
         setSnapshot(null);
-        setJobs({});
         if (id) await loadSnapshot(id);
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : copy.loadFailed);
@@ -225,29 +220,10 @@ export function CoachTab({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [snapshot, partial, pendingMessage, expanded]);
 
-  // Follow jobs started from approved proposals until they finish.
-  const followJob = useCallback(
-    (job: PublicAiJobDto) => {
-      setJobs((current) => ({ ...current, [job.id]: job }));
-      void jobClient
-        .wait(job)
-        .then((done) => setJobs((current) => ({ ...current, [done.id]: done })))
-        .catch(() => {});
-    },
-    [jobClient],
-  );
-  useEffect(() => {
-    for (const step of snapshot?.steps ?? []) {
-      if (step.status === "accepted" && step.aiJobId && !jobs[step.aiJobId]) {
-        void jobClient.get(step.aiJobId).then(followJob).catch(() => {});
-      }
-    }
-  }, [followJob, jobClient, jobs, snapshot?.steps]);
-
   const savedHere = saved && page && saved.slug === page.slug ? saved : null;
   const savedProblemId = savedHere?.problemId ?? null;
 
-  // Resume a session in progress (or finished, awaiting its debrief).
+  // Resume a talk-through in progress.
   useEffect(() => {
     setLocalPractice(null);
     if (!savedProblemId) return;
@@ -319,30 +295,16 @@ export function CoachTab({
     }
   }
 
-  // Latest send, so the completion callback below can stay stable.
+  // Latest send, for code declared before it (starting a practice).
   const sendRef = useRef<typeof send>(null as unknown as typeof send);
-  const practiceCompleted = useCallback(
-    (session: PracticeSessionDto) => {
-      setLocalPractice((current) => (current?.id === session.id ? session : current));
-      if (debriefed.current.has(session.id)) return;
-      debriefed.current.add(session.id);
-      // A talk-through is summarized by the Coach in the same turn; its weak
-      // spots may have been resolved or repeated.
-      if (session.mode === "talk") {
-        void loadWeaknessesRef.current();
-        return;
-      }
-      const items = session.recall.length + (session.check.status === "ready" ? session.check.items.length : 0);
-      const points =
-        session.recall.filter((card) => card.result === "got_it").length +
-        session.check.items.filter((item) => item.answer?.correct).length;
-      void sendRef.current(copy.practiceFinished(points, items), {
-        type: "practice_completed",
-        practiceSessionId: session.id,
-      });
-    },
-    [copy],
-  );
+  const practiceCompleted = useCallback((session: PracticeSessionDto) => {
+    setLocalPractice((current) => (current?.id === session.id ? session : current));
+    if (completedSeen.current.has(session.id)) return;
+    completedSeen.current.add(session.id);
+    // The Coach summarizes a talk-through in the turn that finishes it; its
+    // weak spots may have been resolved or repeated.
+    void loadWeaknessesRef.current();
+  }, []);
 
   async function buildContext(): Promise<AgentPageContext> {
     if (!page) return { page: "extension", activePanel: "overview", problemId: null };
@@ -378,7 +340,7 @@ export function CoachTab({
 
   async function send(
     message: string,
-    trigger?: { type: "practice_completed" | "practice_start" | "analyze_attempts"; practiceSessionId?: string },
+    trigger?: { type: "practice_start" | "analyze_attempts"; practiceSessionId?: string },
   ) {
     const text = message.trim();
     if (!text || streaming || remoteRunActive) return;
@@ -486,7 +448,6 @@ export function CoachTab({
     if (streaming) return;
     setSessionId(null);
     setSnapshot(null);
-    setJobs({});
     setError(null);
     setNotice(null);
     void chrome.storage.local.remove(sessionKeyFor(page?.slug ?? null));
@@ -514,7 +475,6 @@ export function CoachTab({
     if (streaming || id === sessionId) return;
     setSessionId(id);
     setSnapshot(null);
-    setJobs({});
     setError(null);
     setNotice(null);
     setLoading(true);
@@ -579,14 +539,12 @@ export function CoachTab({
       const response = await api(`/api/agent/steps/${encodeURIComponent(step.id)}/${action}`, { method: "POST" });
       const body = (await response.json().catch(() => null)) as {
         step?: AgentStepDto;
-        job?: PublicAiJobDto;
         docs?: unknown;
         message?: string;
         error?: string;
       } | null;
       if (!response.ok || !body?.step) throw new Error(body?.message ?? body?.error ?? copy.sendFailed);
       setSnapshot((current) => (current ? { ...current, steps: upsert(current.steps, body.step!) } : current));
-      if (body.job) followJob(body.job);
       if (body.docs) onDocsChanged();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : copy.sendFailed);
@@ -621,9 +579,6 @@ export function CoachTab({
     : [];
 
   sendRef.current = send;
-  const practiceShownInThread = new Set(
-    (snapshot?.steps ?? []).flatMap((step) => (step.practiceSessionId ? [step.practiceSessionId] : [])),
-  );
   // Whether a session is running comes from the server (resume on load, or
   // the session the Coach or the button started), not from old chat steps.
   const practiceActive = localPractice?.status === "active";
@@ -943,20 +898,13 @@ export function CoachTab({
             const assistant = snapshot?.messages.find((m) => m.runId === run.id && m.role === "assistant");
             const steps = (snapshot?.steps ?? []).filter((step) => step.runId === run.id);
             const live = streaming && run.status === "running";
-            // A session started from the button sits right before its debrief.
-            const practiceBefore =
-              localPractice && !pinnedTalk && run.context.practice?.practiceSessionId === localPractice.id
-                ? renderPractice(localPractice.id, localPractice)
-                : null;
             return (
               <div key={run.id} className="coach-turn">
-                {practiceBefore}
                 {user && <div className="coach-msg coach-msg-user">{user.content}</div>}
                 {steps.filter((step) => step.kind !== "practice").map((step) => (
                   <CoachStep
                     key={step.id}
                     step={step}
-                    job={step.aiJobId ? jobs[step.aiJobId] : undefined}
                     busy={busyStep === step.id}
                     copy={copy}
                     onApprove={() => void actOnProposal(step, "approve")}
@@ -992,11 +940,6 @@ export function CoachTab({
             );
           })
         )}
-        {localPractice &&
-          !pinnedTalk &&
-          !practiceShownInThread.has(localPractice.id) &&
-          !runs.some((run) => run.context.practice?.practiceSessionId === localPractice.id) &&
-          renderPractice(localPractice.id, localPractice)}
         {pendingMessage && (
           <div className="coach-turn">
             <div className="coach-msg coach-msg-user">{pendingMessage}</div>
@@ -1031,7 +974,6 @@ function ThinkingElapsed({ since, label }: { since: number; label: (seconds: num
 
 function CoachStep({
   step,
-  job,
   busy,
   copy,
   onApprove,
@@ -1040,7 +982,6 @@ function CoachStep({
   onRemoveWeakness,
 }: {
   step: AgentStepDto;
-  job: PublicAiJobDto | undefined;
   busy: boolean;
   copy: CoachCopy;
   onApprove: () => void;
@@ -1093,20 +1034,8 @@ function CoachStep({
           </div>
         ) : step.status === "dismissed" ? (
           <p className="popup-muted">{copy.dismissed}</p>
-        ) : step.status === "accepted" && docEdit ? (
-          <p className="popup-muted">{copy.applied}</p>
         ) : step.status === "accepted" ? (
-          <p className="popup-muted coach-thinking">
-            {!job || job.status === "queued" || job.status === "running" ? (
-              <>
-                <span className="btn-spinner" /> {copy.jobRunning}
-              </>
-            ) : job.status === "succeeded" ? (
-              copy.jobDone
-            ) : (
-              copy.jobFailed
-            )}
-          </p>
+          <p className="popup-muted">{docEdit ? copy.applied : copy.approved}</p>
         ) : null}
       </div>
     );

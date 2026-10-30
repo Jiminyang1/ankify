@@ -20,8 +20,6 @@ interface RateLimitResult {
 export const RATE_LIMITS = {
   /** Study Coach turns: each turn may invoke several model/tool steps. */
   agent: { limit: 12, windowMs: 60_000 },
-  /** AI generation (cards, quizzes): expensive + slow, tightest cap. */
-  ai: { limit: 20, windowMs: 60_000 },
   /** Capture writes: cheaper, but the extension can fire in bursts. */
   capture: { limit: 60, windowMs: 60_000 },
   /** Anything that calls LeetCode's public GraphQL: account links, solved-list

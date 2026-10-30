@@ -2,11 +2,8 @@ import type {
   AgentNavigation,
   AgentPageContext,
   AgentProposal,
-  AiJobCreateRequestInput,
   CaptureProblemInput,
   CaptureSubmissionInput,
-  QuizAnswer,
-  QuizItem,
 } from "./schemas";
 
 /** What the Coach's model picker offers. With the server's starter key the
@@ -68,6 +65,8 @@ export type AgentStepDto = {
   practiceSessionId: string | null;
   /** Set on `weakness` steps: the weakness the Coach recorded. */
   weaknessId: string | null;
+  /** Legacy: the job an approved card or quiz proposal started. Extension
+   *  builds 0.3.x look it up (GET /api/ai-jobs/:id). */
   aiJobId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -96,15 +95,6 @@ export type AgentStreamEvent =
   | { type: "practice"; session: PracticeSessionDto }
   | { type: "error"; run: AgentRunDto; message: string };
 
-export type CardDto = {
-  id: string;
-  version: number;
-  aiStatus: "candidate" | "failed" | "ready";
-  errorMessage: string | null;
-  question: string;
-  answer: string;
-};
-
 export type SubmissionDto = {
   id: string;
   language: string;
@@ -117,38 +107,6 @@ export type SubmissionDto = {
   actualOutput: string | null;
   errorMessage: string | null;
   submittedAt: string;
-};
-
-export type QuizSessionDto = {
-  id: string;
-  problemId: string;
-  status: "active" | "completed" | "archived";
-  itemsJson: QuizItem[];
-  answersJson: QuizAnswer[];
-  score: number | null;
-  createdAt: string;
-  updatedAt: string | null;
-  completedAt: string | null;
-};
-
-export type PublicAiJobDto = {
-  id: string;
-  problemId: string;
-  kind: "card" | "quiz" | "practice";
-  action: AiJobCreateRequestInput["action"];
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "superseded";
-  attempt: number;
-  maxAttempts: number;
-  resultCardId: string | null;
-  resultQuizSessionId: string | null;
-  targetCardId: string | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-  queuedAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type ProblemDto = {
@@ -272,8 +230,6 @@ export type FsrsPreviewsDto = Record<1 | 2 | 3 | 4, { due: string }>;
 
 export type ProblemLookupPayloadDto = {
   problem: ProblemDto;
-  cards: CardDto[];
-  candidates: CardDto[];
   previews: FsrsPreviewsDto;
   queue: QueueStatsDto;
 };
@@ -399,12 +355,14 @@ export type ProblemDocsDto = {
   };
 };
 
-/** A practice session as the client sees it: check answers stay hidden until
- *  each question is answered. */
+/** A practice session as the client sees it: a talk-through's reference
+ *  points stay hidden until each question settles. */
 export type PracticeSessionDto = {
   id: string;
   problemId: string;
   status: "active" | "completed" | "abandoned";
+  /** recall_check: a stage-2 session (cards, then generated questions), from
+   *  before talk-throughs; nothing starts one any more. */
   mode: "recall_check" | "talk";
   /** Ended by the user before everything was answered. */
   endedEarly: boolean;
@@ -429,20 +387,10 @@ export type PracticeSessionDto = {
     /** "I did say that" can re-judge it (once). */
     canDispute: boolean;
   }[];
-  recall: { key: string; prompt: string; answer: string; result: "got_it" | "missed" | null }[];
-  check: {
-    status: "pending" | "ready" | "failed" | "skipped";
-    /** Why there are no questions, when failed or skipped. */
-    message: string | null;
-    items: {
-      id: string;
-      question: string;
-      choices: string[];
-      scope: string;
-      source: { kind: "statement" | "notes" | "card" | "submission"; ref: string | null };
-      answer: { choice: number; correct: boolean; answerIndex: number; explanation: string } | null;
-    }[];
-  };
+  /** Legacy, always empty: extension builds 0.3.x read `check.status`, and
+   *  `recall` and `check.items` for a stage-2 session. */
+  recall: never[];
+  check: { status: "skipped"; message: null; items: never[] };
   score: number | null;
   suggestedRating: 1 | 2 | 3 | 4 | null;
   createdAt: string;

@@ -15,33 +15,6 @@ export const submissionStatusEnum = z.enum([
 export const aiProviderEnum = z.enum(["anthropic", "openai", "deepseek"]);
 /** "default", "off", or a provider-native effort; validated per model on save. */
 export const aiReasoningLevelSchema = z.string().trim().min(1).max(32).regex(/^[a-z]+$/);
-export const cardAiStatusEnum = z.enum(["candidate", "failed", "ready"]);
-export const quizSessionStatusEnum = z.enum(["active", "completed", "archived"]);
-export const quizItemSourceEnum = z.enum(["statement", "submission", "notes", "card"]);
-export const quizItemScopeEnum = z.enum([
-  "approach",
-  "invariant",
-  "edge_case",
-  "complexity",
-  "implementation",
-  "mistake_review",
-]);
-export const aiJobStatusEnum = z.enum([
-  "queued",
-  "running",
-  "succeeded",
-  "failed",
-  "cancelled",
-  "superseded",
-]);
-export const aiJobActionEnum = z.enum([
-  "card_generate",
-  "card_followup",
-  "quiz_generate",
-  "quiz_regenerate",
-  "quiz_next_batch",
-  "practice_check",
-]);
 
 export const agentPageEnum = z.enum([
   "today",
@@ -88,16 +61,6 @@ export const agentPageContextSchema = z
     activePanel: agentPanelEnum,
     problemId: z.string().min(1).max(64).nullable(),
     leetcode: agentLeetcodeContextSchema.optional(),
-    /** Set by the server from a practice_completed trigger, never by clients. */
-    practice: z
-      .object({
-        practiceSessionId: z.string().min(1).max(64),
-        score: z.number().min(0).max(1),
-        suggestedRating: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-        missed: z.array(z.string().max(4_000)).max(10),
-      })
-      .strict()
-      .optional(),
     /** Set by the server while a talk-through practice session is active on
      *  this problem: what to ask about and what's been graded. */
     practiceActive: z
@@ -141,11 +104,13 @@ export const agentTurnRequestSchema = z
     requestId: z.string().uuid(),
     message: z.string().trim().min(1).max(12_000),
     context: agentPageContextSchema,
-    /** Instead of typed text: a practice session just finished; the server
-     *  loads its results into the turn for the debrief. */
+    /** Instead of typed text: the Coach asks a talk-through's first question
+     *  (practice_start), or reads the failed submissions first
+     *  (analyze_attempts). practice_completed is legacy: extension builds
+     *  0.3.x send it for a stage-2 practice session, and it's refused (410). */
     trigger: z
       .object({
-        type: z.enum(["practice_completed", "practice_start", "analyze_attempts"]),
+        type: z.enum(["practice_start", "analyze_attempts", "practice_completed"]),
         /** Required for the practice triggers. */
         practiceSessionId: z.string().min(1).max(64).optional(),
       })
@@ -213,18 +178,12 @@ export const problemDocPutSchema = z
   .strict();
 
 export const agentProposalSchema = z.discriminatedUnion("action", [
+  /** Card and quiz generation the Coach proposed before it was removed. Old
+   *  runs can still hold one; approving it fails with a message. */
   z.object({
-    action: z.literal("card_generate"),
-    requestId: z.string().uuid(),
-    problemId: z.string().min(1).max(64),
-    reason: z.string().min(1).max(500),
-  }),
-  z.object({
-    action: z.enum(["quiz_generate", "quiz_regenerate", "quiz_next_batch"]),
-    requestId: z.string().uuid(),
-    problemId: z.string().min(1).max(64),
-    expectedQuizSessionId: z.string().min(1).max(64).nullable(),
-    reason: z.string().min(1).max(500),
+    action: z.enum(["card_generate", "quiz_generate", "quiz_regenerate", "quiz_next_batch"]),
+    problemId: z.string(),
+    reason: z.string(),
   }),
   /** A new weakness category; added to the user's list on approval. */
   z.object({
@@ -288,186 +247,10 @@ export const captureProblemSchema = z.object({
 });
 export type CaptureProblemInput = z.infer<typeof captureProblemSchema>;
 
-/** A flash card: question (front) and answer (back). */
-export const cardDraftSchema = z.object({
-  question: z.string().min(1).max(5_000),
-  answer: z.string().min(1).max(20_000),
-});
-export type CardDraft = z.infer<typeof cardDraftSchema>;
-
-/** Storage / API shape for a quiz item — uses `answerIndex` so the rest of
- *  the app can index `choices[answerIndex]` cheaply. */
-export const quizItemSchema = z.object({
-  id: z.string().min(1),
-  question: z.string().min(1).max(4_000),
-  choices: z.array(z.string().min(1).max(2_000)).length(4),
-  answerIndex: z.number().int().min(0).max(3),
-  explanation: z.string().min(1).max(8_000),
-  source: quizItemSourceEnum,
-  scope: quizItemScopeEnum,
-});
-export type QuizItem = z.infer<typeof quizItemSchema>;
-export type QuizItemScope = z.infer<typeof quizItemScopeEnum>;
-
-export const quizAnswerSchema = z.object({
-  itemId: z.string().min(1),
-  selectedIndex: z.number().int().min(0).max(3),
-  correct: z.boolean(),
-  answeredAt: z.string().datetime(),
-});
-export type QuizAnswer = z.infer<typeof quizAnswerSchema>;
-
-/** AI-generation contract for a single quiz item. Differs from the storage
- *  shape on purpose: identifies the correct option as literal text rather
- *  than an integer index — eliminates the off-by-one errors that plagued the
- *  index-based schema. The server maps `correctAnswer` → `answerIndex` via
- *  `choices.indexOf` before persisting.
- *
- *  No internal "reasoning" field: when DeepSeek thinking mode is on the model
- *  already CoTs via the separate `reasoning_content` response field (which we
- *  discard); when thinking is off the model goes directly to the answer. A
- *  schema-level reasoning field would just bill double for content nobody
- *  reads. */
-export const quizDraftItemSchema = z
-  .object({
-    question: z.string().min(1).max(4_000).describe("The question text shown to the user."),
-    choices: z.array(z.string().min(1).max(2_000)).length(4).describe("Exactly 4 plausible options."),
-    correctAnswer: z
-      .string()
-      .min(1)
-      .max(2_000)
-      .describe("The exact text of the correct option, character-for-character identical to one of the choices entries."),
-    explanation: z
-      .string()
-      .min(1)
-      .max(8_000)
-      .describe("Concise rationale shown to the user after they answer."),
-    source: quizItemSourceEnum.describe(
-      "Which input material this question is grounded in: 'statement' (problem statement), 'submission' (the user's submitted code), 'notes' (the user's saved notes), or 'card' (an existing flashcard). NOT a category of question type — that is `scope`.",
-    ),
-    scope: quizItemScopeEnum.describe(
-      "What pedagogical dimension this question tests: 'approach', 'invariant', 'edge_case', 'complexity', 'implementation', or 'mistake_review'. NOT where the content came from — that is `source`.",
-    ),
-  })
-  .refine(
-    (item) => {
-      const norm = (s: string) => s.trim();
-      return item.choices.map(norm).includes(norm(item.correctAnswer));
-    },
-    {
-      message: "correctAnswer must exactly match one of the choices (after trimming)",
-      path: ["correctAnswer"],
-    },
-  );
-export type QuizDraftItem = z.infer<typeof quizDraftItemSchema>;
-
-export const quizDraftSchema = z.object({
-  items: z.array(quizDraftItemSchema).length(5),
-});
-export type QuizDraft = z.infer<typeof quizDraftSchema>;
-
-/** POST /api/problems/:id/user-card — saves a manual card directly as ready. */
-export const userCardManualCreateSchema = z.object({
-  mode: z.literal("manual"),
-  question: z.string().min(1).max(5_000),
-  answer: z.string().min(1).max(20_000),
-});
-
-export type UserCardManualCreateInput = z.infer<typeof userCardManualCreateSchema>;
-
 /* ── Practice (docs/coach-practice.md) ── */
-
-export const practiceSourceKindEnum = z.enum(["statement", "notes", "card", "submission"]);
-
-/** A generated check question as stored: the server keeps answerIndex and
- *  only reveals it after the user answers. */
-export const practiceCheckItemSchema = z.object({
-  id: z.string().min(1).max(32),
-  question: z.string().min(1).max(4_000),
-  choices: z.array(z.string().min(1).max(2_000)).length(4),
-  answerIndex: z.number().int().min(0).max(3),
-  explanation: z.string().min(1).max(4_000),
-  scope: quizItemScopeEnum,
-  source: z.object({ kind: practiceSourceKindEnum, ref: z.string().max(200).nullable() }),
-});
-export type PracticeCheckItem = z.infer<typeof practiceCheckItemSchema>;
-
-/** What the model returns for check questions. The correct option is named
- *  by text (mapped to an index server-side), and every item cites a source. */
-export const practiceCheckDraftSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        question: z.string().min(1).max(4_000),
-        choices: z.array(z.string().min(1).max(2_000)).length(4),
-        correctAnswer: z.string().min(1).max(2_000),
-        explanation: z.string().min(1).max(4_000),
-        scope: quizItemScopeEnum,
-        sourceKind: practiceSourceKindEnum,
-        sourceRef: z
-          .string()
-          .max(200)
-          .describe("Notes section heading, card key, or submission id; empty for the statement"),
-      }),
-    )
-    .length(3),
-});
-export type PracticeCheckDraft = z.infer<typeof practiceCheckDraftSchema>;
 
 /** POST /api/practice/:id/dispute: "I did say that" on a settled target. */
 export const practiceDisputeSchema = z.object({ targetId: z.string().min(1).max(80) }).strict();
-
-export const practiceRecallSchema = z
-  .object({ key: z.string().regex(/^[0-9a-f]{16}$/), result: z.enum(["got_it", "missed"]) })
-  .strict();
-export const practiceCheckAnswerSchema = z
-  .object({ itemId: z.string().min(1).max(32), choice: z.number().int().min(0).max(3) })
-  .strict();
-
-/** Durable async generation command shared by the web app and extension. */
-export const aiJobCreateRequestSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("card_generate"),
-    problemId: z.string().min(1).max(64),
-    requestId: z.string().uuid(),
-    rawText: z.string().max(6_000).optional(),
-  }),
-  z.object({
-    action: z.literal("card_followup"),
-    problemId: z.string().min(1).max(64),
-    requestId: z.string().uuid(),
-    cardId: z.string().min(1).max(64),
-    expectedCardVersion: z.number().int().positive(),
-    draft: cardDraftSchema,
-    instruction: z.string().min(1).max(4_000),
-  }),
-  z.object({
-    action: z.enum(["quiz_generate", "quiz_regenerate", "quiz_next_batch"]),
-    problemId: z.string().min(1).max(64),
-    requestId: z.string().uuid(),
-    expectedQuizSessionId: z.string().min(1).max(64).nullable(),
-  }),
-  z.object({
-    action: z.literal("practice_check"),
-    problemId: z.string().min(1).max(64),
-    requestId: z.string().uuid(),
-    practiceSessionId: z.string().min(1).max(64),
-  }),
-]);
-export type AiJobCreateRequestInput = z.infer<typeof aiJobCreateRequestSchema>;
-
-/** PATCH /api/cards/:id — edit question/answer or confirm a candidate card. */
-export const updateCardPatchSchema = z
-  .object({
-    expectedVersion: z.number().int().positive(),
-    aiStatus: z.literal("ready").optional(),
-    question: z.string().min(1).max(5_000).optional(),
-    answer: z.string().min(1).max(20_000).optional(),
-  })
-  .strict()
-  .refine((o) => o.aiStatus !== undefined || o.question !== undefined || o.answer !== undefined, {
-    message: "empty_patch",
-  });
 
 export const fsrsRatingSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 
@@ -495,15 +278,6 @@ export const reviewUndoSchema = z.object({
   problemId: z.string().min(1).max(64),
 });
 export type ReviewUndoInput = z.infer<typeof reviewUndoSchema>;
-
-export const quizAnswerRequestSchema = z.object({
-  itemId: z.string().min(1),
-  selectedIndex: z.number().int().min(0).max(3),
-});
-
-export const quizSaveCardRequestSchema = z.object({
-  itemId: z.string().min(1),
-});
 
 /** POST /api/leetcode/account — a LeetCode username or profile URL. */
 export const leetcodeAccountLinkSchema = z.object({

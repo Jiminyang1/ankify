@@ -1,27 +1,5 @@
-import type { QuizSessionDto, SubmissionDto } from "@ankify/contracts";
-import { schema, type QuizSession } from "@ankify/db";
-
-type PublicQuizSessionRow = Pick<
-  QuizSession,
-  | "id"
-  | "problemId"
-  | "status"
-  | "itemsJson"
-  | "answersJson"
-  | "score"
-  | "createdAt"
-  | "updatedAt"
-  | "completedAt"
->;
-
-export const publicCardColumns = {
-  id: schema.cards.id,
-  version: schema.cards.version,
-  aiStatus: schema.cards.aiStatus,
-  errorMessage: schema.cards.errorMessage,
-  question: schema.cards.question,
-  answer: schema.cards.answer,
-} as const;
+import type { SubmissionDto } from "@ankify/contracts";
+import { schema } from "@ankify/db";
 
 export const publicSubmissionColumns = {
   id: schema.submissions.id,
@@ -45,19 +23,5 @@ export function toSubmissionDto(submission: PublicSubmissionRow): SubmissionDto 
   return {
     ...submission,
     submittedAt: submission.submittedAt.toISOString(),
-  };
-}
-
-export function toQuizSessionDto(session: PublicQuizSessionRow): QuizSessionDto {
-  return {
-    id: session.id,
-    problemId: session.problemId,
-    status: session.status,
-    itemsJson: session.itemsJson,
-    answersJson: session.answersJson,
-    score: session.score,
-    createdAt: session.createdAt.toISOString(),
-    updatedAt: session.updatedAt?.toISOString() ?? null,
-    completedAt: session.completedAt?.toISOString() ?? null,
   };
 }

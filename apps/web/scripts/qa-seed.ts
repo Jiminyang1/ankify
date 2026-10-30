@@ -1,4 +1,3 @@
-import type { QuizAnswer, QuizItem } from "@ankify/contracts";
 import { serializeCards } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { loadDbEnv } from "@ankify/db/client";
@@ -22,76 +21,6 @@ if (!isQaProfile()) {
 const now = new Date();
 const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
 const fromNow = (days: number) => new Date(now.getTime() + days * 86_400_000);
-
-const twoSumQuizItems: QuizItem[] = [
-  {
-    id: "qa-quiz-two-sum-1",
-    question: "哈希表解法为什么能把 Two Sum 的时间复杂度降到 `O(n)`？",
-    choices: [
-      "每个元素只进行一次均摊 `O(1)` 的查找与插入",
-      "数组会自动保持有序",
-      "哈希表消除了所有空间开销",
-      "只需要比较相邻元素",
-    ],
-    answerIndex: 0,
-    explanation: "遍历时查询补数并记录已见元素，每个元素只处理一次。",
-    source: "statement",
-    scope: "complexity",
-  },
-  {
-    id: "qa-quiz-two-sum-2",
-    question: "为什么应当先查询补数、再把当前元素写入哈希表？",
-    choices: [
-      "避免同一个下标与自己配对",
-      "减少数组长度",
-      "保证答案按值排序",
-      "避免使用额外空间",
-    ],
-    answerIndex: 0,
-    explanation: "先写入会让 `target = 2 * nums[i]` 时命中当前下标。",
-    source: "submission",
-    scope: "edge_case",
-  },
-  {
-    id: "qa-quiz-two-sum-3",
-    question: "哈希表中最适合保存什么？",
-    choices: ["数值到下标的映射", "下标到目标值的映射", "所有数对", "排序后的数组副本"],
-    answerIndex: 0,
-    explanation: "查询补数后需要立即返回对应的原数组下标。",
-    source: "card",
-    scope: "implementation",
-  },
-  {
-    id: "qa-quiz-two-sum-4",
-    question: "输入 `[3, 3]`、目标值 `6` 时，正确结果是什么？",
-    choices: ["`[0, 1]`", "`[0, 0]`", "不存在答案", "必须先去重"],
-    answerIndex: 0,
-    explanation: "两个相同的值来自不同下标，可以组成合法答案。",
-    source: "statement",
-    scope: "edge_case",
-  },
-  {
-    id: "qa-quiz-two-sum-5",
-    question: "这道题的一遍扫描不变量是什么？",
-    choices: [
-      "哈希表只包含当前下标之前见过的元素",
-      "哈希表始终包含整个数组",
-      "当前元素一定属于答案",
-      "数组前缀已经排序",
-    ],
-    answerIndex: 0,
-    explanation: "该不变量保证命中的补数来自另一个、且更早的下标。",
-    source: "notes",
-    scope: "invariant",
-  },
-];
-
-const twoSumQuizAnswers: QuizAnswer[] = twoSumQuizItems.map((item, index) => ({
-  itemId: item.id,
-  selectedIndex: index === 1 ? 1 : item.answerIndex,
-  correct: index !== 1,
-  answeredAt: ago(2).toISOString(),
-}));
 
 function qaAiSettings() {
   const provider = process.env.ANKIFY_QA_AI_PROVIDER?.trim();
@@ -336,19 +265,6 @@ async function main() {
         occurredAt: ago(4),
       },
     ]);
-
-    await tx.insert(schema.quizSessions).values({
-      id: "qa-quiz-two-sum-archived",
-      userId: QA_USER_ID,
-      problemId: "qa-problem-two-sum",
-      status: "archived",
-      itemsJson: twoSumQuizItems,
-      answersJson: twoSumQuizAnswers,
-      score: 4,
-      createdAt: ago(2),
-      updatedAt: ago(2),
-      completedAt: ago(2),
-    });
 
     const completedAt = ago(3).toISOString();
     await tx.insert(schema.settings).values([

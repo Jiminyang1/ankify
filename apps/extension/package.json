@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ankify/api-client": "workspace:*",
     "@ankify/contracts": "workspace:*",
     "@ankify/core": "workspace:*",
     "react": "19.2.8",

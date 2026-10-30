@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import { PRACTICE_ERROR_STATUS, getPractice } from "@/server/practice";
 
-/** GET /api/practice/:id — session state; check answers stay hidden until answered. */
+/** GET /api/practice/:id — session state; a talk-through's points stay hidden
+ *  until each question settles. */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();

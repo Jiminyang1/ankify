@@ -10,17 +10,5 @@
       "**": false,
       "main": true
     }
-  },
-  "functions": {
-    "src/app/api/queues/ai-generation/route.ts": {
-      "experimentalTriggers": [
-        {
-          "type": "queue/v2beta",
-          "topic": "ankify-ai-generation",
-          "retryAfterSeconds": 60,
-          "initialDelaySeconds": 0
-        }
-      ]
-    }
   }
 }
