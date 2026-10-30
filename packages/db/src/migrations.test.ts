@@ -1,13 +1,114 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createClient, type Client } from "@libsql/client";
+import { notesSections } from "@ankify/core";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
+
+/** A copy of the migrations folder whose journal stops before `tag`, so a
+ *  test can seed rows the way they looked before that migration ran. */
+async function migrationsBefore(dir: string, tag: string) {
+  const folder = resolve(dir, "drizzle-before");
+  await cp(migrationsFolder, folder, { recursive: true });
+  const journalPath = resolve(folder, "meta/_journal.json");
+  const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
+  const index = journal.entries.findIndex((entry) => entry.tag === tag);
+  if (index < 0) throw new Error(`no migration ${tag}`);
+  journal.entries = journal.entries.slice(0, index);
+  await writeFile(journalPath, JSON.stringify(journal));
+  return folder;
+}
+
+describe("0025_cards_into_notes", () => {
+  let dir: string;
+  let client: Client;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(resolve(tmpdir(), "ankify-db-test-"));
+    client = createClient({ url: `file:${resolve(dir, "test.db")}` });
+    await migrate(drizzle(client), { migrationsFolder: await migrationsBefore(dir, "0025_cards_into_notes") });
+    await client.execute({
+      sql: "INSERT INTO user (id, name, email) VALUES (?, ?, ?)",
+      args: ["user-1", "Test", "test@example.com"],
+    });
+  });
+
+  afterEach(async () => {
+    client.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function insertProblem(slug: string, notes: string | null, cardsMd: string | null) {
+    await client.execute({
+      sql: `INSERT INTO problems (
+              id, user_id, leetcode_slug, title, difficulty, url,
+              notes, notes_version, cards_md, cards_version
+            ) VALUES (?, 'user-1', ?, ?, 'Easy', ?, ?, 3, ?, 2)`,
+      args: [slug, slug, slug, `https://leetcode.com/problems/${slug}/`, notes, cardsMd],
+    });
+  }
+
+  async function docs(slug: string) {
+    const result = await client.execute({
+      sql: "SELECT notes, notes_version, cards_md, cards_version FROM problems WHERE id = ?",
+      args: [slug],
+    });
+    return result.rows[0]!;
+  }
+
+  it("appends each Cards doc to Notes under one Cards section and keeps the Cards doc", async () => {
+    const cards = [
+      "## Why one pass?",
+      "Look up the complement before inserting.",
+      "",
+      "## What does it cost?",
+      "```python",
+      "## not a heading",
+      "```",
+      "O(n) time.",
+      "",
+    ].join("\n");
+    await insertProblem("two-sum", "Use a hash map.\n\n", cards);
+    await insertProblem("no-notes", null, "\n## Prompt\nAnswer\n");
+    await insertProblem("blank-cards", "Keep me.", " \n\n");
+    await insertProblem("no-cards", "Keep me too.", null);
+
+    await migrate(drizzle(client), { migrationsFolder });
+
+    const twoSum = await docs("two-sum");
+    expect(twoSum.notes).toBe(
+      [
+        "Use a hash map.",
+        "",
+        "## Cards",
+        "### Why one pass?",
+        "Look up the complement before inserting.",
+        "",
+        "### What does it cost?",
+        "```python",
+        "### not a heading",
+        "```",
+        "O(n) time.",
+        "",
+      ].join("\n"),
+    );
+    expect(notesSections(twoSum.notes as string)).toEqual(["Cards"]);
+    expect(twoSum).toMatchObject({ notes_version: 4, cards_md: cards, cards_version: 2 });
+
+    expect(await docs("no-notes")).toMatchObject({
+      notes: "## Cards\n### Prompt\nAnswer\n",
+      notes_version: 4,
+      cards_md: "\n## Prompt\nAnswer\n",
+    });
+    expect(await docs("blank-cards")).toMatchObject({ notes: "Keep me.", notes_version: 3, cards_md: " \n\n" });
+    expect(await docs("no-cards")).toMatchObject({ notes: "Keep me too.", notes_version: 3, cards_md: null });
+  });
+});
 
 describe("database invariants", () => {
   let dir: string;

@@ -91,7 +91,7 @@ describe("Study Coach model context", () => {
 
   it("requires minimal, request-relevant tool use", () => {
     expect(STUDY_COACH_INSTRUCTIONS).toContain(
-      "do not call submissions, cards, or quiz tools merely because they are available or their panel is open",
+      "do not call submissions, notes, or quiz tools merely because they are available or their panel is open",
     );
     expect(STUDY_COACH_INSTRUCTIONS).toContain(
       "Tool results are private evidence, not a required response outline",
@@ -113,7 +113,7 @@ describe("Study Coach model context", () => {
   it("combines the previous summary with the next compaction batch", () => {
     const context = {
       page: "review" as const,
-      activePanel: "cards" as const,
+      activePanel: "notes" as const,
       problemId: "problem-two-sum",
     };
     expect(JSON.parse(buildSessionSummaryPrompt("Previous", [
@@ -189,20 +189,5 @@ describe("LeetCode page context", () => {
   it("tells the Coach to hint rather than solve while the user is coding", () => {
     expect(STUDY_COACH_INSTRUCTIONS).toContain("runtimeContext.leetcode");
     expect(STUDY_COACH_INSTRUCTIONS).toContain("give a full solution only when they ask for one");
-  });
-});
-
-describe("propose_doc_edit input", () => {
-  it("keeps only the op's fields, so empty extras don't fail the strict edit schema", async () => {
-    const { docEditInput } = await import("./doc-edit-input");
-    const { docEditSchema } = await import("@ankify/contracts");
-    const withExtras = { section: "", markdown: "", prompt: "Why loop over amounts?", answer: "Order doesn't matter.", key: "" };
-    expect(docEditSchema.safeParse(docEditInput("add_card", withExtras)).success).toBe(true);
-    expect(docEditSchema.safeParse({ op: "add_card", ...withExtras }).success).toBe(false);
-    expect(docEditInput("update_card", { key: "0123456789abcdef", answer: "New." })).toEqual({
-      op: "update_card",
-      key: "0123456789abcdef",
-      answer: "New.",
-    });
   });
 });

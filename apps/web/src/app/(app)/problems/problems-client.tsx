@@ -24,7 +24,7 @@ type FilterState = {
   search: string;
 };
 
-type SortKey = "title" | "due" | "difficulty" | "reps" | "drills";
+type SortKey = "title" | "due" | "difficulty" | "reps";
 
 export default function ProblemsPage({
   initialData,
@@ -205,8 +205,6 @@ export default function ProblemsPage({
           return asc * ((diffOrder[a.difficulty] ?? 2) - (diffOrder[b.difficulty] ?? 2));
         case "reps":
           return asc * (a.fsrsReps - b.fsrsReps);
-        case "drills":
-          return asc * (a.cardTotal - b.cardTotal);
         default:
           return 0;
       }
@@ -365,7 +363,6 @@ export default function ProblemsPage({
                   { key: "difficulty", label: t.problems.diffCol, className: "hidden sm:table-cell" },
                   { key: "due", label: t.problems.due, className: "" },
                   { key: "reps", label: t.problems.repsCol, className: "hidden md:table-cell" },
-                  { key: "drills", label: t.problems.drillsCol, className: "hidden md:table-cell" },
                   { key: "state", label: t.problems.stateCol, className: "hidden sm:table-cell" },
                 ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => {
                   const sortable = col.key !== "state";
@@ -435,11 +432,6 @@ export default function ProblemsPage({
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
                       {p.fsrsReps}
                       {p.fsrsLapses > 0 && <span className="text-danger ml-0.5">↓{p.fsrsLapses}</span>}
-                    </td>
-                    <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
-                      <span className={p.cardTotal > 0 ? "text-accent" : "text-muted"}>
-                        {p.cardTotal}
-                      </span>
                     </td>
                     <td className="hidden sm:table-cell px-4 py-2.5">
                       <FsrsStatePill state={p.fsrsState} language={language} />

@@ -1,26 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ProblemDocsDto, ProblemDocTarget } from "@ankify/contracts";
+import type { ProblemDocsDto } from "@ankify/contracts";
 import type { ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
 
 export type DocsCopy = {
   notes: string;
-  cards: string;
   edit: string;
   save: string;
   cancel: string;
   reload: string;
   emptyNotes: string;
-  emptyCards: string;
-  cardsFormat: string;
   conflict: string;
   loadFailed: string;
   saveFailed: string;
-  issueEmptyAnswer: (prompt: string) => string;
-  issueDuplicate: (prompt: string) => string;
-  issueTooMany: (limit: number) => string;
-  issueTooLong: (limit: number) => string;
   solutions: string;
   emptySolutions: string;
   solutionsFormat: string;
@@ -32,8 +25,8 @@ export type DocsCopy = {
   issueSolutionsTooLong: (limit: number) => string;
 };
 
-/** The problem's Notes, Cards, and Solutions docs (docs/coach-practice.md):
- *  rendered, with an edit mode. Saves are version-checked, so an edit can't silently
+/** The problem's Notes and Solutions docs (docs/coach-practice.md): rendered,
+ *  with an edit mode. Saves are version-checked, so an edit can't silently
  *  overwrite a Coach change applied meanwhile. `revision` bumps when the Coach
  *  applies an edit. */
 export function DocsPanel({
@@ -48,7 +41,7 @@ export function DocsPanel({
   copy: DocsCopy;
 }) {
   const [docs, setDocs] = useState<ProblemDocsDto | null>(null);
-  const [target, setTarget] = useState<ProblemDocTarget>("notes");
+  const [target, setTarget] = useState<"notes" | "solutions">("notes");
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ message: string; conflict: boolean } | null>(null);
@@ -110,8 +103,8 @@ export function DocsPanel({
   return (
     <div className="docs-panel">
       <div className="docs-head">
-        <div className="docs-switch" role="tablist" aria-label={`${copy.notes} / ${copy.cards} / ${copy.solutions}`}>
-          {(["notes", "cards", "solutions"] as const).map((key) => (
+        <div className="docs-switch" role="tablist" aria-label={`${copy.notes} / ${copy.solutions}`}>
+          {(["notes", "solutions"] as const).map((key) => (
             <button
               key={key}
               type="button"
@@ -121,11 +114,7 @@ export function DocsPanel({
               disabled={editing}
               onClick={() => setTarget(key)}
             >
-              {key === "notes"
-                ? copy.notes
-                : key === "cards"
-                  ? `${copy.cards}${docs ? ` · ${docs.cards.cards.length}` : ""}`
-                  : copy.solutions}
+              {key === "notes" ? copy.notes : copy.solutions}
             </button>
           ))}
         </div>
@@ -159,13 +148,12 @@ export function DocsPanel({
 
       {editing ? (
         <>
-          {target === "cards" && <p className="docs-hint">{copy.cardsFormat}</p>}
           {target === "solutions" && <p className="docs-hint">{copy.solutionsFormat}</p>}
           <textarea
             className="textarea-card docs-editor scroll-area"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            aria-label={target === "notes" ? copy.notes : target === "cards" ? copy.cards : copy.solutions}
+            aria-label={target === "notes" ? copy.notes : copy.solutions}
           />
         </>
       ) : !docs ? (
@@ -178,7 +166,7 @@ export function DocsPanel({
         ) : (
           <p className="popup-muted">{copy.emptyNotes}</p>
         )
-      ) : target === "solutions" ? (
+      ) : (
         <div className="docs-solutions">
           {docs.solutions.issues.map((issue, index) => (
             <p key={index} className="docs-issue">
@@ -213,32 +201,6 @@ export function DocsPanel({
                   </p>
                 )}
               </section>
-            ))
-          )}
-        </div>
-      ) : (
-        <div className="docs-cards">
-          {docs.cards.issues.map((issue, index) => (
-            <p key={index} className="docs-issue">
-              {issue.kind === "empty_answer"
-                ? copy.issueEmptyAnswer(issue.prompt)
-                : issue.kind === "duplicate_prompt"
-                  ? copy.issueDuplicate(issue.prompt)
-                  : issue.kind === "too_many_cards"
-                    ? copy.issueTooMany(issue.limit)
-                    : copy.issueTooLong(issue.limit)}
-            </p>
-          ))}
-          {docs.cards.cards.length === 0 ? (
-            <p className="popup-muted">{copy.emptyCards}</p>
-          ) : (
-            docs.cards.cards.map((card) => (
-              <details key={card.key} className="docs-card">
-                <summary>
-                  <PopupMarkdown className="popup-md-inline">{card.prompt}</PopupMarkdown>
-                </summary>
-                <PopupMarkdown className="docs-card-answer">{card.answer}</PopupMarkdown>
-              </details>
             ))
           )}
         </div>

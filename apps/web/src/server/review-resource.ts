@@ -3,7 +3,7 @@ import { getDb, schema } from "@ankify/db";
 import { and, desc, eq } from "drizzle-orm";
 import { publicSubmissionColumns, toSubmissionDto } from "./public-dto";
 
-/** One review-workspace tab's data, loaded lazily. The docs (Notes, Cards,
+/** One review-workspace tab's data, loaded lazily. The docs (Notes,
  *  Solutions) come from /api/problems/:id/docs; this serves the rest. */
 
 type ReviewResourceResult =

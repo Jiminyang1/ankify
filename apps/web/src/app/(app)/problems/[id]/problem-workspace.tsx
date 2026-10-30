@@ -21,9 +21,9 @@ export type WorkspacePanel = {
 /**
  * Tabbed "management console" body for the problem detail page. All panels are
  * rendered up front and toggled with `hidden` so client state inside a panel
- * (e.g. card selection) survives tab switches. Server-rendered nodes (Markdown,
- * highlighted code) are passed in as `node`. The Notes / Cards / Solutions
- * tabs share one ProblemDocs, whose Edit / Save sit at the end of the tab row.
+ * (e.g. a docs draft) survives tab switches. Server-rendered nodes (Markdown,
+ * highlighted code) are passed in as `node`. The Notes and Solutions tabs
+ * share one ProblemDocs, whose Edit / Save sit at the end of the tab row.
  */
 export function ProblemWorkspace({
   panels,
@@ -43,7 +43,7 @@ export function ProblemWorkspace({
   const [docActions, setDocActions] = useState<HTMLDivElement | null>(null);
   const activeDoc = panels.find((p) => p.id === active)?.doc;
   const activePanel =
-    active === "notes" || active === "cards" || active === "submissions" || active === "weak_spots"
+    active === "notes" || active === "submissions" || active === "weak_spots"
       ? active
       : active === "solutions"
         ? "docs"

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { leetcodeTagName } from "@ankify/core";
 import type { PlanNextDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
-import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { requirePageUser } from "@/server/auth";
@@ -131,34 +131,26 @@ export default async function HomePage() {
           </div>
 
           <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-            {data.dueProblems.map((problem, index) => {
-              const cardCount = data.cardsByProblem.get(problem.id) ?? 0;
-              return (
-                <li key={problem.id}>
-                  <Link href={`/problems/${problem.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-subtle sm:grid-cols-[32px_1fr_auto] sm:items-center">
-                    <div className="text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{problem.title}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <DifficultyPill difficulty={problem.difficulty} language={language} />
-                        <FsrsStatePill state={problem.fsrsState} language={language} />
-                        {problem.topicTags.slice(0, 3).map((tag) => (
-                          <span key={tag} className="text-xs text-muted">
-                            #{leetcodeTagName(tag)}
-                          </span>
-                        ))}
-                      </div>
+            {data.dueProblems.map((problem, index) => (
+              <li key={problem.id}>
+                <Link href={`/problems/${problem.id}`} className="grid gap-3 px-4 py-3 transition hover:bg-subtle sm:grid-cols-[32px_1fr_auto] sm:items-center">
+                  <div className="text-xs text-muted tabular-nums">{String(index + 1).padStart(2, "0")}</div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{problem.title}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <DifficultyPill difficulty={problem.difficulty} language={language} />
+                      <FsrsStatePill state={problem.fsrsState} language={language} />
+                      {problem.topicTags.slice(0, 3).map((tag) => (
+                        <span key={tag} className="text-xs text-muted">
+                          #{leetcodeTagName(tag)}
+                        </span>
+                      ))}
                     </div>
-                    <div className="flex items-center gap-2 text-xs sm:justify-end">
-                      <Pill tone={cardCount > 0 ? "accent" : "neutral"}>
-                        {cardCount > 0 ? t.common.cards(cardCount) : t.home.needsCards}
-                      </Pill>
-                      <span className="text-muted">{formatRelative(problem.fsrsDue)}</span>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
+                  </div>
+                  <div className="text-xs text-muted sm:text-right">{formatRelative(problem.fsrsDue)}</div>
+                </Link>
+              </li>
+            ))}
           </ul>
         </section>
       ) : (

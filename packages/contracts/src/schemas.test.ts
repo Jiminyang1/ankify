@@ -7,6 +7,8 @@ import {
   aiJobCreateRequestSchema,
   captureProblemSchema,
   cardDraftSchema,
+  docEditSchema,
+  isLegacyCardEdit,
   reviewRatingSchema,
 } from "./schemas";
 
@@ -47,6 +49,19 @@ describe("Agent contracts", () => {
         reason: "Missing the session precondition.",
       }).success,
     ).toBe(false);
+  });
+
+  it("lets the Coach edit only Notes, while old card proposals still load", () => {
+    expect(docEditSchema.safeParse({ op: "append_section", section: "Pitfalls", markdown: "- Off by one." }).success).toBe(true);
+    expect(docEditSchema.safeParse({ op: "add_card", prompt: "Why?", answer: "Because." }).success).toBe(false);
+    const stored = agentProposalSchema.parse({
+      action: "doc_edit",
+      problemId: "problem-1",
+      edit: { op: "update_card", key: "0123456789abcdef", answer: "New." },
+      baseVersion: 2,
+      reason: "Clarify the answer.",
+    });
+    expect(stored.action === "doc_edit" && isLegacyCardEdit(stored.edit)).toBe(true);
   });
 
   it("keeps navigation inside the saved problem workspace", () => {

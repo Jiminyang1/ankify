@@ -3537,39 +3537,10 @@ a:focus-visible,
   font-size: 13px;
 }
 
-.docs-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .docs-issue {
   margin: 0;
   font-size: 11px;
   color: var(--warning);
-}
-
-.docs-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 8px 10px;
-}
-
-.docs-card summary {
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg);
-  line-height: 1.4;
-}
-
-.docs-card[open] summary {
-  margin-bottom: 6px;
-}
-
-.docs-card-answer {
-  font-size: 13px;
 }
 
 /* Solutions: one block per approach, its points, and its cost. */

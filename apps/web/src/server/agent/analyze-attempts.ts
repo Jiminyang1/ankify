@@ -1,7 +1,7 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { WEAKNESS_CATEGORIES, parseCards } from "@ankify/core";
+import { WEAKNESS_CATEGORIES } from "@ankify/core";
 import type { WeaknessDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { aiCallOptions } from "@/server/ai/call-options";
@@ -78,9 +78,6 @@ export async function analyzeAttempts(args: {
     "",
     "## Notes",
     clip(problem.notes, 2_000) || "(empty)",
-    "",
-    "## Cards",
-    parseCards(problem.cardsMd).cards.map((card) => `- ${card.prompt}`).join("\n") || "(empty)",
     "",
     "## Already recorded weak spots (don't repeat these)",
     existing.length ? existing.map((weakness) => `- [${weakness.category}] ${weakness.detail}`).join("\n") : "(none)",

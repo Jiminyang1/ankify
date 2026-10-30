@@ -11,6 +11,7 @@ import type {
   AgentModelChoice,
   CoachModelsDto,
   DocEdit,
+  LegacyCardEdit,
   PublicAiJobDto,
 } from "@ankify/contracts";
 import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
@@ -1113,19 +1114,11 @@ function CoachStep({
   return <p className="coach-step coach-step-read">{step.summary}</p>;
 }
 
-/** What a doc-edit proposal would write, shown before the user applies it. */
-function docEditPreview(edit: DocEdit): string | null {
-  switch (edit.op) {
-    case "append_section":
-    case "replace_section":
-      return edit.markdown;
-    case "add_card":
-      return `**${edit.prompt}**\n\n${edit.answer}`;
-    case "update_card":
-      return [edit.prompt ? `**${edit.prompt}**` : null, edit.answer ?? null].filter(Boolean).join("\n\n") || null;
-    case "remove_card":
-      return null;
-  }
+/** What a doc-edit proposal would write, shown before the user applies it. A
+ *  card edit from before the Cards doc moved into Notes has no preview;
+ *  applying it fails with a message. */
+function docEditPreview(edit: DocEdit | LegacyCardEdit): string | null {
+  return edit.op === "append_section" || edit.op === "replace_section" ? edit.markdown : null;
 }
 
 /** "Two Sum - LeetCode" -> "Two Sum". */

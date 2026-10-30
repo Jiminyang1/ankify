@@ -170,31 +170,32 @@ export type AgentSessionPatchInput = z.infer<typeof agentSessionPatchSchema>;
 
 /* ── Problem docs (docs/coach-practice.md) ── */
 
+/** "cards" is legacy: the Cards doc moved into Notes (migration 0025), and
+ *  only older extension builds (0.3.x, with a Cards tab) still read or write it. */
 export const problemDocTargetEnum = z.enum(["notes", "cards", "solutions"]);
 export type ProblemDocTarget = z.infer<typeof problemDocTargetEnum>;
 
 const docSection = z.string().trim().min(1).max(60);
 const docMarkdown = z.string().max(20_000);
 
-/** One edit to a problem's Notes or Cards doc. The op implies the target. */
+/** One edit to a problem's Notes doc, as the Coach proposes it. */
 export const docEditSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("append_section"), section: docSection, markdown: docMarkdown.min(1) }).strict(),
   z.object({ op: z.literal("replace_section"), section: docSection, markdown: docMarkdown }).strict(),
-  z.object({ op: z.literal("add_card"), prompt: z.string().trim().min(1).max(300), answer: docMarkdown.min(1) }).strict(),
-  z
-    .object({
-      op: z.literal("update_card"),
-      key: z.string().regex(/^[0-9a-f]{16}$/),
-      prompt: z.string().trim().min(1).max(300).optional(),
-      answer: docMarkdown.min(1).optional(),
-    })
-    .strict(),
-  z.object({ op: z.literal("remove_card"), key: z.string().regex(/^[0-9a-f]{16}$/) }).strict(),
 ]);
 export type DocEdit = z.infer<typeof docEditSchema>;
 
-export function docEditTarget(edit: DocEdit): ProblemDocTarget {
-  return edit.op === "append_section" || edit.op === "replace_section" ? "notes" : "cards";
+/** Card edits the Coach proposed before the Cards doc moved into Notes. Old
+ *  runs can still hold one; it renders without a preview and can't be applied. */
+const legacyCardEditSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("add_card"), prompt: z.string(), answer: z.string() }),
+  z.object({ op: z.literal("update_card"), key: z.string(), prompt: z.string().optional(), answer: z.string().optional() }),
+  z.object({ op: z.literal("remove_card"), key: z.string() }),
+]);
+export type LegacyCardEdit = z.infer<typeof legacyCardEditSchema>;
+
+export function isLegacyCardEdit(edit: DocEdit | LegacyCardEdit): edit is LegacyCardEdit {
+  return edit.op === "add_card" || edit.op === "update_card" || edit.op === "remove_card";
 }
 
 /** PATCH /api/weaknesses/:id: the user removes, resolves, or reopens one. */
@@ -233,11 +234,11 @@ export const agentProposalSchema = z.discriminatedUnion("action", [
     description: z.string().trim().min(1).max(200),
     reason: z.string().min(1).max(500),
   }),
-  /** An edit to the problem's Notes or Cards doc, applied on approval. */
+  /** An edit to the problem's Notes doc, applied on approval. */
   z.object({
     action: z.literal("doc_edit"),
     problemId: z.string().min(1).max(64),
-    edit: docEditSchema,
+    edit: z.union([docEditSchema, legacyCardEditSchema]),
     /** The doc version the edit was checked against. */
     baseVersion: z.number().int().min(0),
     reason: z.string().min(1).max(500),

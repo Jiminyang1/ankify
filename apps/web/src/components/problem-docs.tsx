@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ProblemDocsDto } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
-import { useAgentShellControls } from "@/components/agent/agent-shell";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
@@ -12,13 +11,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { PROBLEM_DOCS_UPDATED_EVENT } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
 
-export type DocTarget = "notes" | "cards" | "solutions";
+export type DocTarget = "notes" | "solutions";
 
 /**
- * A problem's three docs (docs/coach-practice.md): Notes, Cards, and
- * Solutions, rendered, with an edit mode. Saves are version-checked, so an
- * edit can't silently overwrite a Coach change applied meanwhile; an applied
- * Coach edit reloads them. The same docs the extension's book icon shows.
+ * A problem's two docs (docs/coach-practice.md): Notes and Solutions,
+ * rendered, with an edit mode. Saves are version-checked, so an edit can't
+ * silently overwrite a Coach change applied meanwhile; an applied Coach edit
+ * reloads them. The same docs the extension's book icon shows.
  *
  * The parent's tab row picks the doc (`target`) and holds `actionsSlot`, where
  * Edit / Save render. A draft belongs to its doc, so switching docs mid-edit
@@ -38,7 +37,6 @@ export function ProblemDocs({
   className?: string;
 }) {
   const { t } = useLanguage();
-  const { ask } = useAgentShellControls();
   const [docs, setDocs] = useState<ProblemDocsDto | null>(initialDocs ?? null);
   const [draft, setDraft] = useState<{ target: DocTarget; markdown: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -147,9 +145,7 @@ export function ProblemDocs({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {editing && draft ? (
           <div className="flex h-full min-h-[320px] flex-col gap-2">
-            {target !== "notes" && (
-              <p className="text-[11px] text-muted">{target === "cards" ? t.docs.cardsFormat : t.docs.solutionsFormat}</p>
-            )}
+            {target === "solutions" && <p className="text-[11px] text-muted">{t.docs.solutionsFormat}</p>}
             {/* Same type as the rendered Markdown, so switching to edit doesn't jump. */}
             <textarea
               value={draft.markdown}
@@ -189,58 +185,10 @@ export function ProblemDocs({
           ) : (
             <EmptyState title={t.docs.emptyNotes} />
           )
-        ) : target === "cards" ? (
-          <CardsView
-            docs={docs}
-            onAskForCards={() => ask(t.docs.askForCardsPrompt)}
-          />
         ) : (
           <SolutionsView docs={docs} />
         )}
       </div>
-    </div>
-  );
-}
-
-function CardsView({ docs, onAskForCards }: { docs: ProblemDocsDto; onAskForCards: () => void }) {
-  const { t } = useLanguage();
-  return (
-    <div className="space-y-2">
-      {docs.cards.issues.map((issue, index) => (
-        <p key={index} className="text-xs text-warning">
-          {issue.kind === "empty_answer"
-            ? t.docs.issueEmptyAnswer(issue.prompt)
-            : issue.kind === "duplicate_prompt"
-              ? t.docs.issueDuplicate(issue.prompt)
-              : issue.kind === "too_many_cards"
-                ? t.docs.issueTooMany(issue.limit)
-                : t.docs.issueTooLong(issue.limit)}
-        </p>
-      ))}
-      {docs.cards.cards.length === 0 ? (
-        <EmptyState
-          title={t.docs.emptyCards}
-          action={
-            <Button size="sm" onClick={onAskForCards}>
-              {t.docs.askForCards}
-            </Button>
-          }
-        />
-      ) : (
-        docs.cards.cards.map((card) => (
-          <details
-            key={card.key}
-            className="group rounded-lg border border-border bg-surface px-3 py-2.5 open:bg-subtle/40"
-          >
-            <summary className="cursor-pointer text-sm font-medium leading-snug text-fg marker:text-muted [&_p]:inline">
-              <Markdown className="inline">{card.prompt}</Markdown>
-            </summary>
-            <div className="mt-2 border-t border-border pt-2">
-              <Markdown>{card.answer}</Markdown>
-            </div>
-          </details>
-        ))
-      )}
     </div>
   );
 }

@@ -2,20 +2,21 @@ import {
   CARDS_DOC_MAX_CHARS,
   NOTES_DOC_MAX_CHARS,
   SOLUTIONS_DOC_MAX_CHARS,
-  applyCardsEdit,
   applyNotesEdit,
   notesSections,
   parseCards,
   parseSolutions,
   type DocEditError,
 } from "@ankify/core";
-import { docEditTarget, type DocEdit, type ProblemDocTarget, type ProblemDocsDto } from "@ankify/contracts";
+import type { DocEdit, ProblemDocTarget, ProblemDocsDto } from "@ankify/contracts";
 import { getDb, schema } from "@ankify/db";
 import { and, eq, inArray } from "drizzle-orm";
 
-/** The problem's Notes, Cards, and Solutions docs (docs/coach-practice.md).
- *  Every write checks the doc's version, so a stale editor tab or Coach
- *  proposal can't overwrite newer text. */
+/** The problem's Notes and Solutions docs (docs/coach-practice.md). Every
+ *  write checks the doc's version, so a stale editor tab or Coach proposal
+ *  can't overwrite newer text. The Cards doc is legacy: migration 0025 moved
+ *  it into Notes, and only older extension builds (0.3.x) still read and
+ *  write it here. */
 
 export type DocWriteError = DocEditError | "problem_not_found" | "version_conflict";
 export type DocWriteResult = { ok: true; docs: ProblemDocsDto } | { ok: false; error: DocWriteError };
@@ -116,7 +117,7 @@ async function writeDoc(
 }
 
 /** The user's own edit from the docs editor. Drafts may have parse issues
- *  (an empty answer while typing), but not exceed the size limits. */
+ *  (an approach without points while typing), but not exceed the size limits. */
 export async function saveProblemDoc(
   userId: string,
   problemId: string,
@@ -129,6 +130,7 @@ export async function saveProblemDoc(
   if (target === "notes" && markdown.length > NOTES_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
   // A session in progress keeps the copy it started with; edits apply next time.
   if (target === "solutions" && markdown.length > SOLUTIONS_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
+  // Legacy: older extension builds (0.3.x) still edit the Cards doc.
   if (target === "cards") {
     if (markdown.length > CARDS_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
     if (parseCards(markdown).issues.some((issue) => issue.kind === "too_many_cards")) {
@@ -138,8 +140,8 @@ export async function saveProblemDoc(
   return writeDoc(userId, row, target, markdown, expectedVersion);
 }
 
-/** Checks an edit against the current doc without writing it, so the Coach's
- *  proposals fail when proposed instead of when applied. */
+/** Checks a Notes edit against the current doc without writing it, so the
+ *  Coach's proposals fail when proposed instead of when applied. */
 export async function previewProblemDocEdit(
   userId: string,
   problemId: string,
@@ -147,14 +149,13 @@ export async function previewProblemDocEdit(
 ): Promise<{ ok: true; baseVersion: number } | { ok: false; error: DocWriteError }> {
   const row = await loadRow(userId, problemId);
   if (!row) return { ok: false, error: "problem_not_found" };
-  const target = docEditTarget(edit);
-  const result = applyEdit(row, edit);
+  const result = applyNotesEdit(row.notes, edit);
   if (!result.ok) return result;
-  return { ok: true, baseVersion: target === "notes" ? row.notesVersion : row.cardsVersion };
+  return { ok: true, baseVersion: row.notesVersion };
 }
 
 /** Applies a Coach proposal the user approved. Fails with version_conflict
- *  when the doc changed after the proposal was made. */
+ *  when Notes changed after the proposal was made. */
 export async function applyProblemDocEdit(
   userId: string,
   problemId: string,
@@ -163,24 +164,10 @@ export async function applyProblemDocEdit(
 ): Promise<DocWriteResult> {
   const row = await loadRow(userId, problemId);
   if (!row) return { ok: false, error: "problem_not_found" };
-  const target = docEditTarget(edit);
-  const current = target === "notes" ? row.notesVersion : row.cardsVersion;
-  if (current !== baseVersion) return { ok: false, error: "version_conflict" };
-  const result = applyEdit(row, edit);
+  if (row.notesVersion !== baseVersion) return { ok: false, error: "version_conflict" };
+  const result = applyNotesEdit(row.notes, edit);
   if (!result.ok) return result;
-  return writeDoc(userId, row, target, result.markdown, baseVersion);
-}
-
-function applyEdit(row: DocRow, edit: DocEdit) {
-  switch (edit.op) {
-    case "append_section":
-    case "replace_section":
-      return applyNotesEdit(row.notes, edit);
-    case "add_card":
-    case "update_card":
-    case "remove_card":
-      return applyCardsEdit(row.cardsMd, edit);
-  }
+  return writeDoc(userId, row, "notes", result.markdown, baseVersion);
 }
 
 export const DOC_WRITE_STATUS: Record<DocWriteError, number> = {
@@ -195,8 +182,7 @@ export const DOC_WRITE_STATUS: Record<DocWriteError, number> = {
   too_long: 400,
 };
 
-
-/** Cards per problem, counted from each problem's Cards doc. */
+/** Cards per problem, counted from each problem's legacy Cards doc. */
 export async function countDocCards(userId: string, problemIds: string[]): Promise<Map<string, number>> {
   if (problemIds.length === 0) return new Map();
   const rows = await getDb()

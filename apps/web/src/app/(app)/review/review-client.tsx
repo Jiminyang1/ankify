@@ -81,10 +81,10 @@ function getRatingButtons(t: ReviewLabels): { rating: FsrsRating; label: string;
 
 const REVIEW_TAGS_EVENT = "ankify:review-tags-visibility";
 const DEFAULT_WORKSPACE_TAB: WorkspaceTab = "notes";
-const WORKSPACE_TABS: readonly WorkspaceTab[] = ["notes", "cards", "solutions", "weakSpots", "submissions"];
+const WORKSPACE_TABS: readonly WorkspaceTab[] = ["notes", "solutions", "weakSpots", "submissions"];
 
 function isDocTab(tab: WorkspaceTab): tab is DocTarget {
-  return tab === "notes" || tab === "cards" || tab === "solutions";
+  return tab === "notes" || tab === "solutions";
 }
 const LAST_WORKSPACE_TAB_KEY = "ankify.review.workspace-tab";
 
@@ -256,7 +256,7 @@ export default function ReviewPage({
     let preferred = DEFAULT_WORKSPACE_TAB;
     try {
       const stored = localStorage.getItem(LAST_WORKSPACE_TAB_KEY);
-      // Older builds stored quiz or docs: those open on Notes.
+      // Older builds stored quiz, docs, or cards: those open on Notes.
       if (WORKSPACE_TABS.includes(stored as WorkspaceTab)) preferred = stored as WorkspaceTab;
     } catch {}
     selectWorkspaceTab(preferred);
@@ -636,7 +636,6 @@ function WorkspacePanel({
   const { t } = useLanguage();
   const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
     { id: "notes", label: t.docs.notes },
-    { id: "cards", label: t.docs.cards },
     { id: "solutions", label: t.docs.solutions },
     { id: "weakSpots", label: t.review.weakSpots },
     { id: "submissions", label: t.review.submissions, count: submissions?.length },
