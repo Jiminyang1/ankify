@@ -16,7 +16,7 @@ export default defineManifest(({ mode }) => {
     name: "ankify",
     description:
       "A study coach beside LeetCode: it reads your code, keeps notes and cards per problem, and brings problems back for practice.",
-    version: "0.3.1",
+    version: "0.3.2",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
