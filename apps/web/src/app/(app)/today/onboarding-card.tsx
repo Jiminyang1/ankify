@@ -1,23 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BookOpenCheck,
   Check,
   Chrome,
   Circle,
   ExternalLink,
+  Route,
   Sparkles,
   Trophy,
 } from "lucide-react";
 import { AI_PROVIDERS, getAiProviderInfo, type AiProvider } from "@ankify/core";
 import type { OnboardingProgressDto } from "@ankify/contracts";
 import type { SolvedSummary } from "@/server/profile";
+import type { StudyPlanOption } from "@/server/study-plans";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { getTranslations } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+
+const STEP_COUNT = 5;
 
 /** Suggested models from the shared catalog, recommended default first. */
 function presetModels(provider: AiProvider): string[] {
@@ -29,6 +36,13 @@ type Copy = {
   title: string;
   description: string;
   progress: (done: number) => string;
+  planTitle: string;
+  planBody: string;
+  planLabel: string;
+  planSize: (problems: number, chapters: number) => string;
+  usePlan: string;
+  planDone: (plan: string) => string;
+  planFailed: string;
   extensionTitle: string;
   extensionBody: string;
   extensionDone: string;
@@ -77,8 +91,16 @@ const COPY: Record<"en" | "zh", Copy> = {
   en: {
     eyebrow: "Quick setup",
     title: "Build your first review",
-    description: "Four small steps take you from a new account to a scheduled memory.",
-    progress: (done) => `${done} of 4 handled`,
+    description: "Five small steps take you from a new account to a plan to follow and a scheduled memory.",
+    progress: (done) => `${done} of ${STEP_COUNT} handled`,
+    planTitle: "Choose a study plan",
+    planBody:
+      "Your plan sets the order you learn in, one chapter (pattern) at a time. After your reviews, Today shows its next problem.",
+    planLabel: "Study plan",
+    planSize: (problems, chapters) => `${problems} problems in ${chapters} chapters`,
+    usePlan: "Use this plan",
+    planDone: (plan) => `Following ${plan}. Switch anytime on the Plan page.`,
+    planFailed: "Couldn't save your plan. Try again.",
     extensionTitle: "Install and connect the extension",
     extensionBody: "Install it, then click ankify once so it can reuse this web login and capture from LeetCode.",
     extensionDone: "Extension connected",
@@ -127,8 +149,15 @@ const COPY: Record<"en" | "zh", Copy> = {
   zh: {
     eyebrow: "快速设置",
     title: "建立你的第一次复习",
-    description: "四个小步骤，把新账号变成一条真正开始运转的记忆。",
-    progress: (done) => `已处理 ${done}/4`,
+    description: "五个小步骤：选好要跟的计划，再把新账号变成一条真正开始运转的记忆。",
+    progress: (done) => `已处理 ${done}/${STEP_COUNT}`,
+    planTitle: "选择学习计划",
+    planBody: "计划决定你学习的顺序，一次学一个章节（题型）。每天复习完之后，今日页会给出计划里的下一题。",
+    planLabel: "学习计划",
+    planSize: (problems, chapters) => `${chapters} 个章节，共 ${problems} 道题`,
+    usePlan: "使用这个计划",
+    planDone: (plan) => `正在跟 ${plan}。随时可以在主页换计划。`,
+    planFailed: "计划没有保存成功，请重试。",
     extensionTitle: "安装并连接扩展",
     extensionBody: "安装后点击一次 ankify，让扩展复用当前网页登录并从 LeetCode 捕获数据。",
     extensionDone: "扩展已连接",
@@ -182,6 +211,8 @@ export function OnboardingCard({
   installUrl,
   language,
   solvedSummary,
+  plans,
+  currentPlan,
 }: {
   initialProgress: OnboardingProgressDto;
   initialAi: {
@@ -194,9 +225,19 @@ export function OnboardingCard({
   language: "en" | "zh";
   /** Set once the extension has synced the user's LeetCode solved list. */
   solvedSummary: SolvedSummary | null;
+  /** The Plan page picker's plans, and the one the user is on now (the
+   *  default for their language until they choose). */
+  plans: StudyPlanOption[];
+  currentPlan: string;
 }) {
   const t = COPY[language];
+  const profileCopy = getTranslations(language).profile;
+  const router = useRouter();
   const [progress, setProgress] = useState(initialProgress);
+  const [planSlug, setPlanSlug] = useState(currentPlan);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [refreshing, startRefresh] = useTransition();
   const [showAi, setShowAi] = useState(false);
   const [provider, setProvider] = useState<AiProvider>(initialAi.provider);
   const [model, setModel] = useState(initialAi.model);
@@ -219,7 +260,9 @@ export function OnboardingCard({
 
   const aiHandled = progress.aiChoice !== "not_started";
   const hasStarterCredits = starter.enabled && starter.remaining > 0;
+  const selectedPlan = plans.find((plan) => plan.slug === planSlug);
   const doneCount = [
+    Boolean(progress.planChosenAt),
     Boolean(progress.extensionConnectedAt),
     aiHandled,
     Boolean(progress.firstCaptureAt),
@@ -234,6 +277,28 @@ export function OnboardingCard({
     () => AI_PROVIDERS.map((entry) => ({ value: entry.id, label: entry.label })),
     [],
   );
+
+  async function choosePlan() {
+    setPlanBusy(true);
+    setPlanError(null);
+    try {
+      // The Plan page's switch, which also records the step as done.
+      const response = await fetch("/api/study-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plan: planSlug }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setProgress((current) => ({ ...current, planChosenAt: current.planChosenAt ?? new Date().toISOString() }));
+      await refreshProgress();
+      // Today's Next part and the capture step's numbers follow the plan.
+      startRefresh(() => router.refresh());
+    } catch {
+      setPlanError(t.planFailed);
+    } finally {
+      setPlanBusy(false);
+    }
+  }
 
   async function skipAi() {
     setAiBusy(true);
@@ -315,12 +380,61 @@ export function OnboardingCard({
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-border/70">
           <div
             className="h-full rounded-full bg-accent transition-[width]"
-            style={{ width: `${(doneCount / 4) * 100}%` }}
+            style={{ width: `${(doneCount / STEP_COUNT) * 100}%` }}
           />
         </div>
       </div>
 
       <div className="divide-y divide-border">
+        <OnboardingStep
+          icon={Route}
+          done={Boolean(progress.planChosenAt)}
+          title={t.planTitle}
+          description={progress.planChosenAt ? t.planDone(selectedPlan?.name ?? planSlug) : t.planBody}
+        >
+          {!progress.planChosenAt && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  aria-label={t.planLabel}
+                  value={planSlug}
+                  disabled={planBusy || refreshing}
+                  className="w-full sm:w-72"
+                  onValueChange={(value) => {
+                    setPlanSlug(value);
+                    setPlanError(null);
+                  }}
+                >
+                  {plans.map((plan) => (
+                    <option key={plan.slug} value={plan.slug}>
+                      {plan.name}
+                    </option>
+                  ))}
+                </Select>
+                <Button size="sm" variant="primary" disabled={planBusy || refreshing} onClick={() => void choosePlan()}>
+                  {(planBusy || refreshing) && <Spinner />}
+                  {t.usePlan}
+                </Button>
+              </div>
+              {selectedPlan && (
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  {t.planSize(selectedPlan.problems, selectedPlan.chapters)}
+                  {selectedPlan.sourceUrl && (
+                    <>
+                      {" · "}
+                      {profileCopy.sourceCredit}{" "}
+                      <a href={selectedPlan.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                        {profileCopy.sourceLink}
+                      </a>
+                    </>
+                  )}
+                </p>
+              )}
+              {planError && <p className="mt-2 text-sm text-danger">{planError}</p>}
+            </>
+          )}
+        </OnboardingStep>
+
         <OnboardingStep
           icon={Chrome}
           done={Boolean(progress.extensionConnectedAt)}

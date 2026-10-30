@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { studyPlanImportSchema } from "@ankify/contracts";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
+import { markPlanChosen } from "@/server/onboarding";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 import { importLeetcodeList } from "@/server/study-plans";
@@ -36,5 +37,9 @@ export async function POST(req: Request) {
 
   const result = await importLeetcodeList(user.id, parsed.data.link);
   if ("error" in result) return NextResponse.json(result, { status: ERROR_STATUS[result.error] });
+  // Importing switches to the list, so it's a plan choice too.
+  await markPlanChosen(user.id).catch((error) => {
+    console.warn("[onboarding] failed to record plan choice", error);
+  });
   return NextResponse.json(result);
 }
