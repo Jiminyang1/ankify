@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { ChevronUp, X } from "lucide-react";
-import type { PatternSuggestionDto, PracticeSessionDto, ReviewRateResponseDto } from "@ankify/contracts";
+import type { PracticeSessionDto, ReviewRateResponseDto } from "@ankify/contracts";
 import type { FsrsRating } from "@ankify/core";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/ui/markdown";
-import { PatternSuggestion } from "@/components/same-pattern";
 import { Spinner } from "@/components/ui/spinner";
 import { weaknessCategoryName } from "@/lib/weakness-names";
 import { notifyPracticeUpdated } from "@/lib/agent-events";
@@ -54,7 +53,6 @@ export function PracticeTray({
   const [error, setError] = useState<string | null>(null);
   const [rating, setRating] = useState<FsrsRating | null>(session.suggestedRating);
   const [rated, setRated] = useState<FsrsRating | null>(null);
-  const [suggestion, setSuggestion] = useState<PatternSuggestionDto | null>(null);
   const completed = session.status === "completed";
   const ratingLabels = [t.rating.again, t.rating.hard, t.rating.good, t.rating.easy];
 
@@ -114,7 +112,6 @@ export function PracticeTray({
       if (!res.ok) throw new Error(t.practice.actionFailed);
       const body = (await res.json().catch(() => null)) as Partial<ReviewRateResponseDto> | null;
       setRated(rating);
-      setSuggestion(body?.suggestion ?? null);
       notifyReviewQueueUpdated(body?.queue?.dueCount);
     } catch (rateError) {
       setError(rateError instanceof Error ? rateError.message : t.practice.actionFailed);
@@ -297,10 +294,7 @@ export function PracticeTray({
               {!showRating ? (
                 <p className="text-[11px] text-muted">{t.practice.rateOnLeft}</p>
               ) : rated ? (
-                <>
-                  <p className="text-[11px] text-muted">{t.practice.rated(ratingLabels[rated - 1]!)}</p>
-                  {suggestion && <PatternSuggestion suggestion={suggestion} className="mt-2" />}
-                </>
+                <p className="text-[11px] text-muted">{t.practice.rated(ratingLabels[rated - 1]!)}</p>
               ) : (
                 <div className="flex items-stretch gap-1.5" role="radiogroup" aria-label={t.practice.rate}>
                   {([1, 2, 3, 4] as const).map((value) => (

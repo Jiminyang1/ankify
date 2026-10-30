@@ -2,14 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type {
-  PatternStepDto,
-  PatternSuggestionDto,
-  ProblemPatternDto,
-  ProblemPatternsDto,
-} from "@ankify/contracts";
+import type { PatternStepDto, ProblemPatternDto, ProblemPatternsDto } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
-import { Button, buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
@@ -21,15 +15,6 @@ const NEXT_COUNT = 3;
 
 function leetcodeUrl(slug: string) {
   return `https://leetcode.com/problems/${slug}/`;
-}
-
-async function setMuted(key: string, muted: boolean) {
-  const res = await fetch("/api/patterns/mute", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key, muted }),
-  });
-  if (!res.ok) throw new Error("mute_failed");
 }
 
 /**
@@ -75,54 +60,19 @@ export function SamePattern({ slug, className }: { slug: string; className?: str
   return (
     <div className={cn("space-y-3", className)}>
       {patterns.map((pattern) => (
-        <PatternCard
-          key={pattern.key}
-          pattern={pattern}
-          currentSlug={slug}
-          onMutedChange={(muted) =>
-            setData((current) =>
-              current && {
-                ...current,
-                patterns: current.patterns.map((item) => (item.key === pattern.key ? { ...item, muted } : item)),
-              },
-            )
-          }
-        />
+        <PatternCard key={pattern.key} pattern={pattern} currentSlug={slug} />
       ))}
       <p className="text-[11px] text-muted">{t.patterns.credit}</p>
     </div>
   );
 }
 
-function PatternCard({
-  pattern,
-  currentSlug,
-  onMutedChange,
-}: {
-  pattern: ProblemPatternDto;
-  currentSlug: string;
-  onMutedChange: (muted: boolean) => void;
-}) {
+function PatternCard({ pattern, currentSlug }: { pattern: ProblemPatternDto; currentSlug: string }) {
   const { language, t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const next = pattern.steps.filter((step) => !step.done && step.slug !== currentSlug).slice(0, NEXT_COUNT);
   const shown = expanded ? pattern.steps : next;
-
-  async function toggleMuted() {
-    setBusy(true);
-    setError(null);
-    try {
-      await setMuted(pattern.key, !pattern.muted);
-      onMutedChange(!pattern.muted);
-    } catch {
-      setError(t.patterns.actionFailed);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <Surface className="p-3">
@@ -166,18 +116,8 @@ function PatternCard({
           </button>
         )}
         <span className="flex-1" />
-        {pattern.misc ? (
-          <span className="text-[11px] text-muted">{t.patterns.misc}</span>
-        ) : (
-          <>
-            {pattern.muted && <span className="text-[11px] text-muted">{t.patterns.mutedNote}</span>}
-            <Button size="xs" variant="ghost" disabled={busy} onClick={() => void toggleMuted()}>
-              {busy ? <Spinner /> : pattern.muted ? t.patterns.unmute : t.patterns.mute}
-            </Button>
-          </>
-        )}
+        {pattern.misc && <span className="text-[11px] text-muted">{t.patterns.misc}</span>}
       </div>
-      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </Surface>
   );
 }
@@ -224,81 +164,5 @@ function StepRow({ step, current }: { step: PatternStepDto; current: boolean }) 
         {step.rating != null ? t.patterns.rating(step.rating) : ""}
       </span>
     </li>
-  );
-}
-
-/**
- * After a rating: one new problem with the technique the user just showed
- * they remember. "Not this pattern" stops suggestions from it.
- */
-export function PatternSuggestion({
-  suggestion,
-  className,
-}: {
-  suggestion: PatternSuggestionDto;
-  className?: string;
-}) {
-  const { language, t } = useLanguage();
-  const [muted, setMutedState] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { problem, pattern } = suggestion;
-
-  async function mute() {
-    setBusy(true);
-    setError(null);
-    try {
-      await setMuted(pattern.key, true);
-      setMutedState(true);
-    } catch {
-      setError(t.patterns.actionFailed);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (muted) {
-    return <p className={cn("text-center text-xs text-muted", className)}>{t.patterns.suggestionMuted}</p>;
-  }
-  return (
-    <Surface className={cn("p-4 text-left", className)}>
-      <p className="text-sm font-semibold text-fg">{t.patterns.suggestionTitle}</p>
-      <p className="mt-1 text-xs text-muted">{t.patterns.suggestionBody(pattern.name[language])}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm text-fg">
-          <span className="text-muted tabular-nums">{problem.id}. </span>
-          {problem.title}
-        </span>
-        <DifficultyPill difficulty={problem.difficulty} language={language} />
-        {problem.rating != null && (
-          <span className="text-[11px] text-muted tabular-nums" title={t.patterns.ratingHint}>
-            {t.patterns.rating(problem.rating)}
-          </span>
-        )}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <a
-          href={leetcodeUrl(problem.slug)}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClasses({ variant: "primary", size: "sm" })}
-        >
-          {t.patterns.open}
-        </a>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void mute()}>
-          {busy ? <Spinner /> : t.patterns.notThisPattern}
-        </Button>
-        <span className="flex-1" />
-        <a
-          href={pattern.topic.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[11px] text-muted hover:text-fg hover:underline"
-        >
-          {t.patterns.credit}
-        </a>
-      </div>
-      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
-    </Surface>
   );
 }

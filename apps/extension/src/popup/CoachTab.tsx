@@ -11,7 +11,6 @@ import type {
   AgentModelChoice,
   CoachModelsDto,
   DocEdit,
-  PatternSuggestionDto,
   PublicAiJobDto,
 } from "@ankify/contracts";
 import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
@@ -94,7 +93,6 @@ export function CoachTab({
   ratingPanel,
   onDocsChanged,
   onProblemChanged,
-  onSuggestion,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
@@ -110,8 +108,6 @@ export function CoachTab({
   onDocsChanged: () => void;
   /** The problem was rated from a practice summary. */
   onProblemChanged: () => void;
-  /** That rating came with a same-pattern suggestion. */
-  onSuggestion: (suggestion: PatternSuggestionDto) => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
@@ -648,10 +644,7 @@ export function CoachTab({
       initial={initial}
       copy={copy.practice}
       onCompleted={practiceCompleted}
-      onRated={(suggestion) => {
-        if (suggestion) onSuggestion(suggestion);
-        onProblemChanged();
-      }}
+      onRated={onProblemChanged}
       onAbandoned={(session) => setLocalPractice((current) => (current?.id === session.id ? null : current))}
       categoryName={categoryName}
     />
