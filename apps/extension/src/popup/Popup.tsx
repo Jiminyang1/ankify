@@ -6,6 +6,7 @@ import type {
   CaptureResultDto as CaptureResult,
   CardDto as ApiCard,
   FsrsPreviewsDto as Previews,
+  PlanNextDto as PlanNext,
   ProblemDto as ApiProblem,
   ProblemLookupPayloadDto,
   QueueProblemDto as QueueProblem,
@@ -96,6 +97,16 @@ const EXT_I18N = {
       noQueue: "No problems in queue.",
       dueNow: "Due now",
       stability: "stability",
+      nextTitle: "Next in your plan",
+      nextSummary: (plan: string, done: number, total: number) => `${plan} · ${done} of ${total} solved`,
+      chapter: "Chapter",
+      chapterProgress: (done: number, total: number) => `${done} of ${total} done`,
+      openOnLeetcode: "Open on LeetCode",
+      openRoadmap: "Open roadmap",
+      planComplete: (plan: string, total: number) => `You've solved all ${total} problems in ${plan}.`,
+      pickPlan: "Pick another plan",
+      sourceCredit: "Problems and order from 灵茶山艾府's problem lists, used with permission.",
+      sourceLink: "Original list",
     },
     problem: {
       connecting: "Connecting...",
@@ -464,6 +475,16 @@ const EXT_I18N = {
       noQueue: "队列里没有题目。",
       dueNow: "当前到期",
       stability: "稳定性",
+      nextTitle: "计划里的下一题",
+      nextSummary: (plan: string, done: number, total: number) => `${plan} · 已做 ${done} / ${total}`,
+      chapter: "当前章节",
+      chapterProgress: (done: number, total: number) => `已做 ${done} / ${total}`,
+      openOnLeetcode: "去 LeetCode 做",
+      openRoadmap: "打开路线图",
+      planComplete: (plan: string, total: number) => `${plan} 的 ${total} 道题你都做过了。`,
+      pickPlan: "换一个计划",
+      sourceCredit: "题目和顺序来自灵茶山艾府的算法题单，已获授权。",
+      sourceLink: "原题单",
     },
     problem: {
       connecting: "连接中...",
@@ -1505,8 +1526,7 @@ function TodayTab({
     };
   }, [load]);
 
-  async function jumpToProblem(p: QueueProblem) {
-    const url = p.url || `https://leetcode.com/problems/${p.leetcodeSlug}/`;
+  async function openProblem(url: string) {
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (activeTab?.id != null) {
@@ -1518,6 +1538,10 @@ function TodayTab({
     } catch (e) {
       setError(e instanceof Error ? e.message : t.common.unknownError);
     }
+  }
+
+  function jumpToProblem(p: QueueProblem) {
+    void openProblem(p.url || `https://leetcode.com/problems/${p.leetcodeSlug}/`);
   }
 
   if (loading && !data) return <p className="popup-muted">{t.common.loadingQueue}</p>;
@@ -1586,7 +1610,7 @@ function TodayTab({
               key={p.id}
               type="button"
               className="problem-list-item"
-              onClick={() => void jumpToProblem(p)}
+              onClick={() => jumpToProblem(p)}
             >
               <div className="problem-list-item-row">
                 <span className="problem-list-item-title">{p.title}</span>
@@ -1611,7 +1635,99 @@ function TodayTab({
       >
         {t.common.openFullReview}
       </a>
+
+      <PlanNextPart
+        settings={settings}
+        onOpen={(slug) => void openProblem(`https://leetcode.com/problems/${slug}/`)}
+      />
     </div>
+  );
+}
+
+/** Today's second part, after the reviews: the plan's next unsolved problem
+ *  and its chapter, the same as the web's Today. Hidden until it loads. */
+function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (slug: string) => void }) {
+  const t = getExtText(settings);
+  const [data, setData] = useState<PlanNext | null>(null);
+
+  useEffect(() => {
+    const language = settings.language === "zh" ? "zh" : "en";
+    const load = async () => {
+      try {
+        const res = await apiFetch(settings, `/api/study-plan/next?language=${language}`, { cache: "no-store" });
+        if (res.ok) setData((await res.json()) as PlanNext);
+      } catch {
+        /* Next just stays as it was; the reviews above are what matter */
+      }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, [settings]);
+
+  if (!data) return null;
+  const { plan, next } = data;
+  const roadmapUrl = `${settings.apiBaseUrl}/profile`;
+
+  return (
+    <section className="today-next">
+      <div className="today-next-head">
+        <span className="section-label">{t.today.nextTitle}</span>
+        <a href={roadmapUrl} target="_blank" rel="noreferrer" className="today-next-link">
+          {t.today.openRoadmap}
+        </a>
+      </div>
+      <div className="panel today-next-panel">
+        <div className="today-next-plan">{t.today.nextSummary(plan.name, plan.done, plan.total)}</div>
+        {next ? (
+          <>
+            <div className="today-next-chapter">
+              <span className="today-next-chapter-name">
+                <span className="today-next-chapter-label">{t.today.chapter}</span> {next.chapter.name}
+              </span>
+              <span className="today-next-chapter-count">
+                {t.today.chapterProgress(next.chapter.done, next.chapter.total)}
+              </span>
+            </div>
+            <div className="today-progress today-next-progress">
+              <div
+                className="today-progress-fill"
+                style={{ width: `${Math.round((next.chapter.done / Math.max(1, next.chapter.total)) * 100)}%` }}
+              />
+            </div>
+            <button type="button" className="problem-list-item today-next-problem" onClick={() => onOpen(next.problem.slug)}>
+              <div className="problem-list-item-row">
+                <span className="problem-list-item-title">
+                  <span className="today-next-id">{next.problem.leetcodeId}.</span> {next.problem.title}
+                </span>
+                <span className={`pill pill-${next.problem.difficulty.toLowerCase()}`}>
+                  {difficultyLabel(next.problem.difficulty, t)}
+                </span>
+              </div>
+              <div className="problem-list-item-meta today-next-open">
+                {t.today.openOnLeetcode}
+                <ExternalIcon />
+              </div>
+            </button>
+          </>
+        ) : (
+          <div className="today-next-done">
+            <p>{t.today.planComplete(plan.name, plan.total)}</p>
+            <a href={roadmapUrl} target="_blank" rel="noreferrer" className="hero-link">
+              {t.today.pickPlan}
+            </a>
+          </div>
+        )}
+      </div>
+      {plan.sourceUrl && (
+        <p className="today-next-credit">
+          {t.today.sourceCredit}{" "}
+          <a href={plan.sourceUrl} target="_blank" rel="noreferrer">
+            {t.today.sourceLink}
+          </a>
+        </p>
+      )}
+    </section>
   );
 }
 

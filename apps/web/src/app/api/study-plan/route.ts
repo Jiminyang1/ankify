@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { studyPlanSelectSchema } from "@ankify/contracts";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
+import { markPlanChosen } from "@/server/onboarding";
 import { readJsonBody } from "@/server/request-body";
 import { removeCustomPlan, setCurrentStudyPlan } from "@/server/study-plans";
 
@@ -21,7 +22,8 @@ async function readPlan(req: Request) {
   return { plan: parsed.data.plan };
 }
 
-/** Switch the plan the profile shows. */
+/** Switch the plan the profile shows. Also onboarding's plan step, which
+ *  saves the preselected default the same way when the user keeps it. */
 export async function POST(req: Request) {
   const user = await getRequestSessionUser(req);
   if (!user) return unauthorizedResponse();
@@ -30,6 +32,9 @@ export async function POST(req: Request) {
   if (!(await setCurrentStudyPlan(user.id, input.plan))) {
     return NextResponse.json({ error: "unknown_plan" }, { status: 404 });
   }
+  await markPlanChosen(user.id).catch((error) => {
+    console.warn("[onboarding] failed to record plan choice", error);
+  });
   return NextResponse.json({ plan: input.plan });
 }
 

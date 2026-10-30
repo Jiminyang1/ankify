@@ -313,12 +313,33 @@ export type AuthUserDto = {
 
 export type OnboardingProgressDto = {
   aiChoice: "not_started" | "configured" | "skipped";
+  /** When the user first picked a study plan, in onboarding or on the Plan page. */
+  planChosenAt?: string;
   extensionConnectedAt?: string;
   aiVerifiedAt?: string;
   firstCaptureAt?: string;
   firstReviewAt?: string;
   completedAt?: string;
   complete: boolean;
+};
+
+/** Today's Next part (web and extension): the current plan's first problem
+ *  the user hasn't solved, in plan order, and the chapter it's in. */
+export type PlanNextDto = {
+  plan: {
+    slug: string;
+    name: string;
+    /** 灵茶山艾府's post, for his lists; null for other plans. */
+    sourceUrl: string | null;
+    /** Problems solved on LeetCode or in review, of the plan's total. */
+    done: number;
+    total: number;
+  };
+  /** null once every problem in the plan is solved. */
+  next: {
+    chapter: { name: string; done: number; total: number };
+    problem: { slug: string; leetcodeId: number; title: string; difficulty: "Easy" | "Medium" | "Hard" };
+  } | null;
 };
 
 export type CaptureResultDto = {

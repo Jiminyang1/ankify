@@ -30,8 +30,28 @@ const PAGE_SIZE = 100;
 
 type CustomPlan = StudyPlan & { importedAt: number };
 
-export type StudyPlanOption = { slug: string; name: string; custom: boolean };
+export type StudyPlanOption = {
+  slug: string;
+  name: string;
+  custom: boolean;
+  /** Its size, so onboarding's plan step can say what each plan is. */
+  problems: number;
+  chapters: number;
+  /** 灵茶山艾府's post, for his lists; null for other plans. */
+  sourceUrl: string | null;
+};
 type Language = "en" | "zh";
+
+function planOption(plan: StudyPlan & { sourceUrl?: string }, custom: boolean): StudyPlanOption {
+  return {
+    slug: plan.slug,
+    name: plan.name,
+    custom,
+    problems: plan.groups.reduce((sum, group) => sum + group.questions.length, 0),
+    chapters: plan.groups.length,
+    sourceUrl: plan.sourceUrl ?? null,
+  };
+}
 
 /** Without a saved choice, Chinese users start on his Beginner Route. */
 function defaultPlanSlug(language: Language) {
@@ -99,11 +119,21 @@ export async function getCurrentStudyPlan(userId: string, language: Language) {
     custom.find((candidate) => candidate.slug === slug) ??
     findBuiltInStudyPlan(defaultPlanSlug(language), language)!;
   const options: StudyPlanOption[] = [
-    ...OFFICIAL_STUDY_PLANS.map((official) => ({ slug: official.slug, name: official.name, custom: false })),
-    ...patternPlansIn(language).map((pattern) => ({ slug: pattern.slug, name: pattern.name, custom: false })),
-    ...custom.map((imported) => ({ slug: imported.slug, name: imported.name, custom: true })),
+    ...OFFICIAL_STUDY_PLANS.map((official) => planOption(official, false)),
+    ...patternPlansIn(language).map((pattern) => planOption(pattern, false)),
+    ...custom.map((imported) => planOption(imported, true)),
   ];
   return { plan, custom: plan.slug.startsWith(CUSTOM_PREFIX), options };
+}
+
+/** When the user last saved a plan choice; null while they're on the
+ *  default (never chose, or removed the imported list they were on). */
+export async function studyPlanChosenAt(userId: string): Promise<Date | null> {
+  const [row] = await getDb()
+    .select({ value: schema.settings.value, updatedAt: schema.settings.updatedAt })
+    .from(schema.settings)
+    .where(and(eq(schema.settings.userId, userId), eq(schema.settings.key, CURRENT_KEY)));
+  return typeof (row?.value as { plan?: unknown } | undefined)?.plan === "string" ? row!.updatedAt : null;
 }
 
 /** false when the slug isn't a built-in plan or one of the user's imports. */
@@ -235,5 +265,5 @@ export async function importLeetcodeList(
   const next = existing < 0 ? [...custom, plan] : custom.map((candidate, index) => (index === existing ? plan : candidate));
   await writeSetting(userId, CUSTOM_KEY, next);
   await writeSetting(userId, CURRENT_KEY, { plan: slug });
-  return { plan: { slug, name: plan.name, custom: true } };
+  return { plan: planOption(plan, true) };
 }

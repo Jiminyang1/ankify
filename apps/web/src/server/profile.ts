@@ -6,9 +6,9 @@ import {
 } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
-import type { LeetcodeAccountDto } from "@ankify/contracts";
-import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "@/server/leetcode-account";
-import { findBuiltInStudyPlan, getCurrentStudyPlan, studyPlanSourceUrl } from "@/server/study-plans";
+import type { LeetcodeAccountDto, PlanNextDto } from "@ankify/contracts";
+import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
+import { findBuiltInStudyPlan, getCurrentStudyPlan, studyPlanSourceUrl } from "./study-plans";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
  *  refreshes are failing and the numbers may be out of date. */
@@ -57,20 +57,41 @@ export async function loadProfile(userId: string, language: Language) {
   };
 }
 
-/** The current plan's next problem and the group it's in, for Today. Reads
- *  the cached LeetCode account only, so Today never waits on LeetCode. */
-export async function loadPlanNext(userId: string, language: Language) {
+/** Today's Next part, on the web and through `/api/study-plan/next` for the
+ *  extension. Reads the cached LeetCode account only, so Today never waits
+ *  on LeetCode. */
+export async function loadPlanNext(userId: string, language: Language): Promise<PlanNextDto> {
   const progress = await loadPlanProgress(userId, language, await getCachedLeetcodeAccount(userId), new Date());
-  if (!progress.next) return null;
-  const group = progress.groups.find((candidate) => candidate.items.includes(progress.next!))!;
-  return {
-    plan: progress.plan,
-    group: { name: group.name, done: group.items.length - group.counts.todo, total: group.items.length },
-    problem: progress.next,
-  };
+  return planNextFrom(progress.plan, progress.groups);
 }
 
-export type PlanNext = NonNullable<Awaited<ReturnType<typeof loadPlanNext>>>;
+/** The plan is ordered, so the next problem is the first one not started,
+ *  and its group is the chapter the user is in. */
+export function planNextFrom(
+  plan: { slug: string; name: string; sourceUrl: string | null },
+  groups: Pick<PlanGroup, "name" | "items" | "counts">[],
+): PlanNextDto {
+  const done = (group: Pick<PlanGroup, "items" | "counts">) => group.items.length - group.counts.todo;
+  const summary = {
+    slug: plan.slug,
+    name: plan.name,
+    sourceUrl: plan.sourceUrl,
+    done: groups.reduce((sum, group) => sum + done(group), 0),
+    total: groups.reduce((sum, group) => sum + group.items.length, 0),
+  };
+  for (const group of groups) {
+    const item = group.items.find((candidate) => candidate.status === "todo");
+    if (!item) continue;
+    return {
+      plan: summary,
+      next: {
+        chapter: { name: group.name, done: done(group), total: group.items.length },
+        problem: { slug: item.slug, leetcodeId: item.leetcodeId, title: item.title, difficulty: item.difficulty },
+      },
+    };
+  }
+  return { plan: summary, next: null };
+}
 
 async function loadPlanProgress(userId: string, language: Language, leetcode: AccountForStatus, now: Date) {
   const [rows, solved, current] = await Promise.all([

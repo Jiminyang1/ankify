@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { leetcodeTagName } from "@ankify/core";
+import type { PlanNextDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
 import { buttonClasses } from "@/components/ui/button";
@@ -13,9 +14,10 @@ import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
 import { getAiSettings } from "@/server/settings";
 import { getStarterAiStatus } from "@/server/starter-ai";
-import { getTranslations } from "@/lib/i18n";
-import { loadPlanNext, loadSolvedSummary, type PlanNext } from "@/server/profile";
+import type { Translation } from "@/lib/i18n";
+import { loadPlanNext, loadSolvedSummary } from "@/server/profile";
 import { getOnboardingProgress } from "@/server/onboarding";
+import { getCurrentStudyPlan } from "@/server/study-plans";
 import { OnboardingCard } from "./onboarding-card";
 import { loadToday } from "@/server/today";
 
@@ -33,6 +35,8 @@ export default async function HomePage() {
     loadSolvedSummary(user.id, language),
     loadPlanNext(user.id, language),
   ]);
+  // Onboarding's plan step offers the Plan page's plans, the current one preselected.
+  const planChoice = onboarding.complete ? null : await getCurrentStudyPlan(user.id, language);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
   const held = Math.max(0, data.totalDue - data.dueCount);
@@ -58,7 +62,7 @@ export default async function HomePage() {
         </div>
       </div>
 
-      {!onboarding.complete && (
+      {!onboarding.complete && planChoice && (
         <OnboardingCard
           initialProgress={onboarding}
           initialAi={{
@@ -70,6 +74,8 @@ export default async function HomePage() {
           installUrl={getExtensionInstallUrl()}
           language={language}
           solvedSummary={solvedSummary}
+          plans={planChoice.options}
+          currentPlan={planChoice.plan.slug}
         />
       )}
 
@@ -178,44 +184,100 @@ export default async function HomePage() {
         )
       )}
 
-      {planNext && <PlanNextCard next={planNext} language={language} />}
+      <PlanNextSection data={planNext} t={t} language={language} hasDue={hasDue} />
     </PageFrame>
   );
 }
 
-/** The current plan's next unsolved problem: one line under the reviews,
- *  which stay the point of Today. */
-function PlanNextCard({ next, language }: { next: PlanNext; language: "en" | "zh" }) {
-  const copy = getTranslations(language).planNext;
+/** Today's second part, after the reviews (which stay the point of Today):
+ *  the plan's next unsolved problem and the chapter it's in. */
+function PlanNextSection({
+  data,
+  t,
+  language,
+  hasDue,
+}: {
+  data: PlanNextDto;
+  t: Translation;
+  language: "en" | "zh";
+  hasDue: boolean;
+}) {
+  const copy = t.planNext;
+  const { plan, next } = data;
   return (
-    <Surface className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted">{copy.kicker}</p>
-        <p className="mt-1 truncate text-sm font-medium">
-          <span className="tabular-nums text-muted">{next.problem.leetcodeId}. </span>
-          {next.problem.title}
-        </p>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-          <DifficultyPill difficulty={next.problem.difficulty} language={language} />
-          <span className="truncate">
-            {next.plan.name} · {copy.progress(next.group.name, next.group.done, next.group.total)}
-          </span>
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Link href="/profile" className={buttonClasses({ variant: "ghost", size: "sm" })}>
+    <section>
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">{copy.title}</h2>
+          <p className="mt-1 truncate text-sm text-muted">{copy.summary(plan.name, plan.done, plan.total)}</p>
+        </div>
+        <Link href="/profile" className="shrink-0 text-sm font-medium text-accent hover:underline">
           {copy.roadmap}
         </Link>
-        <a
-          href={`https://leetcode.com/problems/${next.problem.slug}/`}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClasses({ variant: "secondary", size: "sm" })}
-        >
-          {copy.open}
-        </a>
       </div>
-    </Surface>
+
+      {next ? (
+        <Surface className="mt-4 divide-y divide-border overflow-hidden">
+          <div className="px-4 py-3">
+            <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted">{copy.chapter}</p>
+                <p className="mt-1 truncate text-sm font-medium">{next.chapter.name}</p>
+              </div>
+              <span className="shrink-0 text-xs text-muted tabular-nums">
+                {copy.chapterProgress(next.chapter.done, next.chapter.total)}
+              </span>
+            </div>
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-border/70">
+              <div
+                className="h-full rounded-full bg-accent"
+                style={{ width: `${(next.chapter.done / Math.max(1, next.chapter.total)) * 100}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">
+                <span className="tabular-nums text-muted">{next.problem.leetcodeId}. </span>
+                {next.problem.title}
+              </p>
+              <div className="mt-1">
+                <DifficultyPill difficulty={next.problem.difficulty} language={language} />
+              </div>
+            </div>
+            <a
+              href={`https://leetcode.com/problems/${next.problem.slug}/`}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonClasses({ variant: hasDue ? "secondary" : "primary", size: "sm" })}
+            >
+              {copy.open}
+            </a>
+          </div>
+        </Surface>
+      ) : (
+        <Surface className="mt-4 p-4">
+          <EmptyState
+            title={copy.complete(plan.name, plan.total)}
+            description={copy.completeHint}
+            action={
+              <Link href="/profile" className={buttonClasses({ variant: "primary", size: "sm" })}>
+                {copy.pickPlan}
+              </Link>
+            }
+          />
+        </Surface>
+      )}
+
+      {plan.sourceUrl && (
+        <p className="mt-2 text-xs text-muted">
+          {t.profile.sourceCredit}{" "}
+          <a href={plan.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
+            {t.profile.sourceLink}
+          </a>
+        </p>
+      )}
+    </section>
   );
 }
 

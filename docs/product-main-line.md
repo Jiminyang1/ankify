@@ -1,9 +1,10 @@
 # The main line (product)
 
-Status: proposed 2026-10-29; step 1 (pull back) built the same day. Decided with Jimin: study
-plans are the spine of the product, and what a review checks is whether the
-user recognizes the pattern, not whether they memorized one problem. The rest
-of this doc is the proposal built on those two decisions.
+Status: proposed 2026-10-29; step 1 (pull back) built the same day; step 2 (plan
+first) built 2026-10-30. Decided with Jimin: study plans are the spine of the
+product, and what a review checks is whether the user recognizes the pattern,
+not whether they memorized one problem. The rest of this doc is the proposal
+built on those two decisions.
 
 ## In one sentence
 

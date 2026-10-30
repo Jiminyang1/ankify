@@ -367,6 +367,7 @@ async function main() {
         key: "onboarding",
         value: {
           aiChoice: aiSettings ? "configured" : "skipped",
+          planChosenAt: completedAt,
           extensionConnectedAt: completedAt,
           firstCaptureAt: completedAt,
           firstReviewAt: completedAt,
