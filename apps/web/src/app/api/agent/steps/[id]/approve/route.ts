@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isLegacyCardEdit } from "@ankify/contracts";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import {
   AiJobRequestError,
@@ -16,9 +17,6 @@ import { addWeaknessCategory } from "@/server/weaknesses";
 
 const DOC_EDIT_MESSAGES: Partial<Record<keyof typeof DOC_WRITE_STATUS, string>> = {
   version_conflict: "This doc changed since the suggestion. Ask the Coach again.",
-  card_not_found: "That card is no longer in your Cards doc.",
-  duplicate_prompt: "A card with that prompt already exists.",
-  too_many_cards: "Your Cards doc is full. Remove a card first.",
   too_long: "This would make the doc too long.",
 };
 
@@ -42,6 +40,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     const proposal = step.proposalJson;
     if (proposal.action === "doc_edit") {
+      // A card edit from before the Cards doc moved into Notes.
+      if (isLegacyCardEdit(proposal.edit)) {
+        return NextResponse.json(
+          {
+            error: "cards_retired",
+            message: "Cards are part of your Notes now, so this suggestion can't be applied. Ask the Coach again.",
+          },
+          { status: 410 },
+        );
+      }
       const applied = await applyProblemDocEdit(user.id, proposal.problemId, proposal.edit, proposal.baseVersion);
       if (!applied.ok) {
         return NextResponse.json(

@@ -4,7 +4,8 @@ import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import { DOC_WRITE_STATUS, loadProblemDocs, saveProblemDoc } from "@/server/problem-docs";
 import { readJsonBody } from "@/server/request-body";
 
-/** GET /api/problems/:id/docs — the problem's Notes and Cards docs. */
+/** GET /api/problems/:id/docs — the problem's Notes and Solutions docs, plus
+ *  the legacy Cards doc that older extension builds (0.3.x) still show. */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
@@ -14,7 +15,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   return NextResponse.json({ ok: true, docs }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
-/** PUT /api/problems/:id/docs — the user's own edit of Notes or Cards. */
+/** PUT /api/problems/:id/docs — the user's own edit of Notes or Solutions
+ *  (or of the legacy Cards doc, from older extension builds). */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();

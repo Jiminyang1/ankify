@@ -1,8 +1,33 @@
 # Coach-led practice (design)
 
-Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; the signal point and the technique-first question ([product-main-line.md](./product-main-line.md), step 3) built 2026-10-30; stage 4 not yet. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; the signal point and the technique-first question ([product-main-line.md](./product-main-line.md), step 3) built 2026-10-30; the Cards doc folded into Notes (step 4a) built 2026-10-30; stage 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
+
+## Cards fold into Notes (2026-10-30)
+
+Step 4a of [product-main-line.md](./product-main-line.md) ("Docs: three to
+two"). Practice v3 judges against Solutions and weak spots, and nothing
+current read the Cards doc, so a problem keeps two docs: **Solutions** (what
+review judges against) and **Notes** (everything else).
+
+- Migration `0025_cards_into_notes` appended each non-blank Cards doc to
+  Notes, after a blank line, under a `## Cards` heading. The card prompts move
+  one level down (`### prompt`, answer below), so the cards stay one Notes
+  section for the Coach's section edits. `notes_version` is bumped;
+  `cards_md` is left as it was.
+- The Cards tab is gone from `/review`, `/problems/[id]`, and the extension's
+  Docs; so are the card counts on Today and Problems.
+- The Coach reads Notes only (`get_problem_docs`) and proposes Notes edits
+  only (`append_section`, `replace_section`). A card proposal left pending in
+  an old run shows without a preview; approving it returns 410
+  `cards_retired` with a message.
+- Legacy, for extension builds 0.3.x (they still have a Cards tab): the docs
+  API still returns `cards` and accepts `PUT { target: "cards" }`, and the
+  review queue still sends `cardCount`. A card edited there stays in
+  `cards_md` and doesn't reach Notes.
+- Card rows, the AI card and quiz jobs, `recall_check`, and `practice_check`
+  stay until step 4b removes them.
 
 ## Stage 3: the web app follows the extension (2026-10-11)
 
@@ -406,7 +431,8 @@ You can write anything anywhere; the convention is for the Coach.
 
 ### Cards doc
 
-Markdown where each `##` heading is a prompt and the text under it, up to the
+Legacy since 2026-10-30: migration 0025 appended it to Notes (see "Cards
+fold into Notes" above). Markdown where each `##` heading is a prompt and the text under it, up to the
 next `##`, is the answer. Text before the first heading is ignored, which
 leaves room for a note to yourself.
 
@@ -574,7 +600,7 @@ Debrief rules (prompt and code):
 
 | Tool | Kind | Notes |
 | --- | --- | --- |
-| `get_problem_docs` | read | Notes and Cards with their versions, plus parse issues |
+| `get_problem_docs` | read | Notes and Cards with their versions, plus parse issues (Notes only since 2026-10-30) |
 | `start_practice` | practice | no content parameters: the server builds the session |
 | `propose_doc_edit` | proposal | see operations below; carries the doc version it was based on |
 | existing read tools | read | queue, study plan, problem context, submissions |
@@ -592,6 +618,8 @@ Cards and Quiz UI.
 | Cards | `add_card` | `prompt`, `answer` |
 | Cards | `update_card` | `key`, `prompt?`, `answer?` |
 | Cards | `remove_card` | `key` |
+
+The card operations were removed on 2026-10-30, when Cards folded into Notes.
 
 Applying checks the doc's version. If you edited the doc since the proposal,
 Apply fails with "Notes changed since this suggestion" and the Coach can be
@@ -630,7 +658,7 @@ All user-owned, all scoped by `user_id`, all cascading from the problem.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/problems/[id]/docs` | Notes and Cards with versions and parse issues |
+| `GET /api/problems/[id]/docs` | Notes and Cards with versions and parse issues (Cards legacy since 2026-10-30) |
 | `PUT /api/problems/[id]/docs` | direct edit by the user, with `expectedVersion` |
 | `POST /api/problems/[id]/practice` | start a session (from a chip or the Coach tool) |
 | `GET /api/practice/[id]` | session state; check items without answers until answered |

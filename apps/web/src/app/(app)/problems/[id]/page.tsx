@@ -41,7 +41,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
   const { problem, submissions, docs, weaknesses, reviewHistory } = detail;
-  const cardCount = docs.cards.cards.length;
   const activeWeaknesses = weaknesses.filter((weakness) => weakness.status === "active").length;
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
@@ -84,7 +83,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const panels: WorkspacePanel[] = [
     { id: "statement", label: t.detail.statement, node: statementPanel },
     { id: "notes", label: t.docs.notes, doc: "notes" },
-    { id: "cards", label: t.docs.cards, doc: "cards" },
     { id: "solutions", label: t.docs.solutions, doc: "solutions" },
     {
       id: "weak_spots",
@@ -152,7 +150,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                 }
               />
               <MetaRow label={t.detail.lastReviewed} value={formatRelative(problem.fsrsLastReview)} />
-              <MetaRow label={t.review.cards} value={cardCount} />
             </dl>
           </Surface>
 

@@ -35,6 +35,8 @@ export async function loadReviewQueueData(
     .orderBy(asc(sql`COALESCE(${schema.problems.fsrsDue}, 0)`))
     .limit(limit);
 
+  // Legacy: extension builds from before the Cards doc moved into Notes
+  // (0.3.x) still show a card count on Today.
   const problemIds = dueProblems.map((problem) => problem.id);
   const cardCountByProblem = await countDocCards(userId, problemIds);
 

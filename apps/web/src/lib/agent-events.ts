@@ -8,7 +8,8 @@ export function notifyAgentJobUpdated(job: PublicAiJobDto) {
   window.dispatchEvent(new CustomEvent(AGENT_JOB_UPDATED_EVENT, { detail: job }));
 }
 
-/** A problem's Notes, Cards, or Solutions changed (a Coach edit was applied). */
+/** A problem's Notes or Solutions changed (a Coach edit was applied, or a
+ *  first practice wrote Solutions). */
 export const PROBLEM_DOCS_UPDATED_EVENT = "ankify:problem-docs-updated";
 
 export function notifyProblemDocsUpdated(problemId: string) {

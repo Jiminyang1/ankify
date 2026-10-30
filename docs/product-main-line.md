@@ -1,7 +1,7 @@
 # The main line (product)
 
 Status: proposed 2026-10-29; step 1 (pull back) built the same day; step 2 (plan
-first) and step 3 (recognize the pattern) built 2026-10-30. Decided with Jimin: study plans are the spine of the
+first), step 3 (recognize the pattern), and step 4a (Cards into Notes) built 2026-10-30. Decided with Jimin: study plans are the spine of the
 product, and what a review checks is whether the user recognizes the pattern,
 not whether they memorized one problem. The rest of this doc is the proposal
 built on those two decisions.
@@ -210,6 +210,11 @@ chapter and techniques; Today gets the same Next part as the web.
   card stays the user's own words; ankify no longer treats it as a separate
   thing to study.
 
+Built 2026-10-30 (step 4a): migration `0025_cards_into_notes`, with the card
+prompts one level down (`###`) so the cards stay one Notes section. The
+Cards doc stays untouched for extension builds 0.3.x; details in
+[coach-practice.md](./coach-practice.md) ("Cards fold into Notes").
+
 ## What gets removed
 
 Users can't see these; removing them shrinks what has to be kept working:
@@ -228,8 +233,8 @@ Users can't see these; removing them shrinks what has to be kept working:
    parts; the extension's Today gets Next.
 3. **Recognize the pattern.** The signal point in the Solutions writer, the
    Coach's opening question, the judge, and eval cases.
-4. **Clean up.** Cards into Notes (migration), technique-anchored "one more"
-   suggestions, legacy code removed.
+4. **Clean up.** Cards into Notes (migration; 4a, built), technique-anchored
+   "one more" suggestions, legacy code removed.
 
 ## How we'll know
 

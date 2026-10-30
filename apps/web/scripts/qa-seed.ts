@@ -389,7 +389,9 @@ main().catch((error) => {
   process.exit(1);
 });
 
-/** The panel reads cards from each problem's Cards doc; mirror the seeded rows. */
+/** Mirrors the seeded card rows the way migration 0025 left real ones: in
+ *  Notes under "## Cards" (prompts as "###"), and in the legacy Cards doc that
+ *  older extension builds still show. */
 async function writeCardDocs(
   tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
   rows: (typeof schema.cards.$inferInsert)[],
@@ -399,9 +401,21 @@ async function writeCardDocs(
     byProblem.set(row.problemId, [...(byProblem.get(row.problemId) ?? []), { prompt: row.question, answer: row.answer }]);
   }
   for (const [problemId, cards] of byProblem) {
+    const cardsMd = serializeCards(cards);
+    const [problem] = await tx
+      .select({ notes: schema.problems.notes })
+      .from(schema.problems)
+      .where(eq(schema.problems.id, problemId));
+    const notes = problem?.notes?.trimEnd();
+    const section = `## Cards\n${cardsMd.trim().replace(/^## /gm, "### ")}\n`;
     await tx
       .update(schema.problems)
-      .set({ cardsMd: serializeCards(cards), cardsVersion: 1 })
+      .set({
+        cardsMd,
+        cardsVersion: 1,
+        notes: notes ? `${notes}\n\n${section}` : section,
+        notesVersion: 1,
+      })
       .where(eq(schema.problems.id, problemId));
   }
 }

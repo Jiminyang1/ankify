@@ -12,7 +12,6 @@ import {
   sql,
 } from "drizzle-orm";
 import { dueProblemCondition } from "./due-problems";
-import { countDocCards } from "./problem-docs";
 
 export const DEFAULT_PROBLEMS_PAGE_SIZE = 50;
 const MAX_PROBLEMS_PAGE_SIZE = 100;
@@ -112,9 +111,6 @@ export async function loadProblemsList(
 
   const hasMore = problemRows.length > limit;
   const problems = hasMore ? problemRows.slice(0, limit) : problemRows;
-  const problemIds = problems.map((problem) => problem.id);
-
-  const cardByProblem = await countDocCards(userId, problemIds);
   const lastProblem = problems.at(-1);
 
   return {
@@ -123,7 +119,6 @@ export async function loadProblemsList(
       fsrsDue: problem.fsrsDue?.toISOString() ?? null,
       archivedAt: problem.archivedAt?.toISOString() ?? null,
       createdAt: problem.createdAt.toISOString(),
-      cardTotal: cardByProblem.get(problem.id) ?? 0,
     })),
     dueCount: dueRow?.count ?? 0,
     serverNow: now.toISOString(),

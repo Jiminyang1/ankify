@@ -7,7 +7,7 @@ import {
 } from "@/server/problems-list";
 
 /** GET /api/problems?search=&archived=1&cursor=&limit= — paginated
- *  metadata-only problem list with card counts.
+ *  metadata-only problem list.
  *  Default lists non-archived; `archived=1` lists archived problems instead. */
 export async function GET(req: Request) {
   const user = await getRequestUser(req);

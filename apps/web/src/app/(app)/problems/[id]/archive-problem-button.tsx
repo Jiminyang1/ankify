@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/components/LanguageProvider";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
 
-/** Archive removes the problem from the review rotation but keeps notes,
- *  cards, submissions, and review history. Reversible, so no confirm modal. */
+/** Archive removes the problem from the review rotation but keeps its docs,
+ *  submissions, and review history. Reversible, so no confirm modal. */
 export function ArchiveProblemButton({
   problemId,
   archived,

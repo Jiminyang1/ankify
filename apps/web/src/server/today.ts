@@ -1,7 +1,6 @@
 import { getDb, schema } from "@ankify/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { dueProblemCondition } from "@/server/due-problems";
-import { countDocCards } from "@/server/problem-docs";
 import { getReviewQueueStatus } from "@/server/review-queue";
 
 export async function loadToday(userId: string) {
@@ -23,8 +22,6 @@ export async function loadToday(userId: string) {
     ]);
 
     const dueProblems = allDueProblems.slice(0, Math.min(8, queue.remaining));
-    const dueProblemIds = dueProblems.map((problem) => problem.id);
-    const cardsByProblem = await countDocCards(userId, dueProblemIds);
 
     return {
       totalProblems: totalRows[0]?.count ?? 0,
@@ -33,7 +30,6 @@ export async function loadToday(userId: string) {
       doneToday: queue.doneToday,
       dailyReviewLimit: queue.dailyReviewLimit,
       dueProblems,
-      cardsByProblem,
     };
   } catch {
     return {
@@ -43,7 +39,6 @@ export async function loadToday(userId: string) {
       doneToday: 0,
       dailyReviewLimit: 20,
       dueProblems: [],
-      cardsByProblem: new Map<string, number>(),
       error: true,
     } as const;
   }

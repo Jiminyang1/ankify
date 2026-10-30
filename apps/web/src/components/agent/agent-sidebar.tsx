@@ -32,6 +32,7 @@ import type {
   AgentStepDto,
   AgentStreamEvent,
   DocEdit,
+  LegacyCardEdit,
   PracticeSessionDto,
   PublicAiJobDto,
 } from "@ankify/contracts";
@@ -919,7 +920,7 @@ export function AgentSidebar({
                   ? [
                       t.agent.suggestions.submission,
                       t.agent.suggestions.review,
-                      t.agent.suggestions.card,
+                      t.agent.suggestions.notes,
                     ]
                   : [
                       t.agent.globalSuggestions.review,
@@ -1316,16 +1317,11 @@ function AgentStep({
   );
 }
 
-/** What a doc-edit proposal would write, before the user applies it. */
-function DocEditPreview({ edit, reason }: { edit: DocEdit; reason: string }) {
-  const content =
-    edit.op === "append_section" || edit.op === "replace_section"
-      ? edit.markdown
-      : edit.op === "add_card"
-        ? `**${edit.prompt}**\n\n${edit.answer}`
-        : edit.op === "update_card"
-          ? [edit.prompt ? `**${edit.prompt}**` : null, edit.answer].filter(Boolean).join("\n\n")
-          : null;
+/** What a doc-edit proposal would write, before the user applies it. A card
+ *  edit from before the Cards doc moved into Notes has no preview; applying it
+ *  fails with a message. */
+function DocEditPreview({ edit, reason }: { edit: DocEdit | LegacyCardEdit; reason: string }) {
+  const content = edit.op === "append_section" || edit.op === "replace_section" ? edit.markdown : null;
   return (
     <div className="mt-2 space-y-2">
       {content && (

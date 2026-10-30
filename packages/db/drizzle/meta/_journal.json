@@ -176,6 +176,13 @@
       "when": 1791755432780,
       "tag": "0024_cards_doc_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1793342744338,
+      "tag": "0025_cards_into_notes",
+      "breakpoints": true
     }
   ]
 }

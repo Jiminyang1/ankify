@@ -3,7 +3,6 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   docEditSchema,
-  docEditTarget,
   type AgentNavigation,
   type AgentProposal,
   type AgentStepDto,
@@ -19,7 +18,6 @@ import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/se
 import { getRequestLanguage } from "@/server/i18n";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
-import { docEditInput } from "./doc-edit-input";
 import { createAgentStep } from "./store";
 import { toAgentSafeQuizState } from "./quiz-context";
 import { relativeTimeLabel } from "./time-labels";
@@ -365,7 +363,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     get_problem_docs: tool({
       description:
-        "Load the problem's two docs: Notes (the user's understanding, in ## sections such as Approach, Key insight, Pitfalls, Complexity, My attempts) and Cards (each ## heading is a recall prompt, the text under it the answer, each card has a key). Call before proposing a doc edit, or when what the user already wrote down matters.",
+        "Load the problem's Notes: the user's understanding, in ## sections such as Approach, Key insight, Pitfalls, Complexity, My attempts. Call before proposing a Notes edit, or when what the user already wrote down matters.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);
@@ -375,13 +373,11 @@ export function createStudyCoachTools(context: AgentToolContext) {
           kind: "read",
           toolName: "get_problem_docs",
           status: "completed",
-          summary: `Read Notes and Cards for ${target.title}`,
+          summary: `Read Notes for ${target.title}`,
         });
         return {
           notes: docs.notes.markdown || null,
           notesSections: docs.notes.sections,
-          cards: docs.cards.cards,
-          cardIssues: docs.cards.issues,
         };
       },
     }),
@@ -566,25 +562,20 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     propose_doc_edit: tool({
       description:
-        "Propose one edit to the problem's Notes or Cards doc. Nothing changes until the user approves it. Ops: append_section / replace_section (Notes: section + markdown); add_card (Cards: prompt + answer); update_card (Cards: key + new prompt and/or answer); remove_card (Cards: key). Call get_problem_docs first so you don't duplicate what's there.",
+        "Propose one edit to the problem's Notes. Nothing changes until the user approves it. Ops: append_section adds markdown to the end of a ## section (creating it if missing); replace_section rewrites one. Call get_problem_docs first so you don't duplicate what's there.",
       inputSchema: z.object({
         problemId: problemIdInput,
-        op: z.enum(["append_section", "replace_section", "add_card", "update_card", "remove_card"]),
-        section: z.string().max(60).optional().describe("Notes section heading, e.g. Pitfalls"),
-        markdown: z.string().max(4_000).optional().describe("Notes content to append or replace with"),
-        prompt: z.string().max(300).optional().describe("Card prompt: one question, one line"),
-        answer: z.string().max(2_000).optional().describe("Card answer: short, at most a few lines"),
-        key: z.string().max(16).optional().describe("Existing card key from get_problem_docs"),
+        op: z.enum(["append_section", "replace_section"]),
+        section: z.string().max(60).describe("Notes section heading, e.g. Pitfalls"),
+        markdown: z.string().max(4_000).describe("Notes content to append or replace with"),
         reason: z.string().min(1).max(500).describe("Why this edit helps, in one sentence"),
       }),
-      execute: async ({ problemId: requestedId, op, section, markdown, prompt, answer, key, reason }) => {
+      execute: async ({ problemId: requestedId, op, section, markdown, reason }) => {
         if (docProposals >= MAX_DOC_PROPOSALS_PER_RUN) {
           return { proposalCreated: false, error: "too_many_proposals_this_turn" };
         }
         const target = await resolveProblem(requestedId);
-        const parsed = docEditSchema.safeParse(
-          docEditInput(op, { section, markdown, prompt, answer, key }),
-        );
+        const parsed = docEditSchema.safeParse({ op, section, markdown });
         if (!parsed.success) {
           return { proposalCreated: false, error: "invalid_edit", issues: parsed.error.issues.map((i) => i.message) };
         }
@@ -608,7 +599,6 @@ export function createStudyCoachTools(context: AgentToolContext) {
         });
         return {
           proposalId: step.id,
-          target: docEditTarget(edit),
           requiresUserConfirmation: true,
         };
       },
@@ -679,16 +669,5 @@ function limitText(value: string | null, maxLength: number) {
 
 /** One line for the proposal card: what will change if the user approves. */
 function docEditSummary(edit: DocEdit): string {
-  switch (edit.op) {
-    case "append_section":
-      return `Add to Notes, ${edit.section}`;
-    case "replace_section":
-      return `Rewrite Notes, ${edit.section}`;
-    case "add_card":
-      return "Add a card";
-    case "update_card":
-      return "Edit a card";
-    case "remove_card":
-      return "Remove a card";
-  }
+  return edit.op === "append_section" ? `Add to Notes, ${edit.section}` : `Rewrite Notes, ${edit.section}`;
 }

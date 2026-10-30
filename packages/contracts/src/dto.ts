@@ -178,7 +178,6 @@ export type ProblemListItemDto = {
   fsrsState: "new" | "learning" | "review" | "relearning";
   archivedAt: string | null;
   createdAt: string;
-  cardTotal: number;
 };
 
 export type ProblemsListPayloadDto = {
@@ -208,6 +207,8 @@ export type QueueProblemDto = {
   fsrsStability: number | null;
   fsrsReps: number;
   fsrsLapses: number;
+  /** Legacy: cards in the old Cards doc, which extension builds before the
+   *  Cards doc moved into Notes (0.3.x) still show on Today. */
   cardCount: number;
 };
 
@@ -368,7 +369,9 @@ export type LeetcodeAccountDto = {
   profile: LeetcodeProfileDto | null;
 };
 
-/** A problem's Notes, Cards, and Solutions docs (docs/coach-practice.md). */
+/** A problem's Notes and Solutions docs (docs/coach-practice.md). `cards` is
+ *  legacy: the Cards doc moved into Notes (migration 0025), and only older
+ *  extension builds (0.3.x, with a Cards tab) still read it. */
 export type ProblemDocsDto = {
   problemId: string;
   notes: { markdown: string; version: number; sections: string[] };
