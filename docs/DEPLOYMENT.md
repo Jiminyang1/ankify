@@ -69,10 +69,58 @@ Compare the migration count with the number of entries in
 consistent with the authenticated Production UI. A mismatch means stop and
 resolve the target; do not migrate by name guessing.
 
-## Back up and migrate
+## The pipeline
 
-Create a short-lived token for the verified integration database and put it,
-with the exact database URL, in the gitignored `.env.production.local`:
+Merging to `main` runs, in order:
+
+1. **CI `verify`** (`.github/workflows/ci.yml`): install, local migrations,
+   typecheck, lint, test, build, extension manifest check, audit. Branch
+   protection requires it on every PR.
+2. **CI `release`**: only on a push to `main`, after `verify` passes. It runs
+   `pnpm db:migrate:prod` against `database-ankify` (the URL is pinned in the
+   workflow) with the `TURSO_AUTH_TOKEN` secret of the `production-db` GitHub
+   environment, which only protected branches may use. With nothing pending
+   it changes nothing.
+3. **Vercel**: the Git integration builds every `main` commit (`vercel.json`
+   deploys no other branch). Deployment Checks hold the Production promotion
+   until `verify` and `release` pass on that commit, so code never goes live
+   ahead of its schema. Force Promote on the deployment page skips the wait
+   in an emergency.
+
+A migration therefore runs while the previous build is still serving. Keep
+migrations additive (expand/deploy/contract): add first, drop only in a later
+release once no deployed code reads the old shape.
+
+### One-time setup
+
+- **CI token.** Create a non-expiring token for the verified integration
+  database (see the identification steps above) and store it straight into
+  the environment, so it never lands in a file or terminal history:
+
+  ```bash
+  turso org switch vercel-icfg-mdehlkeeqefnm8sqwfj1zlce
+  turso db tokens create database-ankify --expiration none | gh secret set TURSO_AUTH_TOKEN --env production-db --repo Jiminyang1/ankify
+  ```
+
+  To replace it, create a new one the same way. `turso db tokens invalidate`
+  revokes every token of the database, including the one the Vercel
+  integration uses, so reconnect the integration afterwards if you run it.
+- **Vercel Deployment Checks.** In the Vercel project, Settings → Deployment
+  Checks, add GitHub checks `verify` and `release` for Production.
+
+### Backups
+
+Public repository Actions artifacts can be downloaded by anyone, so CI never
+dumps the database. Before merging a PR that adds a migration, take a backup
+from your machine (`pnpm db:backup`, below), and keep it until the release
+has passed Production smoke testing.
+
+## Back up and migrate by hand
+
+Use this for a backup before merging a migration, or to migrate outside the
+pipeline. Create a short-lived token for the verified integration database
+and put it, with the exact database URL, in the gitignored
+`.env.production.local`:
 
 ```bash
 turso db tokens create database-ankify --expiration 1d
@@ -80,8 +128,9 @@ pnpm db:release
 ```
 
 `pnpm db:release` first writes a SQLite backup under `backups/`, verifies its
-foreign keys, and only then applies pending Drizzle migrations. Migrations do
-not run during a Vercel build.
+foreign keys, and only then applies pending Drizzle migrations; `pnpm db:backup`
+writes the backup alone. Migrations never run during a Vercel build; the CI
+`release` job runs them.
 
 After migration, repeat the migration-count query and verify any newly required
 tables and indexes. Keep the pre-migration backup until the release has passed
@@ -95,8 +144,8 @@ Production smoke testing.
    ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app pnpm release:check
    ```
 
-2. Push the reviewed commit to `main` and wait for the Vercel Production
-   deployment to become `Ready` and for the canonical alias to point to it.
+2. Merge the reviewed PR to `main` and wait for `verify`, `release`, and the
+   Vercel Production deployment, until the canonical alias points to it.
 3. Verify public `/`, `/login`, `/privacy`, and `/terms` routes; an
    unauthenticated app page must redirect to `/login`, while `/api/me` returns
    `401`.
