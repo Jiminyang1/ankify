@@ -1,13 +1,14 @@
 import { PATTERN_PROBLEM_DATA, PATTERN_TOPIC_DATA } from "./patterns.generated";
-import type { StudyPlan, StudyPlanGroup, StudyPlanQuestion } from "./study-plans";
+import { deepDivePlanFor, type StudyPlan, type StudyPlanGroup, type StudyPlanQuestion } from "./study-plans";
 import type { LeetCodeDifficulty } from "./types";
 
 /**
  * Patterns come from 灵茶山艾府's twelve problem lists (used with his
  * permission), snapshotted by `pnpm patterns:sync`. A pattern is one
  * technique, such as "count subarrays with exactly k", and its problems are a
- * ladder ordered by contest rating. Review uses them to suggest a new problem
- * that needs the same technique once one is remembered.
+ * ladder ordered by contest rating. A problem's patterns are its techniques;
+ * their ladders give "one more of this technique" when a review is forgotten
+ * or a chapter is finished.
  *
  * The data is large (~600 KB), so this module has its own entry point
  * (`@ankify/core/patterns`) and only server code imports it.
@@ -131,6 +132,118 @@ export function nextInPattern(
     .sort((a, b) => TIER_ORDER[a.step.tier] - TIER_ORDER[b.step.tier] || a.index - b.index)
     .slice(0, limit)
     .map(({ step }) => step);
+}
+
+/* ── "One more of this technique" (docs/product-main-line.md) ── */
+
+type PatternLookup = (slug: string) => { topic: PatternTopic; pattern: Pattern }[];
+
+/** The techniques a problem uses: its patterns, minus "Other" sections. */
+export function techniquesForSlug(
+  slug: string,
+  lookup: PatternLookup = patternsForSlug,
+): { topic: PatternTopic; pattern: Pattern }[] {
+  return lookup(slug).filter(({ pattern }) => !isMiscPattern(pattern));
+}
+
+function ladderRating(pattern: Pattern, slug: string): number | null {
+  return pattern.problems.find(([candidate]) => candidate === slug)?.[1] ?? null;
+}
+
+/**
+ * After a review is forgotten (Again): one easier problem with the same
+ * technique. On each technique's ladder it takes the first problem not done
+ * (core tier first, as `nextInPattern()` walks it), preferring one rated below
+ * this problem when both have contest ratings. A technique with such a
+ * lower-rated problem wins over one without; otherwise techniques go in list
+ * order.
+ */
+export function easierInTechnique(
+  slug: string,
+  done: (slug: string) => boolean,
+  lookup: PatternLookup = patternsForSlug,
+): { topic: PatternTopic; pattern: Pattern; step: PatternStep } | null {
+  let fallback: { topic: PatternTopic; pattern: Pattern; step: PatternStep } | null = null;
+  for (const { topic, pattern } of techniquesForSlug(slug, lookup)) {
+    const candidates = nextInPattern(pattern, (other) => other === slug || done(other), { limit: Infinity });
+    if (candidates.length === 0) continue;
+    const own = ladderRating(pattern, slug);
+    const lower = own == null ? undefined : candidates.find((step) => step.rating != null && step.rating < own);
+    if (lower) return { topic, pattern, step: lower };
+    fallback ??= { topic, pattern, step: candidates[0]! };
+  }
+  return fallback;
+}
+
+/**
+ * After a chapter is finished ("go deeper"): the technique most common among
+ * the chapter's problems, with its next problems not done. Ties go to the
+ * technique that shows up first in the chapter; a technique with nothing left
+ * gives way to the next one.
+ */
+export function goDeeperInChapter(
+  slugs: readonly string[],
+  done: (slug: string) => boolean,
+  options: { limit?: number; lookup?: PatternLookup } = {},
+): { topic: PatternTopic; pattern: Pattern; steps: PatternStep[] } | null {
+  const { limit = 3, lookup = patternsForSlug } = options;
+  const counts = new Map<string, { topic: PatternTopic; pattern: Pattern; count: number }>();
+  for (const slug of slugs) {
+    for (const { topic, pattern } of techniquesForSlug(slug, lookup)) {
+      const entry = counts.get(pattern.key) ?? { topic, pattern, count: 0 };
+      entry.count += 1;
+      counts.set(pattern.key, entry);
+    }
+  }
+  const inChapter = new Set(slugs);
+  // Array.prototype.sort is stable, so equal counts keep chapter order.
+  for (const { topic, pattern } of [...counts.values()].sort((a, b) => b.count - a.count)) {
+    const steps = nextInPattern(pattern, (slug) => inChapter.has(slug) || done(slug), { limit });
+    if (steps.length > 0) return { topic, pattern, steps };
+  }
+  return null;
+}
+
+/**
+ * After a plan is finished: what to focus on next. The technique the user
+ * forgets most is the list (topic) whose deck problems add up the most
+ * lapses; its plan is `ling:<topic>`. Without lapses on any catalog problem it
+ * falls back to the official plan that goes deeper on the plan chapter with
+ * the most lapses (`deepDivePlanFor()`), and otherwise suggests nothing. The
+ * plan the user just finished is never suggested.
+ */
+export function focusPlanAfter(input: {
+  currentPlan: string;
+  /** Every problem in the deck with its lapses (times forgotten). */
+  deck: readonly { slug: string; lapses: number }[];
+  /** The finished plan's chapters with the lapses of their problems. */
+  chapters: readonly { name: string; lapses: number }[];
+  lookup?: PatternLookup;
+}):
+  | { kind: "topic"; topic: PatternTopic; plan: string; lapses: number }
+  | { kind: "official"; plan: string; chapter: string; lapses: number }
+  | null {
+  const lookup = input.lookup ?? patternsForSlug;
+  const byTopic = new Map<string, number>();
+  for (const { slug, lapses } of input.deck) {
+    if (lapses <= 0) continue;
+    const topics = new Set(techniquesForSlug(slug, lookup).map(({ topic }) => topic.key));
+    for (const key of topics) byTopic.set(key, (byTopic.get(key) ?? 0) + lapses);
+  }
+  const ranked = PATTERN_TOPICS.map((topic) => ({ topic, lapses: byTopic.get(topic.key) ?? 0 }))
+    .filter((entry) => entry.lapses > 0 && `${PATTERN_PLAN_PREFIX}${entry.topic.key}` !== input.currentPlan)
+    .sort((a, b) => b.lapses - a.lapses);
+  const top = ranked[0];
+  if (top) return { kind: "topic", topic: top.topic, plan: `${PATTERN_PLAN_PREFIX}${top.topic.key}`, lapses: top.lapses };
+
+  const chapters = input.chapters
+    .filter((chapter) => chapter.lapses > 0)
+    .sort((a, b) => b.lapses - a.lapses);
+  for (const chapter of chapters) {
+    const dive = deepDivePlanFor(chapter.name, input.currentPlan);
+    if (dive) return { kind: "official", plan: dive.slug, chapter: chapter.name, lapses: chapter.lapses };
+  }
+  return null;
 }
 
 /* ── His lists as profile study plans ── */

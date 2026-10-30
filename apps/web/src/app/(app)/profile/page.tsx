@@ -9,6 +9,7 @@ import { requirePageUser } from "@/server/auth";
 import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { loadProfile } from "@/server/profile";
 import { AskCoachNext } from "./ask-coach";
+import { FrequentMistakes } from "./frequent-mistakes";
 import { ProfileGuide } from "./guide";
 import { LeetcodeCard } from "./leetcode-card";
 import { PlanPicker } from "./plan-picker";
@@ -19,8 +20,10 @@ import { STATUS_ORDER, STATUS_SWATCH } from "./status-style";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilePage() {
+export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ chapter?: string | string[] }> }) {
   const user = await requirePageUser();
+  // The problem page links a chapter here so its dialog opens.
+  const { chapter } = await searchParams;
   const language = await getRequestLanguage();
   const [t, data] = await Promise.all([getRequestTranslations(), loadProfile(user.id, language)]);
   const copy = t.profile;
@@ -121,7 +124,14 @@ export default async function ProfilePage() {
 
       <ProfileGuide solvedSynced={data.solvedSync != null} />
 
-      <Roadmap planSlug={data.plan.slug} groups={data.groups} nextSlug={data.next?.slug ?? null} />
+      <Roadmap
+        planSlug={data.plan.slug}
+        groups={data.groups}
+        nextSlug={data.next?.slug ?? null}
+        initialChapter={typeof chapter === "string" ? chapter : null}
+      />
+
+      {data.frequentMistakes.length > 0 && <FrequentMistakes mistakes={data.frequentMistakes} />}
 
       <section id="leetcode" className="space-y-2">
         <LeetcodeCard account={data.leetcode} stale={data.leetcodeStale} />

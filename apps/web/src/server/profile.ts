@@ -1,14 +1,19 @@
 import {
+  computeWeaknessProfile,
   deepDivePlanFor,
   planProblemStatus,
   type LeetCodeDifficulty,
   type PlanProblemStatus,
 } from "@ankify/core";
+import { focusPlanAfter, goDeeperInChapter } from "@ankify/core/patterns";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
-import type { LeetcodeAccountDto, PlanNextDto } from "@ankify/contracts";
+import type { ChapterDeeperDto, LeetcodeAccountDto, PlanFocusDto, PlanNextDto } from "@ankify/contracts";
 import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
+import { toPatternRef, toPatternStep, type DoneSet } from "./patterns";
+import { planNextFrom } from "./plan-next";
 import { findBuiltInStudyPlan, getCurrentStudyPlan, studyPlanSourceUrl } from "./study-plans";
+import { loadActiveWeaknesses } from "./weaknesses";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
  *  refreshes are failing and the numbers may be out of date. */
@@ -34,7 +39,35 @@ export type PlanGroup = {
   counts: Record<PlanProblemStatus, number>;
   /** LeetCode's topic plan that goes deeper on this pattern, if any. */
   deepDive: { slug: string; name: string; total: number } | null;
+  /** Once every problem in the chapter is solved: the next problems on the
+   *  ladder of the technique most of them use ("go deeper"). */
+  deeper: ChapterDeeperDto | null;
+  /** The user's active weak spots on this chapter's problems (Plan page only). */
+  mistakes: ChapterMistake[];
 };
+
+export type ChapterMistake = {
+  id: string;
+  category: string;
+  /** Custom categories' own name; built-ins are localized on the client. */
+  categoryName: string | null;
+  detail: string;
+  hitCount: number;
+  problem: { id: string; title: string; slug: string };
+};
+
+/** "Your frequent mistakes" on the Plan page: a mistake type across problems. */
+export type FrequentMistake = {
+  category: string;
+  categoryName: string | null;
+  /** Active weak spots of this type, and how often they showed up in all. */
+  active: number;
+  hits: number;
+  problems: { id: string; title: string; chapter: string | null }[];
+};
+
+/** Mistake types shown in the Plan page summary. */
+const FREQUENT_MISTAKES = 4;
 
 export type ProfileData = Awaited<ReturnType<typeof loadProfile>>;
 
@@ -43,13 +76,54 @@ const emptyCounts = (): Record<PlanProblemStatus, number> => ({ todo: 0, solved:
 type Language = "en" | "zh";
 type AccountForStatus = Pick<LeetcodeAccountDto, "username" | "profile"> | null;
 
-/** The profile page: the current plan with every problem's status, and the
- *  linked LeetCode account. */
+/** The profile page: the current plan with every problem's status, each
+ *  chapter's weak spots, the user's frequent mistakes, and the linked
+ *  LeetCode account. */
 export async function loadProfile(userId: string, language: Language) {
   const now = new Date();
   const leetcode = await getLeetcodeAccount(userId);
+  const [progress, weaknesses] = await Promise.all([
+    loadPlanProgress(userId, language, leetcode, now),
+    loadActiveWeaknesses(userId),
+  ]);
+  const chapterOf = new Map(progress.groups.flatMap((group) => group.items.map((item) => [item.slug, group.name])));
+  const groups = progress.groups.map((group) => {
+    const slugs = new Set(group.items.map((item) => item.slug));
+    return {
+      ...group,
+      mistakes: weaknesses
+        .filter((weakness) => slugs.has(weakness.slug))
+        .map(
+          (weakness): ChapterMistake => ({
+            id: weakness.id,
+            category: weakness.category,
+            categoryName: weakness.categoryName,
+            detail: weakness.detail,
+            hitCount: weakness.hitCount,
+            problem: { id: weakness.problemId, title: weakness.title, slug: weakness.slug },
+          }),
+        ),
+    };
+  });
+  const byProblem = new Map(weaknesses.map((weakness) => [weakness.problemId, weakness]));
+  const frequentMistakes = computeWeaknessProfile(weaknesses, now)
+    .slice(0, FREQUENT_MISTAKES)
+    .map(
+      (entry): FrequentMistake => ({
+        category: entry.category,
+        categoryName: weaknesses.find((weakness) => weakness.category === entry.category)?.categoryName ?? null,
+        active: entry.active,
+        hits: entry.hits,
+        problems: entry.problemIds.flatMap((id) => {
+          const weakness = byProblem.get(id);
+          return weakness ? [{ id, title: weakness.title, chapter: chapterOf.get(weakness.slug) ?? null }] : [];
+        }),
+      }),
+    );
   return {
-    ...(await loadPlanProgress(userId, language, leetcode, now)),
+    ...progress,
+    groups,
+    frequentMistakes,
     leetcode,
     leetcodeStale:
       leetcode != null &&
@@ -59,38 +133,41 @@ export async function loadProfile(userId: string, language: Language) {
 
 /** Today's Next part, on the web and through `/api/study-plan/next` for the
  *  extension. Reads the cached LeetCode account only, so Today never waits
- *  on LeetCode. */
+ *  on LeetCode. Once the plan is solved it suggests a focused plan. */
 export async function loadPlanNext(userId: string, language: Language): Promise<PlanNextDto> {
   const progress = await loadPlanProgress(userId, language, await getCachedLeetcodeAccount(userId), new Date());
-  return planNextFrom(progress.plan, progress.groups);
+  const next = planNextFrom(progress.plan, progress.groups);
+  if (next.next) return next;
+  return { ...next, focus: focusAfterPlan(progress, language) };
 }
 
-/** The plan is ordered, so the next problem is the first one not started,
- *  and its group is the chapter the user is in. */
-export function planNextFrom(
-  plan: { slug: string; name: string; sourceUrl: string | null },
-  groups: Pick<PlanGroup, "name" | "items" | "counts">[],
-): PlanNextDto {
-  const done = (group: Pick<PlanGroup, "items" | "counts">) => group.items.length - group.counts.todo;
-  const summary = {
+/** After the plan: the plan for the technique the user forgets most
+ *  (`focusPlanAfter()`), named in the user's language. */
+function focusAfterPlan(
+  progress: Pick<Awaited<ReturnType<typeof loadPlanProgress>>, "plan" | "groups" | "deck">,
+  language: Language,
+): PlanFocusDto | null {
+  const focus = focusPlanAfter({
+    currentPlan: progress.plan.slug,
+    deck: progress.deck.map((row) => ({ slug: row.leetcodeSlug, lapses: row.fsrsLapses })),
+    chapters: progress.groups.map((group) => ({
+      name: group.name,
+      lapses: group.items.reduce((sum, item) => sum + item.lapses, 0),
+    })),
+  });
+  const plan = focus ? findBuiltInStudyPlan(focus.plan, language) : null;
+  if (!focus || !plan) return null;
+  return {
     slug: plan.slug,
     name: plan.name,
-    sourceUrl: plan.sourceUrl,
-    done: groups.reduce((sum, group) => sum + done(group), 0),
-    total: groups.reduce((sum, group) => sum + group.items.length, 0),
+    total: plan.groups.reduce((sum, group) => sum + group.questions.length, 0),
+    sourceUrl: studyPlanSourceUrl(plan.slug),
+    reason:
+      focus.kind === "topic"
+        ? { kind: "topic", name: { en: focus.topic.en, zh: focus.topic.zh } }
+        : { kind: "chapter", name: focus.chapter },
+    lapses: focus.lapses,
   };
-  for (const group of groups) {
-    const item = group.items.find((candidate) => candidate.status === "todo");
-    if (!item) continue;
-    return {
-      plan: summary,
-      next: {
-        chapter: { name: group.name, done: done(group), total: group.items.length },
-        problem: { slug: item.slug, leetcodeId: item.leetcodeId, title: item.title, difficulty: item.difficulty },
-      },
-    };
-  }
-  return { plan: summary, next: null };
 }
 
 async function loadPlanProgress(userId: string, language: Language, leetcode: AccountForStatus, now: Date) {
@@ -120,6 +197,12 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
     ...(leetcode?.profile?.recentAccepted.map((item) => item.slug) ?? []),
     ...(solvedSync?.slugs ?? []),
   ]);
+
+  // Ladders count a problem as done the same way the roadmap does.
+  const done: DoneSet = {
+    inDeck: new Map(rows.map((row) => [row.leetcodeSlug, row.id])),
+    isDone: (slug) => deck.has(slug) || solvedOnLeetcode.has(slug),
+  };
 
   const counts = emptyCounts();
   const groups: PlanGroup[] = plan.groups.map((group) => {
@@ -155,6 +238,13 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
       : sourceUrl
         ? null
         : deepDivePlanFor(group.name, plan.slug);
+    const deeper =
+      groupCounts.todo === 0
+        ? goDeeperInChapter(
+            items.map((item) => item.slug),
+            done.isDone,
+          )
+        : null;
     return {
       name: group.name,
       items,
@@ -166,6 +256,13 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
             total: dive.groups.reduce((sum, diveGroup) => sum + diveGroup.questions.length, 0),
           }
         : null,
+      deeper: deeper
+        ? {
+            technique: toPatternRef(deeper.topic, deeper.pattern),
+            problems: deeper.steps.map((step) => toPatternStep(step, done)),
+          }
+        : null,
+      mistakes: [],
     };
   });
 
@@ -180,6 +277,7 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
     total: groups.reduce((sum, group) => sum + group.items.length, 0),
     next,
     solvedSync: solvedSync ? { count: solvedSync.slugs.length, syncedAt: solvedSync.syncedAt } : null,
+    deck: rows,
   };
 }
 

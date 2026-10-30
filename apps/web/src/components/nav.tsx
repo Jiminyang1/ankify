@@ -17,8 +17,7 @@ import { UserAvatar } from "./user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
 import { ActiveIndicator, MotionPresence } from "@/components/ui/motion";
 
-// The main line (docs/product-main-line.md): review is entered from Today, and
-// Analysis is reachable only by link.
+// The main line (docs/product-main-line.md): review is entered from Today.
 const LINKS = [
   { href: "/today", key: "today", also: ["/review"] },
   { href: "/profile", key: "profile", also: [] },

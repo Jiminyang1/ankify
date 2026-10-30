@@ -21,6 +21,7 @@ export const agentPageEnum = z.enum([
   "review",
   "problems",
   "problem",
+  /** Removed page; kept so runs recorded there still parse. */
   "analysis",
   "settings",
   "extension",

@@ -21,7 +21,7 @@ export default function robots(): MetadataRoute.Robots {
         "/today",
         "/review",
         "/problems",
-        "/analysis",
+        "/profile",
         "/settings",
         "/extension-connected",
       ],

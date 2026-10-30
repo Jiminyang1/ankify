@@ -20,12 +20,15 @@ export function Roadmap({
   planSlug,
   groups,
   nextSlug,
+  initialChapter = null,
 }: {
   planSlug: string;
   groups: PlanGroup[];
   nextSlug: string | null;
+  /** A chapter to open on arrival (`/profile?chapter=…`, from a problem page). */
+  initialChapter?: string | null;
 }) {
-  const [openName, setOpenName] = useState<string | null>(null);
+  const [openName, setOpenName] = useState<string | null>(initialChapter);
   const layout = roadmapLayout(planSlug, groups.map((group) => group.name));
   const openGroup = groups.find((group) => group.name === openName) ?? null;
   const nextGroup = groups.find((group) => group.items.some((item) => item.slug === nextSlug))?.name ?? null;

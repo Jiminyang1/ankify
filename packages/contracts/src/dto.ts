@@ -180,6 +180,9 @@ export type ReviewRateResponseDto = {
   idempotentReplay: boolean;
   nextDue: string | null;
   queue: QueueStatsDto;
+  /** Rated Again: one easier problem with the same technique, at most once
+   *  per problem a day (older servers and other ratings omit it or send null). */
+  easier?: TechniqueSuggestionDto | null;
 };
 
 /** A name in both languages the app speaks. Pattern names come from
@@ -219,6 +222,27 @@ export type ProblemPatternDto = PatternRefDto & {
 export type ProblemPatternsDto = {
   slug: string;
   patterns: ProblemPatternDto[];
+};
+
+/** One problem from a technique's ladder: an easier one after a forgotten
+ *  review, or the next ones after a finished chapter. */
+export type TechniqueSuggestionDto = {
+  technique: PatternRefDto;
+  problem: PatternStepDto;
+};
+
+/** Where a LeetCode problem sits (docs/product-main-line.md, "Three layers"):
+ *  its chapter in the user's current plan and its techniques from
+ *  灵茶山艾府's catalog. Works for problems not in the deck. */
+export type ProblemChapterDto = {
+  slug: string;
+  /** null when the problem isn't in the current plan. */
+  chapter: {
+    name: string;
+    plan: { slug: string; name: string; sourceUrl: string | null };
+  } | null;
+  /** Empty when the problem isn't in the catalog; "Other" sections left out. */
+  techniques: PatternRefDto[];
 };
 
 export type ReviewUndoResponseDto = {
@@ -297,6 +321,32 @@ export type PlanNextDto = {
     chapter: { name: string; done: number; total: number };
     problem: { slug: string; leetcodeId: number; title: string; difficulty: "Easy" | "Medium" | "Hard" };
   } | null;
+  /** Once the plan is solved: a focused plan on the technique the user
+   *  forgets most (older servers omit it). */
+  focus?: PlanFocusDto | null;
+  /** The chapter just finished, while the next one hasn't started: the
+   *  technique to go deeper on (older servers omit it). */
+  finishedChapter?: { name: string; deeper: ChapterDeeperDto | null } | null;
+};
+
+/** After a plan: the plan to switch to, and why. */
+export type PlanFocusDto = {
+  slug: string;
+  name: string;
+  total: number;
+  /** 灵茶山艾府's list it comes from; null for LeetCode's own plans. */
+  sourceUrl: string | null;
+  /** What the user forgets most: a list of his (topic) or a plan chapter. */
+  reason: { kind: "topic"; name: LocalizedNameDto } | { kind: "chapter"; name: string };
+  /** Times forgotten in review across those problems. */
+  lapses: number;
+};
+
+/** After a chapter: the technique most of its problems use, and the next
+ *  problems on its ladder. */
+export type ChapterDeeperDto = {
+  technique: PatternRefDto;
+  problems: PatternStepDto[];
 };
 
 export type CaptureResultDto = {

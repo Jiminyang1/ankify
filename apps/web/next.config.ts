@@ -38,6 +38,11 @@ const contentSecurityPolicy = [
 const config: NextConfig = {
   transpilePackages: ["@ankify/contracts", "@ankify/core", "@ankify/db"],
   poweredByHeader: false,
+  async redirects() {
+    // Analysis was removed (docs/product-main-line.md); its weak spots moved
+    // to the Plan page.
+    return [{ source: "/analysis", destination: "/profile", permanent: false }];
+  },
   async headers() {
     return [
       {

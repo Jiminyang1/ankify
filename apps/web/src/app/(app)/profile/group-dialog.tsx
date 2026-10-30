@@ -9,15 +9,19 @@ import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { DifficultyPill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
+import { TechniqueCredit, TechniqueStep } from "@/components/technique-suggestion";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useHydrated } from "@/lib/use-hydrated";
 import { cn, formatRelative } from "@/lib/utils";
-import type { PlanGroup, PlanItem } from "@/server/profile";
+import { weaknessCategoryName } from "@/lib/weakness-names";
+import type { ChapterMistake, PlanGroup, PlanItem } from "@/server/profile";
 import { StatusBar } from "./status-bar";
 import { STATUS_ORDER, STATUS_SWATCH } from "./status-style";
 
-/** A pattern's problems with one action each, plus "add every solved one to
- *  review". Stays open across the refresh that follows an add. */
+/** A chapter's problems with one action each, plus "add every solved one to
+ *  review"; once it's finished, the technique to go deeper on; and the user's
+ *  weak spots on its problems. Stays open across the refresh that follows an
+ *  add. */
 export function GroupDialog({
   group,
   nextSlug,
@@ -171,18 +175,22 @@ export function GroupDialog({
           )}
         </div>
 
-        <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
-          {group.items.map((item) => (
-            <PlanItemRow
-              key={item.slug}
-              item={item}
-              isNext={item.slug === nextSlug}
-              adding={adding.includes(item.slug)}
-              busy={busy}
-              onAdd={() => void addToReview([item.slug])}
-            />
-          ))}
-        </ul>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {group.deeper && <GoDeeper deeper={group.deeper} />}
+          {group.mistakes.length > 0 && <ChapterMistakes mistakes={group.mistakes} />}
+          <ul className="divide-y divide-border">
+            {group.items.map((item) => (
+              <PlanItemRow
+                key={item.slug}
+                item={item}
+                isNext={item.slug === nextSlug}
+                adding={adding.includes(item.slug)}
+                busy={busy}
+                onAdd={() => void addToReview([item.slug])}
+              />
+            ))}
+          </ul>
+        </div>
 
         <div className="flex justify-end border-t border-border px-5 py-3">
           <Button onClick={onClose}>{copy.group.close}</Button>
@@ -268,5 +276,64 @@ function PlanItemRow({
       <span className={cn("hidden text-xs sm:block", noteTone)}>{note}</span>
       {action}
     </li>
+  );
+}
+
+/** A finished chapter: the next problems on the ladder of the technique most
+ *  of its problems use. */
+function GoDeeper({ deeper }: { deeper: NonNullable<PlanGroup["deeper"]> }) {
+  const { language, t } = useLanguage();
+  const copy = t.profile.group;
+  return (
+    <section className="border-b border-border bg-accent-soft/30 px-5 py-4">
+      <h3 className="text-sm font-semibold">{copy.deeperTitle(deeper.technique.name[language])}</h3>
+      <p className="mt-1 text-xs leading-5 text-muted">{copy.deeperBody}</p>
+      <ul className="mt-3 space-y-2">
+        {deeper.problems.map((problem) => (
+          <li key={problem.slug} className="flex items-center gap-3">
+            <TechniqueStep step={problem} className="min-w-0 flex-1" />
+            <a
+              href={`https://leetcode.com/problems/${problem.slug}/`}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonClasses({ variant: "secondary", size: "xs" })}
+            >
+              {copy.actions.leetcode}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <TechniqueCredit technique={deeper.technique} className="mt-3 inline-block" />
+    </section>
+  );
+}
+
+/** The user's active weak spots on this chapter's problems. */
+function ChapterMistakes({ mistakes }: { mistakes: ChapterMistake[] }) {
+  const { language, t } = useLanguage();
+  const copy = t.profile.group;
+  return (
+    <section className="border-b border-border px-5 py-4">
+      <h3 className="text-sm font-semibold">{copy.mistakesTitle}</h3>
+      <ul className="mt-2 space-y-2">
+        {mistakes.map((mistake) => (
+          <li key={mistake.id} className="text-sm">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="font-medium text-fg">
+                {weaknessCategoryName(mistake.category, mistake.categoryName, language)}
+              </span>
+              <Link
+                href={`/problems/${mistake.problem.id}` as Route}
+                className="min-w-0 truncate text-xs text-muted hover:text-accent hover:underline"
+              >
+                {mistake.problem.title}
+              </Link>
+              <span className="text-xs text-muted tabular-nums">{copy.timesSeen(mistake.hitCount)}</span>
+            </div>
+            <p className="mt-0.5 text-xs leading-5 text-muted">{mistake.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

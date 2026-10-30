@@ -33,6 +33,7 @@ import {
 } from "@/components/agent/agent-shell";
 import { ProblemDocs, type DocTarget } from "@/components/problem-docs";
 import { WeakSpots } from "@/components/weak-spots";
+import { EasierProblem } from "@/components/technique-suggestion";
 import { PRACTICE_UPDATED_EVENT, type PracticeUpdatedEvent } from "@/lib/agent-events";
 import { cn, formatInterval } from "@/lib/utils";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
@@ -493,6 +494,7 @@ export default function ReviewPage({
             </div>
             {error && <p className="mt-3 text-xs text-danger">{error}</p>}
           </Surface>
+          {result.easier && <EasierProblem key={problem.id} suggestion={result.easier} />}
         </div>
       )}
 
