@@ -1,6 +1,6 @@
 # Coach-led practice (design)
 
-Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; the signal point and the technique-first question ([product-main-line.md](./product-main-line.md), step 3) built 2026-10-30; the Cards doc folded into Notes (step 4a) built 2026-10-30; stage 4 not yet. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; the signal point and the technique-first question ([product-main-line.md](./product-main-line.md), step 3) built 2026-10-30; the Cards doc folded into Notes (step 4a) built 2026-10-30; stage 2's code (recall cards, generated check questions) removed with the legacy Quiz and card code (step 4b) 2026-10-30; stage 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
@@ -27,7 +27,42 @@ review judges against) and **Notes** (everything else).
   review queue still sends `cardCount`. A card edited there stays in
   `cards_md` and doesn't reach Notes.
 - Card rows, the AI card and quiz jobs, `recall_check`, and `practice_check`
-  stay until step 4b removes them.
+  stayed until step 4b removed them (below).
+
+## Legacy code removed (step 4b, 2026-10-30)
+
+Step 4 of [product-main-line.md](./product-main-line.md) ("What gets
+removed"). Nothing current used these, so only code went; the tables and
+columns stay (no migration), and the data export still includes card rows and
+quiz sessions.
+
+- **Quiz and AI cards**: the quiz and card routes (`problems/[id]/quiz` and
+  below, `ai-cards`, `user-card`, `cards`), their prompts and generation, and
+  the Coach's `get_quiz_state` and `propose_quiz_generation`. A card or quiz
+  proposal left pending in an old run still shows; approving it returns 410
+  `generation_retired` with a message.
+- **Stage 2 practice**: `recall_check` sessions, the `practice_check` job,
+  `validateCheckItems()`, card selection and `card_stats`, the recall and check
+  routes, the debrief turn (`practice_completed`, `context.practice`), and the
+  extension's recall-card and question UI. Every session is a talk-through;
+  the Coach sums one up in the turn that finishes it. An active stage-2 session
+  is abandoned the next time it's loaded, so the problem can be practiced
+  again.
+- **The job pipeline**: with no job kind left, `server/ai-generation/`,
+  `/api/ai-jobs` (start, list, cancel), the Vercel Queues consumer and its
+  trigger, the QA worker, and `@ankify/api-client` went too. Every model call
+  runs inside the request that needs it.
+
+Kept for the store extension (0.3.1), which still calls these on load:
+- `GET /api/ai-jobs/:id`, read-only: 0.3.1 looks up the job behind each card
+  or quiz proposal approved before the removal and polls it until it's done; a
+  job that never finished reads as cancelled, so the poll stops.
+- `PracticeSessionDto.recall` (always `[]`) and `check` (always skipped, no
+  items): 0.3.1 reads `check.status` on every active session.
+- `practice_completed` stays a valid trigger: 0.3.1 sends it for a finished
+  stage-2 session it shows, and it gets 410 `practice_retired` with a message
+  instead of a validation error.
+- The by-slug lookup drops `cards` and `candidates`, which 0.3.1 doesn't read.
 
 ## Stage 3: the web app follows the extension (2026-10-11)
 
@@ -47,7 +82,8 @@ card rows, autosaved notes) while the extension moved to docs and practice.
   "I did say that", End, rating), and removable weak spots.
 - **Weak spots across problems** show on Analysis, ranked by category with
   the problems behind each.
-- Quiz and AI card candidate APIs stay for extension builds before 0.3.0.
+- Quiz and AI card candidate APIs stayed for extension builds before 0.3.0
+  (until step 4b).
 
 ## Version 3: practice judged against a solutions doc (designed 2026-10-06, first scope built 2026-10-10)
 
@@ -364,7 +400,8 @@ Cost: about one model call per answer plus the summary, so 4 to 5 calls a
 session; each is a starter credit for users without their own key.
 
 The stage 2 multiple-choice generator stays available as a hint when the user
-says they don't know ("show me options").
+says they don't know ("show me options"). (Never built; the generator was
+removed in step 4b.)
 
 ### Where it shows
 
@@ -384,6 +421,10 @@ says they don't know ("show me options").
   and `check_json` stay for old sessions.
 
 ## Summary (stages 1 and 2)
+
+Stage 2's practice (cards, then generated questions) was replaced by the
+talk-through (versions 2 and 3, above) and its code removed in step 4b; the
+sections below describe it as it was designed.
 
 - Each problem keeps two markdown documents: **Notes** (your understanding)
   and **Cards** (prompts worth recalling). They are the problem's memory.
@@ -661,9 +702,9 @@ All user-owned, all scoped by `user_id`, all cascading from the problem.
 | `GET /api/problems/[id]/docs` | Notes and Cards with versions and parse issues (Cards legacy since 2026-10-30) |
 | `PUT /api/problems/[id]/docs` | direct edit by the user, with `expectedVersion` |
 | `POST /api/problems/[id]/practice` | start a session (from a chip or the Coach tool) |
-| `GET /api/practice/[id]` | session state; check items without answers until answered |
-| `POST /api/practice/[id]/recall` | `{ cardKey, result }` |
-| `POST /api/practice/[id]/check` | `{ itemId, choice }` returns correctness and explanation |
+| `GET /api/practice/[id]` | session state; check items without answers until answered (stage 2; a talk-through's points stay hidden until each question settles) |
+| `POST /api/practice/[id]/recall` | `{ cardKey, result }` (removed in step 4b) |
+| `POST /api/practice/[id]/check` | `{ itemId, choice }` returns correctness and explanation (removed in step 4b) |
 | `POST /api/agent/steps/[id]/approve` | applies a `doc_edit` proposal (existing route) |
 
 ## Cost

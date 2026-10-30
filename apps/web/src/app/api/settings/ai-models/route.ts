@@ -4,9 +4,8 @@ import { aiProviderEnum } from "@ankify/contracts";
 import { listAvailableAiModels } from "@/server/ai-models";
 import { getRequestSessionUser, unauthorizedResponse } from "@/server/auth";
 
-// Listing models is a single cheap GET against the provider. Card and quiz
-// generation need minutes; this does not, and a long hang here just leaves the
-// Settings dropdown spinning.
+// Listing models is a single cheap GET against the provider; a long hang here
+// just leaves the Settings dropdown spinning.
 export const maxDuration = 30;
 
 const requestSchema = z.object({

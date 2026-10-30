@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -34,7 +33,6 @@ import type {
   DocEdit,
   LegacyCardEdit,
   PracticeSessionDto,
-  PublicAiJobDto,
 } from "@ankify/contracts";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -44,7 +42,6 @@ import { Markdown } from "@/components/ui/markdown";
 import { MotionPresence } from "@/components/ui/motion";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  notifyAgentJobUpdated,
   notifyPracticeUpdated,
   notifyProblemDocsUpdated,
   notifyWeaknessesUpdated,
@@ -107,10 +104,8 @@ export function AgentSidebar({
   const turnSentAtRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [jobs, setJobs] = useState<Record<string, PublicAiJobDto>>({});
   const turnAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const notifiedJobsRef = useRef(new Set<string>());
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const loadSnapshot = useCallback(async (
@@ -229,65 +224,12 @@ export function AgentSidebar({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [partialResponse, snapshot?.messages.length, snapshot?.steps.length]);
 
-  const acceptedJobIds = useMemo(
-    () =>
-      [...new Set(
-        (snapshot?.steps ?? [])
-          .filter((step) => step.status === "accepted" && step.aiJobId)
-          .map((step) => step.aiJobId!),
-      )],
-    [snapshot?.steps],
-  );
-  const pollingJobKey = acceptedJobIds
-    .filter((jobId) => {
-      const status = jobs[jobId]?.status;
-      return status === undefined || status === "queued" || status === "running";
-    })
-    .join("|");
-  useEffect(() => {
-    const pollingJobIds = pollingJobKey ? pollingJobKey.split("|") : [];
-    if (!open || pollingJobIds.length === 0) return;
-    let cancelled = false;
-    const loadJobs = async () => {
-      const results = await Promise.all(
-        pollingJobIds.map(async (jobId) => {
-          const response = await fetch(`/api/ai-jobs/${encodeURIComponent(jobId)}`, {
-            cache: "no-store",
-          });
-          if (!response.ok) throw new Error("agent_job_load_failed");
-          return ((await response.json()) as { job: PublicAiJobDto }).job;
-        }),
-      );
-      if (cancelled) return;
-      setJobs((current) => ({
-        ...current,
-        ...Object.fromEntries(results.map((job) => [job.id, job])),
-      }));
-    };
-    void loadJobs();
-    const timer = window.setInterval(() => void loadJobs(), 2_500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [open, pollingJobKey]);
-
-  useEffect(() => {
-    for (const job of Object.values(jobs)) {
-      if (job.status !== "succeeded" || notifiedJobsRef.current.has(job.id)) continue;
-      notifiedJobsRef.current.add(job.id);
-      notifyAgentJobUpdated(job);
-      router.refresh();
-    }
-  }, [jobs, router]);
-
   const showPractice = useCallback((session: PracticeSessionDto | null) => {
     setPractice(session);
     if (session) notifyPracticeUpdated(session);
   }, []);
 
-  // The session to resume when the problem changes: active, or finished but
-  // not yet debriefed.
+  // The talk-through to resume when the problem changes.
   // A session of another problem stays in state but isn't shown (see below).
   useEffect(() => {
     if (!problemId) return;
@@ -495,7 +437,6 @@ export function AgentSidebar({
     setActiveSessionId(null);
     setBoundaryDismissedAt(null);
     setSnapshot(null);
-    setJobs({});
     setPartialResponse("");
     setError(null);
     setLoading(false);
@@ -518,7 +459,6 @@ export function AgentSidebar({
     }
     setActiveSessionId(sessionId);
     setSnapshot(null);
-    setJobs({});
     setError(null);
     sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
     closeSessionMenu();
@@ -596,7 +536,6 @@ export function AgentSidebar({
       if (target.id === activeSessionId) {
         const fallback = remainingSessions[0] ?? null;
         setSnapshot(null);
-        setJobs({});
         setPartialResponse("");
         setBoundaryDismissedAt(null);
         setDraft("");
@@ -645,23 +584,20 @@ export function AgentSidebar({
       });
       const body = (await response.json()) as {
         step?: AgentStepDto;
-        job?: PublicAiJobDto;
         message?: string;
         error?: string;
       };
-      // A doc edit is applied at once and starts no job.
-      // Doc edits and new categories apply at once and start no job.
-      const docEdit = step.proposal?.action === "doc_edit" || step.proposal?.action === "weakness_category";
-      if (!response.ok || !body.step || (!docEdit && !body.job)) {
+      // Doc edits and new categories apply at once. An old card or quiz
+      // proposal can't be applied; the server says why.
+      if (!response.ok || !body.step) {
         throw new Error(body.message ?? body.error ?? t.agent.sendFailed);
       }
       setSnapshot((current) =>
         current ? { ...current, steps: replaceById(current.steps, body.step!) } : current,
       );
-      if (body.job) setJobs((current) => ({ ...current, [body.job!.id]: body.job! }));
       if (step.proposal?.action === "doc_edit") notifyProblemDocsUpdated(step.proposal.problemId);
       if (step.proposal?.action === "weakness_category") notifyWeaknessesUpdated(null);
-      if (docEdit) router.refresh();
+      router.refresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t.agent.sendFailed);
     } finally {
@@ -949,7 +885,6 @@ export function AgentSidebar({
                   snapshot={snapshot!}
                   partialResponse={activeRunId === run.id ? partialResponse : ""}
                   thinkingSince={activeRunId === run.id ? thinkingSince : null}
-                  jobs={jobs}
                   actionBusy={actionBusy}
                   onApprove={approveProposal}
                   onDismiss={dismissProposal}
@@ -1082,7 +1017,6 @@ function AgentTurn({
   snapshot,
   partialResponse,
   thinkingSince,
-  jobs,
   actionBusy,
   onApprove,
   onDismiss,
@@ -1093,7 +1027,6 @@ function AgentTurn({
   snapshot: AgentSessionSnapshotDto;
   partialResponse: string;
   thinkingSince: number | null;
-  jobs: Record<string, PublicAiJobDto>;
   actionBusy: string | null;
   onApprove: (step: AgentStepDto) => void;
   onDismiss: (step: AgentStepDto) => void;
@@ -1125,7 +1058,6 @@ function AgentTurn({
             <AgentStep
               key={step.id}
               step={step}
-              job={step.aiJobId ? jobs[step.aiJobId] : undefined}
               busy={actionBusy === step.id}
               onApprove={() => onApprove(step)}
               onDismiss={() => onDismiss(step)}
@@ -1189,7 +1121,6 @@ function ThinkingElapsed({ since }: { since: number }) {
 
 function AgentStep({
   step,
-  job,
   busy,
   onApprove,
   onDismiss,
@@ -1197,7 +1128,6 @@ function AgentStep({
   onRemove,
 }: {
   step: AgentStepDto;
-  job?: PublicAiJobDto;
   busy: boolean;
   onApprove: () => void;
   onDismiss: () => void;
@@ -1206,9 +1136,6 @@ function AgentStep({
 }) {
   const { t } = useLanguage();
   const toolLabel = t.agent.tools[step.toolName as keyof typeof t.agent.tools] ?? step.summary;
-  const jobActive = job?.status === "running" || job?.status === "queued";
-  const jobFailed =
-    job?.status === "failed" || job?.status === "cancelled" || job?.status === "superseded";
   const docEdit = step.proposal?.action === "doc_edit" ? step.proposal : null;
   if (step.kind === "read") {
     return (
@@ -1291,14 +1218,8 @@ function AgentStep({
       {step.status === "accepted" && (
         <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5">
-            {jobActive ? (
-              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden />
-            ) : jobFailed ? (
-              <CircleAlert className="h-3 w-3 text-danger" aria-hidden />
-            ) : (
-              <Check className="h-3 w-3 text-success" aria-hidden />
-            )}
-            {job ? t.agent[job.status] : docEdit ? t.agent.applied : t.agent.accepted}
+            <Check className="h-3 w-3 text-success" aria-hidden />
+            {docEdit ? t.agent.applied : t.agent.accepted}
           </span>
           {step.proposal && "problemId" in step.proposal && (
             <Link

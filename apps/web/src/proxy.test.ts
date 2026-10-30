@@ -38,16 +38,6 @@ describe("extension session CORS", () => {
     expect(response.headers.has("location")).toBe(false);
   });
 
-  it("lets Vercel Queue callbacks reach the queue SDK without a user cookie", async () => {
-    const response = await proxy(
-      new NextRequest("https://ankify.example.com/api/queues/ai-generation", {
-        method: "POST",
-      }),
-    );
-
-    expect(response.status).toBe(200);
-  });
-
   it("opens the fixed-session login only in the QA profile", async () => {
     process.env.ANKIFY_PROFILE = "qa";
     const qaResponse = await proxy(

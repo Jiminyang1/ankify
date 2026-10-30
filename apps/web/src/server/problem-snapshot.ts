@@ -1,9 +1,8 @@
 import type { ProblemDto, ProblemLookupPayloadDto } from "@ankify/contracts";
 import { preview, type FsrsCardState } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getReviewQueueStatus } from "@/server/review-queue";
-import { publicCardColumns } from "./public-dto";
 
 const problemColumns = {
   id: schema.problems.id,
@@ -42,33 +41,7 @@ export async function loadProblemSnapshotBySlug(
     .limit(1);
   if (!problem) return null;
 
-  const [cards, candidates, queue] = await Promise.all([
-    db
-      .select(publicCardColumns)
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problem.id),
-          eq(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(50),
-    db
-      .select(publicCardColumns)
-      .from(schema.cards)
-      .where(
-        and(
-          eq(schema.cards.userId, userId),
-          eq(schema.cards.problemId, problem.id),
-          ne(schema.cards.aiStatus, "ready"),
-        ),
-      )
-      .orderBy(desc(schema.cards.createdAt))
-      .limit(25),
-    getReviewQueueStatus(userId),
-  ]);
+  const queue = await getReviewQueueStatus(userId);
 
   const state: FsrsCardState = {
     due: problem.fsrsDue,
@@ -97,8 +70,6 @@ export async function loadProblemSnapshotBySlug(
   };
   return {
     problem: problemDto,
-    cards,
-    candidates,
     previews: preview(state, new Date()),
     queue,
   };

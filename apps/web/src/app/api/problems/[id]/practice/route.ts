@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import { PRACTICE_ERROR_STATUS, getCurrentPractice, startPractice } from "@/server/practice";
 
-/** GET /api/problems/:id/practice — the session to resume: active, or
- *  finished and not yet debriefed. `session` is null when there's none. */
+/** GET /api/problems/:id/practice — the talk-through to resume: the active
+ *  one. `session` is null when there's none. */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();

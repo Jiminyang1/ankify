@@ -91,7 +91,7 @@ describe("Study Coach model context", () => {
 
   it("requires minimal, request-relevant tool use", () => {
     expect(STUDY_COACH_INSTRUCTIONS).toContain(
-      "do not call submissions, notes, or quiz tools merely because they are available or their panel is open",
+      "do not call submissions or notes tools merely because they are available or their panel is open",
     );
     expect(STUDY_COACH_INSTRUCTIONS).toContain(
       "Tool results are private evidence, not a required response outline",

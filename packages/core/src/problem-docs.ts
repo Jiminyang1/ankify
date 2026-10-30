@@ -4,8 +4,10 @@
  * - Notes: free-form understanding. The Coach targets `##` sections
  *   (Approach, Key insight, Pitfalls, Complexity, My attempts) so its edits
  *   stay small.
- * - Cards: each `##` heading is a prompt; the text under it, up to the next
- *   `##`, is the answer. Text before the first heading is ignored.
+ * - Cards (legacy: migration 0025 moved it into Notes; only extension builds
+ *   0.3.x still read and edit it): each `##` heading is a prompt; the text
+ *   under it, up to the next `##`, is the answer. Text before the first
+ *   heading is ignored.
  * - Solutions: each `##` heading is an approach (named for its technique),
  *   its key points are the top-level bullets, the first of them usually its
  *   signal (`- Signal: ...`, what in the statement points to the technique),
@@ -18,7 +20,6 @@
 export const NOTES_DOC_MAX_CHARS = 50_000;
 export const CARDS_DOC_MAX_CHARS = 20_000;
 export const CARDS_DOC_MAX_CARDS = 30;
-export const CARD_PROMPT_MAX_CHARS = 300;
 export const DOC_SECTION_MAX_CHARS = 60;
 
 /** Sections the Coach writes into Notes, in the order it creates them. */
@@ -32,23 +33,11 @@ export type CardsDocIssue =
   | { kind: "too_many_cards"; limit: number }
   | { kind: "too_long"; limit: number };
 
-export type CardsEdit =
-  | { op: "add_card"; prompt: string; answer: string }
-  | { op: "update_card"; key: string; prompt?: string; answer?: string }
-  | { op: "remove_card"; key: string };
-
 export type NotesEdit =
   | { op: "append_section"; section: string; markdown: string }
   | { op: "replace_section"; section: string; markdown: string };
 
-export type DocEditError =
-  | "card_not_found"
-  | "duplicate_prompt"
-  | "invalid_prompt"
-  | "empty_answer"
-  | "invalid_section"
-  | "too_many_cards"
-  | "too_long";
+export type DocEditError = "invalid_section" | "too_many_cards" | "too_long";
 
 export type DocEditResult = { ok: true; markdown: string } | { ok: false; error: DocEditError };
 
@@ -158,49 +147,6 @@ export function serializeCards(cards: { prompt: string; answer: string }[]): str
 
 function cleanPrompt(prompt: string): string {
   return prompt.replace(/\s+/g, " ").trim();
-}
-
-function validPrompt(prompt: string): boolean {
-  return prompt.length > 0 && prompt.length <= CARD_PROMPT_MAX_CHARS;
-}
-
-export function applyCardsEdit(markdown: string | null | undefined, edit: CardsEdit): DocEditResult {
-  const split = splitH2(markdown);
-  const indexOf = (key: string) => split.blocks.findIndex((block) => cardKey(block.heading) === key);
-
-  if (edit.op === "add_card") {
-    const prompt = cleanPrompt(edit.prompt);
-    const answer = edit.answer.trim();
-    if (!validPrompt(prompt)) return { ok: false, error: "invalid_prompt" };
-    if (!answer) return { ok: false, error: "empty_answer" };
-    if (indexOf(cardKey(prompt)) >= 0) return { ok: false, error: "duplicate_prompt" };
-    if (parseCards(markdown).cards.length >= CARDS_DOC_MAX_CARDS) return { ok: false, error: "too_many_cards" };
-    split.blocks.push({ heading: prompt, body: answer.split("\n") });
-  } else if (edit.op === "update_card") {
-    const index = indexOf(edit.key);
-    if (index < 0) return { ok: false, error: "card_not_found" };
-    const block = split.blocks[index]!;
-    if (edit.prompt !== undefined) {
-      const prompt = cleanPrompt(edit.prompt);
-      if (!validPrompt(prompt)) return { ok: false, error: "invalid_prompt" };
-      const clash = indexOf(cardKey(prompt));
-      if (clash >= 0 && clash !== index) return { ok: false, error: "duplicate_prompt" };
-      block.heading = prompt;
-    }
-    if (edit.answer !== undefined) {
-      const answer = edit.answer.trim();
-      if (!answer) return { ok: false, error: "empty_answer" };
-      block.body = answer.split("\n");
-    }
-  } else {
-    const index = indexOf(edit.key);
-    if (index < 0) return { ok: false, error: "card_not_found" };
-    split.blocks.splice(index, 1);
-  }
-
-  const next = joinH2(split);
-  if (next.length > CARDS_DOC_MAX_CHARS) return { ok: false, error: "too_long" };
-  return { ok: true, markdown: next };
 }
 
 /* ── Notes ── */

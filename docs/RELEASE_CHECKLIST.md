@@ -36,7 +36,8 @@ legacy and must not be used for Production migrations. Follow
 
 - [ ] Sign in with two unrelated Google accounts and confirm each sees only its own data.
 - [ ] Capture one problem and both an accepted and failed submission.
-- [ ] Configure an AI provider, generate and confirm a card, then complete a quiz.
+- [ ] Configure an AI provider, then finish one practice on a saved problem
+      (the first one writes its Solutions doc) and apply its suggested rating.
 - [ ] Rate a review and confirm the next due date and Analysis history.
 - [ ] Sign into the web app, open the extension, and confirm it connects without
       creating or pasting a token. Then sign out on the web and confirm the
@@ -89,8 +90,6 @@ legacy and must not be used for Production migrations. Follow
       `database-ankify`, not the legacy personal `ankify-prod` database.
 - [ ] Open Study Coach and complete one real Agent turn with a valid provider
       key, including a read-only tool call and streaming response.
-- [ ] Confirm the `ankify-ai-generation` Queue trigger is deployed and one
-      queued Card or Quiz job reaches a terminal success state.
 - [ ] In Google Auth Platform, set the audience to External and publish the app.
 - [ ] Use the public root URL as the OAuth homepage, `/privacy` as the privacy
       policy, and `/terms` as the terms URL. Verify domain ownership in Search Console.
@@ -123,4 +122,4 @@ legacy and must not be used for Production migrations. Follow
 - [ ] Roll back application code independently of migrations. Never run destructive
       contract migrations until all deployed code uses the expanded schema.
 - [ ] Test account deletion with a disposable user and confirm sign-in,
-      problems, cards, submissions, quizzes, history, and settings are gone.
+      problems, notes, submissions, practice, history, and settings are gone.

@@ -43,10 +43,7 @@ if (args.has("--reset-only")) {
   process.exit(0);
 }
 
-const children = [
-  command(["--filter", "@ankify/web", "dev"]),
-  command(["--filter", "@ankify/web", "qa:worker"]),
-];
+const children = [command(["--filter", "@ankify/web", "dev"])];
 if (args.has("--extension")) {
   children.push(command(["--filter", "@ankify/extension", "dev"]));
 }

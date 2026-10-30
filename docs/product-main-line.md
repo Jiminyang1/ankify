@@ -1,7 +1,8 @@
 # The main line (product)
 
 Status: proposed 2026-10-29; step 1 (pull back) built the same day; step 2 (plan
-first), step 3 (recognize the pattern), and step 4a (Cards into Notes) built 2026-10-30. Decided with Jimin: study plans are the spine of the
+first), step 3 (recognize the pattern), step 4a (Cards into Notes), and step 4b
+(legacy code removed) built 2026-10-30. Decided with Jimin: study plans are the spine of the
 product, and what a review checks is whether the user recognizes the pattern,
 not whether they memorized one problem. The rest of this doc is the proposal
 built on those two decisions.
@@ -224,6 +225,12 @@ Users can't see these; removing them shrinks what has to be kept working:
 - `recall_check` practice mode and the `practice_check` job.
 - Analysis's charts and dev reset.
 
+Built 2026-10-30 (step 4b) for the first two: the code is gone, and with no
+job kind left so is the AI job pipeline (Vercel Queues, `/api/ai-jobs`,
+`@ankify/api-client`). The tables stay, unused, and the data export still
+includes card rows and quiz sessions. A few read-only answers stay for the store extension (0.3.1);
+details in [coach-practice.md](./coach-practice.md) ("Legacy code removed").
+
 ## Order of work
 
 1. **Pull back.** Navigation to 4; Same pattern removed from after ratings,
@@ -234,7 +241,7 @@ Users can't see these; removing them shrinks what has to be kept working:
 3. **Recognize the pattern.** The signal point in the Solutions writer, the
    Coach's opening question, the judge, and eval cases.
 4. **Clean up.** Cards into Notes (migration; 4a, built), technique-anchored
-   "one more" suggestions, legacy code removed.
+   "one more" suggestions, legacy code removed (4b, built).
 
 ## How we'll know
 

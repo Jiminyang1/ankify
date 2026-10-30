@@ -5,7 +5,7 @@ How Ankify talks to language models, and where provider-specific behavior lives.
 ## Layers
 
 ```
-Feature code   ai-generation/quiz.ts · ai-generation/card.ts · agent/runtime.ts · agent/compaction.ts · ai-connection.ts
+Feature code   agent/runtime.ts · agent/analyze-attempts.ts · agent/compaction.ts · practice-judge.ts · practice-solutions.ts · ai-connection.ts
                  │  asks for a model and "how to reason" (user setting or lightest)
                  ▼
 Ankify layer   server/settings.ts      getAiRuntimeSettings(): the user's own key, or starter credits
@@ -62,9 +62,10 @@ falls back to `default`. Each call asks for one of:
 
 | Request | Used by | Meaning |
 |---|---|---|
-| user level | quizzes, cards, Study Coach | The user's level for this model (`default` sends nothing) |
+| user level | Study Coach, Analyze my attempts, a dispute's re-check | The user's level for this model (`default` sends nothing) |
+| `capped` | the Solutions doc writer | The user's level, but no heavier than the model's `low` |
 | `default` | starter credits | Provider default (thinking on) |
-| `lightest` | connection probe, session summaries | Cheapest setting the model accepts |
+| `lightest` | connection probe, session summaries, the practice judge | Cheapest setting the model accepts |
 
 "Lightest" is not "off" everywhere, because not every model can turn thinking off:
 
@@ -82,8 +83,9 @@ Adapters use each provider's own options instead of the SDK's generic
 
 Rows saved before levels existed carry `reasoningMode: "fast" | "thinking"`.
 They are read as `default`, except DeepSeek "fast" (the only provider that
-showed the switch), which becomes `off`. `ai_jobs.reasoning_mode` keeps its
-column name and now stores the level.
+showed the switch), which becomes `off`. The unused legacy table `ai_jobs`
+(card and quiz generation, removed) stored the level in a column still named
+`reasoning_mode`.
 
 ## Sampling parameters
 
@@ -100,13 +102,13 @@ current Claude models. Use `toolChoice: "auto"` and ask for the tool in the prom
 `classifyProviderFailure()` maps any provider error to one of
 `invalid_api_key · forbidden · model_not_found · quota_exceeded · rate_limited ·
 provider_unavailable · bad_request · timeout · network · unknown`, using the
-HTTP status on the SDK's `APICallError`. Generation jobs retry only transient
-failures; the probe and model list turn the same codes into user-facing messages.
+HTTP status on the SDK's `APICallError`. The Study Coach, the probe, and the
+model list turn the same codes into user-facing messages.
 
 ## Verified behavior (2026-09)
 
 Checked against the DeepSeek QA key: thinking on by default and off with
-`thinking: disabled`; quiz generation and multi-turn Study Coach tool use in
+`thinking: disabled`; quiz generation (since removed) and multi-turn Study Coach tool use in
 thinking mode (dropping reasoning between turns causes no errors); the
 connection probe; retired model ids resolving to `deepseek-flash`. Anthropic
 and OpenAI mappings follow their current documentation and are unit tested,

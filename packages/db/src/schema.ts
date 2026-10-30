@@ -1,15 +1,10 @@
 import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 import type { TalkHelp, TalkSettledBy, TalkTarget, TalkTargetState } from "@ankify/core";
-import type {
-  AgentNavigation,
-  AgentPageContext,
-  AgentProposal,
-  PracticeCheckItem,
-  QuizAnswer,
-  QuizItem,
-} from "@ankify/contracts";
+import type { AgentNavigation, AgentPageContext, AgentProposal } from "@ankify/contracts";
 
+/** Legacy: practice stats per card key, from stage-2 practice. Nothing writes
+ *  them any more. */
 export type CardStat = {
   lastShownAt: string;
   lastResult: "got_it" | "missed";
@@ -132,7 +127,7 @@ export const problems = sqliteTable(
      *  points, and cost. Written on the first practice, then the user's. */
     solutionsMd: text("solutions_md"),
     solutionsVersion: integer("solutions_version").notNull().default(0),
-    /** Practice stats per card key: when it was last shown and how it went. */
+    /** Legacy, unused: stage-2 practice stats per card key. */
     cardStats: text("card_stats", { mode: "json" })
       .$type<Record<string, CardStat>>()
       .notNull()
@@ -227,8 +222,9 @@ export const submissions = sqliteTable(
 
 /* ────────────────────────────────────────────────────────────────────────────
  * cards
- * Flash cards for a problem. Only question (front) and answer (back).
- * AI generation creates candidate rows; user confirms to ready.
+ * Legacy, unused: flash card rows (question and answer), from before the Cards
+ * doc. AI generation created candidate rows the user confirmed to ready.
+ * Nothing reads or writes them any more except the data export.
  * ──────────────────────────────────────────────────────────────────────────── */
 export const cards = sqliteTable(
   "cards",
@@ -309,9 +305,21 @@ export const reviewEvents = sqliteTable(
 
 /* ────────────────────────────────────────────────────────────────────────────
  * quiz_sessions
- * Per-problem review quiz sessions. V1 keeps quiz items and answers as JSON so
- * the feature can iterate without normalizing every quiz item into its own row.
+ * Legacy, unused: per-problem review quizzes (5 generated multiple-choice
+ * questions, the answers, the score). Nothing reads or writes them any more
+ * except the data export.
  * ──────────────────────────────────────────────────────────────────────────── */
+export type QuizItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  source: "statement" | "submission" | "notes" | "card";
+  scope: string;
+};
+export type QuizAnswer = { itemId: string; selectedIndex: number; correct: boolean; answeredAt: string };
+
 export const quizSessions = sqliteTable(
   "quiz_sessions",
   {
@@ -344,12 +352,23 @@ export const quizSessions = sqliteTable(
 
 /* ────────────────────────────────────────────────────────────────────────────
  * practice_sessions
- * One Practice run on a problem (docs/coach-practice.md): a few cards from
- * its Cards doc, then generated check questions, then a suggested rating.
- * The cards' text is copied in as shown, so later doc edits don't rewrite
- * history. At most one active session per problem.
+ * One Practice run on a problem (docs/coach-practice.md): a talk-through whose
+ * targets (the approach, then weak spots) copy the reference they're judged
+ * against, so later doc edits don't rewrite history. At most one active
+ * session per problem. The recall and check columns are legacy, from stage-2
+ * sessions (cards, then generated questions); talk-throughs leave them empty.
  * ──────────────────────────────────────────────────────────────────────────── */
 export type PracticeRecallItem = { key: string; prompt: string; answer: string };
+/** Legacy: a stage-2 generated check question. */
+export type PracticeCheckItem = {
+  id: string;
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  explanation: string;
+  scope: string;
+  source: { kind: "statement" | "notes" | "card" | "submission"; ref: string | null };
+};
 export type PracticeTarget = TalkTarget;
 export type PracticeGrade = { grade: "correct" | "partial" | "missed"; reason: string };
 /** One line of a talk-through target's conversation, for the judge. */
@@ -376,6 +395,7 @@ export type WeaknessSnapshot = Pick<
   "status" | "resolvedAt" | "correctStreak" | "hitCount" | "lastSeenAt" | "evidenceJson"
 >;
 export type PracticeResults = {
+  /** Legacy (stage 2): recall results by card key and check answers by item. */
   recall: Record<string, "got_it" | "missed">;
   check: Record<string, { choice: number; correct: boolean }>;
   /** Talk-through grades by target id. */
@@ -403,8 +423,8 @@ export const practiceSessions = sqliteTable(
     /** The Coach run that started it, if any. */
     agentRunId: text("agent_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
     status: text("status", { enum: ["active", "completed", "abandoned"] }).notNull().default("active"),
-    /** talk: the Coach asks about weak spots (version 2); recall_check: cards
-     *  then generated questions (stage 2). */
+    /** talk: a talk-through (versions 2 and 3); recall_check: cards then
+     *  generated questions (stage 2, legacy: nothing starts one any more). */
     mode: text("mode", { enum: ["recall_check", "talk"] }).notNull().default("recall_check"),
     targetsJson: text("targets_json", { mode: "json" }).$type<PracticeTarget[]>(),
     recallJson: text("recall_json", { mode: "json" }).$type<PracticeRecallItem[]>().notNull(),
@@ -418,7 +438,9 @@ export const practiceSessions = sqliteTable(
       .default(sql`'{"recall":{},"check":{}}'`),
     score: real("score"),
     suggestedRating: integer("suggested_rating"),
-    /** Set once the Coach's debrief turn for this session started. */
+    /** When it was summarized: a talk-through when it finishes or ends (the
+     *  Coach sums it up in that turn); a stage-2 session once the Coach's
+     *  debrief turn started. */
     debriefedAt: optTs("debriefed_at"),
     createdAt: ts("created_at"),
     updatedAt: ts("updated_at"),
@@ -494,9 +516,10 @@ export const weaknessCategories = sqliteTable(
 
 /* ────────────────────────────────────────────────────────────────────────────
  * ai_jobs
- * Durable source of truth for asynchronous Card / Quiz generation. Queue
- * messages contain only the job id; all ownership, inputs and results live in
- * this user-scoped table so delivery can safely be at-least-once.
+ * Legacy, unused: asynchronous card, quiz, and practice-check generation, run
+ * through Vercel Queues. Nothing creates or runs jobs any more; the only reader
+ * is GET /api/ai-jobs/:id, for extension builds 0.3.x showing an old approved
+ * Coach proposal.
  * ──────────────────────────────────────────────────────────────────────────── */
 export type EncryptedJobInput = {
   v: 1;

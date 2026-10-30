@@ -4,7 +4,6 @@ import type {
   AuthUserDto as AuthAccount,
   CaptureProblemInput,
   CaptureResultDto as CaptureResult,
-  CardDto as ApiCard,
   FsrsPreviewsDto as Previews,
   PlanNextDto as PlanNext,
   ProblemDto as ApiProblem,
@@ -32,7 +31,7 @@ type State =
   | { kind: "off-page" }
   | { kind: "loading"; slug: string }
   | { kind: "not-saved"; slug: string }
-  | { kind: "captured"; problem: ApiProblem; cards: ApiCard[]; candidates: ApiCard[]; previews: Previews }
+  | { kind: "captured"; problem: ApiProblem; previews: Previews }
   | { kind: "error"; msg: string };
 
 type AuthState =
@@ -47,8 +46,6 @@ type Sticky = {
   slug: string;
   tabId: number | null;
   problem: ApiProblem;
-  cards: ApiCard[];
-  candidates: ApiCard[];
   previews: Previews;
 };
 
@@ -94,6 +91,7 @@ const EXT_I18N = {
       limitReached: "Daily limit reached. Take a break.",
       allCaughtUp: "All caught up - nothing due right now.",
       noQueue: "No problems in queue.",
+      loadFailed: "Couldn't load today's queue.",
       dueNow: "Due now",
       stability: "stability",
       nextTitle: "Next in your plan",
@@ -125,70 +123,10 @@ const EXT_I18N = {
     },
     review: {
       workspace: "Review workspace",
-      quiz: "Quiz",
       notes: "Notes",
       submitRating: "Submit rating",
       alreadyRated: "Already rated in another window. Refreshing...",
       rateFailed: "Rate failed",
-    },
-    quiz: {
-      loading: "Loading quiz...",
-      generating: "Generating quiz",
-      noQuiz: "No quiz yet",
-      generate: "Generate quiz",
-      pendingTimer: (elapsed: string) => `Generating ${elapsed} / 02:00`,
-      timedOut: "Quiz generation timed out. Try again.",
-      failedLoad: "Failed to load quiz",
-      failedGenerate: "Failed to generate quiz",
-      resetConfirm: "Delete all quiz history for this problem? Past sessions cannot be recovered.",
-      failedReset: "Failed to reset quiz history",
-      changed: "Quiz state changed elsewhere. Reloading...",
-      failedSubmit: "Failed to submit answer",
-      batchComplete: "Batch complete",
-      noMisses: "No misses",
-      missed: (count: number) => `${count} missed`,
-      coverageBalanced: "coverage balanced",
-      reset: "Reset",
-      confirmReset: "Delete history",
-      resetting: "Deleting...",
-      newBatch: "New Batch",
-      scope: "Scope",
-      source: "Source",
-      missedLabel: "Missed",
-      none: "None",
-      creating: "Creating...",
-      hideQuiz: "Hide Quiz",
-      reviewQuiz: "Review Quiz",
-      hideAnswers: "Hide all answers",
-      expandQuestions: "Expand all questions",
-      noQuestions: "This quiz has no questions.",
-      regenerate: "Regenerate",
-      regenerating: "Regenerating...",
-      question: (current: number, total: number) => `Question ${current} / ${total}`,
-      answered: (answered: number, total: number) => `Answered ${answered}/${total}`,
-      prev: "Prev",
-      next: "Next",
-      correct: "Correct",
-      wrong: "Wrong",
-      incorrect: "Incorrect",
-      saved: "Saved",
-      saving: "Saving...",
-      save: "Save",
-      results: "Results",
-      checking: "Checking answer...",
-      answerHint: "Click an option to answer, or use Next to skip for now.",
-      firstUnanswered: "First unanswered",
-      yourAnswer: "Your answer:",
-      correctAnswer: "Correct answer:",
-      scopes: {
-        approach: "Approach",
-        invariant: "Invariant",
-        edge_case: "Edge cases",
-        complexity: "Complexity",
-        implementation: "Implementation",
-        mistake_review: "Mistakes",
-      },
-      sources: { statement: "Statement", submission: "Submission", notes: "Notes" },
     },
     capture: {
       notInDeck: "Not in your deck",
@@ -273,15 +211,6 @@ const EXT_I18N = {
         close: "Close",
         startMessage: "Let's practice this problem.",
         progress: (done: number, total: number) => `${done} of ${total}`,
-        showAnswer: "Show answer",
-        gotIt: "Got it",
-        missed: "Missed it",
-        preparing: "Preparing your questions",
-        noQuestions: (reason: string) => `No AI questions this time: ${reason}`,
-        next: "Next",
-        correct: "Correct",
-        incorrect: "Not quite. The answer:",
-        score: (points: number, total: number) => `${points} of ${total} right`,
         suggestedTag: "suggested",
         rate: "Rate this review",
         rated: (rating: string) => `Rated ${rating}.`,
@@ -292,7 +221,6 @@ const EXT_I18N = {
       startPractice: "Practice",
       rateDirectly: "Rate",
       dueForReview: "Due for review",
-      practiceFinished: (points: number, total: number) => `Practice finished: ${points} of ${total}. Go over what I missed.`,
       title: "Study Coach",
       showChat: "Show chat",
       hideChat: "Hide chat",
@@ -330,9 +258,7 @@ const EXT_I18N = {
       applied: "Applied.",
       dismiss: "Dismiss",
       dismissed: "Dismissed.",
-      jobRunning: "Generating",
-      jobDone: "Done. Find it in the Problem tab.",
-      jobFailed: "Generation failed.",
+      approved: "Approved.",
       openReview: "Open review in ankify",
       openProblem: "Open in ankify",
       noCode: (reason: EditorReadFailure) =>
@@ -418,6 +344,7 @@ const EXT_I18N = {
       limitReached: "已达到每日上限，休息一下吧。",
       allCaughtUp: "全部跟上了，现在没有到期题。",
       noQueue: "队列里没有题目。",
+      loadFailed: "加载今日队列失败。",
       dueNow: "当前到期",
       stability: "稳定性",
       nextTitle: "计划里的下一题",
@@ -449,63 +376,10 @@ const EXT_I18N = {
     },
     review: {
       workspace: "复习工作区",
-      quiz: "测验",
       notes: "笔记",
       submitRating: "提交评分",
       alreadyRated: "已在另一个窗口评分，正在刷新...",
       rateFailed: "评分失败",
-    },
-    quiz: {
-      loading: "正在加载测验...",
-      generating: "正在生成测验",
-      noQuiz: "还没有测验",
-      generate: "生成测验",
-      pendingTimer: (elapsed: string) => `生成中 ${elapsed} / 02:00`,
-      timedOut: "测验生成超时，请重试。",
-      failedLoad: "加载测验失败",
-      failedGenerate: "生成测验失败",
-      resetConfirm: "删除这道题的所有测验历史？过去的 session 无法恢复。",
-      failedReset: "重置测验历史失败",
-      changed: "测验状态已在其他地方变化，正在重新加载...",
-      failedSubmit: "提交答案失败",
-      batchComplete: "本批完成",
-      noMisses: "没有错题",
-      missed: (count: number) => `错 ${count} 题`,
-      coverageBalanced: "覆盖均衡",
-      reset: "重置",
-      confirmReset: "删除历史",
-      resetting: "删除中...",
-      newBatch: "新一批",
-      scope: "范围",
-      source: "来源",
-      missedLabel: "错题",
-      none: "无",
-      creating: "创建中...",
-      hideQuiz: "隐藏测验",
-      reviewQuiz: "回看测验",
-      hideAnswers: "隐藏全部答案",
-      expandQuestions: "展开全部问题",
-      noQuestions: "这个测验没有问题。",
-      regenerate: "重新生成",
-      regenerating: "重新生成中...",
-      question: (current: number, total: number) => `第 ${current} / ${total} 题`,
-      answered: (answered: number, total: number) => `已答 ${answered}/${total}`,
-      prev: "上题",
-      next: "下题",
-      correct: "正确",
-      wrong: "错误",
-      incorrect: "错误",
-      saved: "已保存",
-      saving: "保存中...",
-      save: "保存",
-      results: "结果",
-      checking: "正在检查答案...",
-      answerHint: "点击选项作答，或用下题暂时跳过。",
-      firstUnanswered: "第一道未答题",
-      yourAnswer: "你的答案：",
-      correctAnswer: "正确答案：",
-      scopes: { approach: "思路", invariant: "不变量", edge_case: "边界情况", complexity: "复杂度", implementation: "实现", mistake_review: "错因复盘" },
-      sources: { statement: "题目", submission: "提交", notes: "笔记" },
     },
     capture: {
       notInDeck: "不在你的题库中",
@@ -582,15 +456,6 @@ const EXT_I18N = {
         close: "关闭",
         startMessage: "开始练习这道题。",
         progress: (done: number, total: number) => `${done} / ${total}`,
-        showAnswer: "显示答案",
-        gotIt: "记得",
-        missed: "没想起来",
-        preparing: "正在准备题目",
-        noQuestions: (reason: string) => `这次没有 AI 题目：${reason}`,
-        next: "下一题",
-        correct: "答对了",
-        incorrect: "不对。正确答案：",
-        score: (points: number, total: number) => `答对 ${points} / ${total}`,
         suggestedTag: "建议",
         rate: "给这次复习评分",
         rated: (rating: string) => `已评分：${rating}。`,
@@ -601,7 +466,6 @@ const EXT_I18N = {
       startPractice: "练习",
       rateDirectly: "评分",
       dueForReview: "该复习了",
-      practiceFinished: (points: number, total: number) => `练习完成：${points} / ${total}。帮我过一下错的地方。`,
       title: "学习教练",
       showChat: "展开对话",
       hideChat: "收起对话",
@@ -637,9 +501,7 @@ const EXT_I18N = {
       applied: "已应用。",
       dismiss: "不用了",
       dismissed: "已忽略。",
-      jobRunning: "生成中",
-      jobDone: "好了，在「题目」页里看。",
-      jobFailed: "生成失败。",
+      approved: "已批准。",
       openReview: "在 ankify 里打开复习",
       openProblem: "在 ankify 里打开",
       noCode: (reason: EditorReadFailure) =>
@@ -1397,7 +1259,7 @@ function TodayTab({
       }
       setData((await res.json()) as QueueResponse);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.quiz.failedLoad);
+      setError(e instanceof Error ? e.message : t.today.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -1646,8 +1508,6 @@ function ProblemTab({
   settings: ExtSettings;
   captured: {
     problem: ApiProblem;
-    cards: ApiCard[];
-    candidates: ApiCard[];
     previews: Previews;
   } | null;
   sticky: Sticky | null;

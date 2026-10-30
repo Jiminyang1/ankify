@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 import { isLegacyCardEdit } from "@ankify/contracts";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
 import {
-  AiJobRequestError,
-  getOwnedAiJob,
-  toPublicAiJob,
-} from "@/server/ai-generation/jobs";
-import { startAiJobForUser } from "@/server/ai-generation/start";
-import {
   AgentRequestError,
   acceptAgentProposal,
   getOwnedAgentStep,
@@ -30,11 +24,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   try {
-    if (step.status === "accepted" && step.aiJobId) {
-      const job = await getOwnedAiJob(user.id, step.aiJobId);
-      if (!job) return NextResponse.json({ error: "job_not_found" }, { status: 404 });
-      return NextResponse.json({ ok: true, step, job: toPublicAiJob(job) });
-    }
     if (step.status !== "pending") {
       throw new AgentRequestError("proposal_not_pending", "This proposal is no longer pending.", 409);
     }
@@ -57,7 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           { status: DOC_WRITE_STATUS[applied.error] },
         );
       }
-      const accepted = await acceptAgentProposal(user.id, step.id, null);
+      const accepted = await acceptAgentProposal(user.id, step.id);
       return NextResponse.json({ ok: true, step: accepted, docs: applied.docs });
     }
     if (proposal.action === "weakness_category") {
@@ -66,27 +55,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         name: proposal.name,
         description: proposal.description,
       });
-      const accepted = await acceptAgentProposal(user.id, step.id, null);
+      const accepted = await acceptAgentProposal(user.id, step.id);
       return NextResponse.json({ ok: true, step: accepted });
     }
-    const job = await startAiJobForUser(user.id, proposal);
-    const accepted = await acceptAgentProposal(user.id, step.id, job.id);
-    return NextResponse.json({ ok: true, step: accepted, job: toPublicAiJob(job) }, { status: 202 });
+    // A card or quiz generation proposed before those were removed.
+    return NextResponse.json(
+      {
+        error: "generation_retired",
+        message: "ankify no longer generates cards or quizzes, so this suggestion can't be applied. Ask the Coach for a Notes edit or a practice instead.",
+      },
+      { status: 410 },
+    );
   } catch (error) {
     if (error instanceof AgentRequestError) {
       return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
-    }
-    if (error instanceof AiJobRequestError) {
-      return NextResponse.json(
-        { error: error.code, message: error.message },
-        {
-          status: error.status,
-          headers:
-            error.retryAfterSec
-              ? { "Retry-After": String(error.retryAfterSec) }
-              : undefined,
-        },
-      );
     }
     throw error;
   }

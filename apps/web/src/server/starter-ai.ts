@@ -6,7 +6,8 @@ import { isProviderId, normalizeModelId } from "./ai/providers/registry";
 /**
  * Starter AI credits: a small, lifetime allowance of AI actions that new users
  * can spend on the server's own provider key before adding their own. One
- * credit is one quiz generation, one card generation, or one Study Coach turn.
+ * credit is one Study Coach turn; the practice calls around a turn (the judge,
+ * the Solutions doc writer) and a dispute's re-check cost nothing more.
  *
  * The feature is off unless ANKIFY_STARTER_AI_API_KEY is set. The overall
  * spend cap is the provider account's prepaid balance, so the code only has to

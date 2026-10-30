@@ -11,7 +11,7 @@ import {
   failAgentRun,
 } from "@/server/agent/store";
 import { getRequestUser, unauthorizedResponse } from "@/server/auth";
-import { getActiveTalkContext, getPracticeDebrief, markPracticeDebriefed } from "@/server/practice";
+import { getActiveTalkContext } from "@/server/practice";
 import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-limit";
 import { readJsonBody } from "@/server/request-body";
 
@@ -29,17 +29,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
 
-  // Practice results come from the server, never from the client.
   const trigger = parsed.data.trigger;
-  let context = { ...parsed.data.context, practice: undefined, practiceActive: undefined } as typeof parsed.data.context;
+  // The debrief after a stage-2 practice session (cards, then generated
+  // questions). Extension builds 0.3.x still ask for one when they show an old
+  // session; a talk-through is summarized in the turn that finishes it.
   if (trigger?.type === "practice_completed") {
-    const debrief = await getPracticeDebrief(user.id, trigger.practiceSessionId!);
-    if (!debrief) {
-      return NextResponse.json({ error: "practice_not_completed", message: "Finish the practice session first." }, { status: 409 });
-    }
-    const { problemId, ...practice } = debrief;
-    context = { ...context, problemId, practice };
+    return NextResponse.json(
+      { error: "practice_retired", message: "This practice session is from an older version, so the Coach can't go over it." },
+      { status: 410 },
+    );
   }
+  // Practice progress comes from the server, never from the client.
+  let context = { ...parsed.data.context, practiceActive: undefined } as typeof parsed.data.context;
   // A talk-through in progress on this problem rides along with every turn.
   if (context.problemId) {
     const active = await getActiveTalkContext(user.id, context.problemId);
@@ -94,7 +95,6 @@ export async function POST(req: Request) {
       context,
       settings: activeModel.settings,
     });
-    if (trigger?.type === "practice_completed") await markPracticeDebriefed(user.id, trigger.practiceSessionId!);
   } catch (error) {
     if (error instanceof AgentRequestError) {
       return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });

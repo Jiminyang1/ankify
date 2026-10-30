@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CARDS_DOC_MAX_CARDS,
-  applyCardsEdit,
   applyNotesEdit,
   cardKey,
   isSignalPoint,
@@ -53,51 +52,6 @@ describe("parseCards", () => {
     const { cards, issues } = parseCards(md);
     expect(cards).toHaveLength(CARDS_DOC_MAX_CARDS);
     expect(issues).toContainEqual({ kind: "too_many_cards", limit: CARDS_DOC_MAX_CARDS });
-  });
-});
-
-describe("applyCardsEdit", () => {
-  const key = cardKey("Time and space?");
-
-  it("adds, updates, and removes cards without touching the rest", () => {
-    const added = applyCardsEdit(CARDS, { op: "add_card", prompt: "Edge case?\n", answer: "Empty array." });
-    expect(added.ok && parseCards(added.markdown).cards.map((card) => card.prompt)).toEqual([
-      "Why check the map before inserting?",
-      "Time and space?",
-      "Edge case?",
-    ]);
-    expect(added.ok && added.markdown.startsWith("Things I keep forgetting.")).toBe(true);
-
-    const updated = applyCardsEdit(CARDS, { op: "update_card", key, answer: "O(n) time, O(n) space." });
-    expect(updated.ok && parseCards(updated.markdown).cards[1]).toEqual({
-      key,
-      prompt: "Time and space?",
-      answer: "O(n) time, O(n) space.",
-    });
-
-    const removed = applyCardsEdit(CARDS, { op: "remove_card", key });
-    expect(removed.ok && parseCards(removed.markdown).cards.map((card) => card.prompt)).toEqual([
-      "Why check the map before inserting?",
-    ]);
-  });
-
-  it("rejects duplicates, unknown keys, and empty content", () => {
-    expect(applyCardsEdit(CARDS, { op: "add_card", prompt: "time and SPACE?", answer: "x" })).toEqual({
-      ok: false,
-      error: "duplicate_prompt",
-    });
-    expect(applyCardsEdit(CARDS, { op: "remove_card", key: "0000000000000000" })).toEqual({
-      ok: false,
-      error: "card_not_found",
-    });
-    expect(applyCardsEdit(CARDS, { op: "add_card", prompt: "New?", answer: "  " })).toEqual({
-      ok: false,
-      error: "empty_answer",
-    });
-    expect(applyCardsEdit(CARDS, { op: "update_card", key, prompt: "Why check the map before inserting?" })).toEqual({
-      ok: false,
-      error: "duplicate_prompt",
-    });
   });
 });
 

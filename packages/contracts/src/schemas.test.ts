@@ -4,9 +4,7 @@ import {
   agentProposalSchema,
   agentSessionPatchSchema,
   agentTurnRequestSchema,
-  aiJobCreateRequestSchema,
   captureProblemSchema,
-  cardDraftSchema,
   docEditSchema,
   isLegacyCardEdit,
   reviewRatingSchema,
@@ -31,24 +29,19 @@ describe("Agent contracts", () => {
     expect(agentTurnRequestSchema.safeParse({ ...turn, userId: "user-2" }).success).toBe(false);
   });
 
-  it("keeps executable AI job preconditions inside proposals", () => {
-    expect(
-      agentProposalSchema.safeParse({
-        action: "quiz_next_batch",
-        requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
-        problemId: "problem-1",
-        expectedQuizSessionId: "quiz-1",
-        reason: "Create a new batch after the completed quiz.",
-      }).success,
-    ).toBe(true);
-    expect(
-      agentProposalSchema.safeParse({
-        action: "quiz_next_batch",
-        requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
-        problemId: "problem-1",
-        reason: "Missing the session precondition.",
-      }).success,
-    ).toBe(false);
+  it("still loads card and quiz proposals from old runs", () => {
+    const stored = agentProposalSchema.parse({
+      action: "quiz_next_batch",
+      requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
+      problemId: "problem-1",
+      expectedQuizSessionId: "quiz-1",
+      reason: "Create a new batch after the completed quiz.",
+    });
+    expect(stored).toEqual({
+      action: "quiz_next_batch",
+      problemId: "problem-1",
+      reason: "Create a new batch after the completed quiz.",
+    });
   });
 
   it("lets the Coach edit only Notes, while old card proposals still load", () => {
@@ -86,30 +79,6 @@ describe("Agent contracts", () => {
     expect(agentSessionPatchSchema.safeParse({ title: "   " }).success).toBe(false);
     expect(agentSessionPatchSchema.safeParse({ title: "x".repeat(81) }).success).toBe(false);
     expect(agentSessionPatchSchema.safeParse({ title: "Review", status: "archived" }).success).toBe(false);
-  });
-});
-
-describe("aiJobCreateRequestSchema", () => {
-  it("accepts versioned async commands and rejects the retired synchronous shape", () => {
-    expect(aiJobCreateRequestSchema.safeParse({
-      action: "card_followup",
-      problemId: "problem-1",
-      requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
-      cardId: "card-1",
-      expectedCardVersion: 2,
-      draft: { question: "Q", answer: "A" },
-      instruction: "Make it shorter",
-    }).success).toBe(true);
-    expect(aiJobCreateRequestSchema.safeParse({
-      mode: "single",
-      action: "generate",
-    }).success).toBe(false);
-    expect(aiJobCreateRequestSchema.safeParse({
-      action: "quiz_generate",
-      problemId: "problem-1",
-      requestId: "14c3fc2b-d67c-49d2-bb7b-28d4210092c4",
-      expectedQuizSessionId: null,
-    }).success).toBe(true);
   });
 });
 
@@ -153,21 +122,6 @@ describe("public payload limits", () => {
       captureProblemSchema.safeParse({
         ...baseCapture,
         submissions: Array.from({ length: 21 }, () => submission),
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps card drafts compact enough for review responses", () => {
-    expect(
-      cardDraftSchema.safeParse({
-        question: "q".repeat(5_000),
-        answer: "a".repeat(20_000),
-      }).success,
-    ).toBe(true);
-    expect(
-      cardDraftSchema.safeParse({
-        question: "q".repeat(5_001),
-        answer: "answer",
       }).success,
     ).toBe(false);
   });

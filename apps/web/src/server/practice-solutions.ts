@@ -4,7 +4,6 @@ import { z } from "zod";
 import { isSignalPoint, leetcodeTagName, parseSolutions, serializeSolutions, type SolutionApproach } from "@ankify/core";
 import { isMiscPattern, patternsForSlug } from "@ankify/core/patterns";
 import { getDb, schema } from "@ankify/db";
-import { clip, plainText } from "@/server/ai-generation/practice-check";
 import { aiCallOptions } from "@/server/ai/call-options";
 import { getGenerationSettings, type AiRuntimeSettings } from "@/server/settings";
 
@@ -45,6 +44,24 @@ const solutionsSchema = z.object({
 });
 const MAX_APPROACHES = 3;
 const MAX_POINTS = 5;
+
+function clip(text: string | null | undefined, max: number) {
+  const value = (text ?? "").trim();
+  return value.length <= max ? value : `${value.slice(0, max)}\n... (truncated)`;
+}
+
+/** A problem statement (LeetCode's HTML) as plain text for a prompt. */
+export function plainText(html: string | null | undefined) {
+  return (html ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 /** The problem's Solutions doc, written first if it's empty. Returns no
  *  approaches when there's none and it couldn't be written; the user's own

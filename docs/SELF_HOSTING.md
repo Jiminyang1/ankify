@@ -26,7 +26,7 @@ Use the QA profile for manual QA, browser automation, Agent testing, and
 extension integration without Google OAuth or deployed infrastructure:
 
 ```bash
-pnpm dev:qa       # reset fixtures, then start Web + the local AI Job worker
+pnpm dev:qa       # reset fixtures, then start Web
 pnpm dev:qa:all   # same environment plus extension watch mode
 pnpm qa:reset     # restore deterministic fixtures while preserving AI settings
 ```
@@ -35,7 +35,7 @@ For README and landing-page screenshots there is also an English demo deck
 (24 problems with two months of review history) on the same QA database:
 
 ```bash
-pnpm dev:demo     # load the demo deck, then start Web + the local AI Job worker
+pnpm dev:demo     # load the demo deck, then start Web
 pnpm demo:reset   # reload the demo deck without starting servers
 ```
 
@@ -56,10 +56,7 @@ ANKIFY_QA_AI_API_KEY="<provider-key>"
 ```
 
 These may match Production's provider configuration, but QA never connects to
-the Production database, Better Auth session store, or Queue. AI jobs remain
-durable rows in the QA SQLite database and are processed by the local worker.
-The worker tests application behavior; deployed Queue delivery/retry semantics
-remain part of Preview/Production verification.
+the Production database or Better Auth session store.
 
 ## Isolated local, Preview, and Production profiles
 
@@ -178,8 +175,10 @@ packages/
 - `user`, `session`, `account`, `verification`: Better Auth.
 - `problems`: LeetCode problem metadata, notes, archived flag, FSRS state.
 - `submissions`: captured accepted and failed submissions.
-- `cards`: flashcards and AI candidates (`ai_status`: `candidate | failed | ready`).
-- `quiz_sessions`: active / completed / archived quiz JSON plus answers and score.
+- `practice_sessions`: talk-through practice sessions, their grades, and the suggested rating.
+- `weaknesses`, `weakness_categories`: recorded mistakes per problem and the user's own categories.
+- `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps`: Study Coach conversations.
+- `cards`, `quiz_sessions`, `ai_jobs`: legacy and unused (flashcard rows, review quizzes, and their generation jobs); kept, and card rows and quizzes are still in the data export.
 - `review_events`: append-only event log feeding the analysis dashboard.
 - `settings`: per-user key/value settings (encrypted AI keys, daily review limit).
 

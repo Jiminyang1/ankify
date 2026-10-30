@@ -155,9 +155,10 @@ Production smoke testing.
    page-context updates, one ToolLoopAgent turn, a read-only tool call,
    streaming completion, and navigation. A valid provider/model/key must be
    saved in the current user's Production Settings before this test.
-6. Verify the `ankify-ai-generation` Queue trigger exists, then run one queued
-   Card or Quiz job through `queued -> running -> succeeded`.
-7. Inspect Vercel runtime logs and clean up any sessions or candidate content
+6. On a saved problem, start a practice from the Coach and answer the first
+   question: the reply is judged (the tray's progress moves) before the Coach
+   answers.
+7. Inspect Vercel runtime logs and clean up any sessions or practice sessions
    created only for smoke testing.
 
 ## Extension release

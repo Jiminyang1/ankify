@@ -38,15 +38,6 @@ export type PracticeCopy = {
   close: string;
   startMessage: string;
   progress: (done: number, total: number) => string;
-  showAnswer: string;
-  gotIt: string;
-  missed: string;
-  preparing: string;
-  noQuestions: (reason: string) => string;
-  next: string;
-  correct: string;
-  incorrect: string;
-  score: (points: number, total: number) => string;
   /** Marks the suggested rating's button. */
   suggestedTag: string;
   rate: string;
@@ -58,9 +49,10 @@ export type PracticeCopy = {
 
 type Rating = 1 | 2 | 3 | 4;
 
-/** One practice session inside the Coach chat (docs/coach-practice.md):
- *  cards to recall, generated questions graded by the server, then a
- *  suggested rating. Talks to the practice API directly; no model calls. */
+/** One talk-through inside the Coach chat (docs/coach-practice.md): its
+ *  questions with their grades as the Coach asks them, End, "I did say that",
+ *  then the score and the suggested rating. Talks to the practice API
+ *  directly; no model calls. */
 export function PracticeWidget({
   settings,
   sessionId,
@@ -91,9 +83,6 @@ export function PracticeWidget({
   categoryName: (key: string) => string;
 }) {
   const [session, setSession] = useState<PracticeSessionDto | null>(initial ?? null);
-  const [revealed, setRevealed] = useState(false);
-  /** The question whose feedback is on screen until "Next". */
-  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rating, setRating] = useState<Rating | null>(null);
@@ -121,23 +110,20 @@ export function PracticeWidget({
     if (!initial) void load().catch((loadError) => setError(loadError instanceof Error ? loadError.message : copy.loadFailed));
   }, [copy.loadFailed, initial, load]);
 
-  // Questions are generated in the background; check until they're ready.
-  // A talk-through is graded by the Coach in the chat; follow its progress.
-  const pending =
-    session?.status === "active" && (session.check.status === "pending" || session.mode === "talk");
+  // Replies are judged in the chat; follow the progress.
+  const following = session?.status === "active" && session.mode === "talk";
   useEffect(() => {
-    if (!pending) return;
+    if (!following) return;
     const timer = window.setInterval(() => void load().catch(() => {}), 1_500);
     return () => window.clearInterval(timer);
-  }, [load, pending]);
+  }, [following, load]);
 
   useEffect(() => {
-    if (!session || session.status !== "completed" || completedReported.current) return;
+    if (!session || session.mode !== "talk" || session.status !== "completed" || completedReported.current) return;
     completedReported.current = true;
     setRating(session.suggestedRating);
-    // Feedback for the last question stays visible until "Next".
-    if (!feedbackFor) onCompleted(session);
-  }, [feedbackFor, onCompleted, session]);
+    onCompleted(session);
+  }, [onCompleted, session]);
 
   async function post(path: string, body: unknown) {
     setBusy(true);
@@ -201,6 +187,9 @@ export function PracticeWidget({
       </div>
     );
   }
+  // A stage-2 session (cards, then generated questions) is from before
+  // talk-throughs; there's nothing left to show for it.
+  if (session.mode !== "talk") return null;
 
   // Same look as the panel's quick rating: four plain buttons and a check.
   // The suggested one is marked under its label instead of a separate line.
@@ -240,312 +229,195 @@ export function PracticeWidget({
     </div>
   );
 
-  if (session.mode === "talk") {
-    const graded = session.targets.filter((target) => target.grade);
-    const correct = graded.filter((target) => target.grade!.grade === "correct").length;
-    const partial = graded.filter((target) => target.grade!.grade === "partial").length;
-    const active = session.status === "active";
-    const tray = variant === "tray";
-    type Target = PracticeSessionDto["targets"][number];
-    const stateOf = (target: Target) =>
-      target.grade?.grade ?? (session.status === "completed" ? "skipped" : target.nudges > 0 ? "probing" : "open");
-    const settledText = (target: Target) => {
-      if (!target.grade) return null;
-      const how =
-        target.settledBy === "complete"
-          ? copy.settledBy.complete[target.help]
-          : target.settledBy === "new_approach"
-            ? copy.settledBy.newApproach
-            : target.settledBy === "gave_up"
-              ? copy.settledBy.gaveUp
-              : target.settledBy === "not_recalled"
-                ? copy.settledBy.notRecalled
-                : target.grade.reason;
-      return `${copy.grades[target.grade.grade]} · ${how}`;
-    };
-    const openTarget = session.targets.find((target) => !target.grade);
-    const openProgress = active && openTarget?.progress && openTarget.progress.covered > 0 ? openTarget.progress : null;
-    if (session.status === "abandoned") {
-      return (
-        <div className="practice practice-talk practice-ended">
-          <div className="practice-head">
-            <span className="coach-dock-title">{copy.title}</span>
-          </div>
-          <p className="popup-muted practice-talk-hint">{copy.abandoned}</p>
-        </div>
-      );
-    }
-    const endButton =
-      active && !confirmEnd ? (
-        <button
-          type="button"
-          className="practice-end"
-          disabled={busy}
-          onClick={() => {
-            setConfirmEnd(true);
-            setOpen(true);
-          }}
-        >
-          {copy.end}
-        </button>
-      ) : null;
-    const details = (
-      <>
-        <ul className="practice-targets">
-          {session.targets.map((target) => {
-            const state = stateOf(target);
-            return (
-              <li key={target.id} className="practice-target" data-grade={state}>
-                <span className="practice-target-mark" aria-hidden="true" />
-                <span className="practice-target-text">
-                  <span className="practice-target-kind">
-                    {target.kind === "core"
-                      ? target.label === "complexity"
-                        ? copy.core.complexity
-                        : copy.core.approach
-                      : categoryName(target.category ?? target.label)}
-                  </span>
-                  {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
-                  {target.grade ? (
-                    <span className="practice-target-grade">{settledText(target)}</span>
-                  ) : state === "skipped" ? (
-                    <span className="practice-target-grade">{copy.grades.skipped}</span>
-                  ) : target.progress && target.progress.covered > 0 ? (
-                    <span className="practice-target-grade">
-                      {copy.pointsProgress(target.progress.covered, target.progress.total)}
-                    </span>
-                  ) : state === "probing" ? (
-                    <span className="practice-target-grade">{copy.followingUp}</span>
-                  ) : null}
-                  {target.kind === "core" && target.review && target.review.points.length > 0 && (
-                    <span className="practice-points">
-                      {target.review.approach && (
-                        <span className="practice-points-approach">{copy.checkedAgainst(target.review.approach)}</span>
-                      )}
-                      {target.review.points.map((point, index) => (
-                        <span key={index} className="practice-point" data-covered={point.covered}>
-                          <span
-                            className="practice-point-mark"
-                            role="img"
-                            aria-label={point.covered ? copy.covered : copy.notCovered}
-                          />
-                          <PopupMarkdown className="popup-md-inline">{point.text}</PopupMarkdown>
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                  {target.canDispute && (
-                    <button
-                      type="button"
-                      className="practice-dispute"
-                      disabled={busy}
-                      title={copy.disputeHint}
-                      onClick={() => void dispute(target.id)}
-                    >
-                      {busy && <span className="btn-spinner" />}
-                      {copy.dispute}
-                    </button>
-                  )}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {session.status === "completed" ? (
-          <div className="practice-summary">
-            <p className="practice-score">
-              {copy.talkScore(correct, partial, graded.length)}
-              {session.endedEarly && <span className="popup-muted"> · {copy.endedEarly}</span>}
-            </p>
-            {ratingBlock}
-          </div>
-        ) : confirmEnd ? (
-          <div className="practice-confirm">
-            <p className="popup-muted">{copy.endConfirm}</p>
-            <div className="practice-actions">
-              <button type="button" className="btn-xs" disabled={busy} onClick={() => setConfirmEnd(false)}>
-                {copy.keepGoing}
-              </button>
-              <button type="button" className="btn-xs btn-xs-danger" disabled={busy} onClick={() => void end()}>
-                {busy && <span className="btn-spinner" />}
-                {copy.endNow}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="popup-muted practice-talk-hint">{copy.talkHint}</p>
-        )}
-        {error && <p className="coach-run-error">{error}</p>}
-      </>
-    );
-
-    if (tray) {
-      return (
-        <div className="practice-tray" data-open={open}>
-          <div className="practice-tray-bar">
-            <button
-              type="button"
-              className="practice-tray-toggle"
-              aria-expanded={open}
-              title={open ? copy.hideDetails : copy.showDetails}
-              onClick={() => setOpen((value) => !value)}
-            >
-              <svg className="practice-tray-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="m4 10 4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span className="practice-tray-title">{copy.title}</span>
-              <span className="practice-tray-dots" aria-hidden="true">
-                {session.targets.map((target) => (
-                  <span key={target.id} className="practice-tray-dot" data-grade={stateOf(target)} />
-                ))}
-              </span>
-              <span className="practice-progress">
-                {session.status === "completed"
-                  ? copy.talkScore(correct, partial, graded.length)
-                  : copy.progress(graded.length, session.targets.length)}
-                {openProgress && ` · ${copy.pointsProgress(openProgress.covered, openProgress.total)}`}
-              </span>
-            </button>
-            {endButton}
-            {session.status === "completed" && onClose && (
-              <button type="button" className="practice-tray-close" aria-label={copy.close} title={copy.close} onClick={onClose}>
-                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                  <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-              </button>
-            )}
-          </div>
-          {open && <div className="practice-tray-body scroll-area">{details}</div>}
-        </div>
-      );
-    }
-
+  const graded = session.targets.filter((target) => target.grade);
+  const correct = graded.filter((target) => target.grade!.grade === "correct").length;
+  const partial = graded.filter((target) => target.grade!.grade === "partial").length;
+  const active = session.status === "active";
+  const tray = variant === "tray";
+  type Target = PracticeSessionDto["targets"][number];
+  const stateOf = (target: Target) =>
+    target.grade?.grade ?? (session.status === "completed" ? "skipped" : target.nudges > 0 ? "probing" : "open");
+  const settledText = (target: Target) => {
+    if (!target.grade) return null;
+    const how =
+      target.settledBy === "complete"
+        ? copy.settledBy.complete[target.help]
+        : target.settledBy === "new_approach"
+          ? copy.settledBy.newApproach
+          : target.settledBy === "gave_up"
+            ? copy.settledBy.gaveUp
+            : target.settledBy === "not_recalled"
+              ? copy.settledBy.notRecalled
+              : target.grade.reason;
+    return `${copy.grades[target.grade.grade]} · ${how}`;
+  };
+  const openTarget = session.targets.find((target) => !target.grade);
+  const openProgress = active && openTarget?.progress && openTarget.progress.covered > 0 ? openTarget.progress : null;
+  if (session.status === "abandoned") {
     return (
-      <div className="practice practice-talk">
+      <div className="practice practice-talk practice-ended">
         <div className="practice-head">
           <span className="coach-dock-title">{copy.title}</span>
-          <span className="practice-head-side">
-            <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
-            {endButton}
-          </span>
         </div>
-        {details}
+        <p className="popup-muted practice-talk-hint">{copy.abandoned}</p>
+      </div>
+    );
+  }
+  const endButton =
+    active && !confirmEnd ? (
+      <button
+        type="button"
+        className="practice-end"
+        disabled={busy}
+        onClick={() => {
+          setConfirmEnd(true);
+          setOpen(true);
+        }}
+      >
+        {copy.end}
+      </button>
+    ) : null;
+  const details = (
+    <>
+      <ul className="practice-targets">
+        {session.targets.map((target) => {
+          const state = stateOf(target);
+          return (
+            <li key={target.id} className="practice-target" data-grade={state}>
+              <span className="practice-target-mark" aria-hidden="true" />
+              <span className="practice-target-text">
+                <span className="practice-target-kind">
+                  {target.kind === "core"
+                    ? target.label === "complexity"
+                      ? copy.core.complexity
+                      : copy.core.approach
+                    : categoryName(target.category ?? target.label)}
+                </span>
+                {target.kind === "weakness" && <span className="practice-target-label">{target.label}</span>}
+                {target.grade ? (
+                  <span className="practice-target-grade">{settledText(target)}</span>
+                ) : state === "skipped" ? (
+                  <span className="practice-target-grade">{copy.grades.skipped}</span>
+                ) : target.progress && target.progress.covered > 0 ? (
+                  <span className="practice-target-grade">
+                    {copy.pointsProgress(target.progress.covered, target.progress.total)}
+                  </span>
+                ) : state === "probing" ? (
+                  <span className="practice-target-grade">{copy.followingUp}</span>
+                ) : null}
+                {target.kind === "core" && target.review && target.review.points.length > 0 && (
+                  <span className="practice-points">
+                    {target.review.approach && (
+                      <span className="practice-points-approach">{copy.checkedAgainst(target.review.approach)}</span>
+                    )}
+                    {target.review.points.map((point, index) => (
+                      <span key={index} className="practice-point" data-covered={point.covered}>
+                        <span
+                          className="practice-point-mark"
+                          role="img"
+                          aria-label={point.covered ? copy.covered : copy.notCovered}
+                        />
+                        <PopupMarkdown className="popup-md-inline">{point.text}</PopupMarkdown>
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {target.canDispute && (
+                  <button
+                    type="button"
+                    className="practice-dispute"
+                    disabled={busy}
+                    title={copy.disputeHint}
+                    onClick={() => void dispute(target.id)}
+                  >
+                    {busy && <span className="btn-spinner" />}
+                    {copy.dispute}
+                  </button>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {session.status === "completed" ? (
+        <div className="practice-summary">
+          <p className="practice-score">
+            {copy.talkScore(correct, partial, graded.length)}
+            {session.endedEarly && <span className="popup-muted"> · {copy.endedEarly}</span>}
+          </p>
+          {ratingBlock}
+        </div>
+      ) : confirmEnd ? (
+        <div className="practice-confirm">
+          <p className="popup-muted">{copy.endConfirm}</p>
+          <div className="practice-actions">
+            <button type="button" className="btn-xs" disabled={busy} onClick={() => setConfirmEnd(false)}>
+              {copy.keepGoing}
+            </button>
+            <button type="button" className="btn-xs btn-xs-danger" disabled={busy} onClick={() => void end()}>
+              {busy && <span className="btn-spinner" />}
+              {copy.endNow}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="popup-muted practice-talk-hint">{copy.talkHint}</p>
+      )}
+      {error && <p className="coach-run-error">{error}</p>}
+    </>
+  );
+
+  if (tray) {
+    return (
+      <div className="practice-tray" data-open={open}>
+        <div className="practice-tray-bar">
+          <button
+            type="button"
+            className="practice-tray-toggle"
+            aria-expanded={open}
+            title={open ? copy.hideDetails : copy.showDetails}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <svg className="practice-tray-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="m4 10 4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="practice-tray-title">{copy.title}</span>
+            <span className="practice-tray-dots" aria-hidden="true">
+              {session.targets.map((target) => (
+                <span key={target.id} className="practice-tray-dot" data-grade={stateOf(target)} />
+              ))}
+            </span>
+            <span className="practice-progress">
+              {session.status === "completed"
+                ? copy.talkScore(correct, partial, graded.length)
+                : copy.progress(graded.length, session.targets.length)}
+              {openProgress && ` · ${copy.pointsProgress(openProgress.covered, openProgress.total)}`}
+            </span>
+          </button>
+          {endButton}
+          {session.status === "completed" && onClose && (
+            <button type="button" className="practice-tray-close" aria-label={copy.close} title={copy.close} onClick={onClose}>
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {open && <div className="practice-tray-body scroll-area">{details}</div>}
       </div>
     );
   }
 
-  const checkItems = session.check.status === "ready" ? session.check.items : [];
-  const total = session.recall.length + (session.check.status === "ready" || pending ? 3 : 0);
-  const done =
-    session.recall.filter((card) => card.result).length + checkItems.filter((item) => item.answer).length;
-  const points =
-    session.recall.filter((card) => card.result === "got_it").length +
-    checkItems.filter((item) => item.answer?.correct).length;
-  const recallCard = session.recall.find((card) => !card.result);
-  const feedbackItem = feedbackFor ? checkItems.find((item) => item.id === feedbackFor) : undefined;
-  const question = checkItems.find((item) => !item.answer);
-  const showSummary = session.status === "completed" && !feedbackItem;
-
   return (
-    <div className="practice">
+    <div className="practice practice-talk">
       <div className="practice-head">
         <span className="coach-dock-title">{copy.title}</span>
-        {!showSummary && <span className="practice-progress">{copy.progress(done, total)}</span>}
+        <span className="practice-head-side">
+          <span className="practice-progress">{copy.progress(graded.length, session.targets.length)}</span>
+          {endButton}
+        </span>
       </div>
-
-      {showSummary ? (
-        <div className="practice-summary">
-          <p className="practice-score">{copy.score(points, session.recall.length + checkItems.length)}</p>
-          {(session.check.status === "failed" || session.check.status === "skipped") && session.check.message && (
-            <p className="popup-muted">{copy.noQuestions(session.check.message)}</p>
-          )}
-          {ratingBlock}
-        </div>
-      ) : recallCard ? (
-        <div className="practice-card">
-          <PopupMarkdown className="practice-prompt">{recallCard.prompt}</PopupMarkdown>
-          {revealed ? (
-            <>
-              <div className="practice-answer">
-                <PopupMarkdown>{recallCard.answer}</PopupMarkdown>
-              </div>
-              <div className="practice-actions">
-                <button
-                  type="button"
-                  className="btn-xs"
-                  disabled={busy}
-                  onClick={() => void post("recall", { key: recallCard.key, result: "missed" }).then(() => setRevealed(false))}
-                >
-                  {copy.missed}
-                </button>
-                <button
-                  type="button"
-                  className="btn-xs btn-xs-accent"
-                  disabled={busy}
-                  onClick={() => void post("recall", { key: recallCard.key, result: "got_it" }).then(() => setRevealed(false))}
-                >
-                  {copy.gotIt}
-                </button>
-              </div>
-            </>
-          ) : (
-            <button type="button" className="btn btn-secondary btn-inline" onClick={() => setRevealed(true)}>
-              {copy.showAnswer}
-            </button>
-          )}
-        </div>
-      ) : feedbackItem?.answer ? (
-        <div className="practice-card">
-          <PopupMarkdown className="practice-prompt">{feedbackItem.question}</PopupMarkdown>
-          <p className={feedbackItem.answer.correct ? "practice-verdict is-correct" : "practice-verdict is-wrong"}>
-            {feedbackItem.answer.correct ? copy.correct : copy.incorrect}
-          </p>
-          {!feedbackItem.answer.correct && (
-            <div className="practice-answer">
-              <PopupMarkdown>{feedbackItem.choices[feedbackItem.answer.answerIndex] ?? ""}</PopupMarkdown>
-            </div>
-          )}
-          <PopupMarkdown className="practice-explanation">{feedbackItem.answer.explanation}</PopupMarkdown>
-          <button
-            type="button"
-            className="btn btn-secondary btn-inline"
-            onClick={() => {
-              setFeedbackFor(null);
-              if (session.status === "completed") onCompleted(session);
-            }}
-          >
-            {copy.next}
-          </button>
-        </div>
-      ) : question ? (
-        <div className="practice-card">
-          <PopupMarkdown className="practice-prompt">{question.question}</PopupMarkdown>
-          <div className="practice-choices">
-            {question.choices.map((choice, index) => (
-              <button
-                key={index}
-                type="button"
-                className="practice-choice"
-                disabled={busy}
-                onClick={() =>
-                  void post("check", { itemId: question.id, choice: index }).then((next) => {
-                    if (next) setFeedbackFor(question.id);
-                  })
-                }
-              >
-                <span className="practice-choice-letter">{String.fromCharCode(65 + index)}</span>
-                <PopupMarkdown className="popup-md-inline">{choice}</PopupMarkdown>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : pending ? (
-        <p className="popup-muted coach-thinking">
-          <span className="btn-spinner" /> {copy.preparing}
-        </p>
-      ) : null}
-
-      {error && <p className="coach-run-error">{error}</p>}
+      {details}
     </div>
   );
 }
