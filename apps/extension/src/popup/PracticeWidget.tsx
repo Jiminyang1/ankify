@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PatternSuggestionDto, PracticeSessionDto, ReviewRateResponseDto } from "@ankify/contracts";
+import type { PracticeSessionDto } from "@ankify/contracts";
 import type { ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
 import { PopupMarkdown } from "./PopupMarkdown";
@@ -79,8 +79,7 @@ export function PracticeWidget({
   copy: PracticeCopy;
   /** Fires once when the session first reaches its summary. */
   onCompleted: (session: PracticeSessionDto) => void;
-  /** Rated from the summary; carries the same-pattern suggestion, if any. */
-  onRated: (suggestion: PatternSuggestionDto | null) => void;
+  onRated: () => void;
   /** The user ended it with nothing answered, so it was dropped. */
   onAbandoned: (session: PracticeSessionDto) => void;
   /** "tray": a one-line bar attached above the composer that expands on
@@ -186,9 +185,8 @@ export function PracticeWidget({
         body: JSON.stringify({ problemId: session.problemId, rating, requestId: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error(copy.actionFailed);
-      const body = (await res.json().catch(() => null)) as Partial<ReviewRateResponseDto> | null;
       setRated(rating);
-      onRated(body?.suggestion ?? null);
+      onRated();
     } catch (rateError) {
       setError(rateError instanceof Error ? rateError.message : copy.actionFailed);
     } finally {

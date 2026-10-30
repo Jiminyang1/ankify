@@ -202,14 +202,6 @@ export const weaknessPatchSchema = z
   .object({ status: z.enum(["active", "resolved", "dismissed"]) })
   .strict();
 
-/** POST /api/patterns/mute: turn suggestions from one pattern off or on. */
-export const patternMuteSchema = z
-  .object({
-    key: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+$/).max(100),
-    muted: z.boolean(),
-  })
-  .strict();
-
 /** PUT /api/problems/:id/docs: the user's own edit of one doc. */
 export const problemDocPutSchema = z
   .object({

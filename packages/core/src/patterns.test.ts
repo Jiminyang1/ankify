@@ -9,7 +9,6 @@ import {
   patternProblem,
   patternSourceUrl,
   patternsForSlug,
-  suggestSamePattern,
 } from "./patterns";
 
 describe("pattern catalog", () => {
@@ -133,20 +132,5 @@ describe("patternStudyPlans", () => {
     const trees = zh.find((plan) => plan.slug === "ling:trees")!.groups.map((group) => group.name);
     expect(trees).toContain("二叉树 · 有递有归");
     expect(trees).toContain("一般树 · 有递有归");
-  });
-});
-
-describe("suggestSamePattern", () => {
-  it("suggests the first problem not done in the problem's pattern", () => {
-    const suggestion = suggestSamePattern("binary-subarrays-with-sum", () => false);
-    expect(suggestion?.pattern.key).toBe("sliding-window/window-count-exact");
-    expect(suggestion?.next.slug).toBe("count-number-of-nice-subarrays");
-  });
-
-  it("skips muted patterns and finished ones", () => {
-    const muted = new Set(["sliding-window/window-count-exact"]);
-    const suggestion = suggestSamePattern("binary-subarrays-with-sum", () => false, muted);
-    expect(suggestion?.pattern.key).not.toBe("sliding-window/window-count-exact");
-    expect(suggestSamePattern("binary-subarrays-with-sum", () => true)).toBeNull();
   });
 });

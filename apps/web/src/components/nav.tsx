@@ -17,14 +17,18 @@ import { UserAvatar } from "./user-avatar";
 import { getUserDisplayName } from "@/lib/user-identity";
 import { ActiveIndicator, MotionPresence } from "@/components/ui/motion";
 
+// The main line (docs/product-main-line.md): review is entered from Today, and
+// Analysis is reachable only by link.
 const LINKS = [
-  { href: "/today", key: "today" },
-  { href: "/review", key: "review" },
-  { href: "/problems", key: "problems" },
-  { href: "/analysis", key: "analysis" },
-  { href: "/profile", key: "profile" },
-  { href: "/settings", key: "settings" },
+  { href: "/today", key: "today", also: ["/review"] },
+  { href: "/profile", key: "profile", also: [] },
+  { href: "/problems", key: "problems", also: [] },
+  { href: "/settings", key: "settings", also: [] },
 ] as const;
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(href + "/");
+}
 
 export function Nav({
   user,
@@ -113,10 +117,10 @@ export function Nav({
         </Link>
 
         {!isPublicPage && (
-          <div className="order-3 col-span-2 grid w-full grid-cols-6 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
+          <div className="order-3 col-span-2 grid w-full grid-cols-4 items-center gap-0.5 text-xs sm:order-none sm:col-auto sm:flex sm:w-auto sm:gap-1 sm:text-sm">
             {LINKS.map((l) => {
-              const active = pathname === l.href || pathname.startsWith(l.href + "/");
-              const showBadge = l.href === "/review" && dueCount > 0;
+              const active = [l.href, ...l.also].some((href) => isActive(pathname, href));
+              const showBadge = l.href === "/today" && dueCount > 0;
               return (
                 <Link
                   key={l.href}

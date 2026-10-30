@@ -8,10 +8,8 @@ import type {
   FsrsPreviewsDto as Previews,
   ProblemDto as ApiProblem,
   ProblemLookupPayloadDto,
-  PatternSuggestionDto,
   QueueProblemDto as QueueProblem,
   ReviewQueuePayloadDto as QueueResponse,
-  ReviewRateResponseDto,
 } from "@ankify/contracts";
 import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
@@ -23,7 +21,6 @@ import {
 import { AUTH_REQUIRED_EVENT, apiFetch } from "./api";
 import { CoachTab } from "./CoachTab";
 import { DocsPanel } from "./DocsPanel";
-import { PatternSuggestionCard, PatternsPanel } from "./PatternsPanel";
 import { PopupMarkdown } from "./PopupMarkdown";
 
 type ThemePreference = "system" | "light" | "dark";
@@ -54,7 +51,7 @@ type Sticky = {
   previews: Previews;
 };
 
-type PanelView = "auto" | "today" | "settings" | "docs" | "patterns";
+type PanelView = "auto" | "today" | "settings" | "docs";
 
 const EXT_I18N = {
   en: {
@@ -246,33 +243,6 @@ const EXT_I18N = {
       saving: "Saving...",
       saved: "Saved",
       placeholder: "What tripped you up, key insights, alternative approaches...",
-    },
-    patterns: {
-      title: "Same pattern",
-      empty: "This problem isn't in any of the pattern lists.",
-      loadFailed: "Couldn't load patterns.",
-      actionFailed: "That didn't save. Try again.",
-      progress: (done: number, total: number) => `${done} of ${total} done`,
-      nextUp: "Next up",
-      allDone: "You've done every problem in this pattern.",
-      showAll: (count: number) => `Show all ${count}`,
-      showLess: "Show less",
-      tiers: { core: "Core", advanced: "Advanced", extension: "Stretch" },
-      ratingHint: "Contest difficulty rating",
-      premium: "Premium",
-      inReview: "In review",
-      misc: "A mix of problems, so reviews don't suggest from here.",
-      mute: "Stop suggesting",
-      unmute: "Suggest again",
-      mutedNote: "Reviews won't suggest from this pattern.",
-      credit: "Patterns from 灵茶山艾府's problem lists",
-      source: "Original list",
-      suggestionTitle: "Same technique, new problem",
-      suggestionBody: (pattern: string) => `You remember this one. Next in ${pattern}:`,
-      open: "Open on LeetCode",
-      notThisPattern: "Not this pattern",
-      suggestionMuted: "Got it. Reviews won't suggest from this pattern.",
-      close: "Close",
     },
     docs: {
       title: "Docs",
@@ -629,33 +599,6 @@ const EXT_I18N = {
       saving: "保存中...",
     },
     notes: { title: "笔记", saving: "保存中...", saved: "已保存", placeholder: "哪里卡住了、关键洞察、其他解法..." },
-    patterns: {
-      title: "同类题",
-      empty: "这道题不在题单的任何分类里。",
-      loadFailed: "加载同类题失败。",
-      actionFailed: "没保存成功，请重试。",
-      progress: (done: number, total: number) => `已做 ${done} / ${total}`,
-      nextUp: "接下来",
-      allDone: "这一类的题你都做过了。",
-      showAll: (count: number) => `显示全部 ${count} 题`,
-      showLess: "收起",
-      tiers: { core: "基础", advanced: "进阶", extension: "思维扩展" },
-      ratingHint: "周赛难度分",
-      premium: "会员题",
-      inReview: "复习中",
-      misc: "这一节的题各不相同，复习后不会从这里推荐。",
-      mute: "不再推荐",
-      unmute: "恢复推荐",
-      mutedNote: "复习后不会从这一类推荐新题。",
-      credit: "分类来自灵茶山艾府的算法题单",
-      source: "原题单",
-      suggestionTitle: "同一个套路，换一道新题",
-      suggestionBody: (pattern: string) => `这道题你记住了。「${pattern}」的下一题：`,
-      open: "在 LeetCode 打开",
-      notThisPattern: "不要这一类",
-      suggestionMuted: "好的，复习后不会再从这一类推荐。",
-      close: "关闭",
-    },
     docs: {
       title: "文档",
       notes: "笔记",
@@ -1056,9 +999,6 @@ export function Popup() {
   const [coachExpanded, setCoachExpanded] = useState(false);
   /** Bumps when the Coach applies a doc edit, so the Docs tab reloads. */
   const [docsRevision, setDocsRevision] = useState(0);
-  /** A same-pattern problem offered after rating, shown above the composer
-   *  while the panel stays on the problem that was rated. */
-  const [suggestion, setSuggestion] = useState<{ slug: string; value: PatternSuggestionDto } | null>(null);
   const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -1275,35 +1215,17 @@ export function Popup() {
   const showSettings = view === "settings";
   const headerProblem = captured ?? (state.kind === "off-page" ? sticky : null);
   const showDocs = view === "docs" && headerProblem != null;
-  // Patterns work for any problem page, saved or not.
-  const patternSlug = headerProblem?.problem.leetcodeSlug ?? pageSlug;
-  const showPatterns = view === "patterns" && patternSlug != null;
-  const showToday =
-    !showSettings && !showDocs && !showPatterns && (view === "today" || (state.kind === "off-page" && !sticky));
+  const showToday = !showSettings && !showDocs && (view === "today" || (state.kind === "off-page" && !sticky));
   // On a problem the Coach chat is the main area; elsewhere it docks below.
-  const problemView = !showSettings && !showDocs && !showPatterns && !showToday;
-  const canReturnToProblem =
-    (view === "today" || showDocs || showPatterns) && (state.kind !== "off-page" || sticky != null);
-  const offerSuggestion = (next: PatternSuggestionDto | null) => {
-    if (next && headerProblem) setSuggestion({ slug: headerProblem.problem.leetcodeSlug, value: next });
-  };
+  const problemView = !showSettings && !showDocs && !showToday;
+  const canReturnToProblem = (view === "today" || showDocs) && (state.kind !== "off-page" || sticky != null);
   const ratingPanel =
     headerProblem && isDue(headerProblem.problem.fsrsDue) ? (
       <QuickRate
         problemId={headerProblem.problem.id}
         previews={headerProblem.previews}
         settings={settings}
-        onRated={(next) => {
-          offerSuggestion(next);
-          void detect({ force: true });
-        }}
-      />
-    ) : suggestion && suggestion.slug === headerProblem?.problem.leetcodeSlug ? (
-      <PatternSuggestionCard
-        settings={settings}
-        suggestion={suggestion.value}
-        copy={text.patterns}
-        onClose={() => setSuggestion(null)}
+        onRated={() => void detect({ force: true })}
       />
     ) : null;
 
@@ -1326,8 +1248,6 @@ export function Popup() {
             <h1 className="panel-bar-title">{text.nav.settings}</h1>
           ) : showDocs ? (
             <h1 className="panel-bar-title">{headerProblem!.problem.title}</h1>
-          ) : showPatterns ? (
-            <h1 className="panel-bar-title">{text.patterns.title}</h1>
           ) : showToday ? (
             <h1 className="panel-bar-title">{text.nav.today}</h1>
           ) : headerProblem ? (
@@ -1348,17 +1268,6 @@ export function Popup() {
               <BookIcon />
             </button>
           )}
-          {problemView && patternSlug && (
-            <button
-              type="button"
-              className="panel-bar-icon"
-              aria-label={text.patterns.title}
-              title={text.patterns.title}
-              onClick={() => setView("patterns")}
-            >
-              <LadderIcon />
-            </button>
-          )}
           {problemView && headerProblem && (
             <a
               href={`${settings.apiBaseUrl}/problems/${headerProblem.problem.id}`}
@@ -1371,7 +1280,7 @@ export function Popup() {
               <ExternalIcon />
             </a>
           )}
-          {!showSettings && !showToday && !showDocs && !showPatterns && (
+          {!showSettings && !showToday && !showDocs && (
             <button
               type="button"
               className="panel-bar-icon"
@@ -1414,10 +1323,6 @@ export function Popup() {
           <div className="content-card">
             <DocsPanel settings={settings} problemId={headerProblem!.problem.id} revision={docsRevision} copy={text.docs} />
           </div>
-        ) : showPatterns ? (
-          <div className="content-card">
-            <PatternsPanel key={patternSlug} settings={settings} slug={patternSlug!} copy={text.patterns} />
-          </div>
         ) : showToday ? (
           <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} />
         ) : (
@@ -1453,7 +1358,6 @@ export function Popup() {
           ratingPanel={ratingPanel}
           onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
           onProblemChanged={() => void detect({ force: true })}
-          onSuggestion={offerSuggestion}
         />
       )}
     </div>
@@ -1505,15 +1409,6 @@ function GearIcon() {
         strokeWidth="1.5"
         strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-/** Rungs of a ladder: the pattern's problems, easiest first. */
-function LadderIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M4.5 2v12M11.5 2v12M4.5 5h7M4.5 8h7M4.5 11h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1817,7 +1712,7 @@ function QuickRate({
   problemId: string;
   previews: Previews;
   settings: ExtSettings;
-  onRated: (suggestion: PatternSuggestionDto | null) => void;
+  onRated: () => void;
 }) {
   const t = getExtText(settings);
   const [rating, setRating] = useState<FsrsRating>(3);
@@ -1837,16 +1732,15 @@ function QuickRate({
       });
       if (res.status === 409) {
         setError(t.review.alreadyRated);
-        onRated(null);
+        onRated();
         return;
       }
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
-      const body = (await res.json().catch(() => null)) as Partial<ReviewRateResponseDto> | null;
       requestIdRef.current = null;
-      onRated(body?.suggestion ?? null);
+      onRated();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.review.rateFailed);
     } finally {

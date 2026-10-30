@@ -133,24 +133,6 @@ export function nextInPattern(
     .map(({ step }) => step);
 }
 
-/**
- * After a problem is remembered: one new problem that needs the same
- * technique. Patterns are tried in list order; "Other" sections and muted
- * patterns are skipped.
- */
-export function suggestSamePattern(
-  slug: string,
-  done: (slug: string) => boolean,
-  muted: ReadonlySet<string> = new Set(),
-): { topic: PatternTopic; pattern: Pattern; next: PatternStep } | null {
-  for (const { topic, pattern } of patternsForSlug(slug)) {
-    if (isMiscPattern(pattern) || muted.has(pattern.key)) continue;
-    const [next] = nextInPattern(pattern, (other) => other === slug || done(other));
-    if (next) return { topic, pattern, next };
-  }
-  return null;
-}
-
 /* ── His lists as profile study plans ── */
 
 export const PATTERN_PLAN_PREFIX = "ling:";

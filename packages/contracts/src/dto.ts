@@ -221,9 +221,6 @@ export type ReviewRateResponseDto = {
   idempotentReplay: boolean;
   nextDue: string | null;
   queue: QueueStatsDto;
-  /** A new problem with the same technique, offered once a problem is
-   *  remembered (older servers omit it). */
-  suggestion?: PatternSuggestionDto | null;
 };
 
 /** A name in both languages the app speaks. Pattern names come from
@@ -251,18 +248,11 @@ export type PatternRefDto = {
   topic: { key: string; name: LocalizedNameDto; sourceUrl: string };
 };
 
-export type PatternSuggestionDto = {
-  pattern: PatternRefDto;
-  problem: PatternStepDto;
-};
-
 export type ProblemPatternDto = PatternRefDto & {
   done: number;
   total: number;
   /** "Other" sections, where problems share no technique. */
   misc: boolean;
-  /** The user turned off suggestions from this pattern. */
-  muted: boolean;
   /** Every problem in ladder order (core, advanced, extension). */
   steps: PatternStepDto[];
 };
