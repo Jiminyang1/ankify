@@ -499,7 +499,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
 
     start_practice: tool({
       description:
-        "Start a talk-through practice session on a saved problem. The server picks the questions (how they'd solve it and its cost, then this problem's weak spots) and checks each answer; you get an instruction for every reply and only phrase it. Call when the user asks to practice, review, or be quizzed.",
+        "Start a talk-through practice session on a saved problem. The server picks the questions (which technique and what in the statement points to it, how they'd solve it and its cost, then this problem's weak spots) and checks each answer; you get an instruction for every reply and only phrase it. Call when the user asks to practice, review, or be quizzed.",
       inputSchema: z.object({ problemId: problemIdInput }),
       execute: async ({ problemId: requestedId }) => {
         const target = await resolveProblem(requestedId);

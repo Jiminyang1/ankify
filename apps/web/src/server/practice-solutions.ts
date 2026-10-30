@@ -1,7 +1,8 @@
 import { generateText, NoObjectGeneratedError, Output, type LanguageModel } from "ai";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { leetcodeTagName, parseSolutions, serializeSolutions, type SolutionApproach } from "@ankify/core";
+import { isSignalPoint, leetcodeTagName, parseSolutions, serializeSolutions, type SolutionApproach } from "@ankify/core";
+import { isMiscPattern, patternsForSlug } from "@ankify/core/patterns";
 import { getDb, schema } from "@ankify/db";
 import { clip, plainText } from "@/server/ai-generation/practice-check";
 import { aiCallOptions } from "@/server/ai/call-options";
@@ -14,6 +15,10 @@ import { getGenerationSettings, type AiRuntimeSettings } from "@/server/settings
  * from the user's Accepted code, their Notes, and the problem, and saved
  * directly because the judge needs it for the first answer. After that it's
  * the user's: they read and edit it behind the book icon.
+ *
+ * Each approach is named for its technique and starts with its signal (what
+ * in the statement points to that technique), since the review's first
+ * question is "which technique, and what tells you?" (docs/product-main-line.md).
  */
 
 /** Per attempt. At "low" thinking a doc takes 15-35 s; "high" took over a minute. */
@@ -30,6 +35,7 @@ const solutionsSchema = z.object({
       z.object({
         name: z.string().min(1).max(80),
         mine: z.boolean(),
+        signal: z.string().min(1).max(300),
         points: z.array(z.string().min(1).max(400)).min(1).max(10),
         complexity: z.string().min(1).max(200),
       }),
@@ -54,6 +60,7 @@ export async function ensureSolutionsDoc(args: {
   const [problem] = await db
     .select({
       title: schema.problems.title,
+      slug: schema.problems.leetcodeSlug,
       difficulty: schema.problems.difficulty,
       descriptionMd: schema.problems.descriptionMd,
       topicTags: schema.problems.topicTags,
@@ -82,21 +89,23 @@ export async function ensureSolutionsDoc(args: {
       .limit(2),
     getGenerationSettings(args.userId),
   ]);
+  const language = generation.language === "zh" ? "zh" : "en";
   const approaches = await generateSolutions({
     model: args.model,
     settings: args.settings,
     abortSignal: args.abortSignal,
-    language: generation.language === "zh" ? "zh" : "en",
+    language,
     problem: {
       title: problem.title,
       difficulty: problem.difficulty,
       statement: plainText(problem.descriptionMd),
       tags: problem.topicTags.map(leetcodeTagName),
+      techniques: catalogTechniques(problem.slug, language),
       notes: problem.notes,
     },
     accepted,
   });
-  const markdown = serializeSolutions(approaches, generation.language === "zh" ? "zh" : "en");
+  const markdown = serializeSolutions(approaches, language);
   const updated = await db
     .update(schema.problems)
     .set({ solutionsMd: markdown, solutionsVersion: problem.solutionsVersion + 1, updatedAt: new Date() })
@@ -120,21 +129,51 @@ export async function ensureSolutionsDoc(args: {
   return parseSolutions(markdown).approaches;
 }
 
+/** The techniques 灵茶山艾府's catalog files a problem under, named in the
+ *  doc's language (his "Other …" leftovers name no technique). Hints for the
+ *  writer, not headings. */
+export function catalogTechniques(slug: string, language: "en" | "zh"): string[] {
+  const names = patternsForSlug(slug)
+    .filter(({ pattern }) => !isMiscPattern(pattern))
+    .map(({ topic, pattern }) =>
+      language === "zh"
+        ? `${pattern.zh.split(" / ").at(-1) ?? pattern.zh}（${topic.zh}）`
+        : `${pattern.en} (${topic.en})`,
+    );
+  return [...new Set(names)];
+}
+
 /** Writes the approaches for one problem (no saving). */
 export async function generateSolutions(args: {
   model: LanguageModel;
   settings: AiRuntimeSettings;
   abortSignal?: AbortSignal;
   language: "en" | "zh";
-  problem: { title: string; difficulty: string; statement: string; tags: string[]; notes: string | null };
+  problem: {
+    title: string;
+    difficulty: string;
+    statement: string;
+    tags: string[];
+    /** From catalogTechniques(); may be empty. */
+    techniques?: string[];
+    notes: string | null;
+  };
   accepted: { code: string; language: string }[];
-}): Promise<{ name: string; mine: boolean; points: string[]; complexity: string }[]> {
+}): Promise<{ name: string; mine: boolean; signal: string; points: string[]; complexity: string }[]> {
   const { problem, accepted } = args;
   const language = args.language === "zh" ? "Simplified Chinese" : "English";
+  const techniques = problem.techniques ?? [];
 
   const prompt = [
     `# Problem: ${problem.title} (${problem.difficulty})`,
     `Topics: ${problem.tags.join(", ") || "none"}`,
+    ...(techniques.length
+      ? [
+          "",
+          "## Techniques a problem catalog files it under (hints, not headings)",
+          ...techniques.map((technique) => `- ${technique}`),
+        ]
+      : []),
     "",
     "## Statement",
     clip(problem.statement, STATEMENT_MAX) || "(not captured; use what you know about this LeetCode problem)",
@@ -159,20 +198,21 @@ export async function generateSolutions(args: {
       const { output } = await generateText({
         model: args.model,
         output: Output.object({ schema: solutionsSchema }),
-        system: `You write the reference a learner's spoken review of one LeetCode problem is checked against. The learner will explain, in their own words, how they'd solve it, and each key point you write is checked as said or not said. A point that's too specific fails learners who clearly know the solution.
+        system: `You write the reference a learner's spoken review of one LeetCode problem is checked against. The learner will say which technique the problem calls for and what in the statement points to it, then explain, in their own words, how they'd solve it; each point you write is checked as said or not said. A point that's too specific fails learners who clearly know the solution.
 
 Return one JSON object of this shape and nothing else:
-{"approaches": [{"name": "...", "mine": true, "points": ["...", "..."], "complexity": "..."}]}
+{"approaches": [{"name": "...", "mine": true, "signal": "...", "points": ["...", "..."], "complexity": "..."}]}
 
 - First approach: the one in the learner's Accepted code (mine: true). If they have no Accepted submission, mine is false everywhere.
 - Then at most 2 genuinely different approaches that pass the constraints. Variants of one algorithm that differ only in details (boundary conventions, iterative vs recursive, a library container) are the same approach: don't list them separately. Leave out brute force that would time out. One approach is fine.
-- name: 2 to 5 words, e.g. "Two pointers", "Bottom-up DP".
-- points: 2 to 4 per approach (5 only for a genuinely intricate one), each one idea in one plain sentence:
+- name: the technique, 2 to 6 words, the way people usually call it, e.g. "Variable-size sliding window", "Bottom-up DP", "One-pass hash map". If the prompt lists techniques from a catalog, use them as hints for naming an approach that uses one, in your own words; they aren't headings to copy, and an approach that fits none of them is fine.
+- signal: what in the problem statement points to this technique, as one short phrase of 1 to 3 features a reader should notice, e.g. "contiguous subarray, all values positive, sum ≥ target". Only features of the statement (the input and its constraints, what's asked), never the technique's name or the algorithm's steps. If one feature is what makes this technique work rather than a similar one, include it (all values positive is what lets a window shrink safely). Don't add a label like "Signal:".
+- points: 2 to 4 per approach (5 only for a genuinely intricate one), each one idea in one plain sentence, not repeating the signal:
   1. The first point is the core idea, the thing that makes the approach work, the way someone would say it out loud ("compare with the middle element and throw away the half that can't hold the target").
   2. Then what is tracked or defined, the order or transition, and the one case that's easy to get wrong, if there is one.
   Say ideas, not syntax: no code expressions or exact loop conditions unless that specific formula is itself the insight. Leave out what any working solution does anyway (returning the result or -1, output order, inputs the problem guarantees, naming), details of one programming language (falsy checks, integer types, library calls), and implementation advice (recursion depth, sentinel nodes): those belong in Notes. Someone who explains the approach well should naturally say every point.
 - complexity: time and space, e.g. "O(n) time, O(1) space".
-- Write names and points in ${language}. Keep code identifiers and complexity notation as they are.`,
+- Write names, signals, and points in ${language}. Keep code identifiers and complexity notation as they are.`,
         prompt,
         // Capped at "low": quality holds up, and it fits within the turn.
         ...aiCallOptions(args.settings, "capped"),
@@ -196,7 +236,9 @@ Return one JSON object of this shape and nothing else:
 
   return output.approaches.slice(0, MAX_APPROACHES).map((approach, index) => ({
     ...approach,
-    points: approach.points.slice(0, MAX_POINTS),
+    // The signal goes first (serializeSolutions labels it); one repeated
+    // among the points would be checked twice.
+    points: approach.points.filter((point) => !isSignalPoint(point)).slice(0, MAX_POINTS),
     // Only the first can be theirs, and only with an Accepted submission.
     mine: approach.mine && index === 0 && accepted.length > 0,
   }));

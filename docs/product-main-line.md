@@ -1,7 +1,7 @@
 # The main line (product)
 
 Status: proposed 2026-10-29; step 1 (pull back) built the same day; step 2 (plan
-first) built 2026-10-30. Decided with Jimin: study plans are the spine of the
+first) and step 3 (recognize the pattern) built 2026-10-30. Decided with Jimin: study plans are the spine of the
 product, and what a review checks is whether the user recognizes the pattern,
 not whether they memorized one problem. The rest of this doc is the proposal
 built on those two decisions.
@@ -127,6 +127,12 @@ How it fits practice v3 ([coach-practice.md](./coach-practice.md)):
 - `pnpm eval:judge` needs new labeled cases: a correct signal, a technique
   named with no signal, a wrong technique, and a technique named only after
   a hint.
+
+Built 2026-10-30 as described; the details are in
+[coach-practice.md](./coach-practice.md) (the Solutions doc, Questions, and
+Checking the judge). In a Chinese doc the label is `题眼：`. Docs written
+before the signal keep working without one: the question still asks for the
+technique, but only a signal the user adds is checked.
 
 ## Data we already have
 

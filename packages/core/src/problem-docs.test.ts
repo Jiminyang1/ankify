@@ -4,6 +4,7 @@ import {
   applyCardsEdit,
   applyNotesEdit,
   cardKey,
+  isSignalPoint,
   notesSections,
   parseCards,
   parseSolutions,
@@ -174,5 +175,38 @@ describe("Solutions doc", () => {
     expect(markdown.startsWith("## lo/hi range (mine)\n- lo/hi track")).toBe(true);
     expect(parseSolutions(markdown).approaches).toEqual(approaches);
     expect(serializeSolutions(approaches.slice(2), "zh")).toBe("## 栈 (我的)\n- 两个栈分别存 ( 和 * 的下标\n复杂度: O(n)\n");
+  });
+
+  it("writes the signal as the first point, labeled in the doc's language", () => {
+    const approach = {
+      name: "Variable-size sliding window",
+      mine: true,
+      signal: "contiguous subarray, all values positive, sum ≥ target",
+      points: ["Shrink from the left while the sum still meets the target"],
+      complexity: "O(n) time, O(1) space",
+    };
+    const markdown = serializeSolutions([approach]);
+    expect(markdown).toBe(
+      "## Variable-size sliding window (mine)\n- Signal: contiguous subarray, all values positive, sum ≥ target\n- Shrink from the left while the sum still meets the target\nComplexity: O(n) time, O(1) space\n",
+    );
+    // Parsing needs nothing new: the signal is the approach's first point.
+    expect(parseSolutions(markdown).approaches[0]!.points).toEqual([
+      "Signal: contiguous subarray, all values positive, sum ≥ target",
+      "Shrink from the left while the sum still meets the target",
+    ]);
+    // A label the model already wrote isn't doubled; zh gets its own label.
+    expect(serializeSolutions([{ ...approach, signal: "信号：连续子数组，元素全为正" }], "zh")).toContain(
+      "\n- 题眼：连续子数组，元素全为正\n",
+    );
+    expect(serializeSolutions([{ ...approach, signal: "  " }])).not.toContain("Signal");
+  });
+
+  it("recognizes a signal point in either language", () => {
+    expect(isSignalPoint("Signal: contiguous subarray")).toBe(true);
+    expect(isSignalPoint(" signal：sorted input")).toBe(true);
+    expect(isSignalPoint("题眼：连续子数组")).toBe(true);
+    expect(isSignalPoint("信号: 有序数组")).toBe(true);
+    expect(isSignalPoint("The signal is lost when the window shrinks")).toBe(false);
+    expect(isSignalPoint("Complexity: O(n) time")).toBe(false);
   });
 });

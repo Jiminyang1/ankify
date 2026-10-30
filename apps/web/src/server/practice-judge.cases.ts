@@ -180,6 +180,81 @@ const twoSum = (log: TalkLogEntry[]): JudgeInput => ({
   log,
 });
 
+/* ── 209. Minimum Size Subarray Sum: a doc with signal points (docs/product-main-line.md, step 3) ── */
+
+const SIGNAL_ASK =
+  "Which technique does this problem call for, and what in the statement tells you? Then how would you solve it, and what does it cost in time and space?";
+const signalQuestion =
+  "Which technique the learner would use and what in the problem statement points to it, then how they would solve the problem and what it costs in time and space.";
+
+const MSA = {
+  title: "Minimum Size Subarray Sum",
+  difficulty: "Medium",
+  statement:
+    "Given an array of positive integers nums and a positive integer target, return the minimal length of a subarray whose sum is greater than or equal to target. If there is no such subarray, return 0 instead. 1 <= target <= 10^9, 1 <= nums.length <= 10^5, 1 <= nums[i] <= 10^4.",
+};
+const MSA_REF: TalkReference = {
+  mode: "key_points",
+  approaches: [
+    {
+      id: "a1",
+      name: "Variable-size sliding window",
+      mine: true,
+      points: [
+        { id: "p1", text: "Signal: contiguous subarray, all values positive, shortest one with sum ≥ target" },
+        {
+          id: "p2",
+          text: "Because every value is positive, growing the window only raises the sum and shrinking only lowers it, so the left end never moves back",
+        },
+        { id: "p3", text: "Extend the right end each step; while the sum still meets the target, record the length and shrink from the left" },
+        { id: "p4", text: "Complexity: O(n) time, O(1) space" },
+      ],
+    },
+    {
+      id: "a2",
+      name: "Prefix sums with binary search",
+      mine: false,
+      points: [
+        { id: "p1", text: "Signal: subarray sums with all values positive, so prefix sums strictly increase" },
+        { id: "p2", text: "For each start, binary search the first prefix sum that is at least the start's prefix sum plus target" },
+        { id: "p3", text: "Complexity: O(n log n) time, O(n) space" },
+      ],
+    },
+  ],
+};
+const MSA_REF_ZH: TalkReference = {
+  mode: "key_points",
+  approaches: [
+    {
+      id: "a1",
+      name: "不定长滑动窗口",
+      mine: true,
+      points: [
+        { id: "p1", text: "题眼：连续子数组，元素全为正，求和 ≥ target 的最短长度" },
+        { id: "p2", text: "元素全为正，窗口变长和只增、变短和只减，所以左端点不必回退" },
+        { id: "p3", text: "右端点每步右移；和仍满足条件时记录长度并收缩左端点" },
+        { id: "p4", text: "Complexity: O(n) time, O(1) space" },
+      ],
+    },
+    {
+      id: "a2",
+      name: "前缀和 + 二分",
+      mine: false,
+      points: [
+        { id: "p1", text: "题眼：子数组和，元素全为正，所以前缀和严格递增" },
+        { id: "p2", text: "对每个起点，二分查找第一个不小于该起点前缀和加 target 的前缀和" },
+        { id: "p3", text: "Complexity: O(n log n) time, O(n) space" },
+      ],
+    },
+  ],
+};
+const msa = (log: TalkLogEntry[], reference = MSA_REF): JudgeInput => ({
+  problem: MSA,
+  question: signalQuestion,
+  reference,
+  log,
+});
+
 export const JUDGE_CASES: JudgeCase[] = [
   {
     id: "vps-complete",
@@ -485,5 +560,131 @@ export const JUDGE_CASES: JudgeCase[] = [
       ),
     ]),
     expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p1", "p2", "p3"], misconception: true },
+  },
+
+  /* Signal points: the technique and what in the statement points to it. */
+  {
+    id: "msa-signal-complete",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Variable-size sliding window. It asks for the shortest contiguous subarray, and every number is positive, so adding an element only increases the sum and removing one only decreases it, which means the left end never has to move back. I extend the right end, and while the sum is at least target I record the length and drop from the left. O(n) time, O(1) space.",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p1", "p2", "p3", "p4"], misconception: false },
+  },
+  {
+    id: "msa-signal-partial-cue",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Sliding window, because it asks for the shortest contiguous subarray whose sum reaches target. Grow the right end, and while the sum is at least target, record the length and shrink from the left. O(n) time, O(1) space.",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p1", "p3", "p4"], misconception: false },
+  },
+  {
+    id: "msa-signal-only",
+    input: msa([tutor(SIGNAL_ASK), learner("A sliding window: it wants a contiguous subarray, and all the numbers are positive.")]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: ["known", "unclear"], covered: ["p1"], misconception: false },
+  },
+  {
+    id: "msa-technique-no-signal",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Sliding window. Move the right end forward adding to the sum; while the sum is at least target, record the length and move the left end forward. O(n) time and O(1) space.",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p3", "p4"], misconception: false },
+  },
+  {
+    id: "msa-technique-only",
+    input: msa([tutor(SIGNAL_ASK), learner("It's a sliding window problem.")]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: ["known", "unclear"], covered: [], misconception: false },
+  },
+  {
+    id: "msa-generic-reason",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Sliding window, since the input is an array. Expand right, shrink left while the sum is at least target, and keep the minimum length. O(n) time, O(1) space.",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p3", "p4"], misconception: false },
+  },
+  {
+    id: "msa-wrong-technique",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Greedy: sort the numbers from largest to smallest and take them until the sum reaches target, since we want as few elements as possible.",
+      ),
+    ]),
+    expected: { reply: "answer", approachStatus: "invalid", covered: [], misconception: true },
+  },
+  {
+    // The gap was named without its content (help 1): the judge still ticks
+    // the signal; advanceTalk caps the grade at partial.
+    id: "msa-signal-after-gap",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Sliding window: expand right, and while the sum is at least target, record the length and shrink from the left. O(n) time, O(1) space.",
+        0,
+      ),
+      tutor("Anything else?"),
+      learner("No, I think that's it.", 0),
+      tutor("What in the problem made you think of a sliding window?"),
+      learner("It asks for a contiguous subarray, and all the numbers are positive, so the sum only grows as the window grows.", 1),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p1", "p3", "p4"], maybe: ["p2"], misconception: false },
+  },
+  {
+    // Said only after a hint with content (help 2). Whether the judge credits
+    // the signal here or not, the grade is missed: advanceTalk settles any
+    // question with help 2 as missed (practice-talk.test.ts). So p1 is a
+    // "maybe"; the help-1 case above is the one where the tick decides.
+    id: "msa-signal-after-hint",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner("Sliding window, expand right and shrink left while the sum is at least target, tracking the min length. O(n), O(1).", 0),
+      tutor("What in the problem made you think of a sliding window?"),
+      learner("I just remember it's a window problem.", 1),
+      tutor("Look at the constraints on the values in nums. What do you notice, and why might that matter for a contiguous window?"),
+      learner("They're all positive, so adding to the window only increases the sum. That's why a window works for the shortest subarray.", 2),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p3", "p4"], maybe: ["p1", "p2"], misconception: false },
+  },
+  {
+    id: "msa-prefix-binary",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "Binary search on prefix sums: since all values are positive the prefix sums strictly increase, so for each start i I binary search the first j where prefix[j] - prefix[i] >= target. O(n log n) time, O(n) space.",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a2", approachStatus: "known", covered: ["p1", "p2", "p3"], misconception: false },
+  },
+  {
+    id: "msa-zh-signal",
+    input: msa([
+      tutor(SIGNAL_ASK),
+      learner(
+        "这是不定长滑动窗口：题目要求和 ≥ target 的最短连续子数组，而且元素都是正数，窗口变长和只会变大、变短只会变小，所以左端点不用回退。右端点每次右移，和满足条件时记录长度并收缩左端点。时间 O(n)，空间 O(1)。",
+      ),
+    ]),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p1", "p2", "p3", "p4"], misconception: false },
+  },
+  {
+    id: "msa-zh-doc-no-signal",
+    input: msa(
+      [
+        tutor("这道题用什么方法？题目里的哪些条件让你想到它？你会怎么解，时间和空间复杂度是多少？"),
+        learner("滑动窗口。右端点往右扩，和大于等于 target 时更新最短长度并把左端点右移。时间 O(n)，空间 O(1)。"),
+      ],
+      MSA_REF_ZH,
+    ),
+    expected: { reply: "answer", approachId: "a1", approachStatus: "known", covered: ["p3", "p4"], misconception: false },
   },
 ];

@@ -6,9 +6,11 @@
  *   stay small.
  * - Cards: each `##` heading is a prompt; the text under it, up to the next
  *   `##`, is the answer. Text before the first heading is ignored.
- * - Solutions: each `##` heading is an approach, its key points are the
- *   top-level bullets, and a `Complexity:` line gives its cost. Practice is
- *   judged against it (version 3).
+ * - Solutions: each `##` heading is an approach (named for its technique),
+ *   its key points are the top-level bullets, the first of them usually its
+ *   signal (`- Signal: ...`, what in the statement points to the technique),
+ *   and a `Complexity:` line gives its cost. Practice is judged against it
+ *   (version 3).
  *
  * Pure functions, shared by the server, the extension, and the web app.
  */
@@ -256,6 +258,15 @@ const MINE = /\s*[(（]\s*(?:mine|my ac|我的)\s*[)）]\s*$/i;
 const BULLET = /^ {0,1}[-*+]\s+(.*)$/;
 const CONTINUATION = /^\s{2,}\S/;
 const COMPLEXITY = /^(?:complexity|复杂度)\s*[:：]\s*(.+)$/i;
+const SIGNAL = /^(?:signal|题眼|信号)\s*[:：]\s*/i;
+
+/** The signal point: what in the problem statement points to the approach's
+ *  technique ("Signal: contiguous subarray, all values positive"). It's an
+ *  ordinary point, written first; practice asks for it first, and the judge
+ *  needs the technique named together with it. */
+export function isSignalPoint(point: string): boolean {
+  return SIGNAL.test(point.trim());
+}
 
 export function parseSolutions(markdown: string | null | undefined): {
   approaches: SolutionApproach[];
@@ -305,20 +316,26 @@ export function parseSolutions(markdown: string | null | undefined): {
   return { approaches, issues };
 }
 
+/** `signal`, when given, is written as the first point with its label. */
 export function serializeSolutions(
-  approaches: { name: string; mine: boolean; points: string[]; complexity: string | null }[],
+  approaches: { name: string; mine: boolean; signal?: string | null; points: string[]; complexity: string | null }[],
   language: "en" | "zh" = "en",
 ): string {
   const mineLabel = language === "zh" ? "(我的)" : "(mine)";
   const complexityLabel = language === "zh" ? "复杂度" : "Complexity";
+  const signalLabel = language === "zh" ? "题眼：" : "Signal: ";
   return joinH2({
     preamble: [],
-    blocks: approaches.map((approach) => ({
-      heading: `${cleanPrompt(approach.name)}${approach.mine ? ` ${mineLabel}` : ""}`,
-      body: [
-        ...approach.points.map((point) => `- ${cleanPrompt(point)}`),
-        ...(approach.complexity ? [`${complexityLabel}: ${cleanPrompt(approach.complexity)}`] : []),
-      ],
-    })),
+    blocks: approaches.map((approach) => {
+      const signal = cleanPrompt(approach.signal ?? "").replace(SIGNAL, "");
+      return {
+        heading: `${cleanPrompt(approach.name)}${approach.mine ? ` ${mineLabel}` : ""}`,
+        body: [
+          ...(signal ? [`- ${signalLabel}${signal}`] : []),
+          ...approach.points.map((point) => `- ${cleanPrompt(point)}`),
+          ...(approach.complexity ? [`${complexityLabel}: ${cleanPrompt(approach.complexity)}`] : []),
+        ],
+      };
+    }),
   });
 }
