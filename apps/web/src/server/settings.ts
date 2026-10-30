@@ -178,7 +178,7 @@ async function readReviewSettings(userId: string): Promise<ReviewSettings> {
   };
 }
 
-/** Memoized per request — the queue status and the analysis page both read it.
+/** Memoized per request — the queue status and a rating's suggestion both read it.
  *  Writers use readReviewSettings() so they always merge against fresh state. */
 export const getReviewSettings = cache(readReviewSettings);
 

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { ChevronUp, X } from "lucide-react";
-import type { PracticeSessionDto, ReviewRateResponseDto } from "@ankify/contracts";
+import type { PracticeSessionDto, ReviewRateResponseDto, TechniqueSuggestionDto } from "@ankify/contracts";
 import type { FsrsRating } from "@ankify/core";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/ui/markdown";
 import { Spinner } from "@/components/ui/spinner";
+import { EasierProblem } from "@/components/technique-suggestion";
 import { weaknessCategoryName } from "@/lib/weakness-names";
 import { notifyPracticeUpdated } from "@/lib/agent-events";
 import { notifyReviewQueueUpdated } from "@/lib/review-queue-event";
@@ -53,6 +54,7 @@ export function PracticeTray({
   const [error, setError] = useState<string | null>(null);
   const [rating, setRating] = useState<FsrsRating | null>(session.suggestedRating);
   const [rated, setRated] = useState<FsrsRating | null>(null);
+  const [easier, setEasier] = useState<TechniqueSuggestionDto | null>(null);
   const completed = session.status === "completed";
   const ratingLabels = [t.rating.again, t.rating.hard, t.rating.good, t.rating.easy];
 
@@ -112,6 +114,7 @@ export function PracticeTray({
       if (!res.ok) throw new Error(t.practice.actionFailed);
       const body = (await res.json().catch(() => null)) as Partial<ReviewRateResponseDto> | null;
       setRated(rating);
+      setEasier(body?.easier ?? null);
       notifyReviewQueueUpdated(body?.queue?.dueCount);
     } catch (rateError) {
       setError(rateError instanceof Error ? rateError.message : t.practice.actionFailed);
@@ -294,7 +297,10 @@ export function PracticeTray({
               {!showRating ? (
                 <p className="text-[11px] text-muted">{t.practice.rateOnLeft}</p>
               ) : rated ? (
-                <p className="text-[11px] text-muted">{t.practice.rated(ratingLabels[rated - 1]!)}</p>
+                <>
+                  <p className="text-[11px] text-muted">{t.practice.rated(ratingLabels[rated - 1]!)}</p>
+                  {easier && <EasierProblem suggestion={easier} compact className="border-t border-border pt-3" />}
+                </>
               ) : (
                 <div className="flex items-stretch gap-1.5" role="radiogroup" aria-label={t.practice.rate}>
                   {([1, 2, 3, 4] as const).map((value) => (

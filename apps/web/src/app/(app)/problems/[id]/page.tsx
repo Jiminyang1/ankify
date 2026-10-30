@@ -17,6 +17,7 @@ import { WeakSpots } from "@/components/weak-spots";
 import { ArchiveProblemButton } from "./archive-problem-button";
 import { DeleteProblemButton } from "./delete-problem-button";
 import { loadProblemDetail } from "@/server/problem-detail";
+import { loadProblemChapter } from "@/server/patterns";
 
 const RATING_TONES: Record<number, "danger" | "warning" | "success" | "accent" | "neutral"> = { 1: "danger", 2: "warning", 3: "success", 4: "accent" };
 
@@ -41,6 +42,9 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
   const detail = await loadProblemDetail(user.id, id);
   if (!detail) notFound();
   const { problem, submissions, docs, weaknesses, reviewHistory } = detail;
+  const place = await loadProblemChapter(user.id, problem.leetcodeSlug, language);
+  // One credit link per list the techniques come from.
+  const techniqueTopics = [...new Map(place.techniques.map((technique) => [technique.topic.key, technique.topic])).values()];
   const activeWeaknesses = weaknesses.filter((weakness) => weakness.status === "active").length;
 
   const isDue = !problem.fsrsDue || new Date(problem.fsrsDue).getTime() <= currentTimeMs();
@@ -119,6 +123,46 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
                   <span key={t}>#{leetcodeTagName(t)}</span>
                 ))}
               </div>
+            )}
+            {(place.chapter || place.techniques.length > 0) && (
+              <dl className="mt-3 space-y-2 border-t border-border pt-3 text-xs">
+                {place.chapter && (
+                  <div>
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">{t.detail.chapter}</dt>
+                    <dd className="mt-0.5">
+                      <Link
+                        href={`/profile?chapter=${encodeURIComponent(place.chapter.name)}`}
+                        title={t.detail.chapterLink(place.chapter.name)}
+                        className="text-fg hover:text-accent hover:underline"
+                      >
+                        <span className="text-muted">{place.chapter.plan.name} · </span>
+                        {place.chapter.name}
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+                {place.techniques.length > 0 && (
+                  <div>
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-muted">{t.detail.techniques}</dt>
+                    <dd className="mt-1 flex flex-wrap gap-1">
+                      {place.techniques.map((technique) => (
+                        <Pill key={technique.key}>{technique.name[language]}</Pill>
+                      ))}
+                    </dd>
+                    <dd className="mt-1.5 text-[11px] text-muted">
+                      {t.detail.techniquesCredit}{" "}
+                      {techniqueTopics.map((topic, index) => (
+                        <span key={topic.key}>
+                          {index > 0 && ", "}
+                          <a href={topic.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                            {topic.name[language]}
+                          </a>
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             )}
             <a
               href={problem.url}

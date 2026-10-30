@@ -10,6 +10,7 @@ import type {
   AgentModelChoice,
   CoachModelsDto,
   DocEdit,
+  TechniqueSuggestionDto,
   LegacyCardEdit,
 } from "@ankify/contracts";
 import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
@@ -89,8 +90,9 @@ export function CoachTab({
   expanded,
   onExpandedChange,
   ratingPanel,
+  aboveComposer,
   onDocsChanged,
-  onProblemChanged,
+  onRated,
 }: {
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
@@ -102,10 +104,13 @@ export function CoachTab({
   onExpandedChange: (expanded: boolean) => void;
   /** Rating buttons for a due problem reviewed another way (like re-solving). */
   ratingPanel: ReactNode;
+  /** Shown above the composer while set (the easier problem after Again). */
+  aboveComposer?: ReactNode;
   /** A doc-edit proposal was applied: the Docs view should reload. */
   onDocsChanged: () => void;
-  /** The problem was rated from a practice summary. */
-  onProblemChanged: () => void;
+  /** The problem was rated from a practice summary; carries the easier
+   *  problem the server offers after Again, if any. */
+  onRated: (problemId: string, easier: TechniqueSuggestionDto | null) => void;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AgentSessionSnapshotDto | null>(null);
@@ -600,7 +605,7 @@ export function CoachTab({
       initial={initial}
       copy={copy.practice}
       onCompleted={practiceCompleted}
-      onRated={onProblemChanged}
+      onRated={(problemId, easier) => onRated(problemId, easier)}
       onAbandoned={(session) => setLocalPractice((current) => (current?.id === session.id ? null : current))}
       categoryName={categoryName}
     />
@@ -671,6 +676,7 @@ export function CoachTab({
         void send(draft);
       }}
     >
+      {aboveComposer}
       {showRating && canRate && <div className="coach-rating">{ratingPanel}</div>}
       {/* A talk-through rides on top of the composer: one line, open on click. */}
       {pinnedTalk && renderPractice(pinnedTalk.id, pinnedTalk, "tray")}

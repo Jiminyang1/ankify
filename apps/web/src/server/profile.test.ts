@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlanProblemStatus } from "@ankify/core";
-import { planNextFrom, type PlanItem } from "./profile";
+import { planNextFrom } from "./plan-next";
+import type { PlanItem } from "./profile";
 
 function item(slug: string, leetcodeId: number, status: PlanProblemStatus): PlanItem {
   return {
@@ -40,7 +41,29 @@ describe("planNextFrom", () => {
         chapter: { name: "Two Pointers", done: 1, total: 3 },
         problem: { slug: "is-subsequence", leetcodeId: 392, title: "is-subsequence", difficulty: "Medium" },
       },
+      // Two Pointers is already started, so this isn't the moment to go deeper.
+      finishedChapter: null,
     });
+  });
+
+  it("offers going deeper on the chapter just finished until the next one starts", () => {
+    const deeper = {
+      technique: {
+        key: "sliding-window/opposite-pointers",
+        name: { en: "Opposite pointers", zh: "相向双指针" },
+        topic: { key: "sliding-window", name: { en: "Sliding Window", zh: "滑动窗口" }, sourceUrl: "https://x/" },
+      },
+      problems: [],
+    };
+    const finished = { ...group("Two Pointers", [item("valid-palindrome", 125, "remembered")]), deeper };
+    const fresh = planNextFrom(plan, [finished, group("Sliding Window", [item("minimum-size-subarray-sum", 209, "todo")])]);
+    expect(fresh.finishedChapter).toEqual({ name: "Two Pointers", deeper });
+
+    const started = planNextFrom(plan, [
+      finished,
+      group("Sliding Window", [item("longest-substring", 3, "solved"), item("minimum-size-subarray-sum", 209, "todo")]),
+    ]);
+    expect(started.finishedChapter).toBeNull();
   });
 
   it("keeps a skipped problem in an earlier chapter next", () => {

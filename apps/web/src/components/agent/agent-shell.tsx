@@ -65,9 +65,6 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/problems")) {
       return { page: "problems", activePanel: "overview", problemId: null, contextLabel: t.nav.problems };
     }
-    if (pathname.startsWith("/analysis")) {
-      return { page: "analysis", activePanel: "overview", problemId: null, contextLabel: t.nav.analysis };
-    }
     if (pathname.startsWith("/profile")) {
       return { page: "profile", activePanel: "overview", problemId: null, contextLabel: t.nav.profile };
     }

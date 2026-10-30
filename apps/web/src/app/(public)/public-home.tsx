@@ -75,18 +75,6 @@ const COPY = {
         shot: "extension-panel",
         alt: "ankify Chrome side panel with a Coin Change quiz question, its explanation, and the rating bar",
       },
-      {
-        eyebrow: "Analysis",
-        title: "See which problems are about to slip.",
-        body: "The dashboard reads the same FSRS state that schedules your reviews: average recall, lapse rate, and a list of the problems you're most likely to forget next.",
-        points: [
-          "Retrievability and stability for every problem",
-          "Seven-day review forecast",
-          "30-day activity history",
-        ],
-        shot: "analysis",
-        alt: "Analysis dashboard showing memory score, lapse rate, and the needs-attention table",
-      },
     ] satisfies Showcase[],
     extras: [
       ["Keyboard-first", "Rate with 1–4, answer with A–D, flip cards with Space, submit with Enter."],
@@ -138,14 +126,6 @@ const COPY = {
         shot: "extension-panel",
         alt: "ankify Chrome 侧边栏：带解析的 Coin Change 测验题与评分栏",
       },
-      {
-        eyebrow: "分析",
-        title: "看清哪些题快要忘了。",
-        body: "仪表盘读取与排期相同的 FSRS 状态：平均记忆率、遗忘率，以及最可能遗忘的题目排序。",
-        points: ["每道题的可提取性与稳定性", "未来七天的复习负担", "近 30 天的复习记录"],
-        shot: "analysis",
-        alt: "分析仪表盘展示记忆率、遗忘率与需要关注的题目",
-      },
     ] satisfies Showcase[],
     extras: [
       ["键盘优先", "1–4 评分，A–D 作答，空格翻卡，Enter 提交。"],
@@ -166,7 +146,6 @@ const SHOT_SIZE = {
   "review-quiz": [2400, 1500],
   "coach-panel": [790, 1840],
   "extension-panel": [800, 1950],
-  analysis: [2400, 1333],
 } as const;
 
 type ShotName = keyof typeof SHOT_SIZE;

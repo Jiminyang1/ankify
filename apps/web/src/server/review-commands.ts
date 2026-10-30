@@ -10,6 +10,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { markFirstReview } from "./onboarding";
+import { suggestAfterForgetting } from "./patterns";
 import { getReviewQueueStatus } from "./review-queue";
 
 type RateReviewResult =
@@ -162,12 +163,21 @@ export async function rateProblemReview(
   });
 
   if (!result.ok) return result;
+  let easier: ReviewRateResponseDto["easier"] = null;
   if (!result.idempotentReplay) {
     await markFirstReview(userId).catch((error) => {
       console.warn("[onboarding] failed to record first review", error);
     });
+    // Forgot it: one easier problem with the same technique. A suggestion is
+    // extra; it never fails the rating.
+    if (input.rating === 1) {
+      easier = await suggestAfterForgetting(userId, input.problemId).catch((error) => {
+        console.warn("[patterns] failed to suggest after forgetting", error);
+        return null;
+      });
+    }
   }
-  return { ...result, queue: await getReviewQueueStatus(userId) };
+  return { ...result, easier, queue: await getReviewQueueStatus(userId) };
 }
 
 export async function undoLatestProblemReview(

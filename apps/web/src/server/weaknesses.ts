@@ -227,6 +227,37 @@ export async function addWeaknessCategory(
   return inserted.length ? "added" : "exists";
 }
 
+/** Every active weakness with its problem and category name, most often
+ *  seen first: the Plan page groups them by chapter. */
+export async function loadActiveWeaknesses(userId: string) {
+  const db = getDb();
+  const [rows, custom] = await Promise.all([
+    db
+      .select({
+        id: schema.weaknesses.id,
+        problemId: schema.weaknesses.problemId,
+        category: schema.weaknesses.category,
+        detail: schema.weaknesses.detail,
+        status: schema.weaknesses.status,
+        hitCount: schema.weaknesses.hitCount,
+        lastSeenAt: schema.weaknesses.lastSeenAt,
+        resolvedAt: schema.weaknesses.resolvedAt,
+        title: schema.problems.title,
+        slug: schema.problems.leetcodeSlug,
+      })
+      .from(schema.weaknesses)
+      .innerJoin(
+        schema.problems,
+        and(eq(schema.problems.id, schema.weaknesses.problemId), eq(schema.problems.userId, userId)),
+      )
+      .where(and(eq(schema.weaknesses.userId, userId), eq(schema.weaknesses.status, "active")))
+      .orderBy(desc(schema.weaknesses.hitCount), desc(schema.weaknesses.lastSeenAt)),
+    customCategories(userId),
+  ]);
+  const names = new Map(custom.map((category) => [category.key, category.name]));
+  return rows.map((row) => ({ ...row, categoryName: names.get(row.category) ?? null }));
+}
+
 /** Weaknesses across problems, ranked by category. */
 export async function loadWeaknessProfile(userId: string): Promise<WeaknessProfileDto> {
   const db = getDb();

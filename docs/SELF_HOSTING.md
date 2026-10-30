@@ -163,7 +163,7 @@ for the complete Preview-to-Production checklist.
 
 ```text
 apps/
-  web/          Next.js dashboard, API, review workspace, FSRS analysis
+  web/          Next.js app, API, review workspace, study-plan roadmap
   extension/    Chrome MV3 extension for LeetCode capture and quick review
 packages/
   db/           Drizzle schema, migrations, libSQL client, profile-aware loader
@@ -179,7 +179,7 @@ packages/
 - `weaknesses`, `weakness_categories`: recorded mistakes per problem and the user's own categories.
 - `agent_sessions`, `agent_runs`, `agent_messages`, `agent_steps`: Study Coach conversations.
 - `cards`, `quiz_sessions`, `ai_jobs`: legacy and unused (flashcard rows, review quizzes, and their generation jobs); kept, and card rows and quizzes are still in the data export.
-- `review_events`: append-only event log feeding the analysis dashboard.
+- `review_events`: append-only event log (review history, done-today counts, Undo).
 - `settings`: per-user key/value settings (encrypted AI keys, daily review limit).
 
 All user-owned business data carries `userId`. `problems.leetcodeSlug` and `leetcodeId` are unique per user, not globally.

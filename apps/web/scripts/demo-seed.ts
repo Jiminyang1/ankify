@@ -32,7 +32,7 @@ const DAY = 86_400_000;
 const now = new Date();
 const at = (daysFromNow: number) => new Date(now.getTime() + daysFromNow * DAY);
 
-// Deterministic PRNG so every reset produces the same charts.
+// Deterministic PRNG so every reset produces the same review history.
 let seed = 20260926;
 function rand() {
   seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
@@ -499,6 +499,66 @@ const problems: DemoProblem[] = [
     reps: 1,
     capturedDaysAgo: 0.3,
   },
+  // With it, Top Interview 150's 1D DP chapter is finished: its roadmap
+  // dialog shows "Go deeper".
+  {
+    slug: "climbing-stairs",
+    id: 70,
+    title: "Climbing Stairs",
+    difficulty: "Easy",
+    tags: ["Math", "Dynamic Programming", "Memoization"],
+    statement: "You climb 1 or 2 steps at a time. Count the distinct ways to reach step `n`.",
+    state: "review",
+    due: 21,
+    stability: 40,
+    difficultyScore: 2.2,
+    reps: 4,
+    lapses: 0,
+    capturedDaysAgo: 58,
+  },
+];
+
+/** Weak spots the Coach would have recorded, so the Plan page shows each
+ *  chapter's mistakes and "Your frequent mistakes". */
+const weakSpots: { slug: string; category: string; detail: string; hits: number; evidence?: string; daysAgo: number }[] = [
+  {
+    slug: "coin-change",
+    category: "approach_choice",
+    detail: "Took the largest coin first; greedy fails on coins [1, 3, 4] with amount 6.",
+    hits: 2,
+    evidence: "greedy-wa",
+    daysAgo: 1,
+  },
+  {
+    slug: "coin-change",
+    category: "efficiency",
+    detail: "Plain recursion recomputed the same amounts; it needs a table or memo.",
+    hits: 1,
+    evidence: "recursion-tle",
+    daysAgo: 1,
+  },
+  {
+    slug: "word-break",
+    category: "approach_choice",
+    detail: "Matched the longest word greedily instead of checking every split point.",
+    hits: 1,
+    daysAgo: 9,
+  },
+  {
+    slug: "house-robber",
+    category: "state_definition",
+    detail: 'Mixed up "robbed house i" with "best total up to house i" in dp[i].',
+    hits: 1,
+    daysAgo: 20,
+  },
+  {
+    slug: "longest-substring-without-repeating-characters",
+    category: "invariant",
+    detail: 'Moved left back to an older duplicate ("abba"); the window\'s left edge only moves right.',
+    hits: 2,
+    evidence: "wa",
+    daysAgo: 4,
+  },
 ];
 
 async function main() {
@@ -739,6 +799,22 @@ async function main() {
 
     await tx.insert(schema.problems).values(problemRows);
     await tx.insert(schema.submissions).values(submissionRows);
+    await tx.insert(schema.weaknesses).values(
+      weakSpots.map((spot, index) => ({
+        id: `demo-weakness-${index}`,
+        userId: QA_USER_ID,
+        problemId: `demo-${spot.slug}`,
+        category: spot.category,
+        detail: spot.detail,
+        evidenceJson: spot.evidence
+          ? [{ kind: "submission" as const, ref: `demo-submission-${spot.slug}-${spot.evidence}` }]
+          : [],
+        hitCount: spot.hits,
+        firstSeenAt: at(-spot.daysAgo - 3),
+        lastSeenAt: at(-spot.daysAgo),
+        updatedAt: at(-spot.daysAgo),
+      })),
+    );
     await tx.insert(schema.cards).values(cardRows);
     await writeCardDocs(tx, cardRows);
     for (let i = 0; i < eventRows.length; i += 100) {

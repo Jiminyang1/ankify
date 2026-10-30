@@ -5,11 +5,16 @@ import type {
   CaptureProblemInput,
   CaptureResultDto as CaptureResult,
   FsrsPreviewsDto as Previews,
+  PatternRefDto,
+  PatternStepDto,
   PlanNextDto as PlanNext,
+  ProblemChapterDto,
   ProblemDto as ApiProblem,
   ProblemLookupPayloadDto,
   QueueProblemDto as QueueProblem,
   ReviewQueuePayloadDto as QueueResponse,
+  ReviewRateResponseDto,
+  TechniqueSuggestionDto,
 } from "@ankify/contracts";
 import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
@@ -102,6 +107,16 @@ const EXT_I18N = {
       openRoadmap: "Open roadmap",
       planComplete: (plan: string, total: number) => `You've solved all ${total} problems in ${plan}.`,
       pickPlan: "Pick another plan",
+      finished: (chapter: string) => `You finished ${chapter}`,
+      finishedBody: (technique: string) =>
+        `Most of its problems use ${technique}. Go deeper with the next ones on its ladder, or start the next chapter.`,
+      focusTitle: (plan: string) => `Next: ${plan}`,
+      focusTopic: (topic: string, times: number) =>
+        `The problems you forget most in review use ${topic} (${times === 1 ? "once" : `${times} times`}). This plan works through it section by section.`,
+      focusChapter: (chapter: string, times: number) =>
+        `You forget ${chapter} problems most in review (${times === 1 ? "once" : `${times} times`}). This plan goes deeper on them.`,
+      switchPlan: "Switch to this plan",
+      switchFailed: "Couldn't switch plans. Try again.",
       sourceCredit: "Problems and order from 灵茶山艾府's problem lists, used with permission.",
       sourceLink: "Original list",
     },
@@ -120,6 +135,19 @@ const EXT_I18N = {
       upToDate: "Already up to date.",
       syncFailed: "Sync failed.",
       next: "next:",
+      chapter: "Chapter",
+      openChapter: (plan: string, chapter: string) => `${plan} · ${chapter}: open on your plan`,
+      techniques: "Technique",
+      techniquesCredit: "Techniques from 灵茶山艾府's problem lists",
+    },
+    technique: {
+      easierTitle: "Rebuild it on an easier one",
+      easierBody: (technique: string) => `You forgot this one. Same technique, a smaller step: ${technique}.`,
+      open: "Open on LeetCode",
+      close: "Close",
+      rating: (rating: number) => `Rating ${rating}`,
+      ratingHint: "Contest difficulty rating",
+      credit: "Patterns from 灵茶山艾府's problem lists",
     },
     review: {
       workspace: "Review workspace",
@@ -355,6 +383,13 @@ const EXT_I18N = {
       openRoadmap: "打开路线图",
       planComplete: (plan: string, total: number) => `${plan} 的 ${total} 道题你都做过了。`,
       pickPlan: "换一个计划",
+      finished: (chapter: string) => `「${chapter}」这一章做完了`,
+      finishedBody: (technique: string) => `这一章的题大多用到「${technique}」。可以沿着它的题单再做几道，或者直接开始下一章。`,
+      focusTitle: (plan: string) => `下一步：${plan}`,
+      focusTopic: (topic: string, times: number) => `复习时你最常忘的题都用到「${topic}」（忘了 ${times} 次）。这个计划会按小节把它练一遍。`,
+      focusChapter: (chapter: string, times: number) => `复习时你最常忘的是「${chapter}」的题（忘了 ${times} 次）。这个计划会在这方面练得更深。`,
+      switchPlan: "换到这个计划",
+      switchFailed: "没能换计划，请重试。",
       sourceCredit: "题目和顺序来自灵茶山艾府的算法题单，已获授权。",
       sourceLink: "原题单",
     },
@@ -373,6 +408,19 @@ const EXT_I18N = {
       upToDate: "已经是最新。",
       syncFailed: "同步失败。",
       next: "下次：",
+      chapter: "章节",
+      openChapter: (plan: string, chapter: string) => `${plan} · ${chapter}：在计划里打开`,
+      techniques: "套路",
+      techniquesCredit: "套路来自灵茶山艾府的算法题单",
+    },
+    technique: {
+      easierTitle: "先做一道简单些的",
+      easierBody: (technique: string) => `这道题忘了。换一道同套路、更简单的题找回来：「${technique}」。`,
+      open: "在 LeetCode 打开",
+      close: "关闭",
+      rating: (rating: number) => `难度分 ${rating}`,
+      ratingHint: "周赛难度分",
+      credit: "分类来自灵茶山艾府的算法题单",
     },
     review: {
       workspace: "复习工作区",
@@ -774,6 +822,9 @@ export function Popup() {
   const [coachExpanded, setCoachExpanded] = useState(false);
   /** Bumps when the Coach applies a doc edit, so the Docs tab reloads. */
   const [docsRevision, setDocsRevision] = useState(0);
+  /** After a review rated Again: an easier problem with the same technique,
+   *  shown above the composer while the panel stays on that problem. */
+  const [easier, setEasier] = useState<{ problemId: string; value: TechniqueSuggestionDto } | null>(null);
   const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -932,6 +983,10 @@ export function Popup() {
         ? state.problem.leetcodeSlug
         : null;
   const dueCount = useDueCount(settings, authState.kind === "signed-in");
+  // The header's chapter and techniques work for any problem page, saved or not.
+  const placeSlug =
+    captured?.problem.leetcodeSlug ?? (state.kind === "off-page" ? sticky?.slug ?? null : pageSlug);
+  const place = useProblemChapter(settings, placeSlug, authState.kind === "signed-in");
 
   // Moving to another problem brings the panel back to it.
   useEffect(() => {
@@ -994,14 +1049,22 @@ export function Popup() {
   // On a problem the Coach chat is the main area; elsewhere it docks below.
   const problemView = !showSettings && !showDocs && !showToday;
   const canReturnToProblem = (view === "today" || showDocs) && (state.kind !== "off-page" || sticky != null);
+  const onRated = (problemId: string, suggestion: TechniqueSuggestionDto | null) => {
+    if (suggestion) setEasier({ problemId, value: suggestion });
+    void detect({ force: true });
+  };
   const ratingPanel =
     headerProblem && isDue(headerProblem.problem.fsrsDue) ? (
       <QuickRate
         problemId={headerProblem.problem.id}
         previews={headerProblem.previews}
         settings={settings}
-        onRated={() => void detect({ force: true })}
+        onRated={(suggestion) => onRated(headerProblem.problem.id, suggestion)}
       />
+    ) : null;
+  const easierCard =
+    problemView && easier && headerProblem && easier.problemId === headerProblem.problem.id ? (
+      <EasierProblemCard settings={settings} suggestion={easier.value} onClose={() => setEasier(null)} />
     ) : null;
 
   return (
@@ -1026,9 +1089,12 @@ export function Popup() {
           ) : showToday ? (
             <h1 className="panel-bar-title">{text.nav.today}</h1>
           ) : headerProblem ? (
-            <ProblemHeading problem={headerProblem.problem} settings={settings} />
+            <ProblemHeading problem={headerProblem.problem} settings={settings} place={place} />
           ) : (
-            <h1 className="panel-bar-title">{pageSlug ?? text.nav.problem}</h1>
+            <div className="problem-card-info">
+              <h1 className="panel-bar-title">{pageSlug ?? text.nav.problem}</h1>
+              {place && <ProblemPlace data={place} settings={settings} />}
+            </div>
           )}
         </div>
         <div className="panel-bar-actions">
@@ -1131,8 +1197,9 @@ export function Popup() {
           expanded={problemView || coachExpanded}
           onExpandedChange={setCoachExpanded}
           ratingPanel={ratingPanel}
+          aboveComposer={easierCard}
           onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
-          onProblemChanged={() => void detect({ force: true })}
+          onRated={(problemId, suggestion) => onRated(problemId, suggestion)}
         />
       )}
     </div>
@@ -1140,7 +1207,15 @@ export function Popup() {
 }
 
 /** Problem title and status, shown in the top bar. */
-function ProblemHeading({ problem, settings }: { problem: ApiProblem; settings: ExtSettings }) {
+function ProblemHeading({
+  problem,
+  settings,
+  place,
+}: {
+  problem: ApiProblem;
+  settings: ExtSettings;
+  place: ProblemChapterDto | null;
+}) {
   const t = getExtText(settings);
   const due = isDue(problem.fsrsDue);
   return (
@@ -1159,7 +1234,145 @@ function ProblemHeading({ problem, settings }: { problem: ApiProblem; settings: 
           </span>
         )}
       </div>
+      {place && <ProblemPlace data={place} settings={settings} />}
     </div>
+  );
+}
+
+/** The problem's chapter in the current plan and its techniques, fetched for
+ *  any problem page (saved or not). Hidden until it loads. */
+function useProblemChapter(settings: ExtSettings | null, slug: string | null, signedIn: boolean) {
+  const [data, setData] = useState<ProblemChapterDto | null>(null);
+  const language = settings?.language === "zh" ? "zh" : "en";
+  useEffect(() => {
+    if (!settings || !slug || !signedIn) return;
+    let cancelled = false;
+    apiFetch(settings, `/api/problems/by-slug/${encodeURIComponent(slug)}/chapter?language=${language}`, {
+      cache: "no-store",
+    })
+      .then(async (res) => (res.ok ? ((await res.json()) as ProblemChapterDto) : null))
+      .then((value) => {
+        if (!cancelled) setData(value);
+      })
+      .catch(() => {
+        /* the header just goes without it */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings, language, slug, signedIn]);
+  return data && data.slug === slug ? data : null;
+}
+
+/** One compact line under the problem's title: its chapter (opens it on the
+ *  web Plan page) and its techniques, each linked to 灵茶山艾府's list. */
+function ProblemPlace({ data, settings }: { data: ProblemChapterDto; settings: ExtSettings }) {
+  const t = getExtText(settings);
+  const language = settings.language === "zh" ? "zh" : "en";
+  if (!data.chapter && data.techniques.length === 0) return null;
+  return (
+    <div className="problem-place">
+      {data.chapter && (
+        <a
+          className="problem-place-item"
+          href={`${settings.apiBaseUrl}/profile?chapter=${encodeURIComponent(data.chapter.name)}`}
+          target="_blank"
+          rel="noreferrer"
+          title={t.problem.openChapter(data.chapter.plan.name, data.chapter.name)}
+        >
+          <span className="problem-place-label">{t.problem.chapter}</span>
+          <span className="problem-place-value">{data.chapter.name}</span>
+        </a>
+      )}
+      {data.techniques.length > 0 && (
+        <span className="problem-place-item" title={t.problem.techniquesCredit}>
+          <span className="problem-place-label">{t.problem.techniques}</span>
+          <span className="problem-place-value">
+            {data.techniques.map((technique, index) => (
+              <span key={technique.key}>
+                {index > 0 && " · "}
+                <a href={technique.topic.sourceUrl} target="_blank" rel="noreferrer">
+                  {technique.name[language]}
+                </a>
+              </span>
+            ))}
+          </span>
+          <span className="problem-place-credit">灵茶山艾府</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** After a review rated Again: one easier problem with the same technique. */
+function EasierProblemCard({
+  settings,
+  suggestion,
+  onClose,
+}: {
+  settings: ExtSettings;
+  suggestion: TechniqueSuggestionDto;
+  onClose: () => void;
+}) {
+  const t = getExtText(settings);
+  const language = settings.language === "zh" ? "zh" : "en";
+  return (
+    <div className="technique-card">
+      <div className="technique-card-head">
+        <p className="technique-card-title">{t.technique.easierTitle}</p>
+        <button type="button" className="technique-card-close" aria-label={t.technique.close} title={t.technique.close} onClick={onClose}>
+          <CloseIcon />
+        </button>
+      </div>
+      <p className="technique-card-body">{t.technique.easierBody(suggestion.technique.name[language])}</p>
+      <TechniqueStepRow step={suggestion.problem} settings={settings} />
+      <div className="technique-card-actions">
+        <a
+          className="btn btn-primary btn-inline technique-card-open"
+          href={`https://leetcode.com/problems/${suggestion.problem.slug}/`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t.technique.open}
+        </a>
+        <TechniqueCredit technique={suggestion.technique} settings={settings} />
+      </div>
+    </div>
+  );
+}
+
+/** A ladder problem: number, title, difficulty, and contest rating if any. */
+function TechniqueStepRow({ step, settings }: { step: PatternStepDto; settings: ExtSettings }) {
+  const t = getExtText(settings);
+  return (
+    <div className="technique-step">
+      <span className="technique-step-title">
+        <span className="technique-step-id">{step.id}.</span> {step.title}
+      </span>
+      <span className={`pill pill-${step.difficulty.toLowerCase()}`}>{difficultyLabel(step.difficulty, t)}</span>
+      {step.rating != null && (
+        <span className="technique-step-rating" title={t.technique.ratingHint}>
+          {t.technique.rating(step.rating)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TechniqueCredit({ technique, settings }: { technique: PatternRefDto; settings: ExtSettings }) {
+  const t = getExtText(settings);
+  return (
+    <a className="technique-credit" href={technique.topic.sourceUrl} target="_blank" rel="noreferrer">
+      {t.technique.credit}
+    </a>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1401,25 +1614,49 @@ function TodayTab({
  *  and its chapter, the same as the web's Today. Hidden until it loads. */
 function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (slug: string) => void }) {
   const t = getExtText(settings);
+  const language = settings.language === "zh" ? "zh" : "en";
   const [data, setData] = useState<PlanNext | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch(settings, `/api/study-plan/next?language=${language}`, { cache: "no-store" });
+      if (res.ok) setData((await res.json()) as PlanNext);
+    } catch {
+      /* Next just stays as it was; the reviews above are what matter */
+    }
+  }, [settings, language]);
 
   useEffect(() => {
-    const language = settings.language === "zh" ? "zh" : "en";
-    const load = async () => {
-      try {
-        const res = await apiFetch(settings, `/api/study-plan/next?language=${language}`, { cache: "no-store" });
-        if (res.ok) setData((await res.json()) as PlanNext);
-      } catch {
-        /* Next just stays as it was; the reviews above are what matter */
-      }
-    };
     void load();
-    window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
-  }, [settings]);
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
+
+  /** After a plan: switch to the suggested focused plan (the web's switch). */
+  async function switchPlan(plan: string) {
+    setSwitching(true);
+    setSwitchError(null);
+    try {
+      const res = await apiFetch(settings, "/api/study-plan", {
+        method: "POST",
+        headers: jsonHeaders(settings),
+        body: JSON.stringify({ plan }),
+      });
+      if (!res.ok) throw new Error("switch_failed");
+      await load();
+    } catch {
+      setSwitchError(t.today.switchFailed);
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   if (!data) return null;
-  const { plan, next } = data;
+  const { plan, next, focus, finishedChapter } = data;
+  const deeper = finishedChapter?.deeper;
   const roadmapUrl = `${settings.apiBaseUrl}/profile`;
 
   return (
@@ -1462,10 +1699,55 @@ function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (sl
                 <ExternalIcon />
               </div>
             </button>
+            {finishedChapter && deeper && deeper.problems.length > 0 && (
+              <div className="today-next-deeper">
+                <p className="today-next-deeper-title">{t.today.finished(finishedChapter.name)}</p>
+                <p className="today-next-deeper-body">{t.today.finishedBody(deeper.technique.name[language])}</p>
+                {deeper.problems.map((problem) => (
+                  <button
+                    key={problem.slug}
+                    type="button"
+                    className="today-next-deeper-step"
+                    onClick={() => onOpen(problem.slug)}
+                  >
+                    <TechniqueStepRow step={problem} settings={settings} />
+                  </button>
+                ))}
+                <TechniqueCredit technique={deeper.technique} settings={settings} />
+              </div>
+            )}
           </>
         ) : (
           <div className="today-next-done">
             <p>{t.today.planComplete(plan.name, plan.total)}</p>
+            {focus && (
+              <div className="today-next-focus">
+                <p className="today-next-deeper-title">{t.today.focusTitle(focus.name)}</p>
+                <p className="today-next-deeper-body">
+                  {focus.reason.kind === "topic"
+                    ? t.today.focusTopic(focus.reason.name[language], focus.lapses)
+                    : t.today.focusChapter(focus.reason.name, focus.lapses)}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-inline"
+                  disabled={switching}
+                  onClick={() => void switchPlan(focus.slug)}
+                >
+                  {switching && <span className="btn-spinner" />}
+                  {t.today.switchPlan}
+                </button>
+                {switchError && <div className="err-banner">{switchError}</div>}
+                {focus.sourceUrl && (
+                  <p className="today-next-credit">
+                    {t.today.sourceCredit}{" "}
+                    <a href={focus.sourceUrl} target="_blank" rel="noreferrer">
+                      {t.today.sourceLink}
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
             <a href={roadmapUrl} target="_blank" rel="noreferrer" className="hero-link">
               {t.today.pickPlan}
             </a>
@@ -1579,7 +1861,8 @@ function QuickRate({
   problemId: string;
   previews: Previews;
   settings: ExtSettings;
-  onRated: () => void;
+  /** Carries the easier problem the server offers after Again, if any. */
+  onRated: (easier: TechniqueSuggestionDto | null) => void;
 }) {
   const t = getExtText(settings);
   const [rating, setRating] = useState<FsrsRating>(3);
@@ -1599,15 +1882,16 @@ function QuickRate({
       });
       if (res.status === 409) {
         setError(t.review.alreadyRated);
-        onRated();
+        onRated(null);
         return;
       }
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error ?? `HTTP ${res.status}`);
       }
+      const body = (await res.json().catch(() => null)) as Partial<ReviewRateResponseDto> | null;
       requestIdRef.current = null;
-      onRated();
+      onRated(body?.easier ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : t.review.rateFailed);
     } finally {

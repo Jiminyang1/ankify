@@ -82,14 +82,9 @@ The extension reads the LeetCode page directly: title, statement, tags, and ever
   </picture>
 </p>
 
-### See what's about to slip
+### Follow a plan, chapter by chapter
 
-`/analysis` reads the same FSRS state that drives your schedule: average recall, lapse rate, a ranked list of the problems you're most likely to forget, stability buckets, and your review history.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/analysis-dark.png">
-  <img alt="Analysis dashboard with memory score, lapse rate, needs-attention table, stability buckets, and a 30-day review activity chart" src="images/analysis-light.png">
-</picture>
+The Plan page draws your study plan (Top Interview 150, LeetCode 75, [灵茶山艾府's problem lists](https://leetcode.cn/circle/discuss/RvFUtj/) used with permission, or a LeetCode list of your own) as a roadmap by chapter: what you've solved, what's in review, and what's due. Each problem shows its chapter and the techniques it uses. Finish a chapter and it offers the next problems on that technique's ladder; forget a review and it offers one easier problem with the same technique. The weak spots Study Coach records show up under each chapter, with your most frequent mistakes on top.
 
 ### And the rest
 

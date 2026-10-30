@@ -2,7 +2,7 @@ import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 
 /**
  * Default route-segment loading UI. Routes whose shape differs a lot from this
- * grid (problems, review, analysis) ship their own loading.tsx.
+ * grid (problems, review, profile) ship their own loading.tsx.
  */
 export default function Loading() {
   return (

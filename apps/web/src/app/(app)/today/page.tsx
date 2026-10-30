@@ -19,6 +19,8 @@ import { loadPlanNext, loadSolvedSummary } from "@/server/profile";
 import { getOnboardingProgress } from "@/server/onboarding";
 import { getCurrentStudyPlan } from "@/server/study-plans";
 import { OnboardingCard } from "./onboarding-card";
+import { SwitchPlanButton } from "./switch-plan-button";
+import { TechniqueCredit, TechniqueStep } from "@/components/technique-suggestion";
 import { loadToday } from "@/server/today";
 
 export const dynamic = "force-dynamic";
@@ -195,7 +197,8 @@ function PlanNextSection({
   hasDue: boolean;
 }) {
   const copy = t.planNext;
-  const { plan, next } = data;
+  const { plan, next, focus, finishedChapter } = data;
+  const deeper = finishedChapter?.deeper;
   return (
     <section>
       <div className="flex items-end justify-between gap-4">
@@ -246,6 +249,60 @@ function PlanNextSection({
               {copy.open}
             </a>
           </div>
+          {finishedChapter && deeper && deeper.problems.length > 0 && (
+            <div className="px-4 py-3">
+              <p className="text-sm font-medium">{copy.finished(finishedChapter.name)}</p>
+              <p className="mt-0.5 text-xs text-muted">{copy.finishedBody(deeper.technique.name[language])}</p>
+              <ul className="mt-2.5 space-y-2">
+                {deeper.problems.map((problem) => (
+                  <li key={problem.slug} className="flex items-center gap-3">
+                    <TechniqueStep step={problem} className="min-w-0 flex-1" />
+                    <a
+                      href={`https://leetcode.com/problems/${problem.slug}/`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={buttonClasses({ variant: "ghost", size: "xs" })}
+                    >
+                      {t.profile.group.actions.leetcode}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <TechniqueCredit technique={deeper.technique} className="mt-2 inline-block" />
+            </div>
+          )}
+        </Surface>
+      ) : focus ? (
+        <Surface className="mt-4 p-4">
+          <EmptyState
+            title={copy.complete(plan.name, plan.total)}
+            description={
+              <>
+                <span className="block font-medium text-fg">{copy.focusTitle(focus.name)}</span>
+                <span className="mt-1 block">
+                  {focus.reason.kind === "topic"
+                    ? copy.focusTopic(focus.reason.name[language], focus.lapses)
+                    : copy.focusChapter(focus.reason.name, focus.lapses)}
+                </span>
+                {focus.sourceUrl && (
+                  <span className="mt-1 block text-xs">
+                    {t.profile.sourceCredit}{" "}
+                    <a href={focus.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                      {t.profile.sourceLink}
+                    </a>
+                  </span>
+                )}
+              </>
+            }
+            action={
+              <div className="flex flex-wrap items-start justify-center gap-2">
+                <SwitchPlanButton plan={focus.slug} />
+                <Link href="/profile" className={buttonClasses({ variant: "ghost", size: "sm" })}>
+                  {copy.pickPlan}
+                </Link>
+              </div>
+            }
+          />
         </Surface>
       ) : (
         <Surface className="mt-4 p-4">
