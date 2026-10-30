@@ -35,3 +35,42 @@ jobs:
       - run: pnpm build
       - run: pnpm extension:check-manifest
       - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
+
+  # Applies pending migrations to the Production database once main passes
+  # verify. Vercel's Deployment Checks wait for this job before promoting, so
+  # new code never goes live ahead of its schema (docs/DEPLOYMENT.md).
+  release:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # The token lives only in this environment, which only main may use.
+    environment: production-db
+    concurrency:
+      group: production-db
+      cancel-in-progress: false
+    env:
+      ANKIFY_PROFILE: production
+      # The Vercel integration database, not the legacy `ankify-prod`.
+      TURSO_DATABASE_URL: libsql://database-ankify-vercel-icfg-mdehlkeeqefnm8sqwfj1zlce.aws-ap-northeast-1.turso.io
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+
+    steps:
+      - name: Require the database token
+        run: |
+          if [ -z "$TURSO_AUTH_TOKEN" ]; then
+            echo "::error::TURSO_AUTH_TOKEN is not set in the production-db environment (docs/DEPLOYMENT.md)."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate:prod

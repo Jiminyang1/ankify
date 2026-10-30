@@ -59,10 +59,12 @@ legacy and must not be used for Production migrations. Follow
 - [ ] Confirm Production has its own auth secret, Google OAuth credentials, and
       encryption secret.
 - [ ] Keep `AI_KEY_ENCRYPTION_SECRET` backed up and stable for this database.
-- [ ] Back up and migrate before deploying code that depends on a new schema:
+- [ ] Back up before merging a PR with a migration; the CI `release` job
+      applies it on `main` before Vercel promotes the build
+      (`docs/DEPLOYMENT.md`, The pipeline):
 
   ```bash
-  pnpm db:release
+  pnpm db:backup
   ```
 
 - [ ] Use expand/deploy/contract rather than a single breaking migration.

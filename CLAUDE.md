@@ -10,13 +10,13 @@ cp .env.example .env.local  # fill in Better Auth/Google, encryption secret (LOC
 
 pnpm db:generate            # drizzle-kit generate (after schema changes; uses LOCAL profile)
 pnpm db:migrate             # apply migrations to local SQLite (packages/db/local.db)
-pnpm db:migrate:prod        # apply migrations to prod Turso (requires .env.production.local)
+pnpm db:migrate:prod        # apply migrations to prod Turso by hand (requires .env.production.local); CI's release job does this on main
 pnpm db:studio              # drizzle-kit studio against local SQLite
 pnpm db:studio:prod         # drizzle-kit studio against prod Turso
 pnpm plans:sync             # re-snapshot LeetCode study plans into packages/core
 pnpm patterns:sync          # re-snapshot 灵茶山艾府's problem lists into packages/core (patterns)
 pnpm db:backup              # dump prod Turso into backups/ankify-prod-<ts>.db (gitignored; requires .env.production.local)
-pnpm db:release             # db:backup, then db:migrate:prod
+pnpm db:release             # db:backup, then db:migrate:prod (by hand; normally just db:backup before merging a migration)
 
 pnpm dev                    # migrate local DB, then Next.js web app on :3000 (LOCAL profile)
 pnpm dev:ext                # Chrome extension build in watch mode
@@ -46,7 +46,9 @@ Each profile has its own env file and its own script suffix so a local migration
 | `preview` | `pnpm db:migrate:preview`, `pnpm db:studio:preview` | Preview Turso | `.env.preview.local` |
 | `production` | `pnpm db:migrate:prod`, `pnpm db:studio:prod` | Turso (`TURSO_DATABASE_URL`) | `.env.production.local` |
 
-The selector is `process.env.ANKIFY_PROFILE`. `:prod` / `:preview` / `:qa` scripts set it; everything else defaults to `local`. The QA profile signs in through `/api/qa/login` and never publishes AI jobs to Vercel Queues. `loadDbEnv()` in `packages/db/src/client.ts` reads the matching env file; both `migrate.ts` and `drizzle.config.ts` go through it so drizzle-kit and the migrate runner stay aligned. Production runtime on Vercel reads env vars from the Vercel dashboard, NOT from `.env.production.local` — the file exists only so the developer can run prod migrations from their laptop.
+The selector is `process.env.ANKIFY_PROFILE`. `:prod` / `:preview` / `:qa` scripts set it; everything else defaults to `local`. The QA profile signs in through `/api/qa/login` and never publishes AI jobs to Vercel Queues. `loadDbEnv()` in `packages/db/src/client.ts` reads the matching env file; both `migrate.ts` and `drizzle.config.ts` go through it so drizzle-kit and the migrate runner stay aligned. Production runtime on Vercel reads env vars from the Vercel dashboard, NOT from `.env.production.local` — the file exists only so the developer can back up or migrate prod from their laptop.
+
+**Release pipeline** (`docs/DEPLOYMENT.md`): a push to `main` runs CI `verify`, then CI `release` (`pnpm db:migrate:prod` with the `production-db` environment's `TURSO_AUTH_TOKEN`; the database URL is pinned in `ci.yml`), and Vercel promotes the `main` build only after both checks pass (Deployment Checks). Migrations run while the previous build still serves, so keep them additive. CI never dumps the database (public repo); back up by hand with `pnpm db:backup` before merging a migration.
 
 ## Architecture
 
