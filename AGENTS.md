@@ -136,7 +136,6 @@ stay inside explicit server boundaries.
   - `/review` - dynamic sibling panels for Question, Quiz/Cards/Submissions/Notes, and optional Study Coach; panels can be hidden and resized
   - `/problems` - list with difficulty/state/tag/search filters
   - `/problems/[id]` - problem detail: metadata, notes, cards, submission code, review history timeline
-  - `/analysis` - FSRS dashboard: memory score, lapse rate, state/stability distributions, risk table, reviews/day chart, burden forecast, dev reset
   - `/settings` - AI provider configuration + daily review limit
 
 ### `apps/extension` - Chrome MV3 Extension

@@ -1,8 +1,10 @@
 # The main line (product)
 
 Status: proposed 2026-10-29; step 1 (pull back) built the same day; step 2 (plan
-first), step 3 (recognize the pattern), step 4a (Cards into Notes), and step 4b
-(legacy code removed) built 2026-10-30. Decided with Jimin: study plans are the spine of the
+first), step 3 (recognize the pattern), step 4a (Cards into Notes), step 4b
+(legacy code removed), and step 4c (chapters and techniques on the problem,
+"one more of this technique", frequent mistakes on the Plan page, Analysis
+removed) built 2026-10-30, so every step is built. Decided with Jimin: study plans are the spine of the
 product, and what a review checks is whether the user recognizes the pattern,
 not whether they memorized one problem. The rest of this doc is the proposal
 built on those two decisions.
@@ -98,6 +100,15 @@ roadmap), plus chapter and technique. No mastery percentages, no FSRS terms.
   plan (`deepDivePlanFor()` already links three of these). "Weakest" means
   the technique whose problems are forgotten most in review.
 
+Built 2026-10-30 (step 4c) for the second and third: Today's Next part adds the
+chapter just finished (until the next one is started) with its go-deeper
+problems, and once the plan is solved it suggests a focused plan with
+"Switch to this plan". Techniques are counted by 灵茶山艾府's list they belong
+to (the sum of lapses over deck problems), since his plans are one per list;
+without lapses on any catalog problem it falls back to `deepDivePlanFor()` on
+the chapter forgotten most, and without lapses at all it suggests nothing
+(`focusPlanAfter()` in `@ankify/core/patterns`).
+
 ## Recognizing the pattern
 
 The one new idea in this proposal: **the review's first question is "which
@@ -181,6 +192,17 @@ After:
 - Attribution to 灵茶山艾府, with the source link, stays on every surface that
   shows his lists or techniques.
 
+Built 2026-10-30 (step 4c):
+- **Forgot it:** a new rating of Again (on `/review`, the practice tray, and
+  the extension) returns one easier problem with the same technique: the
+  first problem not done on its ladder, core tier first, preferring one rated
+  below the forgotten problem (`easierInTechnique()`). At most once per
+  problem a day, with no mute setting. It shows as a small card with "Open on
+  LeetCode".
+- **Finished a chapter:** the chapter dialog on the Plan page shows "Go
+  deeper" once every problem in it is solved: the next 3 problems on the
+  ladder of the technique most of its problems use (`goDeeperInChapter()`).
+
 ## Surfaces after
 
 **Web navigation** goes from 6 items to 4:
@@ -195,12 +217,16 @@ After:
 - `/review` stays as a page, entered from Today; it leaves the navigation.
 - `/analysis` leaves the navigation. Its stability charts, burden forecast,
   and risk table are FSRS internals. The one useful part, weak spots across
-  problems, moves to the Plan page per chapter.
+  problems, moves to the Plan page per chapter. (Built in step 4c: each
+  chapter dialog lists the user's active weak spots on its problems, the Plan
+  page has "Your frequent mistakes", and `/analysis` is gone and redirects to
+  the Plan page.)
 - The problem page shows its chapter and techniques in the header. Its tabs
   lose Cards; Same pattern stays there as the technique's ladder.
 
 **Extension side panel:** the ladder icon goes; the problem view shows the
-chapter and techniques; Today gets the same Next part as the web.
+chapter and techniques (one line under the title, for saved and unsaved
+problems); Today gets the same Next part as the web.
 
 ## Docs: three to two
 
@@ -223,7 +249,7 @@ Users can't see these; removing them shrinks what has to be kept working:
   (`quiz_*`, `card_*`). Extension builds from 0.3.0 on don't call them;
   remove once older builds are gone.
 - `recall_check` practice mode and the `practice_check` job.
-- Analysis's charts and dev reset.
+- Analysis's charts and dev reset (removed in step 4c, with the whole page).
 
 Built 2026-10-30 (step 4b) for the first two: the code is gone, and with no
 job kind left so is the AI job pipeline (Vercel Queues, `/api/ai-jobs`,
@@ -240,8 +266,9 @@ details in [coach-practice.md](./coach-practice.md) ("Legacy code removed").
    parts; the extension's Today gets Next.
 3. **Recognize the pattern.** The signal point in the Solutions writer, the
    Coach's opening question, the judge, and eval cases.
-4. **Clean up.** Cards into Notes (migration; 4a, built), technique-anchored
-   "one more" suggestions, legacy code removed (4b, built).
+4. **Clean up.** Cards into Notes (migration; 4a, built), legacy code removed
+   (4b, built), technique-anchored "one more" suggestions with chapters and
+   techniques on the problem and mistakes per chapter (4c, built).
 
 ## How we'll know
 
