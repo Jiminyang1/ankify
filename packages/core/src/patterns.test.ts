@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  PATTERN_ROUTE_SLUG,
   PATTERN_TOPICS,
   findPattern,
+  patternStudyPlans,
   isMiscPattern,
   nextInPattern,
   patternProblem,
@@ -77,6 +79,60 @@ describe("nextInPattern", () => {
     const free = nextInPattern(real, () => false, { limit: 100 });
     expect(free.every((step) => !step.premium)).toBe(true);
     expect(premium.length).toBeGreaterThan(free.length);
+  });
+});
+
+describe("patternStudyPlans", () => {
+  const plans = patternStudyPlans("en");
+
+  it("ships the Beginner Route first, then one plan per list", () => {
+    expect(plans.map((plan) => plan.slug)).toEqual([
+      PATTERN_ROUTE_SLUG,
+      ...PATTERN_TOPICS.map((topic) => `ling:${topic.key}`),
+    ]);
+    expect(plans[0]!.groups.map((group) => group.name)).toEqual([
+      "1. Sliding window",
+      "2. Binary search",
+      "3. Prefix sums, stacks, queues, heaps",
+      "4. Binary tree DFS",
+      "5. Grid DFS",
+      "6. Backtracking",
+      "7. Dynamic programming",
+    ]);
+  });
+
+  it("keeps each plan's problems unique, free, and its groups non-empty and distinctly named", () => {
+    for (const language of ["en", "zh"] as const) {
+      for (const plan of patternStudyPlans(language)) {
+        const slugs = plan.groups.flatMap((group) => group.questions.map((q) => q.slug));
+        expect(new Set(slugs).size, plan.slug).toBe(slugs.length);
+        expect(slugs.every((slug) => !patternProblem(slug)!.premium), plan.slug).toBe(true);
+        expect(plan.groups.every((group) => group.questions.length > 0), plan.slug).toBe(true);
+        const names = plan.groups.map((group) => group.name);
+        expect(new Set(names).size, `${language} ${plan.slug}`).toBe(names.length);
+      }
+    }
+  });
+
+  it("caps the route by rating and points each stage at its list", () => {
+    const route = plans[0]!;
+    const window = findPattern("sliding-window/fixed-window")!.pattern;
+    const rating = new Map(window.problems.map(([slug, value]) => [slug, value]));
+    const stage = route.groups[0]!;
+    expect(stage.deepDive).toBe("ling:sliding-window");
+    for (const question of stage.questions) {
+      if (rating.has(question.slug)) expect(rating.get(question.slug) ?? 0).toBeLessThanOrEqual(1700);
+    }
+  });
+
+  it("names groups in Chinese with his headings", () => {
+    const zh = patternStudyPlans("zh");
+    expect(zh[0]!.name).toBe("灵神 · 新手村路线");
+    const window = zh.find((plan) => plan.slug === "ling:sliding-window")!;
+    expect(window.groups.map((group) => group.name)).toContain("恰好型滑动窗口");
+    const trees = zh.find((plan) => plan.slug === "ling:trees")!.groups.map((group) => group.name);
+    expect(trees).toContain("二叉树 · 有递有归");
+    expect(trees).toContain("一般树 · 有递有归");
   });
 });
 

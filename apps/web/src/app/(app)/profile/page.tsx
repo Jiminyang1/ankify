@@ -21,11 +21,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const user = await requirePageUser();
-  const [t, language, data] = await Promise.all([
-    getRequestTranslations(),
-    getRequestLanguage(),
-    loadProfile(user.id),
-  ]);
+  const language = await getRequestLanguage();
+  const [t, data] = await Promise.all([getRequestTranslations(), loadProfile(user.id, language)]);
   const copy = t.profile;
   const solved = data.total - data.counts.todo;
   // First step, only while nothing from this plan is in review yet.
@@ -38,7 +35,19 @@ export default async function ProfilePage() {
     <PageFrame width="wide" className="space-y-6">
       <PageHeader
         title={copy.title}
-        description={copy.subtitle(data.plan.name)}
+        description={
+          <>
+            {copy.subtitle(data.plan.name)}
+            {data.plan.sourceUrl && (
+              <span className="mt-1 block text-xs">
+                {copy.sourceCredit}{" "}
+                <a href={data.plan.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
+                  {copy.sourceLink}
+                </a>
+              </span>
+            )}
+          </>
+        }
         actions={<PlanPicker plans={data.plans} current={data.plan} />}
       />
 

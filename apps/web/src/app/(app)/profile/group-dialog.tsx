@@ -153,7 +153,10 @@ export function GroupDialog({
           {group.deepDive && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg bg-subtle px-3 py-2">
               <p className="min-w-0 text-xs leading-5 text-muted">
-                {copy.group.deepDive(group.deepDive.name, group.deepDive.total)}
+                {(group.deepDive.slug.startsWith("ling:") ? copy.group.deepDiveList : copy.group.deepDive)(
+                  group.deepDive.name,
+                  group.deepDive.total,
+                )}
               </p>
               <Button
                 variant="secondary"
