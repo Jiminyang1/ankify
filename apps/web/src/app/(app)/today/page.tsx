@@ -13,7 +13,8 @@ import { getExtensionInstallUrl } from "@/lib/extension-install";
 import { PageFrame } from "@/components/ui/page";
 import { getAiSettings } from "@/server/settings";
 import { getStarterAiStatus } from "@/server/starter-ai";
-import { loadSolvedSummary } from "@/server/profile";
+import { getTranslations } from "@/lib/i18n";
+import { loadPlanNext, loadSolvedSummary, type PlanNext } from "@/server/profile";
 import { getOnboardingProgress } from "@/server/onboarding";
 import { OnboardingCard } from "./onboarding-card";
 import { loadToday } from "@/server/today";
@@ -24,12 +25,13 @@ export default async function HomePage() {
   const user = await requirePageUser();
   const [t, language] = await Promise.all([getRequestTranslations(), getRequestLanguage()]);
 
-  const [data, onboarding, ai, starter, solvedSummary] = await Promise.all([
+  const [data, onboarding, ai, starter, solvedSummary, planNext] = await Promise.all([
     loadToday(user.id),
     getOnboardingProgress(user.id),
     getAiSettings(user.id),
     getStarterAiStatus(user.id),
-    loadSolvedSummary(user.id),
+    loadSolvedSummary(user.id, language),
+    loadPlanNext(user.id, language),
   ]);
   const hasDue = data.dueCount > 0;
   const allDone = data.totalProblems > 0 && !hasDue;
@@ -175,7 +177,45 @@ export default async function HomePage() {
           </Surface>
         )
       )}
+
+      {planNext && <PlanNextCard next={planNext} language={language} />}
     </PageFrame>
+  );
+}
+
+/** The current plan's next unsolved problem: one line under the reviews,
+ *  which stay the point of Today. */
+function PlanNextCard({ next, language }: { next: PlanNext; language: "en" | "zh" }) {
+  const copy = getTranslations(language).planNext;
+  return (
+    <Surface className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted">{copy.kicker}</p>
+        <p className="mt-1 truncate text-sm font-medium">
+          <span className="tabular-nums text-muted">{next.problem.leetcodeId}. </span>
+          {next.problem.title}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <DifficultyPill difficulty={next.problem.difficulty} language={language} />
+          <span className="truncate">
+            {next.plan.name} · {copy.progress(next.group.name, next.group.done, next.group.total)}
+          </span>
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Link href="/profile" className={buttonClasses({ variant: "ghost", size: "sm" })}>
+          {copy.roadmap}
+        </Link>
+        <a
+          href={`https://leetcode.com/problems/${next.problem.slug}/`}
+          target="_blank"
+          rel="noreferrer"
+          className={buttonClasses({ variant: "secondary", size: "sm" })}
+        >
+          {copy.open}
+        </a>
+      </div>
+    </Surface>
   );
 }
 

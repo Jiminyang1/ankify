@@ -110,6 +110,11 @@ export async function fetchLeetcodeProfile(username: string): Promise<LeetcodePr
   };
 }
 
+/** The linked account as last fetched, without refetching from LeetCode. */
+export async function getCachedLeetcodeAccount(userId: string): Promise<Pick<StoredAccount, "username" | "profile"> | null> {
+  return readAccount(userId);
+}
+
 async function readAccount(userId: string): Promise<StoredAccount | null> {
   const [row] = await getDb()
     .select({ value: schema.settings.value })

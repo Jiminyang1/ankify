@@ -6,16 +6,19 @@ import {
   type LeetCodeDifficulty,
   type StudyPlan,
 } from "@ankify/core";
+import { PATTERN_PLAN_PREFIX, PATTERN_ROUTE_SLUG, patternStudyPlans } from "@ankify/core/patterns";
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { leetcodeGraphql } from "./leetcode-graphql";
 
 /**
- * Which study plan the profile shows: one of LeetCode's official plans, or a
- * plan imported from the user's own public LeetCode problem list. Imported
- * plans are stored per user in `settings` (`custom-study-plans`) and use the
- * slug `list:<leetcode list slug>`.
+ * Which study plan the profile shows: one of LeetCode's official plans, one
+ * of 灵茶山艾府's lists (`ling:<topic>`, plus his Beginner Route
+ * `ling:route`, built from `@ankify/core/patterns` and named in the user's
+ * language), or a plan imported from the user's own public LeetCode problem
+ * list. Imported plans are stored per user in `settings`
+ * (`custom-study-plans`) and use the slug `list:<leetcode list slug>`.
  */
 
 const CURRENT_KEY = "study-plan";
@@ -28,6 +31,33 @@ const PAGE_SIZE = 100;
 type CustomPlan = StudyPlan & { importedAt: number };
 
 export type StudyPlanOption = { slug: string; name: string; custom: boolean };
+type Language = "en" | "zh";
+
+/** Without a saved choice, Chinese users start on his Beginner Route. */
+function defaultPlanSlug(language: Language) {
+  return language === "zh" ? PATTERN_ROUTE_SLUG : DEFAULT_STUDY_PLAN;
+}
+
+const patternPlans = new Map<Language, ReturnType<typeof patternStudyPlans>>();
+function patternPlansIn(language: Language) {
+  let plans = patternPlans.get(language);
+  if (!plans) {
+    plans = patternStudyPlans(language);
+    patternPlans.set(language, plans);
+  }
+  return plans;
+}
+
+/** An official or pattern plan by slug (imports need the user's settings). */
+export function findBuiltInStudyPlan(slug: unknown, language: Language): StudyPlan | null {
+  return findOfficialStudyPlan(slug) ?? patternPlansIn(language).find((plan) => plan.slug === slug) ?? null;
+}
+
+/** 灵茶山艾府's post a pattern plan comes from; null for other plans. */
+export function studyPlanSourceUrl(slug: string): string | null {
+  if (!slug.startsWith(PATTERN_PLAN_PREFIX)) return null;
+  return patternPlansIn("en").find((plan) => plan.slug === slug)?.sourceUrl ?? null;
+}
 
 export type ImportListError =
   | "invalid_link"
@@ -61,23 +91,25 @@ async function getCustomPlans(userId: string): Promise<CustomPlan[]> {
 }
 
 /** The plan the profile shows, plus every plan the user can switch to. */
-export async function getCurrentStudyPlan(userId: string) {
+export async function getCurrentStudyPlan(userId: string, language: Language) {
   const [current, custom] = await Promise.all([readSetting(userId, CURRENT_KEY), getCustomPlans(userId)]);
   const slug = (current as { plan?: unknown } | undefined)?.plan;
   const plan =
-    findOfficialStudyPlan(slug) ??
+    findBuiltInStudyPlan(slug, language) ??
     custom.find((candidate) => candidate.slug === slug) ??
-    findOfficialStudyPlan(DEFAULT_STUDY_PLAN)!;
+    findBuiltInStudyPlan(defaultPlanSlug(language), language)!;
   const options: StudyPlanOption[] = [
     ...OFFICIAL_STUDY_PLANS.map((official) => ({ slug: official.slug, name: official.name, custom: false })),
+    ...patternPlansIn(language).map((pattern) => ({ slug: pattern.slug, name: pattern.name, custom: false })),
     ...custom.map((imported) => ({ slug: imported.slug, name: imported.name, custom: true })),
   ];
   return { plan, custom: plan.slug.startsWith(CUSTOM_PREFIX), options };
 }
 
-/** false when the slug isn't an official plan or one of the user's imports. */
+/** false when the slug isn't a built-in plan or one of the user's imports. */
 export async function setCurrentStudyPlan(userId: string, slug: string): Promise<boolean> {
-  const known = findOfficialStudyPlan(slug) || (await getCustomPlans(userId)).some((plan) => plan.slug === slug);
+  const known =
+    findBuiltInStudyPlan(slug, "en") || (await getCustomPlans(userId)).some((plan) => plan.slug === slug);
   if (!known) return false;
   await writeSetting(userId, CURRENT_KEY, { plan: slug });
   return true;
@@ -87,13 +119,14 @@ export async function removeCustomPlan(userId: string, slug: string) {
   const custom = await getCustomPlans(userId);
   await writeSetting(userId, CUSTOM_KEY, custom.filter((plan) => plan.slug !== slug));
   const current = (await readSetting(userId, CURRENT_KEY)) as { plan?: unknown } | undefined;
-  if (current?.plan === slug) await writeSetting(userId, CURRENT_KEY, { plan: DEFAULT_STUDY_PLAN });
+  // Clearing the choice falls back to the default for the user's language.
+  if (current?.plan === slug) await writeSetting(userId, CURRENT_KEY, {});
 }
 
 /** Every problem slug in the plans this user can see, so add-to-review only
  *  accepts problems that are actually on a roadmap. */
 export async function studyPlanSlugsForUser(userId: string): Promise<Set<string>> {
-  const plans = [...OFFICIAL_STUDY_PLANS, ...(await getCustomPlans(userId))];
+  const plans = [...OFFICIAL_STUDY_PLANS, ...patternPlansIn("en"), ...(await getCustomPlans(userId))];
   return new Set(plans.flatMap((plan) => plan.groups.flatMap((group) => group.questions.map((q) => q.slug))));
 }
 

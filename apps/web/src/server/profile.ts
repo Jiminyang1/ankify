@@ -6,8 +6,9 @@ import {
 } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { eq } from "drizzle-orm";
-import { getLeetcodeAccount, getLeetcodeSolved } from "@/server/leetcode-account";
-import { getCurrentStudyPlan } from "@/server/study-plans";
+import type { LeetcodeAccountDto } from "@ankify/contracts";
+import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "@/server/leetcode-account";
+import { findBuiltInStudyPlan, getCurrentStudyPlan, studyPlanSourceUrl } from "@/server/study-plans";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
  *  refreshes are failing and the numbers may be out of date. */
@@ -39,9 +40,40 @@ export type ProfileData = Awaited<ReturnType<typeof loadProfile>>;
 
 const emptyCounts = (): Record<PlanProblemStatus, number> => ({ todo: 0, solved: 0, remembered: 0, due: 0 });
 
-export async function loadProfile(userId: string) {
+type Language = "en" | "zh";
+type AccountForStatus = Pick<LeetcodeAccountDto, "username" | "profile"> | null;
+
+/** The profile page: the current plan with every problem's status, and the
+ *  linked LeetCode account. */
+export async function loadProfile(userId: string, language: Language) {
   const now = new Date();
-  const [rows, leetcode, solved, current] = await Promise.all([
+  const leetcode = await getLeetcodeAccount(userId);
+  return {
+    ...(await loadPlanProgress(userId, language, leetcode, now)),
+    leetcode,
+    leetcodeStale:
+      leetcode != null &&
+      (!leetcode.fetchedAt || now.getTime() - new Date(leetcode.fetchedAt).getTime() > LEETCODE_STALE_MS),
+  };
+}
+
+/** The current plan's next problem and the group it's in, for Today. Reads
+ *  the cached LeetCode account only, so Today never waits on LeetCode. */
+export async function loadPlanNext(userId: string, language: Language) {
+  const progress = await loadPlanProgress(userId, language, await getCachedLeetcodeAccount(userId), new Date());
+  if (!progress.next) return null;
+  const group = progress.groups.find((candidate) => candidate.items.includes(progress.next!))!;
+  return {
+    plan: progress.plan,
+    group: { name: group.name, done: group.items.length - group.counts.todo, total: group.items.length },
+    problem: progress.next,
+  };
+}
+
+export type PlanNext = NonNullable<Awaited<ReturnType<typeof loadPlanNext>>>;
+
+async function loadPlanProgress(userId: string, language: Language, leetcode: AccountForStatus, now: Date) {
+  const [rows, solved, current] = await Promise.all([
     getDb()
       .select({
         id: schema.problems.id,
@@ -52,11 +84,11 @@ export async function loadProfile(userId: string) {
       })
       .from(schema.problems)
       .where(eq(schema.problems.userId, userId)),
-    getLeetcodeAccount(userId),
     getLeetcodeSolved(userId),
-    getCurrentStudyPlan(userId),
+    getCurrentStudyPlan(userId, language),
   ]);
   const plan = current.plan;
+  const sourceUrl = studyPlanSourceUrl(plan.slug);
 
   const deck = new Map(rows.map((row) => [row.leetcodeSlug, row]));
   // Publicly LeetCode shows only the latest 20 accepted problems; the
@@ -95,7 +127,13 @@ export async function loadProfile(userId: string) {
         lapses: row?.fsrsLapses ?? 0,
       };
     });
-    const dive = deepDivePlanFor(group.name, plan.slug);
+    // A plan that names its deep dives (the Beginner Route) uses those;
+    // 灵茶山艾府's topic lists already are the deep dive.
+    const dive = group.deepDive
+      ? findBuiltInStudyPlan(group.deepDive, language)
+      : sourceUrl
+        ? null
+        : deepDivePlanFor(group.name, plan.slug);
     return {
       name: group.name,
       items,
@@ -114,24 +152,20 @@ export async function loadProfile(userId: string) {
   const next = groups.flatMap((group) => group.items).find((item) => item.status === "todo") ?? null;
 
   return {
-    plan: { slug: plan.slug, name: plan.name, custom: current.custom },
+    plan: { slug: plan.slug, name: plan.name, custom: current.custom, sourceUrl },
     plans: current.options,
     groups,
     counts,
     total: groups.reduce((sum, group) => sum + group.items.length, 0),
     next,
-    leetcode,
     solvedSync: solvedSync ? { count: solvedSync.slugs.length, syncedAt: solvedSync.syncedAt } : null,
-    leetcodeStale:
-      leetcode != null &&
-      (!leetcode.fetchedAt || now.getTime() - new Date(leetcode.fetchedAt).getTime() > LEETCODE_STALE_MS),
   };
 }
 
 /** How much of the current plan the extension's solved list covers, for the
  *  Today onboarding step. null until the extension has synced something. */
-export async function loadSolvedSummary(userId: string) {
-  const [solved, current] = await Promise.all([getLeetcodeSolved(userId), getCurrentStudyPlan(userId)]);
+export async function loadSolvedSummary(userId: string, language: Language) {
+  const [solved, current] = await Promise.all([getLeetcodeSolved(userId), getCurrentStudyPlan(userId, language)]);
   if (!solved || solved.slugs.length === 0) return null;
   const solvedSlugs = new Set(solved.slugs);
   const planSlugs = current.plan.groups.flatMap((group) => group.questions.map((question) => question.slug));

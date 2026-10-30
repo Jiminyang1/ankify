@@ -21,6 +21,9 @@ export interface StudyPlanQuestion {
 export interface StudyPlanGroup {
   name: string;
   questions: StudyPlanQuestion[];
+  /** The plan that goes deeper on this group, when the plan names one (the
+   *  Beginner Route points each stage at its topic list). */
+  deepDive?: string;
 }
 
 export interface StudyPlan {

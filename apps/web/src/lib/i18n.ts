@@ -173,6 +173,12 @@ export const translations = {
       issueTooManyPoints: (approach: string, limit: number) => `Only the first ${limit} points of "${approach}" are used.`,
       issueTooManyApproaches: (limit: number) => `Only the first ${limit} approaches are used.`,
     },
+    planNext: {
+      kicker: "Next in your plan",
+      progress: (group: string, done: number, total: number) => `${group} · ${done} of ${total} done`,
+      open: "Open on LeetCode",
+      roadmap: "Roadmap",
+    },
     weakSpots: {
       title: "Weak spots",
       empty: "No weak spots recorded. The Coach can read your submissions and find where you go wrong.",
@@ -551,6 +557,8 @@ export const translations = {
       title: "Profile",
       subtitle: (plan: string) =>
         `Your ${plan} roadmap: what you've solved on LeetCode, and whether you still remember it.`,
+      sourceCredit: "Problems and order from 灵茶山艾府's problem lists, used with permission.",
+      sourceLink: "Original list",
       solvedOf: (total: number) => `of ${total} solved`,
       plans: {
         label: "Study plan",
@@ -612,6 +620,8 @@ export const translations = {
         addFailed: "Couldn't add some problems. Try again in a minute.",
         deepDive: (plan: string, total: number) =>
           `Want to go deeper? LeetCode's ${plan} plan has ${total} problems on this pattern. You can switch back from the plan picker.`,
+        deepDiveList: (plan: string, total: number) =>
+          `Want to go deeper? The ${plan} list has ${total} problems, section by section. You can switch back from the plan picker.`,
         switchPlan: "Switch to this plan",
         switchFailed: "Couldn't switch plans. Try again.",
         item: {
@@ -866,6 +876,12 @@ export const translations = {
       issueNoPoints: (approach: string) => `「${approach}」没有列表要点，练习时会跳过。`,
       issueTooManyPoints: (approach: string, limit: number) => `「${approach}」只使用前 ${limit} 个要点。`,
       issueTooManyApproaches: (limit: number) => `只使用前 ${limit} 种解法。`,
+    },
+    planNext: {
+      kicker: "计划里的下一题",
+      progress: (group: string, done: number, total: number) => `${group} · 已做 ${done} / ${total}`,
+      open: "在 LeetCode 打开",
+      roadmap: "路线图",
     },
     weakSpots: {
       title: "弱点",
@@ -1225,6 +1241,8 @@ export const translations = {
     profile: {
       title: "主页",
       subtitle: (plan: string) => `你的 ${plan} 路线图：LeetCode 上做过哪些题，以及现在还记不记得。`,
+      sourceCredit: "题目和顺序来自灵茶山艾府的算法题单，已获授权。",
+      sourceLink: "原题单",
       solvedOf: (total: number) => `/ ${total} 做过`,
       plans: {
         label: "学习计划",
@@ -1286,6 +1304,8 @@ export const translations = {
         addFailed: "部分题目没加进去，请稍后再试。",
         deepDive: (plan: string, total: number) =>
           `想练得更深？LeetCode 的「${plan}」计划有 ${total} 道这类题。之后可以在学习计划里切回来。`,
+        deepDiveList: (plan: string, total: number) =>
+          `想练得更深？「${plan}」题单按小节排好了 ${total} 道题。之后可以在学习计划里切回来。`,
         switchPlan: "切换到这个计划",
         switchFailed: "切换失败，请重试。",
         item: {

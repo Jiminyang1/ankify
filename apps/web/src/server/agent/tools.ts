@@ -16,6 +16,7 @@ import { dueProblemCondition } from "@/server/due-problems";
 import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/practice";
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
+import { getRequestLanguage } from "@/server/i18n";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { docEditInput } from "./doc-edit-input";
@@ -133,7 +134,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
         "Load the user's current study plan from their profile roadmap: every pattern group in learning order with its status counts, the next not-started problems in each group, problems in the user's reviews they have forgotten before, and the LeetCode topic plan that goes deeper on a pattern. Use this when the user asks what to solve, learn, or practice next, or how their plan is going.",
       inputSchema: z.object({}),
       execute: async () => {
-        const profile = await loadProfile(context.userId);
+        const profile = await loadProfile(context.userId, await getRequestLanguage());
         const label: Record<PlanItem["status"], string> = {
           todo: "not started",
           solved: "solved, not reviewing",
