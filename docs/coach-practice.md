@@ -1,6 +1,6 @@
 # Coach-led practice (design)
 
-Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; stage 4 not yet. This doc describes how studying
+Status: stages 1 and 2 implemented (2026-10-05) in the extension; version 3 (below) built 2026-10-10 in its first, smaller scope; stage 3 (the web app follows the extension) built 2026-10-11; the signal point and the technique-first question ([product-main-line.md](./product-main-line.md), step 3) built 2026-10-30; stage 4 not yet. This doc describes how studying
 a problem moves into the Study Coach chat in the extension's side panel, and
 what replaces the separate Quiz and Cards screens.
 
@@ -70,22 +70,32 @@ premature grading?
 
 Next to Notes and Cards, each problem has **Solutions**
 (`problems.solutions_md`, `solutions_version`): markdown the user reads and
-edits behind the book icon. One `##` section per approach, `(mine)` on the
-user's own, its key points as bullets, and a `Complexity:` line
-(`parseSolutions()` in `packages/core/src/problem-docs.ts`):
+edits behind the book icon. One `##` section per approach, named for its
+technique, `(mine)` on the user's own, its key points as bullets, the first
+of them its **signal**, and a `Complexity:` line (`parseSolutions()` in
+`packages/core/src/problem-docs.ts`):
 
 ```markdown
-## lo/hi range (mine)
-- lo/hi track the fewest and most unmatched `(`
-- `*` widens both ends by 1, covering all three meanings at once
-- hi < 0 fails early; at the end, lo must be 0
+## Variable-size sliding window (mine)
+- Signal: contiguous subarray, all values positive, sum at least target
+- Grow the right end; once the sum reaches the target, shrink from the left
+- All values are positive, so shrinking only lowers the sum: the left end never moves back
 Complexity: O(n) time, O(1) space
 
-## DP
-- dp[i][j]: can s[i..j] be valid
+## Prefix sums with binary search
+- Signal: positive integers, so prefix sums strictly increase
 ...
 ```
 
+- **The signal** (added 2026-10-30, [product-main-line.md](./product-main-line.md)
+  "Recognizing the pattern") is what in the statement points to the
+  technique: features of the input, its constraints, or what's asked, never
+  the technique's name or the algorithm's steps. It's an ordinary point, so
+  parsing didn't change; `isSignalPoint()` recognizes it by its label
+  (`Signal:`, or `题眼：` in a Chinese doc; `信号：` also works) so the
+  instructions can treat it specially. Docs written before it have no signal
+  and are judged as before: the question still asks for the technique, but
+  nothing checks that part until the user adds a signal by hand.
 - **Per approach**, never one list per problem: the user may answer with any
   approach. The one in the user's Accepted code is marked as theirs; at most
   2 genuinely different others are added (boundary variants of one algorithm
@@ -93,13 +103,16 @@ Complexity: O(n) time, O(1) space
 - **Written** the first time the problem is practiced
   (`server/practice-solutions.ts`), from the Accepted code, Notes, and the
   problem, at the user's reasoning level, and saved directly as the first
-  version (the judge needs it right away). The user's own text is never
-  overwritten. Without AI, or if it fails, the approach question falls back to
-  the Coach grading it.
-- **Points are ideas, not syntax**: 2 to 4 per approach, the first is the core
-  idea as someone would say it, then what's tracked, the transition, the easy
-  mistake. Trivia (returning -1, output order), one language's details, and
-  implementation advice belong in Notes. A point that's too specific fails
+  version (the judge needs it right away). The problem's techniques from
+  灵茶山艾府's catalog (`catalogTechniques()`, his "Other …" sections left
+  out) go into the prompt as hints for naming the approaches, not as
+  headings to copy; a problem outside the catalog gets its technique named
+  by the writer. The user's own text is never overwritten. Without AI, or if
+  it fails, the approach question falls back to the Coach grading it.
+- **Points are ideas, not syntax**: after the signal, 2 to 4 per approach;
+  the first is the core idea as someone would say it, then what's tracked,
+  the transition, the easy mistake. Trivia (returning -1, output order), one
+  language's details, and implementation advice belong in Notes. A point that's too specific fails
   learners who clearly know the solution. (Trying it showed this is the part
   that most needs care: the first prompts produced `while left <= right` and
   "return an empty array" as points.)
@@ -137,10 +150,27 @@ it with `grade_answer` (still capped by the help given).
 
 ### Questions
 
-How they'd solve it **and what it costs** is always the first question: it's
-what the problem's review schedules. Then up to 2 of this problem's active weak
-spots, most recent first. (Version 2's cross-problem category targets are
-dropped: there's no reference to judge them against.)
+The approach is always the first question: **which technique, and what in the
+statement points to it**, then how they'd solve it **and what it costs**. It's
+what the problem's review schedules, and recognizing the pattern is what the
+review checks (someone who memorized the code can often describe the approach
+but not say what points to it). It's one question, not two: the signal is the
+approach's first point. Then up to 2 of this problem's active weak spots, most
+recent first. (Version 2's cross-problem category targets are dropped: there's
+no reference to judge them against.)
+
+The signal needs care in three places:
+- **The judge** covers it only when the learner names (or unmistakably
+  identifies) that approach's technique *and* says what in the statement
+  points to it; the technique alone, the algorithm alone, or a reason that
+  fits almost any problem ("it's an array") doesn't cover it. Any valid
+  approach counts, so a learner who picks the doc's second technique is
+  checked against that one's signal.
+- **Naming the gap** never names the clue: the Coach asks what in the problem
+  made them think of that approach. Its **hint** points at one clue from the
+  statement without naming the technique.
+- **Nothing recalled** gets the smallest hint toward the signal first, since
+  it's the first point.
 
 ### Moves and grades
 
@@ -202,6 +232,22 @@ up, Chinese answers to an English doc, answers built over several replies,
 other approaches, weak spots). On 2026-10-10, DeepSeek's fast model at the
 lightest setting agreed on 73 of 74 calls (points precision and recall 1.00,
 p50 0.8 s). Add a case whenever a real session shows a misjudgment.
+
+Signal cases (2026-10-30, Minimum Size Subarray Sum with signals, English and
+Chinese docs): a correct signal, a partial clue, the signal alone, the
+technique with no signal, the technique alone, a generic reason, a wrong
+technique, the signal after the gap was named, the signal after a hint, the
+other approach's signal, and a Chinese answer and a Chinese doc. The signal
+after a hint is labeled "either way": with a content hint given, the grade is
+missed whether the judge ticks it or not (`advanceTalk()` settles any question
+with that much help as missed); after only a named gap the tick decides
+partial vs missed, so it must count. Over 50 cases x 4 runs with DeepSeek's
+fast model, the judge prompt before the signal rule credited a signal it
+shouldn't have 6 times (points exact 177/184); with it, 184/184, reply type
+200/200, misconception 168/168, approach 139/140, and the older 38 cases
+agreed on every call. (The rule also says misunderstanding the problem itself
+is an answer with a misconception, not a misread question: "sort the numbers"
+for a subarray problem had been read as a misread.)
 
 ### Not built yet
 

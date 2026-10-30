@@ -677,7 +677,7 @@ async function loadJudgeProblem(userId: string, problemId: string) {
 function judgeQuestion(target: PracticeTarget): string {
   return target.kind === "weakness"
     ? "Whether the learner now gets this right on this problem (the reference is a mistake they made before)."
-    : "How the learner would solve this problem, and what it costs in time and space.";
+    : "Which technique the learner would use and what in the problem statement points to it, then how they would solve the problem and what it costs in time and space.";
 }
 
 /** Writes one target's record, merged into the latest results. */

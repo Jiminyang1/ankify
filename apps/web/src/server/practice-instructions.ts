@@ -1,4 +1,4 @@
-import type { TalkMove, TalkReference, TalkTarget, TalkTargetState } from "@ankify/core";
+import { isSignalPoint, type TalkMove, type TalkReference, type TalkTarget, type TalkTargetState } from "@ankify/core";
 
 /**
  * What the Coach says next in a talk-through (docs/coach-practice.md,
@@ -8,10 +8,13 @@ import type { TalkMove, TalkReference, TalkTarget, TalkTargetState } from "@anki
 
 const RATING_NAMES = ["Again", "Hard", "Good", "Easy"] as const;
 
-/** How the Coach opens a target's question. */
+/** How the Coach opens a target's question. The approach question starts
+ *  with recognizing the pattern: which technique, and what in the statement
+ *  points to it (the Solutions doc's signal point), then the solution and
+ *  its cost. */
 export function askInstruction(target: TalkTarget): string {
   if (target.kind === "core" && target.label !== "complexity") {
-    return "Ask how they would solve this problem and what it costs in time and space, as one open question. No hints, no choices, nothing about the approach.";
+    return "Ask, as one open question, which technique this problem calls for and what in the problem statement points to it, then how they would solve it and what it costs in time and space. No hints, no choices, nothing about the technique or the approach.";
   }
   if (target.kind === "core") {
     return "Ask what the time and space cost of their approach is, and why, as one open question.";
@@ -58,8 +61,14 @@ export function moveInstruction(args: {
       return move.reason === "faster"
         ? "Their approach works but is too slow for the constraints. Ask whether they can do better, without saying how or naming a technique. Don't say yet whether the rest is right."
         : "Their answer is on track but not complete. Ask a content-free follow-up such as \"Anything else?\" or \"Why does that work?\". Don't name, hint at, or confirm what's missing, and don't say yet whether they're right.";
-    case "name_gap":
-      return `They haven't covered this point yet: "${pointText(reference, move.point.approachId, move.point.pointId)}". Ask about just that part by naming it, never its content (for example, ask what something should track or why a step is safe). Don't confirm or correct anything else yet.`;
+    case "name_gap": {
+      const point = pointText(reference, move.point.approachId, move.point.pointId);
+      if (isSignalPoint(point)) {
+        // Naming this gap by its content would give the pattern away.
+        return "They haven't said what in the problem statement points to the technique. Ask what in the problem made them think of that approach (if they haven't named a technique yet, which technique fits and what in the statement tells them). Don't name the technique or any clue from the statement, and don't confirm or correct anything else yet.";
+      }
+      return `They haven't covered this point yet: "${point}". Ask about just that part by naming it, never its content (for example, ask what something should track or why a step is safe). Don't confirm or correct anything else yet.`;
+    }
     case "hint": {
       const point = move.point ? pointText(reference, move.point.approachId, move.point.pointId) : "";
       if (move.misconception) {
@@ -71,6 +80,9 @@ export function moveInstruction(args: {
         ]
           .filter(Boolean)
           .join(" ");
+      }
+      if (point && isSignalPoint(point)) {
+        return `Give the smallest hint toward what in the statement points to the technique: draw their attention to one clue from this, without stating it whole (and without naming the technique if they haven't): "${point}". Then ask what that clue suggests.`;
       }
       return point
         ? `Give the smallest hint with some content toward this point, without stating it whole: "${point}". Then ask them to try again.`
@@ -114,5 +126,5 @@ function nextText(next: TalkNext): string {
 /** The judge couldn't read this question (an error, or no reference): the
  *  Coach grades it, as in version 2. */
 export function fallbackInstruction(target: TalkTarget): string {
-  return `The automatic check isn't available for this question (${target.kind === "core" ? "the approach" : target.label}). Judge their answer yourself: if it's complete and right, call grade_answer with correct. If something is missing, ask one narrower question about just that part without giving it away, and grade once it's settled: partial if they needed that, missed if still wrong or they gave up. After grading, continue with the next question.`;
+  return `The automatic check isn't available for this question (${target.kind === "core" ? "the technique and the approach" : target.label}). Judge their answer yourself: if it's complete and right, call grade_answer with correct. If something is missing, ask one narrower question about just that part without giving it away, and grade once it's settled: partial if they needed that, missed if still wrong or they gave up. After grading, continue with the next question.`;
 }

@@ -32,6 +32,23 @@ const REFERENCE: TalkReference = {
   ],
 };
 
+/** A Solutions doc with a signal point first (docs/product-main-line.md). */
+const WITH_SIGNAL: TalkReference = {
+  mode: "key_points",
+  approaches: [
+    {
+      id: "a1",
+      name: "Variable-size sliding window",
+      mine: true,
+      points: [
+        { id: "p1", text: "Signal: contiguous subarray, all values positive, sum ≥ target" },
+        { id: "p2", text: "Shrink from the left while the sum still meets the target" },
+        { id: "p3", text: "Complexity: O(n) time, O(1) space" },
+      ],
+    },
+  ],
+};
+
 const WEAK_SPOT: TalkReference = {
   mode: "avoid_mistake",
   approaches: [{ id: "w", name: "init_sentinel", mine: false, points: [{ id: "p1", text: "dp starts at 0" }] }],
@@ -153,6 +170,36 @@ describe("advanceTalk", () => {
 
   it("ignores point ids the approach doesn't have", () => {
     expect(run([{ covered: ["p1", "p2", "p9"] }]).state.covered).toEqual(["p1", "p2"]);
+  });
+
+  it("the signal is an ordinary point: all said at once is correct", () => {
+    expect(run([{ covered: ["p1", "p2", "p3"] }], WITH_SIGNAL).last).toEqual({ kind: "settle", grade: "correct", by: "complete" });
+  });
+
+  it("an approach explained without its signal names the signal gap first; saying it then is partial", () => {
+    const result = run([{ covered: ["p2", "p3"] }, { covered: ["p2", "p3"] }, { covered: ["p1", "p2", "p3"] }], WITH_SIGNAL);
+    expect(result.moves.slice(0, 2)).toEqual([
+      { kind: "probe", reason: "more" },
+      { kind: "name_gap", point: { approachId: "a1", pointId: "p1" } },
+    ]);
+    expect(result.last).toEqual({ kind: "settle", grade: "partial", by: "complete" });
+  });
+
+  it("a signal said only after a hint is missed, whether or not the judge credits it", () => {
+    const toHint = [{ covered: ["p2", "p3"] }, { covered: ["p2", "p3"] }, { covered: ["p2", "p3"] }];
+    const credited = run([...toHint, { covered: ["p1", "p2", "p3"] }], WITH_SIGNAL);
+    expect(credited.kinds).toEqual(["probe", "name_gap", "hint", "settle"]);
+    expect(credited.last).toEqual({ kind: "settle", grade: "missed", by: "complete" });
+    const notCredited = run([...toHint, { covered: ["p2", "p3"] }], WITH_SIGNAL);
+    expect(notCredited.last).toEqual({ kind: "settle", grade: "missed", by: "not_recalled" });
+  });
+
+  it("nothing recalled gets a hint toward the signal first", () => {
+    expect(run([{ reply: "blank", approachId: null, approachStatus: "unclear" }], WITH_SIGNAL).last).toEqual({
+      kind: "hint",
+      point: { approachId: "a1", pointId: "p1" },
+      misconception: null,
+    });
   });
 
   it("a weak spot is settled by its one point", () => {
