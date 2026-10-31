@@ -172,9 +172,9 @@ function RoadmapNode({
         className,
       )}
     >
-      <span className="truncate text-[13px] font-medium">{group.name}</span>
-      <StatusBar counts={group.counts} total={total} className="mt-2 h-1.5" />
-      <span className="mt-1.5 flex h-4 items-center gap-2 text-[11px]">
+      <span className="shrink-0 truncate text-[13px] font-medium leading-4">{group.name}</span>
+      <StatusBar counts={group.counts} total={total} className="mt-1.5 h-1.5 shrink-0" />
+      <span className="mt-1 flex h-4 shrink-0 items-center gap-2 text-[11px]">
         <span className={cn("inline-flex items-center gap-1 tabular-nums", done === total ? "text-success" : "text-muted")}>
           {done === total && <Check aria-hidden="true" className="h-3 w-3" strokeWidth={3} />}
           {done}/{total}

@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ankify",
-  description: "Daily LeetCode review with spaced repetition and Q&A flashcards",
+  description: "Follow a LeetCode study plan, learn each pattern, and keep it with spaced review",
   icons: {
     icon: [
       { url: "/ankify-mark.svg", type: "image/svg+xml" },
