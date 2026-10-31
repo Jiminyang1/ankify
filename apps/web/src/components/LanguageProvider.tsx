@@ -72,7 +72,9 @@ export function LanguageProvider({
   );
 
   useEffect(() => {
-    persistLanguage(language);
+    // Hydration renders the server's language first; persisting that would
+    // overwrite the stored choice before the client snapshot takes over.
+    persistLanguage(getStoredLanguage(initialLanguage));
     if (language !== initialLanguage) {
       router.refresh();
     }
