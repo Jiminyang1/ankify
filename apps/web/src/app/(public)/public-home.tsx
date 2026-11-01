@@ -14,127 +14,155 @@ type Showcase = {
   points: string[];
   shot: ShotName;
   alt: string;
+  credit?: { text: string; href: string };
 };
+
+const LISTS_SOURCE = "https://leetcode.cn/circle/discuss/RvFUtj/";
 
 const COPY = {
   en: {
     eyebrow: "Spaced repetition for LeetCode",
-    title: "Remember the reasoning behind every solution.",
-    body: "ankify captures your problems, submissions, and failed test cases from LeetCode, then brings each one back with spaced repetition, AI quizzes built from your own mistakes, and a Study Coach that has read your code.",
+    title: "Follow a plan. Learn the patterns. Keep them.",
+    body: "Pick a study plan and work through it chapter by chapter on LeetCode. ankify collects what you solve and brings each problem back before it fades. Then a Study Coach asks which technique it takes and what in the statement tells you, so you practice recognizing the pattern instead of reciting the code.",
     start: "Continue with Google",
     getExtension: "Add to Chrome",
     note: "Free to start: new accounts get free AI credits, then use your own Anthropic, OpenAI, or DeepSeek key.",
     heroAlt:
-      "ankify review workspace: the Coin Change statement, an AI quiz about the greedy counterexample, and Study Coach explaining why the first submission failed",
+      "ankify review workspace: the Coin Change statement beside the Study Coach, which has checked a spoken answer against the problem's Solutions doc",
     stepsTitle: "How it works",
     steps: [
-      ["Solve", "Work on LeetCode as usual. Accepted or not, every attempt counts."],
       [
-        "Capture",
-        "One click in the Chrome extension saves the statement, your submissions, and the exact failing test case.",
+        "Pick a plan",
+        "Top Interview 150, LeetCode 75, Top 100 Liked, 灵茶山艾府's lists, or a public LeetCode list. Your solved history shows where you already are.",
+      ],
+      [
+        "Solve on LeetCode",
+        "The Chrome extension collects a problem on your first new submission, pass or fail, with your code and the failing test case.",
       ],
       [
         "Review",
-        "FSRS-6 brings each problem back just before you'd forget it, on the web or in the side panel next to LeetCode.",
+        "Each problem comes back just before you'd forget it. Talk it through with the Coach on the web or beside LeetCode, then confirm your rating.",
       ],
     ],
     showcases: [
       {
-        eyebrow: "Quiz",
-        title: "A quiz for each review, built from your own mistakes.",
-        body: "Five questions generated from the statement, your failed submissions, your notes, and your saved cards. Each batch covers at least four different angles and always includes a complexity question.",
+        eyebrow: "Plan",
+        title: "Always know what's next.",
+        body: "Your plan is a roadmap of chapters: what you've solved, what's in review, and what's due. Today shows your reviews first, then the next problem in your current chapter.",
         points: [
-          "Answer with A–D, rate with 1–4, submit with Enter",
-          "Save any missed question as a flashcard in one click",
-          "Your score suggests a rating, but you always decide",
+          "Finish a chapter and go deeper on its technique",
+          "Forget a review and get one easier problem with the same technique",
+          "Finish the plan and get a focused one for what you forget most",
         ],
-        shot: "review-quiz",
-        alt: "Quiz panel with a correct answer and its explanation next to the problem statement",
+        shot: "plan-roadmap",
+        alt: "Plan page: Top Interview 150 as a roadmap of chapters, with solved, due, and not started counts",
+        credit: { text: "Techniques and lists from 灵茶山艾府, used with permission", href: LISTS_SOURCE },
+      },
+      {
+        eyebrow: "Review",
+        title: "Each review starts with recognizing the pattern.",
+        body: "Say which technique the problem calls for and what in the statement points to it, then how you'd solve it and what it costs. Your reply is checked against a Solutions doc for that problem, and the Coach follows up only on what you left out.",
+        points: [
+          "The more help you need, the lower the grade",
+          "Next time it asks about the mistakes you made last time",
+          "A rating is suggested, but you always decide",
+        ],
+        shot: "practice-panel",
+        alt: "Practice results in the Study Coach: the question marked right, with each point of the Solutions doc listed",
       },
       {
         eyebrow: "Study Coach",
         title: "An AI tutor that has actually read your submissions.",
-        body: "Ask why an attempt failed and Coach looks up your code, the failing case, your notes, and past quiz results before answering. It explains your mistake, not a generic editorial.",
+        body: "Ask why an attempt failed and the Coach looks up your code, the failing case, and your notes before answering. It explains your mistake, not a generic editorial.",
         points: [
           "Available beside every page, with conversations that persist",
-          "Can jump to another problem or suggest a new card or quiz",
-          "Nothing is saved until you confirm it",
+          "Records the specific mistakes it finds as weak spots you can remove",
+          "Edits to your notes wait for your approval",
         ],
         shot: "coach-panel",
         alt: "Study Coach explaining why a greedy Coin Change solution fails on coins [1, 3, 4] with amount 6",
       },
       {
         eyebrow: "Chrome extension",
-        title: "Review right next to LeetCode.",
-        body: "The side panel shows today's queue and the problem you're on: quiz, cards, notes, and the same rating bar as the web app. A new problem is one click to capture, with all your submissions.",
+        title: "Everything beside LeetCode.",
+        body: "The side panel follows the problem in your current tab: the Coach, its weak spots, your notes and solutions, and the rating buttons when it's due. Away from a problem, it shows today's reviews and what's next in your plan.",
         points: [
-          "Detects the problem in your current tab",
-          "A gold ! on the toolbar icon for solved problems you haven't saved",
+          "Collects a problem on your first new submission",
+          "The Coach can read the code in your editor, and you can turn that off",
           "Shares your web login, so there's no token to paste",
         ],
         shot: "extension-panel",
-        alt: "ankify Chrome side panel with a Coin Change quiz question, its explanation, and the rating bar",
+        alt: "ankify Chrome side panel: today's due reviews and the next problem in the plan",
       },
     ] satisfies Showcase[],
     extras: [
-      ["Keyboard-first", "Rate with 1–4, answer with A–D, flip cards with Space, submit with Enter."],
+      ["Keyboard-first", "Rate with 1–4, submit with Enter, and press ? for help."],
       ["Free credits, then your key", "Start on free AI credits, then add your own key. Keys are encrypted before they're stored, and your key always takes priority."],
       ["English or 简体中文", "The interface and AI output each have their own language setting."],
       ["Your data stays yours", "Export everything as NDJSON or delete your account from Settings."],
     ],
-    finalTitle: "Your next review starts with the problem you solved today.",
-    finalBody: "Sign in with Google and capture your first problem from LeetCode. Free AI credits cover your first quizzes.",
+    finalTitle: "Pick a plan and start with your next problem.",
+    finalBody: "Sign in with Google, choose a plan, and add the extension. Free AI credits cover your first reviews.",
     privacy: "Privacy policy",
     terms: "Terms of use",
   },
   zh: {
     eyebrow: "为 LeetCode 设计的间隔复习",
-    title: "记住每道题背后的思路。",
-    body: "ankify 从 LeetCode 收集你的题目、提交和失败用例，用间隔复习、根据你自己错误生成的 AI 测验，以及读过你代码的学习教练，把每道题在遗忘前带回来。",
+    title: "跟着题单，学会模式，不再忘记。",
+    body: "选一个题单，在 LeetCode 上一章一章往下做。ankify 收录你做过的题，在快要忘记前带回来。复习时，学习教练先问你用什么技巧、题目里哪句话提示了你，练的是认出模式，而不是背代码。",
     start: "使用 Google 开始",
     getExtension: "添加到 Chrome",
     note: "免费开始：新账号自带免费 AI 额度，之后使用你自己的 Anthropic、OpenAI 或 DeepSeek key。",
-    heroAlt: "ankify 复习工作区：Coin Change 题面、关于贪心反例的 AI 测验，以及解释首次提交为何失败的学习教练",
+    heroAlt: "ankify 复习工作区：Coin Change 题面旁边是学习教练，它已对照这道题的 Solutions 文档判过一次回答",
     stepsTitle: "如何使用",
     steps: [
-      ["刷题", "照常在 LeetCode 做题，通过或失败的每次提交都有价值。"],
-      ["捕获", "在 Chrome 扩展里点一下，同步题面、全部提交和具体的失败用例。"],
-      ["复习", "FSRS-6 在你快要遗忘前安排复习，可在网页或 LeetCode 旁的侧边栏完成。"],
+      ["选题单", "Top Interview 150、LeetCode 75、Top 100 Liked、灵茶山艾府的题单，或任意公开的 LeetCode 题单。做题记录会标出你已经做到哪。"],
+      ["在 LeetCode 做题", "第一次新提交时，不管通过与否，Chrome 扩展都会收录这道题，连同你的代码和失败用例。"],
+      ["复习", "每道题在你快要忘记前回来。在网页或 LeetCode 旁边和教练讲一遍，再确认评分。"],
     ],
     showcases: [
       {
-        eyebrow: "测验",
-        title: "每次复习都有一套新测验，来自你自己的错误。",
-        body: "根据题面、失败提交、笔记和已有卡片生成五道选择题。每套至少覆盖四个角度，并且一定包含复杂度题目。",
-        points: ["A–D 作答，1–4 评分，Enter 提交", "答错的题一键保存为卡片", "得分只给出建议评分，最终由你决定"],
-        shot: "review-quiz",
-        alt: "测验面板展示正确答案与解析，旁边是题面",
+        eyebrow: "题单",
+        title: "随时知道下一步做什么。",
+        body: "题单是一张按章节展开的路线图：哪些做过、哪些在复习、哪些到期。「今日」先列复习，再给出当前章节的下一题。",
+        points: ["做完一章，可以继续深入这一章的技巧", "复习时忘了，推荐一道同技巧的更简单的题", "做完题单，按你最常忘的内容推荐专题题单"],
+        shot: "plan-roadmap",
+        alt: "题单页：Top Interview 150 按章节展开的路线图，标出已做、到期和未开始的数量",
+        credit: { text: "技巧分类与题单来自灵茶山艾府，已获授权", href: LISTS_SOURCE },
+      },
+      {
+        eyebrow: "复习",
+        title: "每次复习，从认出模式开始。",
+        body: "先说这道题用什么技巧、题目里哪句话提示了你，再讲解法和复杂度。回答会对照这道题的 Solutions 文档判断，教练只追问你漏掉的部分。",
+        points: ["需要的提示越多，得分越低", "下次会专门问你上次犯的错", "系统给出建议评分，最终由你决定"],
+        shot: "practice-panel",
+        alt: "学习教练里的练习结果：这道题判为答对，并列出 Solutions 文档的每个要点",
       },
       {
         eyebrow: "学习教练",
         title: "真正读过你提交代码的 AI 教练。",
-        body: "问它某次提交为什么失败，教练会先查看你的代码、失败用例、笔记和过往测验，再回答。它讲的是你的错误，而不是一篇通用题解。",
-        points: ["每个页面都能打开，对话会被保留", "可以跳转到其他题，或建议新的卡片与测验", "所有写入都需要你确认"],
+        body: "问它某次提交为什么失败，教练会先查看你的代码、失败用例和笔记，再回答。它讲的是你的错误，而不是一篇通用题解。",
+        points: ["每个页面都能打开，对话会被保留", "发现的具体错误会记为易错点，你可以删除", "修改笔记需要你批准"],
         shot: "coach-panel",
         alt: "学习教练解释贪心解法为何在 coins [1, 3, 4]、amount 6 时失败",
       },
       {
         eyebrow: "Chrome 扩展",
-        title: "在 LeetCode 旁边直接复习。",
-        body: "侧边栏显示今日队列和当前题目：测验、卡片、笔记，以及与网页相同的评分栏。新题一键捕获，连同你的全部提交。",
-        points: ["自动识别当前标签页的题目", "做过但未保存的题，工具栏图标显示金色 !", "与网页共用登录，无需粘贴 token"],
+        title: "一切都在 LeetCode 旁边。",
+        body: "侧边栏跟随当前标签页的题目：教练、这道题的易错点、笔记和解法，到期时还有评分按钮。不在题目页时，显示今天的复习和题单的下一题。",
+        points: ["第一次新提交时自动收录这道题", "教练可以读取编辑器里的代码，也可以关闭", "与网页共用登录，无需粘贴 token"],
         shot: "extension-panel",
-        alt: "ankify Chrome 侧边栏：带解析的 Coin Change 测验题与评分栏",
+        alt: "ankify Chrome 侧边栏：今天到期的复习和题单的下一题",
       },
     ] satisfies Showcase[],
     extras: [
-      ["键盘优先", "1–4 评分，A–D 作答，空格翻卡，Enter 提交。"],
+      ["键盘优先", "1–4 评分，Enter 提交，按 ? 查看帮助。"],
       ["先免费，再用自己的 key", "先用免费 AI 额度，之后填入自己的 key。key 在存储前加密，配置后优先使用你自己的 key。"],
       ["English 或简体中文", "界面语言与 AI 输出语言可以分别设置。"],
       ["数据归你所有", "可在设置中导出 NDJSON，或永久删除账户。"],
     ],
-    finalTitle: "下一次复习，从今天做过的题开始。",
-    finalBody: "使用 Google 登录，从 LeetCode 捕获第一道题。免费 AI 额度足够你先试几次测验。",
+    finalTitle: "选一个题单，从下一题开始。",
+    finalBody: "使用 Google 登录，选好题单，再添加扩展。免费 AI 额度足够你完成最初几次复习。",
     privacy: "隐私政策",
     terms: "使用条款",
   },
@@ -142,16 +170,17 @@ const COPY = {
 
 /** Intrinsic sizes of the captures in public/marketing (light and dark share one size). */
 const SHOT_SIZE = {
-  "study-coach": [2400, 1500],
-  "review-quiz": [2400, 1500],
-  "coach-panel": [790, 1840],
-  "extension-panel": [800, 1950],
+  "review-workspace": [2400, 1500],
+  "plan-roadmap": [2400, 1500],
+  "practice-panel": [712, 1590],
+  "coach-panel": [712, 1590],
+  "extension-panel": [712, 1590],
 } as const;
 
 type ShotName = keyof typeof SHOT_SIZE;
 
 /** Tall captures sit beside their text instead of below it. */
-const SIDE_SHOTS = new Set<ShotName>(["coach-panel", "extension-panel"]);
+const SIDE_SHOTS = new Set<ShotName>(["practice-panel", "coach-panel", "extension-panel"]);
 
 /** Light and dark captures of the same screen; CSS shows the one that matches the active theme. */
 function ThemedShot({
@@ -192,6 +221,16 @@ function ShowcaseText({ item }: { item: Showcase }) {
             </li>
           ))}
         </ul>
+        {item.credit && (
+          <a
+            href={item.credit.href}
+            target="_blank"
+            rel="noreferrer"
+            className="block text-xs text-muted transition hover:text-fg hover:underline"
+          >
+            {item.credit.text}
+          </a>
+        )}
       </div>
     </>
   );
@@ -234,7 +273,7 @@ export function PublicHome() {
           </div>
           <p className="mt-4 text-sm text-muted">{copy.note}</p>
         </div>
-        <ThemedShot name="study-coach" alt={copy.heroAlt} priority />
+        <ThemedShot name="review-workspace" alt={copy.heroAlt} priority />
       </section>
 
       <section className="space-y-8">

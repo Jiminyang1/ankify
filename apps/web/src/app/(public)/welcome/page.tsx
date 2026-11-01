@@ -11,26 +11,26 @@ export const dynamic = "force-dynamic";
 const COPY = {
   en: {
     eyebrow: "Welcome to ankify",
-    title: "Turn solved problems into durable memory.",
-    body: "The extension is ready. Sign in with Google, capture one LeetCode problem, and ankify will guide you through your first scheduled review.",
+    title: "Follow a plan, and keep what you learn.",
+    body: "The extension is ready. Sign in with Google and choose a study plan, and ankify will guide you from your first problem to your first review.",
     signedIn: "Continue setup",
     signIn: "Continue with Google",
     steps: [
       ["Connect", "The extension securely reuses your ankify web session."],
-      ["Capture", "Open a LeetCode problem and bring in the statement plus your submissions."],
-      ["Remember", "Use an optional AI quiz or review manually, then let FSRS schedule the next recall."],
+      ["Solve", "Submit on a LeetCode problem, and the extension collects it with your submissions."],
+      ["Review", "Talk it through with the Study Coach or rate it yourself, and it comes back before you forget."],
     ],
   },
   zh: {
     eyebrow: "欢迎使用 ankify",
-    title: "把做过的题，变成真正记得住的东西。",
-    body: "扩展已经准备好。使用 Google 登录、捕获一道 LeetCode 题目，ankify 会带你完成第一次定时复习。",
+    title: "跟着题单走，学过的都记得住。",
+    body: "扩展已经准备好。使用 Google 登录并选好题单，ankify 会带你从第一道题走到第一次复习。",
     signedIn: "继续设置",
     signIn: "使用 Google 继续",
     steps: [
       ["连接", "扩展会安全复用 ankify 网页登录会话。"],
-      ["捕获", "打开 LeetCode 题目，同步题面和你的提交记录。"],
-      ["记住", "可以用 AI Quiz，也可以手动复习，最后交给 FSRS 安排下次回忆。"],
+      ["做题", "在 LeetCode 题目上提交，扩展会收录这道题和你的提交记录。"],
+      ["复习", "和学习教练讲一遍，或者自己评分，这道题会在你忘记前回来。"],
     ],
   },
 } as const;

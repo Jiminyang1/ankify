@@ -15,7 +15,7 @@ export default defineManifest(({ mode }) => {
     minimum_chrome_version: "116",
     name: "ankify",
     description:
-      "A study coach beside LeetCode: it reads your code, keeps notes and cards per problem, and brings problems back for practice.",
+      "A study coach beside LeetCode: follow a plan, talk through what you solved, and get each problem back before you forget it.",
     version: "0.3.2",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
