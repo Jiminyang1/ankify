@@ -31,8 +31,6 @@ export type CoachCopy = {
   rateDirectly: string;
   dueForReview: string;
   title: string;
-  showChat: string;
-  hideChat: string;
   intro: string;
   placeholder: string;
   send: string;
@@ -55,7 +53,8 @@ export type CoachCopy = {
   offPage: string;
   thinking: string;
   thinkingFor: (seconds: number) => string;
-  quick: { failing: string; hint: string; history: string };
+  /** On a problem; off one, about the reviews and the plan. */
+  quick: { failing: string; hint: string; history: string; today: string; plan: string };
   approve: string;
   apply: string;
   applied: string;
@@ -79,17 +78,15 @@ const sessionKeyFor = (slug: string | null) => (slug ? `ankify.coachSession:${sl
 
 type PageInfo = { tabId: number; slug: string; title: string | null } | null;
 
-/** The Study Coach, docked at the bottom of the side panel. Collapsed it is
- *  just a composer; sending (or "Show chat") expands it over the panel's
- *  content. Shares the web app's conversations; each turn carries the problem
- *  in the active tab and, unless turned off, a snapshot of LeetCode's editor. */
+/** The Study Coach: the problem view's chat, or its own screen from Today.
+ *  Shares the web app's conversations; each turn carries the problem in the
+ *  active tab and, unless turned off, a snapshot of LeetCode's editor. */
 export function CoachTab({
   settings,
   saved,
   copy,
   mode,
-  expanded,
-  onExpandedChange,
+  hidden,
   ratingPanel,
   aboveComposer,
   onDocsChanged,
@@ -98,11 +95,11 @@ export function CoachTab({
   settings: ExtSettings;
   saved: CoachSavedProblem | null;
   copy: CoachCopy;
-  /** "full": the chat is the problem view. "dock": a composer under other
-   *  content that expands over it. */
-  mode: "full" | "dock";
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
+  /** "problem": the chat is the problem view, its weak spots pinned on top.
+   *  "screen": the Coach's own screen, saying which problem it sees. */
+  mode: "problem" | "screen";
+  /** Kept mounted while another screen shows, so a reply keeps streaming. */
+  hidden: boolean;
   /** Rating buttons for a due problem reviewed another way (like re-solving). */
   ratingPanel: ReactNode;
   /** Shown above the composer while set (the easier problem after Again). */
@@ -224,7 +221,7 @@ export function CoachTab({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [snapshot, partial, pendingMessage, expanded]);
+  }, [snapshot, partial, pendingMessage, hidden]);
 
   const savedHere = saved && page && saved.slug === page.slug ? saved : null;
   const savedProblemId = savedHere?.problemId ?? null;
@@ -288,7 +285,6 @@ export function CoachTab({
         throw new Error(body?.message ?? body?.error ?? `${copy.practice.actionFailed} (HTTP ${res.status})`);
       }
       setLocalPractice(body.session);
-      onExpandedChange(true);
       // A talk-through starts with the Coach's first question.
       if (body.session.mode === "talk" && body.session.status === "active") {
         void sendRef.current(copy.practice.startMessage, { type: "practice_start", practiceSessionId: body.session.id });
@@ -352,7 +348,6 @@ export function CoachTab({
     if (!text || streaming || remoteRunActive) return;
     const controller = new AbortController();
     abortRef.current = controller;
-    onExpandedChange(true);
     sentAtRef.current = Date.now();
     setStreaming(true);
     setPartial("");
@@ -536,7 +531,7 @@ export function CoachTab({
     if (!input) return;
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 168)}px`;
-  }, [draft, expanded]);
+  }, [draft, hidden]);
 
   async function actOnProposal(step: AgentStepDto, action: "approve" | "dismiss") {
     setBusyStep(step.id);
@@ -582,7 +577,7 @@ export function CoachTab({
   const currentLevels = pickable?.models.find((model) => model.id === currentModelId)?.reasoningLevels ?? [];
   const quickPrompts = page
     ? [copy.quick.failing, copy.quick.hint, ...(savedHere ? [copy.quick.history] : [])]
-    : [];
+    : [copy.quick.today, copy.quick.plan];
 
   sendRef.current = send;
   // Whether a session is running comes from the server (resume on load, or
@@ -815,49 +810,15 @@ export function CoachTab({
       >
         <NewChatIcon />
       </button>
-      {mode === "dock" && (
-        <button
-          type="button"
-          className="coach-icon"
-          aria-label={copy.hideChat}
-          title={copy.hideChat}
-          onClick={() => onExpandedChange(false)}
-        >
-          <ChevronDownIcon />
-        </button>
-      )}
     </div>
   );
 
 
-  if (mode === "dock" && !expanded) {
-    return (
-      <section className="coach coach-docked" aria-label={copy.title}>
-        {(runs.length > 0 || error || localPractice) && (
-          <div className="coach-dock-head">
-            <span className="coach-dock-title">{copy.title}</span>
-            <button
-              type="button"
-              className="coach-icon"
-              aria-label={copy.showChat}
-              title={copy.showChat}
-              onClick={() => onExpandedChange(true)}
-            >
-              <ChevronDownIcon up />
-            </button>
-          </div>
-        )}
-        {error && <p className="coach-run-error">{error}</p>}
-        {composer}
-      </section>
-    );
-  }
-
   return (
-    <section className={`coach coach-expanded${mode === "full" ? " coach-full" : ""}`} aria-label={copy.title}>
+    <section className={`coach${hidden ? " is-hidden" : ""}`} aria-label={copy.title}>
       <div className="coach-bar">
         <div className="coach-context">
-          {mode === "full" ? (
+          {mode === "problem" ? (
             <span className="coach-context-title">{snapshot?.session.title?.trim() || copy.title}</span>
           ) : page ? (
             <>
@@ -872,7 +833,7 @@ export function CoachTab({
       </div>
 
       <div className="coach-thread scroll-area" ref={scrollRef} aria-live="polite">
-        {mode === "full" && savedHere && weaknesses && (
+        {mode === "problem" && savedHere && weaknesses && (
           <WeakSpots
             weaknesses={weaknesses}
             language={settings.language}
@@ -888,7 +849,7 @@ export function CoachTab({
           </p>
         ) : runs.length === 0 && !pendingMessage ? (
           <div className="coach-empty">
-            <p className="popup-muted">{copy.intro}</p>
+            {page && <p className="popup-muted">{copy.intro}</p>}
             {quickPrompts.length > 0 && (
               <div className="coach-quick">
                 {quickPrompts.map((prompt) => (
@@ -1165,14 +1126,6 @@ function NewChatIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M13 8.5V12a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12V5a1.5 1.5 0 0 1 1.5-1.5H8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="m11.6 2.4 2 2L8.2 9.8l-2.6.6.6-2.6 5.4-5.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon({ up = false }: { up?: boolean }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={up ? { transform: "rotate(180deg)" } : undefined}>
-      <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

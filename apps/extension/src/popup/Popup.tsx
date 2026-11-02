@@ -62,11 +62,11 @@ type Sticky = {
   previews: Previews;
 };
 
-type PanelView = "auto" | "today" | "settings" | "docs";
+type PanelView = "auto" | "today" | "plan" | "coach" | "settings" | "docs";
 
 const EXT_I18N = {
   en: {
-    nav: { today: "Today", problem: "Problem", settings: "Settings" },
+    nav: { today: "Today", plan: "Plan", problem: "Problem", settings: "Settings" },
     common: {
       back: "Back",
       navigation: "Primary navigation",
@@ -74,9 +74,7 @@ const EXT_I18N = {
       retry: "Retry",
       loadingQueue: "Loading today's queue...",
       due: "due",
-      leftToday: "left today",
-      reviewsToday: "reviews today",
-      openFullReview: "Open full review on web ↗",
+      openFullReview: "Review on the web",
       lapses: (count: number) => `forgot ${count} time${count === 1 ? "" : "s"}`,
       submissions: (count: number) => `${count} submissions`,
       acceptedFailed: (accepted: number, failed: number) => `(${accepted} accepted, ${failed} failed)`,
@@ -105,8 +103,14 @@ const EXT_I18N = {
       allCaughtUp: "All caught up - nothing due right now.",
       noQueue: "No problems in queue.",
       loadFailed: "Couldn't load today's queue.",
-      dueNow: "Due now",
-      nextTitle: "Next in your plan",
+      toReview: "to review today",
+      doneOf: (done: number, limit: number) => `${done} of ${limit} done`,
+      doneToday: (done: number) => `${done} done`,
+      moreDue: (count: number) => `${count} more due after your daily limit`,
+      seePlan: "What's next in your plan",
+      nextTitle: "Up next",
+      planLoading: "Loading your plan...",
+      planLoadFailed: "Couldn't load your plan.",
       nextSummary: (plan: string, done: number, total: number) => `${plan} · ${done} of ${total} solved`,
       chapter: "Chapter",
       chapterProgress: (done: number, total: number) => `${done} of ${total} done`,
@@ -257,8 +261,6 @@ const EXT_I18N = {
       rateDirectly: "Rate",
       dueForReview: "Due for review",
       title: "Study Coach",
-      showChat: "Show chat",
-      hideChat: "Hide chat",
       intro:
         "Ask about the problem you're on. With Code on (below), the Coach also sees what's in LeetCode's editor right now, so it can point at the bug instead of guessing.",
       placeholder: "Ask the Study Coach",
@@ -287,6 +289,8 @@ const EXT_I18N = {
         failing: "Why is my code failing?",
         hint: "Give me a hint, not the answer",
         history: "What did I get wrong on this before?",
+        today: "What should I review first today?",
+        plan: "What's next in my plan?",
       },
       approve: "Approve",
       apply: "Apply",
@@ -346,7 +350,7 @@ const EXT_I18N = {
     },
   },
   zh: {
-    nav: { today: "今日", problem: "题目", settings: "设置" },
+    nav: { today: "今日", plan: "计划", problem: "题目", settings: "设置" },
     common: {
       back: "返回",
       navigation: "主导航",
@@ -354,9 +358,7 @@ const EXT_I18N = {
       retry: "重试",
       loadingQueue: "正在加载今日队列...",
       due: "到期",
-      leftToday: "今日剩余",
-      reviewsToday: "今日复习",
-      openFullReview: "在 Web 打开完整复习 ↗",
+      openFullReview: "在 Web 上复习",
       lapses: (count: number) => `忘了 ${count} 次`,
       submissions: (count: number) => `${count} 次提交`,
       acceptedFailed: (accepted: number, failed: number) => `（${accepted} 通过，${failed} 失败）`,
@@ -380,8 +382,14 @@ const EXT_I18N = {
       allCaughtUp: "全部跟上了，现在没有到期题。",
       noQueue: "队列里没有题目。",
       loadFailed: "加载今日队列失败。",
-      dueNow: "当前到期",
-      nextTitle: "计划里的下一题",
+      toReview: "今天要复习",
+      doneOf: (done: number, limit: number) => `已复习 ${done} / ${limit}`,
+      doneToday: (done: number) => `已复习 ${done}`,
+      moreDue: (count: number) => `另有 ${count} 道到期，超出了每日上限`,
+      seePlan: "看看计划里的下一题",
+      nextTitle: "下一题",
+      planLoading: "正在加载计划...",
+      planLoadFailed: "加载计划失败。",
       nextSummary: (plan: string, done: number, total: number) => `${plan} · 已做 ${done} / ${total}`,
       chapter: "当前章节",
       chapterProgress: (done: number, total: number) => `已做 ${done} / ${total}`,
@@ -521,8 +529,6 @@ const EXT_I18N = {
       rateDirectly: "评分",
       dueForReview: "该复习了",
       title: "学习教练",
-      showChat: "展开对话",
-      hideChat: "收起对话",
       intro: "问问你正在做的这道题。打开下方的「代码」后，教练还能看到 LeetCode 编辑器里现在的代码，直接指出问题在哪。",
       placeholder: "问学习教练",
       send: "发送",
@@ -549,6 +555,8 @@ const EXT_I18N = {
         failing: "我的代码哪里错了？",
         hint: "给我一点提示，别直接给答案",
         history: "我以前这题错在哪？",
+        today: "今天先复习哪道？",
+        plan: "我的计划下一步做什么？",
       },
       approve: "同意",
       apply: "应用",
@@ -844,7 +852,6 @@ export function Popup() {
   const [authState, setAuthState] = useState<AuthState>({ kind: "loading" });
   /** "auto" shows the problem in the active tab, or Today when there is none. */
   const [view, setView] = useState<PanelView>("auto");
-  const [coachExpanded, setCoachExpanded] = useState(false);
   /** Bumps when the Coach applies a doc edit, so the Docs tab reloads. */
   const [docsRevision, setDocsRevision] = useState(0);
   /** After a review rated Again: an easier problem with the same technique,
@@ -1078,10 +1085,15 @@ export function Popup() {
   const showSettings = view === "settings";
   const headerProblem = captured ?? (state.kind === "off-page" ? sticky : null);
   const showDocs = view === "docs" && headerProblem != null;
-  const showToday = !showSettings && !showDocs && (view === "today" || (state.kind === "off-page" && !sticky));
-  // On a problem the Coach chat is the main area; elsewhere it docks below.
-  const problemView = !showSettings && !showDocs && !showToday;
+  // Plan and the Coach are their own screens, opened from Today's top bar.
+  const showPlan = view === "plan";
+  const showCoach = view === "coach";
+  const showToday =
+    !showSettings && !showDocs && !showPlan && !showCoach && (view === "today" || (state.kind === "off-page" && !sticky));
+  // On a problem the Coach chat is the main area.
+  const problemView = !showSettings && !showDocs && !showPlan && !showCoach && !showToday;
   const canReturnToProblem = (view === "today" || showDocs) && (state.kind !== "off-page" || sticky != null);
+  const goBack = () => setView(showPlan || showCoach ? "today" : "auto");
   const onRated = (problemId: string, suggestion: TechniqueSuggestionDto | null) => {
     if (suggestion) setEasier({ problemId, value: suggestion });
     void detect({ force: true });
@@ -1104,13 +1116,13 @@ export function Popup() {
     <div className="popup-shell">
       <header className="panel-bar">
         <div className="panel-bar-main">
-          {showSettings || canReturnToProblem ? (
+          {showSettings || showPlan || showCoach || canReturnToProblem ? (
             <button
               type="button"
               className="panel-bar-icon"
               aria-label={text.common.back}
               title={text.common.back}
-              onClick={() => setView("auto")}
+              onClick={goBack}
             >
               <ChevronIcon direction="left" />
             </button>
@@ -1121,6 +1133,10 @@ export function Popup() {
             <h1 className="panel-bar-title">{headerProblem!.problem.title}</h1>
           ) : showToday ? (
             <h1 className="panel-bar-title">{text.nav.today}</h1>
+          ) : showPlan ? (
+            <h1 className="panel-bar-title">{text.nav.plan}</h1>
+          ) : showCoach ? (
+            <h1 className="panel-bar-title">{text.coach.title}</h1>
           ) : headerProblem ? (
             <ProblemHeading problem={headerProblem.problem} settings={settings} place={place} />
           ) : (
@@ -1154,7 +1170,7 @@ export function Popup() {
               <ExternalIcon />
             </a>
           )}
-          {!showSettings && !showToday && !showDocs && (
+          {problemView && (
             <button
               type="button"
               className="panel-bar-icon"
@@ -1164,6 +1180,28 @@ export function Popup() {
             >
               <ListIcon />
               {dueCount > 0 && <span className="panel-bar-count">{dueCount}</span>}
+            </button>
+          )}
+          {showToday && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.nav.plan}
+              title={text.nav.plan}
+              onClick={() => setView("plan")}
+            >
+              <FlagIcon />
+            </button>
+          )}
+          {showToday && (
+            <button
+              type="button"
+              className="panel-bar-icon"
+              aria-label={text.coach.title}
+              title={text.coach.title}
+              onClick={() => setView("coach")}
+            >
+              <ChatIcon />
             </button>
           )}
           {!showSettings && (
@@ -1180,11 +1218,8 @@ export function Popup() {
         </div>
       </header>
 
-      <main
-        className={`popup-main scroll-area${problemView ? " is-strip" : ""}${
-          showToday && coachExpanded ? " is-covered" : ""
-        }`}
-      >
+      {!showCoach && (
+      <main className={`popup-main scroll-area${problemView ? " is-strip" : ""}`}>
         {showSettings ? (
           <SettingsTab
             settings={settings}
@@ -1198,7 +1233,9 @@ export function Popup() {
             <DocsPanel settings={settings} problemId={headerProblem!.problem.id} revision={docsRevision} copy={text.docs} />
           </div>
         ) : showToday ? (
-          <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} />
+          <TodayTab settings={settings} onJumpToProblem={() => setView("auto")} onShowPlan={() => setView("plan")} />
+        ) : showPlan ? (
+          <PlanTab settings={settings} onJumpToProblem={() => setView("auto")} />
         ) : (
           <ProblemTab
             state={state}
@@ -1211,8 +1248,10 @@ export function Popup() {
           />
         )}
       </main>
+      )}
 
-      {(problemView || showToday) && (
+      {/* Mounted under Today and Plan too, so a reply keeps streaming there. */}
+      {!showSettings && !showDocs && (
         <CoachTab
           settings={settings}
           saved={
@@ -1226,9 +1265,8 @@ export function Popup() {
               : null
           }
           copy={text.coach}
-          mode={problemView ? "full" : "dock"}
-          expanded={problemView || coachExpanded}
-          onExpandedChange={setCoachExpanded}
+          mode={problemView ? "problem" : "screen"}
+          hidden={!problemView && !showCoach}
           ratingPanel={ratingPanel}
           aboveComposer={easierCard}
           onDocsChanged={() => setDocsRevision((revision) => revision + 1)}
@@ -1421,6 +1459,29 @@ function ListIcon() {
   );
 }
 
+/** The plan: a flag on its pole. */
+function FlagIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 14.5V2M3.5 2.75h8.25L9.9 5.6l1.85 2.85H3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The Study Coach: a speech bubble. */
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3 2.75h10a1.25 1.25 0 0 1 1.25 1.25v6A1.25 1.25 0 0 1 13 11.25H7.5L4.5 13.75v-2.5H3A1.25 1.25 0 0 1 1.75 10V4A1.25 1.25 0 0 1 3 2.75Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** A six-tooth gear. Separate rays around a circle read as a sun (a theme
  *  toggle), so the teeth are one closed outline. */
 function GearIcon() {
@@ -1458,15 +1519,16 @@ function ExternalIcon() {
   );
 }
 
-/** Reviews left today, for the Today button's badge. */
+/** Reviews due today, within the daily limit: the Today button's badge, the
+ *  same number Today shows. */
 function useDueCount(settings: ExtSettings | null, signedIn: boolean) {
   const [count, setCount] = useState(0);
   useEffect(() => {
     if (!settings || !signedIn) return;
     const load = async () => {
       try {
-        const res = await apiFetch(settings, "/api/review/queue?limit=1", { cache: "no-store" });
-        if (res.ok) setCount(((await res.json()) as QueueResponse).queue.remaining);
+        const res = await apiFetch(settings, "/api/review/queue?limit=0", { cache: "no-store" });
+        if (res.ok) setCount(((await res.json()) as QueueResponse).queue.dueCount);
       } catch {
         /* the badge just stays as it was */
       }
@@ -1482,14 +1544,28 @@ function useDueCount(settings: ExtSettings | null, signedIn: boolean) {
   return count;
 }
 
+/** Opens a problem in the active tab (a new one if there is none). */
+async function openInActiveTab(url: string) {
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (activeTab?.id != null) {
+    await chrome.tabs.update(activeTab.id, { url });
+  } else {
+    await chrome.tabs.create({ url });
+  }
+}
+
 /* ── TodayTab ── */
 
+/** Today: every review due today, within the daily limit. The plan and the
+ *  Coach have their own screens. */
 function TodayTab({
   settings,
   onJumpToProblem,
+  onShowPlan,
 }: {
   settings: ExtSettings;
   onJumpToProblem: () => void;
+  onShowPlan: () => void;
 }) {
   const t = getExtText(settings);
   const site = useLeetcodeSite();
@@ -1500,7 +1576,8 @@ function TodayTab({
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await apiFetch(settings, "/api/review/queue?limit=20", {
+      // The server's cap: in practice the whole day, since it stops at the daily limit.
+      const res = await apiFetch(settings, "/api/review/queue?limit=100", {
         headers: authHeaders(settings),
       });
       if (!res.ok) {
@@ -1530,22 +1607,13 @@ function TodayTab({
     };
   }, [load]);
 
-  async function openProblem(url: string) {
+  async function jumpToProblem(p: QueueProblem) {
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab?.id != null) {
-        await chrome.tabs.update(activeTab.id, { url });
-      } else {
-        await chrome.tabs.create({ url });
-      }
+      await openInActiveTab(p.url || leetcodeProblemUrl(p.leetcodeSlug, site));
       onJumpToProblem();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.common.unknownError);
     }
-  }
-
-  function jumpToProblem(p: QueueProblem) {
-    void openProblem(p.url || leetcodeProblemUrl(p.leetcodeSlug, site));
   }
 
   if (loading && !data) return <p className="popup-muted">{t.common.loadingQueue}</p>;
@@ -1566,27 +1634,18 @@ function TodayTab({
   const { queue, problems } = data;
   const limit = queue.dailyReviewLimit;
   const progressPct = limit > 0 ? Math.min(100, Math.round((queue.doneToday / limit) * 100)) : 0;
+  const pastLimit = queue.totalDue - queue.dueCount;
 
   return (
     <div className="stack">
       <div className="panel today-stats">
         <div className="today-stats-row">
           <div>
-            <div className="today-stats-num">
-              {queue.doneToday}
-              <span className="today-stats-num-soft"> / {limit || "∞"}</span>
-            </div>
-            <div className="today-stats-label">{t.common.reviewsToday}</div>
+            <div className="today-stats-num">{queue.dueCount}</div>
+            <div className="today-stats-label">{t.today.toReview}</div>
           </div>
           <div className="today-stats-side">
-            <div>
-              <span className="today-stats-pillval">{queue.dueCount}</span>
-              <span className="today-stats-pilllabel"> {t.common.due}</span>
-            </div>
-            <div>
-              <span className="today-stats-pillval">{queue.remaining}</span>
-              <span className="today-stats-pilllabel"> {t.common.leftToday}</span>
-            </div>
+            {limit > 0 ? t.today.doneOf(queue.doneToday, limit) : t.today.doneToday(queue.doneToday)}
           </div>
         </div>
         {limit > 0 && (
@@ -1594,27 +1653,30 @@ function TodayTab({
             <div className="today-progress-fill" style={{ width: `${progressPct}%` }} />
           </div>
         )}
+        {pastLimit > 0 && <p className="today-stats-more">{t.today.moreDue(pastLimit)}</p>}
       </div>
 
       {problems.length === 0 ? (
-        <div className="panel panel-quiet">
-          <p className="popup-muted" style={{ margin: 0, textAlign: "center" }}>
+        <div className="panel panel-quiet today-empty">
+          <p className="popup-muted">
             {queue.remaining === 0
               ? t.today.limitReached
               : queue.totalDue === 0
                 ? t.today.allCaughtUp
                 : t.today.noQueue}
           </p>
+          <button type="button" className="btn btn-secondary btn-inline" onClick={onShowPlan}>
+            {t.today.seePlan}
+          </button>
         </div>
       ) : (
         <div className="problem-list">
-          <div className="section-label">{t.today.dueNow}</div>
           {problems.map((p) => (
             <button
               key={p.id}
               type="button"
               className="problem-list-item"
-              onClick={() => jumpToProblem(p)}
+              onClick={() => void jumpToProblem(p)}
             >
               <div className="problem-list-item-row">
                 <span className="problem-list-item-title">{p.title}</span>
@@ -1630,38 +1692,37 @@ function TodayTab({
         </div>
       )}
 
-      <a
-        href={`${settings.apiBaseUrl}/review`}
-        target="_blank"
-        rel="noreferrer"
-        className="hero-link"
-      >
+      <a href={`${settings.apiBaseUrl}/review`} target="_blank" rel="noreferrer" className="today-web-link">
         {t.common.openFullReview}
+        <ExternalIcon />
       </a>
-
-      <PlanNextPart
-        settings={settings}
-        onOpen={(slug) => void openProblem(leetcodeProblemUrl(slug, site))}
-      />
     </div>
   );
 }
 
-/** Today's second part, after the reviews: the plan's next unsolved problem
- *  and its chapter, the same as the web's Today. Hidden until it loads. */
-function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (slug: string) => void }) {
+/* ── PlanTab ── */
+
+/** Plan: the plan's next unsolved problem and its chapter, the same as the
+ *  web's Today. */
+function PlanTab({ settings, onJumpToProblem }: { settings: ExtSettings; onJumpToProblem: () => void }) {
   const t = getExtText(settings);
+  const site = useLeetcodeSite();
   const language = settings.language === "zh" ? "zh" : "en";
   const [data, setData] = useState<PlanNext | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await apiFetch(settings, `/api/study-plan/next?language=${language}`, { cache: "no-store" });
-      if (res.ok) setData((await res.json()) as PlanNext);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setData((await res.json()) as PlanNext);
+      setLoadFailed(false);
     } catch {
-      /* Next just stays as it was; the reviews above are what matter */
+      // A refresh that fails keeps what's on screen.
+      setLoadFailed(true);
     }
   }, [settings, language]);
 
@@ -1671,6 +1732,15 @@ function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (sl
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
+
+  async function onOpen(slug: string) {
+    try {
+      await openInActiveTab(leetcodeProblemUrl(slug, site));
+      onJumpToProblem();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t.common.unknownError);
+    }
+  }
 
   /** After a plan: switch to the suggested focused plan (the web's switch). */
   async function switchPlan(plan: string) {
@@ -1691,13 +1761,25 @@ function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (sl
     }
   }
 
-  if (!data) return null;
+  if (!data) {
+    return loadFailed ? (
+      <div className="stack">
+        <div className="err-banner">{t.today.planLoadFailed}</div>
+        <button type="button" className="btn btn-primary" onClick={() => void load()}>
+          {t.common.retry}
+        </button>
+      </div>
+    ) : (
+      <p className="popup-muted">{t.today.planLoading}</p>
+    );
+  }
   const { plan, next, focus, finishedChapter } = data;
   const deeper = finishedChapter?.deeper;
   const roadmapUrl = `${settings.apiBaseUrl}/profile`;
 
   return (
-    <section className="today-next">
+    <section className="stack">
+      {error && <div className="err-banner">{error}</div>}
       <div className="today-next-head">
         <span className="section-label">{t.today.nextTitle}</span>
         <a href={roadmapUrl} target="_blank" rel="noreferrer" className="today-next-link">
@@ -1722,7 +1804,7 @@ function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (sl
                 style={{ width: `${Math.round((next.chapter.done / Math.max(1, next.chapter.total)) * 100)}%` }}
               />
             </div>
-            <button type="button" className="problem-list-item today-next-problem" onClick={() => onOpen(next.problem.slug)}>
+            <button type="button" className="problem-list-item today-next-problem" onClick={() => void onOpen(next.problem.slug)}>
               <div className="problem-list-item-row">
                 <span className="problem-list-item-title">
                   <span className="today-next-id">{next.problem.leetcodeId}.</span> {next.problem.title}
@@ -1745,7 +1827,7 @@ function PlanNextPart({ settings, onOpen }: { settings: ExtSettings; onOpen: (sl
                     key={problem.slug}
                     type="button"
                     className="today-next-deeper-step"
-                    onClick={() => onOpen(problem.slug)}
+                    onClick={() => void onOpen(problem.slug)}
                   >
                     <TechniqueStepRow step={problem} settings={settings} />
                   </button>

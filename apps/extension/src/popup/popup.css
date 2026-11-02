@@ -308,12 +308,6 @@ label, button, th, .font-ui {
   overflow-y: auto;
 }
 
-/* The expanded Coach covers the content; keep it mounted so what's on it
- * (an unsaved Docs edit, say) survives. */
-.popup-main.is-covered {
-  display: none;
-}
-
 /* ── top bar ── */
 
 .panel-bar {
@@ -1408,8 +1402,8 @@ label, button, th, .font-ui {
 
 .today-stats { padding: 16px 18px; }
 
-/* In a narrow panel (or at Large) the counts on the right drop below,
- * still on the right, rather than breaking their labels. */
+/* In a narrow panel (or at Large) the count on the right drops below,
+ * still on the right, rather than breaking its label. */
 .today-stats-row {
   display: flex;
   flex-wrap: wrap;
@@ -1427,12 +1421,6 @@ label, button, th, .font-ui {
   line-height: 1.1;
 }
 
-.today-stats-num-soft {
-  font-size: 1.3125rem;
-  font-weight: 500;
-  color: var(--muted);
-}
-
 .today-stats-label {
   font-family: var(--font-ui);
   font-size: 0.75rem;
@@ -1445,28 +1433,47 @@ label, button, th, .font-ui {
 }
 
 .today-stats-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
   margin-left: auto;
+  padding-top: 6px;
   font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.today-stats-pillval {
-  font-size: 1.0625rem;
-  font-weight: 700;
-  color: var(--accent-strong);
+.today-stats-more {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
-.today-stats-pilllabel {
-  font-size: 0.75rem;
+.today-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.today-empty p { margin: 0; }
+
+/* Quiet, after the list: the panel is where reviews happen. */
+.today-web-link {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-decoration: none;
 }
+
+.today-web-link:hover { color: var(--fg); }
 
 .today-progress {
   margin-top: 14px;
@@ -1482,7 +1489,7 @@ label, button, th, .font-ui {
   transition: width 0.3s ease;
 }
 
-/* ── today: next in your plan ── */
+/* ── plan: up next ── */
 
 .today-next-head {
   display: flex;
@@ -2088,32 +2095,9 @@ a:focus-visible,
 
 /* ── Study Coach ── */
 
-/* Docked: a composer under the content. Expanded: covers the content. */
-.coach.coach-docked {
-  flex: none;
-  gap: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.coach.coach-expanded {
-  flex: 1;
-}
-
-.coach-dock-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 24px;
-}
-
-.coach-dock-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--muted);
+/* Under Today and Plan the Coach stays mounted, out of sight. */
+.coach.is-hidden {
+  display: none;
 }
 
 .coach-bar-actions {
