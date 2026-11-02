@@ -22,7 +22,7 @@ import type {
   ReviewRateResponseDto,
   TechniqueSuggestionDto,
 } from "@ankify/contracts";
-import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
+import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState, TextSize } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
   LEETCODE_SITE_KEY,
@@ -86,6 +86,7 @@ const EXT_I18N = {
     },
     difficulty: { Easy: "Easy", Medium: "Medium", Hard: "Hard" },
     theme: { label: "Theme", system: "System", light: "Light", dark: "Dark" },
+    textSize: { label: "Text size", small: "Small", default: "Default", large: "Large" },
     language: { label: "Language", en: "EN", zh: "中" },
     rating: {
       again: "Again",
@@ -309,7 +310,7 @@ const EXT_I18N = {
     },
     settings: {
       appearance: "Appearance",
-      appearanceHelp: "Language and theme for this extension.",
+      appearanceHelp: "Language, theme, and text size for this extension.",
       languageHelp: "Changes only the extension interface. AI-written docs, like a problem's Solutions, use the Generation language saved in web Settings.",
       themeHelp: "Popup color mode",
       connection: "Connection",
@@ -365,6 +366,7 @@ const EXT_I18N = {
     },
     difficulty: { Easy: "简单", Medium: "中等", Hard: "困难" },
     theme: { label: "主题", system: "系统", light: "浅色", dark: "深色" },
+    textSize: { label: "字号", small: "小", default: "标准", large: "大" },
     language: { label: "语言", en: "EN", zh: "中" },
     rating: {
       again: "忘记",
@@ -570,7 +572,7 @@ const EXT_I18N = {
     },
     settings: {
       appearance: "外观",
-      appearanceHelp: "扩展里的语言和主题。",
+      appearanceHelp: "扩展里的语言、主题和字号。",
       languageHelp: "只改变扩展界面；AI 写的文档（比如题目的解法）使用 Web Settings 中保存的“生成内容语言”。",
       themeHelp: "弹窗颜色模式",
       connection: "连接",
@@ -672,6 +674,8 @@ const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" 
   { value: "dark", key: "dark" },
 ];
 
+const TEXT_SIZES: TextSize[] = ["small", "default", "large"];
+
 /* ── helpers ── */
 
 function jsonHeaders(settings: ExtSettings): HeadersInit {
@@ -764,6 +768,15 @@ function applyThemePreference(preference: ThemePreference) {
     document.documentElement.removeAttribute("data-theme");
   } else {
     document.documentElement.setAttribute("data-theme", preference);
+  }
+}
+
+/** Sets the root font size the panel's rem sizes follow (popup.css). */
+function applyTextSize(size: TextSize) {
+  if (size === "default") {
+    document.documentElement.removeAttribute("data-text-size");
+  } else {
+    document.documentElement.setAttribute("data-text-size", size);
   }
 }
 
@@ -863,6 +876,11 @@ export function Popup() {
   useEffect(() => {
     getSettings().then(setLocalSettings);
   }, []);
+
+  const textSize = settings?.textSize;
+  useEffect(() => {
+    if (textSize) applyTextSize(textSize);
+  }, [textSize]);
 
   const refreshSession = useCallback(async () => {
     if (!settings?.apiBaseUrl) {
@@ -2251,7 +2269,7 @@ function SettingsTab({
           </SettingsTitle>
         </div>
         <div className="settings-preference-list">
-          <div className="settings-preference-row">
+          <div className="settings-preference-row settings-choice-row">
             <div className="settings-preference-copy">
               <SettingsTitle info={t.settings.languageHelp}>{t.language.label}</SettingsTitle>
             </div>
@@ -2269,7 +2287,7 @@ function SettingsTab({
               ))}
             </div>
           </div>
-          <div className="settings-preference-row">
+          <div className="settings-preference-row settings-choice-row">
             <div className="settings-preference-copy">
               <SettingsTitle>{t.theme.label}</SettingsTitle>
             </div>
@@ -2283,6 +2301,24 @@ function SettingsTab({
                   aria-pressed={theme === option.value}
                 >
                   {t.theme[option.key]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-preference-row settings-choice-row">
+            <div className="settings-preference-copy">
+              <SettingsTitle>{t.textSize.label}</SettingsTitle>
+            </div>
+            <div className="theme-control settings-theme-control" aria-label={t.textSize.label}>
+              {TEXT_SIZES.map((textSize) => (
+                <button
+                  key={textSize}
+                  type="button"
+                  data-active={settings.textSize === textSize}
+                  onClick={() => onSave({ textSize })}
+                  aria-pressed={settings.textSize === textSize}
+                >
+                  {t.textSize[textSize]}
                 </button>
               ))}
             </div>

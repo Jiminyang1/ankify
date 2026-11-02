@@ -8,6 +8,7 @@ const CARD_DRAFTS_KEY = "ankify.cardDrafts";
 const DEFAULTS: ExtSettings = {
   apiBaseUrl: __ANKIFY_DEFAULT_API_ORIGIN__,
   language: "en",
+  textSize: "default",
   resetCodeOnProblemOpen: false,
   autoCapture: true,
 };
