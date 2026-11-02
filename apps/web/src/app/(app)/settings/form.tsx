@@ -663,6 +663,79 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
   );
 }
 
+function ResetStudyData() {
+  const { t } = useLanguage();
+  const [confirmation, setConfirmation] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function reset() {
+    setResetting(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/account/reset", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: confirmation.trim() }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // A full load, so the Coach sidebar drops the conversation it has open.
+      window.location.assign("/today");
+    } catch {
+      setMessage(t.settings.resetDataFailed);
+      setResetting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 border-t border-border bg-danger/5 p-4">
+      <ConfirmDialog
+        open={dialogOpen}
+        title={t.settings.resetData}
+        description={t.settings.resetDataConfirm}
+        cancelLabel={t.common.cancel}
+        confirmLabel={resetting ? t.settings.resettingData : t.settings.resetData}
+        busy={resetting}
+        error={message}
+        onClose={() => {
+          if (!resetting) {
+            setDialogOpen(false);
+            setMessage(null);
+          }
+        }}
+        onConfirm={() => void reset()}
+      />
+      <div>
+        <h3 className="text-sm font-medium text-danger">{t.settings.resetData}</h3>
+        <p className="mt-1 text-sm text-muted">{t.settings.resetDataHelp}</p>
+      </div>
+      <div className="flex max-w-xl flex-col gap-2 sm:flex-row">
+        <Input
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          placeholder={t.settings.resetDataPlaceholder}
+          aria-label={t.settings.resetDataPlaceholder}
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-0 flex-1"
+        />
+        <Button
+          variant="danger"
+          onClick={() => {
+            setMessage(null);
+            setDialogOpen(true);
+          }}
+          disabled={confirmation.trim() !== "RESET" || resetting}
+          className={`${SETTINGS_ACTION_CLASS} shrink-0`}
+        >
+          {t.settings.resetData}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AccountDataForm({ email }: { email: string }) {
   const { t } = useLanguage();
   const [confirmationEmail, setConfirmationEmail] = useState("");
@@ -749,6 +822,7 @@ export function AccountDataForm({ email }: { email: string }) {
             />
           </svg>
         </summary>
+        <ResetStudyData />
         <div className="space-y-3 border-t border-border bg-danger/5 p-4">
           <div>
             <h3 className="text-sm font-medium text-danger">
