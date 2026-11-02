@@ -171,8 +171,10 @@ ANKIFY_EXTENSION_API_ORIGIN=https://ankify-pi.vercel.app \
   pnpm --filter @ankify/extension build
 ```
 
-Confirm `apps/extension/dist/manifest.json` contains only the exact LeetCode and
-Production API hosts and does not include the unpacked-development `key` field.
+Confirm `apps/extension/dist/manifest.json` contains only the exact LeetCode
+(leetcode.com, leetcode.cn) and Production API hosts and does not include the
+unpacked-development `key` field. A new host permission makes Chrome ask existing
+users to re-enable the extension, and the store may review it for longer.
 The unpacked build uses a stable development key and must not be uploaded to the
 Chrome Web Store.
 

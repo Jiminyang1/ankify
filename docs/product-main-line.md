@@ -88,21 +88,26 @@ is shared because status belongs to the problem.
 - **New users** choose from 7 plans (the first two groups); the dictionary is
   in the picker afterwards.
 - **Done is automatic where it can be, manual otherwise.** Solves on
-  leetcode.com and the deck count on their own; anything else can be ticked by
-  hand (`plan-ticks`), and a tick never overrides what the app can see.
+  leetcode.com or leetcode.cn and the deck count on their own; anything else
+  can be ticked by hand (`plan-ticks`), and a tick never overrides what the app
+  can see.
 - **Next is never a dead end:** it skips premium and leetcode.cn-only problems.
   Plans still count both, so a plan can end on something like 457 of 459.
 - **leetcode.cn-only problems** (22 in the Core Route, 90 in all) show for
-  Chinese users and link to leetcode.cn. English plans leave them out, so the
-  totals there are 437 and 699.
+  Chinese users, link to leetcode.cn, and can be added to review. English plans
+  leave them out, so the totals there are 437 and 699.
 - **Sources:** the data is a snapshot from the map page (`pnpm plans:catalog`):
   structure, titles, and our own English names, none of its prose. NeetCode's
   lists are included with a source link, Jimin's decision knowing that their
   terms restrict redistribution; no NeetCode videos or text. Course videos are
   links to Bilibili, credited.
 
-Still open: the extension and the account link only support leetcode.com, so
-solves on leetcode.cn are ticked by hand.
+**Both LeetCode sites.** The extension collects submissions, syncs the solved
+list, and reads the editor on leetcode.cn as on leetcode.com, and the account
+link takes either site's profile. Accounts and solved lists are kept per site;
+a problem solved on either counts, since a slug names the same problem on both.
+Links open on leetcode.cn when that's the only site linked (the extension: the
+site last open), and the list's "Open problems on" filter overrides that.
 
 ## The user's path
 
