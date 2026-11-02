@@ -5,6 +5,8 @@ import { ActiveIndicator } from "./motion";
 export type TabItem = {
   id: string;
   label: React.ReactNode;
+  /** Extra classes on the trigger, for a tab only some layouts offer. */
+  className?: string;
 };
 
 /**
@@ -29,7 +31,7 @@ export function Tabs({
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     const tabButtons = Array.from(
       event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-    );
+    ).filter((button) => button.offsetParent !== null);
     const currentIndex = tabButtons.indexOf(event.target as HTMLButtonElement);
     if (currentIndex < 0 || tabButtons.length === 0) return;
     event.preventDefault();
@@ -66,6 +68,7 @@ export function Tabs({
               selected
                 ? "text-fg"
                 : "text-muted hover:bg-subtle hover:text-fg",
+              t.className,
             )}
           >
             {selected && (

@@ -17,16 +17,20 @@ const TONE_CLASSES: Record<Tone, string> = {
 export function Pill({
   children,
   tone = "neutral",
+  compact,
   className,
 }: {
   children: React.ReactNode;
   tone?: Tone;
+  /** For tight rows, like a node on the Plan page's mind map. */
+  compact?: boolean;
   className?: string;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none",
+        compact && "shrink-0 whitespace-nowrap px-1 py-px text-[10px]",
         TONE_CLASSES[tone],
         className,
       )}

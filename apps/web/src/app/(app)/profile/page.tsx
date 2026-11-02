@@ -5,6 +5,7 @@ import { getRequestLanguage, getRequestTranslations } from "@/server/i18n";
 import { loadPlanMeters } from "@/server/plan-map";
 import { getCurrentStudyPlan, studyPlanSource } from "@/server/study-plans";
 import { PlanListView } from "./list-view";
+import { PlanMapTab } from "./map-view";
 import { parsePlanView } from "./plan-map-model";
 import { PlanMeters } from "./plan-meters";
 import { PlanPicker } from "./plan-picker";
@@ -53,6 +54,8 @@ export default async function ProfilePage({
       <div role="tabpanel" aria-labelledby={`tab-${view}`} className="space-y-6">
         {view === "list" ? (
           <PlanListView currentPlan={current.plan.slug} />
+        ) : view === "map" ? (
+          <PlanMapTab currentPlan={current.plan.slug} />
         ) : view === "route" ? (
           <PlanRouteView />
         ) : (

@@ -217,6 +217,7 @@ describe("scopes and small helpers", () => {
 
   it("defaults to the plan view", () => {
     expect(parsePlanView("list")).toBe("list");
+    expect(parsePlanView("map")).toBe("map");
     expect(parsePlanView("nonsense")).toBe("plan");
     expect(parsePlanView(undefined)).toBe("plan");
   });

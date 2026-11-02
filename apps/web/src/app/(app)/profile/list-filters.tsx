@@ -5,8 +5,8 @@ import { useLanguage } from "@/components/LanguageProvider";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Surface } from "@/components/ui/surface";
-import { cn } from "@/lib/utils";
 import { PLAN_CAPS, PLAN_ONLY, PLAN_TAGS, filtersActive, type PlanFilters, type PlanOnly, type PlanSite } from "./plan-map-model";
+import { PlanSegments } from "./plan-map-parts";
 
 /** The list view's filter panel, count line, and clear-filters banner. */
 export function ListFilterPanel({
@@ -63,27 +63,12 @@ export function ListFilterPanel({
           value={filters.q}
           onChange={(event) => onFilters({ ...filters, q: event.target.value })}
         />
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span id="plan-only-label" className="text-[11px] font-medium uppercase tracking-wide text-muted">
-            {copy.only.label}
-          </span>
-          <div role="group" aria-labelledby="plan-only-label" className="flex flex-wrap gap-1 rounded-lg bg-subtle p-1">
-            {PLAN_ONLY.map((option) => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={only === option}
-                onClick={() => onOnly(option)}
-                className={cn(
-                  "h-7 rounded-md px-2.5 text-xs font-medium transition-colors",
-                  only === option ? "bg-surface text-fg shadow-card" : "text-muted hover:text-fg",
-                )}
-              >
-                {copy.only[option]}
-              </button>
-            ))}
-          </div>
-        </div>
+        <PlanSegments
+          label={copy.only.label}
+          value={only}
+          options={PLAN_ONLY.map((option) => ({ id: option, label: copy.only[option] }))}
+          onChange={onOnly}
+        />
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           <Field label={labels.tag} className="w-32">
             <Select

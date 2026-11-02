@@ -1,6 +1,6 @@
 "use client";
 
-import type { PlanCatalogNode, PlanCatalogTag } from "@ankify/core/plan-catalog";
+import type { PlanCatalogNode } from "@ankify/core/plan-catalog";
 import { ChevronRight } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -25,6 +25,7 @@ import { PlanProblemRow } from "./list-row";
 import {
   NEETCODE_BLOCK,
   NO_FILTERS,
+  PLAN_BLOCK_TAG,
   autoOpenMatches,
   computePlanList,
   defaultOpen,
@@ -34,6 +35,7 @@ import {
   pathToRoot,
   planListGroups,
   planNodeDomId,
+  planNodeNumber,
   sanitizeFilters,
   visibleCount,
   type PlanFilters,
@@ -41,47 +43,12 @@ import {
   type PlanOnly,
   type PlanSite,
 } from "./plan-map-model";
-import { LingCredit, PlanMapFailed, PlanMapSkeleton, ThinBar } from "./plan-map-parts";
+import { LingCredit, PlanActionAlert, PlanMapFailed, PlanMapSkeleton, ThinBar } from "./plan-map-parts";
+import { PLAN_STORAGE, readStored, replaceQuery, writeStored } from "./plan-storage";
 import { usePlanMap, type PlanMapApi, type PlanMapData } from "./use-plan-map";
 
 /** Sections open by themselves while filtering until this many rows are drawn. */
 const AUTO_OPEN_ROWS = 200;
-
-const STORAGE = {
-  filters: "ankify.planList.filters",
-  only: "ankify.planList.only",
-  site: "ankify.planList.site",
-  open: "ankify.planList.open",
-  nc150: "ankify.planList.nc150",
-};
-
-function readStored(key: string): unknown {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw == null ? null : JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function writeStored(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage can be unavailable; the list still works for this visit.
-  }
-}
-
-/** Keep the scope in the URL without a server round trip, so a meter link to
- *  the same list still counts as a change. */
-function replaceQuery(mutate: (params: URLSearchParams) => void) {
-  const params = new URLSearchParams(window.location.search);
-  mutate(params);
-  window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
-}
-
-/** The block's own list tag says nothing on its own rows. */
-const BLOCK_TAG: Readonly<Record<string, PlanCatalogTag>> = { N: "nc250", H: "hot100", T: "top150" };
 
 type ListContextValue = {
   data: PlanMapData;
@@ -122,12 +89,12 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
 
   // These mount after the data loads, which is after hydration, so reading
   // storage while initializing state can't mismatch the server's HTML.
-  const [only, setOnly] = useState<PlanOnly>(() => urlOnly ?? parsePlanOnly(readStored(STORAGE.only)) ?? "all");
-  const [filters, setFilters] = useState<PlanFilters>(() => sanitizeFilters(readStored(STORAGE.filters) ?? NO_FILTERS));
-  const [site, setSite] = useState<PlanSite>(() => (readStored(STORAGE.site) === "cn" ? "cn" : "com"));
-  const [nc150Toggle, setNc150Toggle] = useState(() => readStored(STORAGE.nc150) === true);
+  const [only, setOnly] = useState<PlanOnly>(() => urlOnly ?? parsePlanOnly(readStored(PLAN_STORAGE.only)) ?? "all");
+  const [filters, setFilters] = useState<PlanFilters>(() => sanitizeFilters(readStored(PLAN_STORAGE.filters) ?? NO_FILTERS));
+  const [site, setSite] = useState<PlanSite>(() => (readStored(PLAN_STORAGE.site) === "cn" ? "cn" : "com"));
+  const [nc150Toggle, setNc150Toggle] = useState(() => readStored(PLAN_STORAGE.nc150) === true);
   const [opened, setOpened] = useState<Record<string, boolean>>(() => {
-    const stored = readStored(STORAGE.open);
+    const stored = readStored(PLAN_STORAGE.open);
     return stored && typeof stored === "object" ? (stored as Record<string, boolean>) : {};
   });
   // What the user opened or closed under the current filters; not kept.
@@ -142,11 +109,11 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
     if (urlOnly) setOnly(urlOnly);
   }
 
-  useEffect(() => writeStored(STORAGE.only, only), [only]);
-  useEffect(() => writeStored(STORAGE.filters, filters), [filters]);
-  useEffect(() => writeStored(STORAGE.site, site), [site]);
-  useEffect(() => writeStored(STORAGE.nc150, nc150Toggle), [nc150Toggle]);
-  useEffect(() => writeStored(STORAGE.open, opened), [opened]);
+  useEffect(() => writeStored(PLAN_STORAGE.only, only), [only]);
+  useEffect(() => writeStored(PLAN_STORAGE.filters, filters), [filters]);
+  useEffect(() => writeStored(PLAN_STORAGE.site, site), [site]);
+  useEffect(() => writeStored(PLAN_STORAGE.nc150, nc150Toggle), [nc150Toggle]);
+  useEffect(() => writeStored(PLAN_STORAGE.open, opened), [opened]);
 
   const nc150Block = only === "nc150" || (only !== "nc250" && nc150Toggle);
   const deferredFilters = useDeferredValue(filters);
@@ -249,15 +216,7 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
         cutLine={active && auto.rows > auto.rendered ? copy.count.cut(auto.rendered, auto.rows - auto.rendered) : null}
       />
 
-      {map.actionError && (
-        <p role="alert" className="rounded-lg bg-danger/10 px-4 py-2.5 text-sm text-danger">
-          {map.actionError === "tick"
-            ? copy.load.tickFailed
-            : map.actionError === "add"
-              ? copy.load.addFailed
-              : copy.load.planFailed}
-        </p>
-      )}
+      <PlanActionAlert error={map.actionError} />
 
       {groups.map((group) => (
         <section key={group.key} className="space-y-2">
@@ -429,10 +388,6 @@ function SectionChildren({ node, level, blockId }: { node: PlanCatalogNode; leve
   );
 }
 
-function trailingNumber(id: string): number {
-  return Number.parseInt(id.replace(/^\D+/, ""), 10) || 0;
-}
-
 function SectionNode({ node, level, blockId }: { node: PlanCatalogNode; level: number; blockId: string }) {
   const { language, t } = useLanguage();
   const copy = t.planMap.section;
@@ -443,9 +398,9 @@ function SectionNode({ node, level, blockId }: { node: PlanCatalogNode; level: n
   const title = node.title[language];
   const heading =
     node.kind === "video"
-      ? copy.lesson(trailingNumber(node.id) + 1, title)
+      ? copy.lesson(planNodeNumber(node.id) + 1, title)
       : node.kind === "step"
-        ? copy.step(trailingNumber(node.id), title)
+        ? copy.step(planNodeNumber(node.id), title)
         : title;
   const rowClass = cn(
     "scroll-mt-28 rounded-md transition-colors motion-reduce:transition-none",
@@ -614,7 +569,7 @@ function Rows({ slugs, blockId }: { slugs: readonly string[]; blockId: string })
             problem={problem}
             entry={statuses[slug]}
             site={site}
-            hideTag={BLOCK_TAG[blockId]}
+            hideTag={PLAN_BLOCK_TAG[blockId]}
             videoUrl={blockId === "C" ? undefined : index.videoOf.get(slug)?.videoUrl}
             adding={map.adding === slug}
             onTick={map.tick}

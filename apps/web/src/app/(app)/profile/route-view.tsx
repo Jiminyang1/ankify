@@ -10,7 +10,7 @@ import { PlanCredit } from "@/components/plan-credit";
 import { buttonClasses } from "@/components/ui/button";
 import { Surface } from "@/components/ui/surface";
 import { cn } from "@/lib/utils";
-import { NO_FILTERS, computePlanList, isVisibleProblem, type PlanNodeState } from "./plan-map-model";
+import { NO_FILTERS, computePlanList, isVisibleProblem, planSectionHref, type PlanNodeState } from "./plan-map-model";
 import { LingCredit, PlanMapFailed, PlanMapSkeleton, ThinBar } from "./plan-map-parts";
 import { usePlanMap, type PlanMapData } from "./use-plan-map";
 
@@ -24,7 +24,7 @@ export function PlanRouteView() {
 }
 
 function sectionHref(id: string): Route {
-  return `/profile?view=list&section=${encodeURIComponent(id)}` as Route;
+  return planSectionHref(id) as Route;
 }
 
 function JumpLink({ id, children, main }: { id: string; children: React.ReactNode; main?: boolean }) {

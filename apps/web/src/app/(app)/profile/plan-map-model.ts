@@ -7,12 +7,12 @@ import type {
 } from "@ankify/core/plan-catalog";
 
 /**
- * The Plan page's list and route views as pure functions over the catalog:
+ * The Plan page's map, list, and route views as pure functions over the catalog:
  * indexing the tree, filtering it, and working out what opens. No React, so
  * it's tested directly and server components can read the view names.
  */
 
-export const PLAN_VIEWS = ["plan", "list", "route"] as const;
+export const PLAN_VIEWS = ["plan", "map", "list", "route"] as const;
 export type PlanView = (typeof PLAN_VIEWS)[number];
 
 export function parsePlanView(value: unknown): PlanView {
@@ -91,8 +91,21 @@ const ONLY_NODE: Record<Exclude<PlanOnly, "all">, string> = {
   dictionary: "G",
 };
 
+/** The node a scope shows, or null when it shows everything. */
+export function planOnlyNode(only: PlanOnly): string | null {
+  return only === "all" ? null : ONLY_NODE[only];
+}
+
 /** The block holding NeetCode, whose NC150 toggle swaps the plan it sets. */
 export const NEETCODE_BLOCK = "N";
+
+/** A block's own list tag says nothing on its own rows. */
+export const PLAN_BLOCK_TAG: Readonly<Record<string, PlanCatalogTag>> = { N: "nc250", H: "hot100", T: "top150" };
+
+/** The list a meter or chip opens at a section. */
+export function planSectionHref(id: string): string {
+  return `/profile?view=list&section=${encodeURIComponent(id)}`;
+}
 
 export type PlanListGroup = {
   key: "ling" | "frequent" | "dictionary";
@@ -168,9 +181,10 @@ export function sanitizeFilters(value: unknown): PlanFilters {
   };
 }
 
-const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+export const normalizePlanQuery = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+const normalize = normalizePlanQuery;
 
-function matchesText(problem: PlanCatalogProblem, query: string): boolean {
+export function matchesPlanProblem(problem: PlanCatalogProblem, query: string): boolean {
   if (/^\d+$/.test(query)) return String(problem.id) === query;
   return normalize(problem.zh).includes(query) || normalize(problem.en).includes(query) || normalize(problem.label).includes(query);
 }
@@ -193,7 +207,7 @@ export function isVisibleProblem(problem: PlanCatalogProblem, language: PlanLang
 
 /** Sections, lists, lessons, and steps are searchable by name; the tree's
  *  scaffolding isn't, or a word in its title would match everything. */
-function hasSearchableTitle(candidate: PlanCatalogNode): boolean {
+export function hasSearchableTitle(candidate: PlanCatalogNode): boolean {
   return candidate.kind !== "root" && candidate.kind !== "group" && candidate.kind !== "dictionary";
 }
 
@@ -242,7 +256,7 @@ export function computePlanList(input: {
     };
     const keep = (slug: string) => {
       const problem = problems[slug]!;
-      return (!query || hit || matchesText(problem, query)) && passesFilters(problem, filters, statuses);
+      return (!query || hit || matchesPlanProblem(problem, query)) && passesFilters(problem, filters, statuses);
     };
 
     const ownAll = new Set([...current.problems, ...(current.homework ?? [])].filter(visible));
@@ -314,6 +328,11 @@ export function autoOpenMatches(
 export function defaultOpen(level: number, single: boolean): boolean {
   if (level === 0) return single;
   return level > 1;
+}
+
+/** A lesson's or step's number, from its id. */
+export function planNodeNumber(id: string): number {
+  return Number.parseInt(id.replace(/^\D+/, ""), 10) || 0;
 }
 
 /* ── Ticks and links ── */
