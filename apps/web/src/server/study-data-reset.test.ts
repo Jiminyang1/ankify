@@ -1,13 +1,15 @@
 import { rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { getDb, schema } from "@ankify/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetStudyData } from "./study-data-reset";
 
 const dir = await vi.hoisted(async () => {
   // Point the database singleton at a throwaway file before anything opens it.
+  // A Turso URL would win over the file, so clear it: this test deletes rows.
+  process.env.TURSO_DATABASE_URL = "";
   const [fs, os, path] = await Promise.all([import("node:fs"), import("node:os"), import("node:path")]);
   const created = fs.mkdtempSync(path.join(os.tmpdir(), "ankify-reset-"));
   process.env.LOCAL_DB_PATH = path.join(created, "test.db");
@@ -74,11 +76,15 @@ async function settingKeys(userId: string) {
 
 describe("resetStudyData", () => {
   beforeAll(async () => {
+    const databases = await getDb().all<{ file: string }>(sql`PRAGMA database_list`);
+    if (!databases[0]?.file.includes(basename(dir))) {
+      throw new Error("Refusing to run: the database isn't this test's throwaway file");
+    }
     await migrate(getDb(), { migrationsFolder: resolve(__dirname, "../../../../packages/db/drizzle") });
   });
 
   beforeEach(async () => {
-    await getDb().delete(schema.user);
+    await getDb().delete(schema.user).where(inArray(schema.user.id, ["alice", "bob"]));
     await seedUser("alice");
     await seedUser("bob");
   });
