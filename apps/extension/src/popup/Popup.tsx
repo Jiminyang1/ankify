@@ -69,7 +69,7 @@ const EXT_I18N = {
       leftToday: "left today",
       reviewsToday: "reviews today",
       openFullReview: "Open full review on web ↗",
-      lapses: (count: number) => `${count} lapse${count === 1 ? "" : "s"}`,
+      lapses: (count: number) => `forgot ${count} time${count === 1 ? "" : "s"}`,
       submissions: (count: number) => `${count} submissions`,
       acceptedFailed: (accepted: number, failed: number) => `(${accepted} accepted, ${failed} failed)`,
       unknownError: "Unknown error",
@@ -77,7 +77,6 @@ const EXT_I18N = {
       next: "Next",
     },
     difficulty: { Easy: "Easy", Medium: "Medium", Hard: "Hard" },
-    fsrs: { new: "new", learning: "learning", review: "review", relearning: "relearning" },
     theme: { label: "Theme", system: "System", light: "Light", dark: "Dark" },
     language: { label: "Language", en: "EN", zh: "中" },
     rating: {
@@ -98,7 +97,6 @@ const EXT_I18N = {
       noQueue: "No problems in queue.",
       loadFailed: "Couldn't load today's queue.",
       dueNow: "Due now",
-      stability: "stability",
       nextTitle: "Next in your plan",
       nextSummary: (plan: string, done: number, total: number) => `${plan} · ${done} of ${total} solved`,
       chapter: "Chapter",
@@ -350,7 +348,7 @@ const EXT_I18N = {
       leftToday: "今日剩余",
       reviewsToday: "今日复习",
       openFullReview: "在 Web 打开完整复习 ↗",
-      lapses: (count: number) => `${count} 次遗忘`,
+      lapses: (count: number) => `忘了 ${count} 次`,
       submissions: (count: number) => `${count} 次提交`,
       acceptedFailed: (accepted: number, failed: number) => `（${accepted} 通过，${failed} 失败）`,
       unknownError: "未知错误",
@@ -358,7 +356,6 @@ const EXT_I18N = {
       next: "下一张",
     },
     difficulty: { Easy: "简单", Medium: "中等", Hard: "困难" },
-    fsrs: { new: "新题", learning: "学习中", review: "复习", relearning: "重新学习" },
     theme: { label: "主题", system: "系统", light: "浅色", dark: "深色" },
     language: { label: "语言", en: "EN", zh: "中" },
     rating: {
@@ -374,7 +371,6 @@ const EXT_I18N = {
       noQueue: "队列里没有题目。",
       loadFailed: "加载今日队列失败。",
       dueNow: "当前到期",
-      stability: "稳定性",
       nextTitle: "计划里的下一题",
       nextSummary: (plan: string, done: number, total: number) => `${plan} · 已做 ${done} / ${total}`,
       chapter: "当前章节",
@@ -660,10 +656,6 @@ function getRatingButtons(t: ReturnType<typeof getExtText>): { rating: FsrsRatin
 
 function difficultyLabel(difficulty: ApiProblem["difficulty"] | CaptureProblemInput["difficulty"], t: ReturnType<typeof getExtText>) {
   return t.difficulty[difficulty];
-}
-
-function fsrsLabel(state: ApiProblem["fsrsState"], t: ReturnType<typeof getExtText>) {
-  return t.fsrs[state];
 }
 
 const THEME_OPTIONS: { value: ThemePreference; key: "system" | "light" | "dark" }[] = [
@@ -1583,11 +1575,11 @@ function TodayTab({
                 <span className="problem-list-item-title">{p.title}</span>
                 <span className={`pill pill-${p.difficulty.toLowerCase()}`}>{difficultyLabel(p.difficulty, t)}</span>
               </div>
-              <div className="problem-list-item-meta">
-                <span className="pill pill-state">{fsrsLabel(p.fsrsState, t)}</span>
-                {p.fsrsStability != null && <span>{t.today.stability} {p.fsrsStability.toFixed(1)}d</span>}
-                {p.fsrsLapses > 0 && <span>{t.common.lapses(p.fsrsLapses)}</span>}
-              </div>
+              {p.fsrsLapses > 0 && (
+                <div className="problem-list-item-meta">
+                  <span>{t.common.lapses(p.fsrsLapses)}</span>
+                </div>
+              )}
             </button>
           ))}
         </div>
