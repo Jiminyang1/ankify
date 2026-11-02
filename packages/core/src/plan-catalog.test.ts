@@ -222,12 +222,12 @@ describe("problems", () => {
     }
   });
 
-  it("offers only problems leetcode.com can open for review", () => {
+  it("offers every problem for review, leetcode.cn-only ones included", () => {
     const review = new Set(planCatalogReviewSlugs());
     expect(review.has("two-sum")).toBe(true);
     expect(review.has("kids-with-the-greatest-number-of-candies")).toBe(true);
-    expect([...review].some((slug) => problems[slug]!.cnOnly)).toBe(false);
-    expect(review.size).toBe(Object.keys(problems).length - 90);
+    expect([...review].filter((slug) => problems[slug]!.cnOnly)).toHaveLength(90);
+    expect(review.size).toBe(Object.keys(problems).length);
   });
 
   it("applies a step's cap by rating, or by difficulty when unrated", () => {

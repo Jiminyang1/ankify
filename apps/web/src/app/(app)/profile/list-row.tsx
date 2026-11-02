@@ -125,7 +125,6 @@ function RowAction({
       </Link>
     );
   }
-  if (problem.cnOnly) return null;
   return (
     <Button variant="secondary" size="xs" disabled={adding} onClick={() => onAdd(problem.slug)}>
       {adding && <Spinner />}

@@ -507,7 +507,6 @@ export const translations = {
         cancel: "Cancel",
         errors: {
           invalid_link: "That doesn't look like a LeetCode list link. It should look like leetcode.com/problem-list/abc123xy.",
-          unsupported_site: "leetcode.cn lists aren't supported yet.",
           not_found: "Couldn't open that list. Make sure it's set to Public on LeetCode.",
           empty: "That list has no problems yet.",
           too_many_lists: "You can keep up to 5 imported lists. Remove one first.",
@@ -600,10 +599,10 @@ export const translations = {
       solvedSynced: (count: number, relative: string) =>
         `Full solved list synced from the extension ${relative}: ${count} problems.`,
       leetcode: {
-        title: "LeetCode",
         connectTitle: "Connect LeetCode",
-        connectDescription: "Paste your profile link to bring in your solved counts. ankify reads only your public profile and never asks for your LeetCode login.",
-        placeholder: "leetcode.com/u/your-name",
+        connectDescription: "Paste your leetcode.com or leetcode.cn profile link to bring in your solved counts. ankify reads only your public profile and never asks for your LeetCode login.",
+        connectOther: (site: string) => `Also on ${site}? Connect it too`,
+        placeholder: "leetcode.com/u/your-name or leetcode.cn/u/your-name",
         inputLabel: "LeetCode profile link or username",
         connect: "Connect",
         disconnect: "Disconnect",
@@ -614,8 +613,7 @@ export const translations = {
         unavailable: "LeetCode didn't respond, so these numbers may be out of date.",
         errors: {
           invalid_profile: "That doesn't look like a LeetCode profile. Paste a link like leetcode.com/u/your-name.",
-          unsupported_site: "leetcode.cn profiles aren't supported yet.",
-          user_not_found: "LeetCode has no user with that name.",
+          user_not_found: "LeetCode has no user with that name. For leetcode.cn, paste your profile link.",
           leetcode_unavailable: "Couldn't reach LeetCode. Try again in a minute.",
           rate_limited: "Too many attempts. Try again in a minute.",
           generic: "Couldn't connect. Try again.",
@@ -734,7 +732,6 @@ export const translations = {
         hideDone: "Hide solved",
         onlyDue: "Only due",
         site: "Open problems on",
-        cnHint: "Solves on leetcode.cn aren't collected automatically, so tick them here by hand.",
         clear: "Clear filters",
       },
       count: {
@@ -1412,7 +1409,6 @@ export const translations = {
         cancel: "取消",
         errors: {
           invalid_link: "这看起来不是 LeetCode 题单链接，格式应类似 leetcode.com/problem-list/abc123xy。",
-          unsupported_site: "暂不支持 leetcode.cn 的题单。",
           not_found: "打不开这个题单，请确认它在 LeetCode 上已设为公开。",
           empty: "这个题单里还没有题目。",
           too_many_lists: "最多保留 5 个导入的题单，请先删除一个。",
@@ -1503,10 +1499,10 @@ export const translations = {
       leetcodeNote: "LeetCode 只公开你最近 20 道 AC 的题。装着 ankify 插件打开任意一道 LeetCode 题，就会同步你的完整做题记录。",
       solvedSynced: (count: number, relative: string) => `插件已同步完整做题记录（${relative}）：共 ${count} 道。`,
       leetcode: {
-        title: "LeetCode",
         connectTitle: "连接 LeetCode",
-        connectDescription: "粘贴你的主页链接，导入已解决题数。ankify 只读取公开主页，不会要求你的 LeetCode 登录信息。",
-        placeholder: "leetcode.com/u/your-name",
+        connectDescription: "粘贴你在 leetcode.com 或 leetcode.cn 的主页链接，导入已解决题数。ankify 只读取公开主页，不会要求你的 LeetCode 登录信息。",
+        connectOther: (site: string) => `也在 ${site} 刷题？一起连接`,
+        placeholder: "leetcode.cn/u/your-name 或 leetcode.com/u/your-name",
         inputLabel: "LeetCode 主页链接或用户名",
         connect: "连接",
         disconnect: "断开",
@@ -1516,9 +1512,8 @@ export const translations = {
         updated: (relative: string) => `更新于 ${relative}`,
         unavailable: "LeetCode 暂时没有响应，这些数字可能不是最新的。",
         errors: {
-          invalid_profile: "这看起来不是 LeetCode 主页。请粘贴类似 leetcode.com/u/your-name 的链接。",
-          unsupported_site: "暂不支持 leetcode.cn 主页。",
-          user_not_found: "LeetCode 上没有这个用户。",
+          invalid_profile: "这看起来不是 LeetCode 主页。请粘贴类似 leetcode.cn/u/your-name 的链接。",
+          user_not_found: "LeetCode 上没有这个用户。如果是 leetcode.cn 账号，请粘贴主页链接。",
           leetcode_unavailable: "暂时连不上 LeetCode，请稍后再试。",
           rate_limited: "尝试次数过多，请稍后再试。",
           generic: "连接失败，请重试。",
@@ -1637,7 +1632,6 @@ export const translations = {
         hideDone: "隐藏做过的",
         onlyDue: "只看到期",
         site: "题目链接",
-        cnHint: "力扣站（leetcode.cn）上的提交不会自动收集，做完请在这里手动勾选。",
         clear: "清除筛选",
       },
       count: {

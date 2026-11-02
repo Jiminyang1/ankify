@@ -8,7 +8,6 @@ import { importLeetcodeList } from "@/server/study-plans";
 
 const ERROR_STATUS = {
   invalid_link: 400,
-  unsupported_site: 400,
   not_found: 404,
   empty: 422,
   too_many_lists: 409,

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { leetcodeTagName } from "@ankify/core";
+import { leetcodeProblemUrl, leetcodeTagName } from "@ankify/core";
 import type { PlanNextDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
 import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
@@ -241,7 +241,7 @@ function PlanNextSection({
               </div>
             </div>
             <a
-              href={`https://leetcode.com/problems/${next.problem.slug}/`}
+              href={leetcodeProblemUrl(next.problem.slug, data.site ?? "com")}
               target="_blank"
               rel="noreferrer"
               className={buttonClasses({ variant: hasDue ? "secondary" : "primary", size: "sm" })}
@@ -258,7 +258,7 @@ function PlanNextSection({
                   <li key={problem.slug} className="flex items-center gap-3">
                     <TechniqueStep step={problem} className="min-w-0 flex-1" />
                     <a
-                      href={`https://leetcode.com/problems/${problem.slug}/`}
+                      href={leetcodeProblemUrl(problem.slug, data.site ?? "com")}
                       target="_blank"
                       rel="noreferrer"
                       className={buttonClasses({ variant: "ghost", size: "xs" })}

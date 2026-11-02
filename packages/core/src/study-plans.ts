@@ -18,8 +18,8 @@ export interface StudyPlanQuestion {
   difficulty: LeetCodeDifficulty;
   /** The Chinese title, where the plan has one (`title` is in the plan's language). */
   zh?: string;
-  /** Only on leetcode.cn (LCP, LCR, ...): it has no leetcode.com page, so it
-   *  can't be captured, and Next never picks it. */
+  /** Only on leetcode.cn (LCP, LCR, ...): it has no leetcode.com page, so its
+   *  links always go there, and Next never picks it. */
   cnOnly?: boolean;
   /** What to show as a cn-only problem's number ("LCP 68"); its `id` is 0. */
   label?: string;

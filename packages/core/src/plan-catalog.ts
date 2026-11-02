@@ -575,10 +575,8 @@ export function planCatalogSummary(language?: "en" | "zh"): Record<keyof PlanLis
   };
 }
 
-/** Every problem on the map except leetcode.cn-only ones, which can't be
- *  captured from leetcode.com: what add-to-review accepts. */
+/** Every problem on the map, leetcode.cn-only ones included: what
+ *  add-to-review accepts. */
 export function planCatalogReviewSlugs(): string[] {
-  return Object.values(catalog().problems)
-    .filter((problem) => !problem.cnOnly)
-    .map((problem) => problem.slug);
+  return Object.keys(catalog().problems);
 }

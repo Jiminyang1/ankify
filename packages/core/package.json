@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./fsrs": "./src/fsrs.ts",
+    "./leetcode-site": "./src/leetcode-site.ts",
     "./patterns": "./src/patterns.ts",
     "./plan-catalog": "./src/plan-catalog.ts",
     "./types": "./src/types.ts"

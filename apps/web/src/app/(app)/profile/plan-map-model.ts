@@ -1,4 +1,5 @@
 import type { PlanStatusEntryDto } from "@ankify/contracts";
+import { leetcodeProblemUrl, type LeetcodeSite } from "@ankify/core/leetcode-site";
 import type {
   PlanCatalog,
   PlanCatalogNode,
@@ -20,7 +21,7 @@ export function parsePlanView(value: unknown): PlanView {
 }
 
 export type PlanStatuses = Readonly<Record<string, PlanStatusEntryDto>>;
-export type PlanSite = "com" | "cn";
+export type PlanSite = LeetcodeSite;
 export type PlanLanguage = "en" | "zh";
 
 /* ── Indexing the tree ── */
@@ -355,7 +356,7 @@ export function applyTick(statuses: PlanStatuses, slug: string, done: boolean): 
 }
 
 export function planProblemUrl(problem: Pick<PlanCatalogProblem, "slug" | "cnOnly">, site: PlanSite): string {
-  return `https://leetcode.${problem.cnOnly || site === "cn" ? "cn" : "com"}/problems/${problem.slug}/`;
+  return leetcodeProblemUrl(problem.slug, problem.cnOnly ? "cn" : site);
 }
 
 export function ratingTone(rating: number): "text-easy" | "text-medium" | "text-hard" {

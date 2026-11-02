@@ -2,7 +2,7 @@ import type { PlanMetersDto, PlanStatusesDto } from "@ankify/contracts";
 import { planCatalogProblem, planListSets } from "@ankify/core/plan-catalog";
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
-import { getCachedLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
+import { getCachedLeetcodeAccounts, getLeetcodeSolved } from "./leetcode-account";
 import { planStatusContext, type AccountForStatus } from "./plan-status";
 
 /**
@@ -53,7 +53,7 @@ export async function setPlanTick(userId: string, slug: string, done: boolean): 
   return true;
 }
 
-export async function loadPlanStatusContext(userId: string, leetcode: AccountForStatus, now: Date) {
+export async function loadPlanStatusContext(userId: string, leetcode: readonly AccountForStatus[], now: Date) {
   const [rows, solved, ticks] = await Promise.all([
     getDb()
       .select({
@@ -78,7 +78,7 @@ function countDue(entries: PlanStatusesDto["statuses"]): number {
 /** Every problem the user has done. Reads the cached LeetCode account only, so
  *  the map never waits on LeetCode. */
 export async function loadPlanStatuses(userId: string): Promise<PlanStatusesDto> {
-  const context = await loadPlanStatusContext(userId, await getCachedLeetcodeAccount(userId), new Date());
+  const context = await loadPlanStatusContext(userId, await getCachedLeetcodeAccounts(userId), new Date());
   const statuses = context.entries();
   return { statuses, due: countDue(statuses) };
 }
@@ -87,7 +87,7 @@ export async function loadPlanStatuses(userId: string): Promise<PlanStatusesDto>
  *  render. Totals depend on language: English leaves leetcode.cn-only problems
  *  out, as its plans do. */
 export async function loadPlanMeters(userId: string, language: "en" | "zh"): Promise<PlanMetersDto> {
-  const context = await loadPlanStatusContext(userId, await getCachedLeetcodeAccount(userId), new Date());
+  const context = await loadPlanStatusContext(userId, await getCachedLeetcodeAccounts(userId), new Date());
   const sets = planListSets(language);
   const meter = (slugs: readonly string[]) => ({
     solved: slugs.filter((slug) => context.statusOf(slug) !== "todo").length,

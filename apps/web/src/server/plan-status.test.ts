@@ -10,8 +10,8 @@ const row = (slug: string, overrides: Partial<PlanStatusRow> = {}): PlanStatusRo
   fsrsLapses: 0,
   ...overrides,
 });
-const leetcode = { username: "me", profile: { recentAccepted: [{ slug: "recent" }] } } as never;
-const solved = { username: "ME", slugs: ["synced", "both"], syncedAt: now.toISOString() };
+const leetcode = [{ site: "com", username: "me", profile: { recentAccepted: [{ slug: "recent" }] } }] as never;
+const solved = [{ site: "com" as const, username: "ME", slugs: ["synced", "both"], syncedAt: now.toISOString() }];
 
 const context = () =>
   planStatusContext({
@@ -28,6 +28,38 @@ const context = () =>
   });
 
 describe("planStatusContext", () => {
+  it("counts a solve on either site, only for the account linked there", () => {
+    const account = (site: "com" | "cn", username: string) => ({ site, username, profile: null });
+    const list = (site: "com" | "cn", username: string, slugs: string[], syncedAt: string) => ({
+      site,
+      username,
+      slugs,
+      syncedAt,
+    });
+    const status = planStatusContext({
+      rows: [],
+      solved: [
+        list("com", "me", ["on-com", "both"], "2026-10-01T00:00:00.000Z"),
+        list("cn", "wo", ["on-cn", "both", "cnHoX6"], "2026-10-02T00:00:00.000Z"),
+      ],
+      leetcode: [account("com", "me"), account("cn", "wo")],
+      ticks: new Set(),
+      now,
+    });
+    for (const slug of ["on-com", "on-cn", "cnHoX6", "both"]) expect(status.statusOf(slug)).toBe("solved");
+    expect(status.solvedSync).toEqual({ count: 4, syncedAt: "2026-10-02T00:00:00.000Z" });
+
+    const otherAccount = planStatusContext({
+      rows: [],
+      solved: [list("cn", "someone-else", ["on-cn"], "2026-10-02T00:00:00.000Z")],
+      leetcode: [account("cn", "wo")],
+      ticks: new Set(),
+      now,
+    });
+    expect(otherAccount.statusOf("on-cn")).toBe("todo");
+    expect(otherAccount.solvedSync).toBeNull();
+  });
+
   it("counts a tick as solved and done", () => {
     const status = context();
     expect(status.statusOf("ticked")).toBe("solved");
@@ -51,7 +83,7 @@ describe("planStatusContext", () => {
   it("ignores a solved list from another LeetCode account", () => {
     const other = planStatusContext({
       rows: [],
-      solved: { ...solved, username: "someone-else" },
+      solved: [{ ...solved[0]!, username: "someone-else" }],
       leetcode,
       ticks: new Set(),
       now,

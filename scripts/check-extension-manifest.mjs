@@ -38,11 +38,14 @@ for (const permission of forbiddenPermissions) {
 }
 
 const hosts = manifest.host_permissions ?? [];
-if (!hosts.includes("https://leetcode.com/*")) {
-  errors.push("the exact LeetCode host permission is missing");
+const leetcodeHosts = ["https://leetcode.com/*", "https://leetcode.cn/*"];
+for (const host of leetcodeHosts) {
+  if (!hosts.includes(host)) {
+    errors.push(`the exact LeetCode host permission ${host} is missing`);
+  }
 }
-if (hosts.length !== 2) {
-  errors.push("Production must have exactly two required host permissions");
+if (hosts.length !== leetcodeHosts.length + 1) {
+  errors.push("Production must have exactly three required host permissions");
 }
 if (
   hosts.some(
@@ -57,12 +60,19 @@ if (
   errors.push("Production required hosts must not contain local or wildcard origins");
 }
 
-const apiHosts = hosts.filter((host) => host !== "https://leetcode.com/*");
+const apiHosts = hosts.filter((host) => !leetcodeHosts.includes(host));
 if (
   apiHosts.length !== 1 ||
   !/^https:\/\/[^*/]+\/\*$/.test(apiHosts[0] ?? "")
 ) {
   errors.push("Production must contain one exact HTTPS API host");
+}
+
+const contentMatches = (manifest.content_scripts ?? []).flatMap((script) => script.matches ?? []);
+for (const host of leetcodeHosts) {
+  if (!contentMatches.includes(host.replace("/*", "/problems/*"))) {
+    errors.push(`content scripts must run on ${host}`);
+  }
 }
 
 const optionalHosts = manifest.optional_host_permissions ?? [];

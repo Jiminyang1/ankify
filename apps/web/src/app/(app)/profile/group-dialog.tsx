@@ -5,7 +5,9 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { leetcodeProblemUrl } from "@ankify/core/leetcode-site";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
@@ -52,7 +54,7 @@ export function GroupDialog({
     };
   }, []);
 
-  const addable = group.items.filter((item) => item.status === "solved" && !item.cnOnly).map((item) => item.slug);
+  const addable = group.items.filter((item) => item.status === "solved").map((item) => item.slug);
   const busy = adding.length > 0 || switching || refreshing;
 
   async function addToReview(slugs: string[]) {
@@ -215,6 +217,7 @@ function PlanItemRow({
   onAdd: () => void;
 }) {
   const { language, t } = useLanguage();
+  const site = useLeetcodeSite();
   const copy = t.profile.group;
   const ghost = buttonClasses({ variant: "ghost", size: "xs" });
   const primary = buttonClasses({ variant: "primary", size: "xs" });
@@ -237,14 +240,6 @@ function PlanItemRow({
         {copy.actions.open}
       </Link>
     );
-  } else if (item.status === "solved" && item.cnOnly) {
-    // Only on leetcode.cn, so it can't be captured into the deck.
-    note = copy.item.solved;
-    action = (
-      <a href={problemUrl(item)} target="_blank" rel="noreferrer" className={ghost}>
-        {copy.actions.leetcode}
-      </a>
-    );
   } else if (item.status === "solved") {
     note = item.archived ? copy.item.archived : copy.item.solved;
     action = (
@@ -258,7 +253,7 @@ function PlanItemRow({
     if (isNext) noteTone = "font-medium text-accent";
     action = (
       <a
-        href={problemUrl(item)}
+        href={leetcodeProblemUrl(item.slug, item.cnOnly ? "cn" : site)}
         target="_blank"
         rel="noreferrer"
         className={isNext ? primary : ghost}
@@ -288,14 +283,11 @@ function PlanItemRow({
   );
 }
 
-function problemUrl(item: PlanItem) {
-  return `https://leetcode.${item.cnOnly ? "cn" : "com"}/problems/${item.slug}/`;
-}
-
 /** A finished chapter: the next problems on the ladder of the technique most
  *  of its problems use. */
 function GoDeeper({ deeper }: { deeper: NonNullable<PlanGroup["deeper"]> }) {
   const { language, t } = useLanguage();
+  const site = useLeetcodeSite();
   const copy = t.profile.group;
   return (
     <section className="border-b border-border bg-accent-soft/30 px-5 py-4">
@@ -306,7 +298,7 @@ function GoDeeper({ deeper }: { deeper: NonNullable<PlanGroup["deeper"]> }) {
           <li key={problem.slug} className="flex items-center gap-3">
             <TechniqueStep step={problem} className="min-w-0 flex-1" />
             <a
-              href={`https://leetcode.com/problems/${problem.slug}/`}
+              href={leetcodeProblemUrl(problem.slug, site)}
               target="_blank"
               rel="noreferrer"
               className={buttonClasses({ variant: "secondary", size: "xs" })}

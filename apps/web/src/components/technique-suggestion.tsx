@@ -1,15 +1,13 @@
 "use client";
 
 import type { PatternRefDto, PatternStepDto, TechniqueSuggestionDto } from "@ankify/contracts";
+import { leetcodeProblemUrl } from "@ankify/core/leetcode-site";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { buttonClasses } from "@/components/ui/button";
 import { DifficultyPill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { cn } from "@/lib/utils";
-
-function leetcodeUrl(slug: string) {
-  return `https://leetcode.com/problems/${slug}/`;
-}
 
 /**
  * After a review rated Again: one easier problem with the same technique,
@@ -27,6 +25,7 @@ export function EasierProblem({
   className?: string;
 }) {
   const { language, t } = useLanguage();
+  const site = useLeetcodeSite();
   const { problem, technique } = suggestion;
   const body = (
     <>
@@ -37,7 +36,7 @@ export function EasierProblem({
       <TechniqueStep step={problem} className="mt-3" />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <a
-          href={leetcodeUrl(problem.slug)}
+          href={leetcodeProblemUrl(problem.slug, site)}
           target="_blank"
           rel="noreferrer"
           className={buttonClasses({ variant: "primary", size: compact ? "xs" : "sm" })}

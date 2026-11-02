@@ -8,7 +8,7 @@ import {
   type AgentStepDto,
   type DocEdit,
 } from "@ankify/contracts";
-import { WEAKNESS_CATEGORIES, leetcodeTagName } from "@ankify/core";
+import { WEAKNESS_CATEGORIES, leetcodeProblemUrl, leetcodeTagName } from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { dueProblemCondition } from "@/server/due-problems";
 import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/practice";
@@ -143,7 +143,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
         const newProblem = (item: PlanItem) => ({
           title: item.title,
           difficulty: item.difficulty,
-          leetcodeUrl: `https://leetcode.com/problems/${item.slug}/`,
+          leetcodeUrl: leetcodeProblemUrl(item.slug, item.cnOnly ? "cn" : profile.site),
         });
         await record({
           kind: "read",

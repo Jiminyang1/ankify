@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { PlanCredit } from "@/components/plan-credit";
 import { Input } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
@@ -23,7 +24,7 @@ import {
 } from "./plan-map-layout";
 import { NO_FILTERS, PLAN_ONLY, computePlanList, parsePlanOnly, type PlanOnly, type PlanSite, type PlanStatuses } from "./plan-map-model";
 import { PlanActionAlert, PlanMapFailed, PlanMapSkeleton, PlanSegments, useMapIsOffered } from "./plan-map-parts";
-import { PLAN_STORAGE, readStored, replaceQuery, writeStored } from "./plan-storage";
+import { PLAN_STORAGE, readStored, readStoredSite, replaceQuery, writeStored } from "./plan-storage";
 import { usePlanMap, type PlanMapApi, type PlanMapData } from "./use-plan-map";
 
 /** One word can match thousands of rows; open only this many. */
@@ -63,7 +64,8 @@ function MapContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanMa
     () => parsePlanOnly(searchParams.get("only")) ?? parsePlanOnly(readStored(PLAN_STORAGE.only)) ?? "all",
   );
   const [level, setLevel] = useState<PlanMapLevel>(() => parsePlanMapLevel(readStored(PLAN_STORAGE.mapLevel)) ?? "lists");
-  const [site] = useState<PlanSite>(() => (readStored(PLAN_STORAGE.site) === "cn" ? "cn" : "com"));
+  const accountSite = useLeetcodeSite();
+  const [site] = useState<PlanSite>(() => readStoredSite(accountSite));
   const [initialZoom] = useState(storedZoom);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => levelExpansion(index, level, only));
   const [query, setQuery] = useState("");
