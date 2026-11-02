@@ -242,7 +242,7 @@ describe("problems", () => {
 
 describe("generated data", () => {
   const ALLOWED = {
-    section: new Set(["id", "zh", "en", "o", "cap", "ref", "p", "c", "topic", "url"]),
+    section: new Set(["id", "zh", "en", "o", "cap", "ref", "p", "c", "topic", "url", "updated"]),
     video: new Set(["zh", "en", "url", "p", "hw", "links"]),
     step: new Set(["zh", "en", "topic", "cap", "secs"]),
     frequent: new Set(["id", "zh", "url", "g"]),
@@ -251,6 +251,10 @@ describe("generated data", () => {
   const expectOnly = (row: object, allowed: Set<string>) => {
     for (const key of Object.keys(row)) expect(allowed.has(key), key).toBe(true);
   };
+
+  it("dates each of his lists by its source post", () => {
+    for (const list of PLAN_LIST_ROWS) expect(list.updated, list.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 
   it("keeps structure only: no prose fields, video ids, or Blind 75", () => {
     const visit = (row: (typeof PLAN_LIST_ROWS)[number]) => {

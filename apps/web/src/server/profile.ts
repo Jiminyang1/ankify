@@ -5,11 +5,12 @@ import {
   type PlanProblemStatus,
 } from "@ankify/core";
 import { PATTERN_PLAN_PREFIX, focusPlanAfter, goDeeperInChapter } from "@ankify/core/patterns";
+import { planCatalogProblem } from "@ankify/core/plan-catalog";
 import type { ChapterDeeperDto, PlanFocusDto, PlanNextDto } from "@ankify/contracts";
 import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
 import { toPatternRef, toPatternStep, type DoneSet } from "./patterns";
 import { loadPlanStatusContext } from "./plan-map";
-import { planNextFrom } from "./plan-next";
+import { isOpenTodo, planNextFrom } from "./plan-next";
 import type { AccountForStatus } from "./plan-status";
 import { findBuiltInStudyPlan, getCurrentStudyPlan, lingSourceUrl, studyPlanSource } from "./study-plans";
 import { loadActiveWeaknesses } from "./weaknesses";
@@ -29,6 +30,8 @@ export type PlanItem = {
   /** Only on leetcode.cn: no leetcode.com page, can't be added to review, and
    *  Next never picks it. */
   cnOnly: boolean;
+  /** Needs LeetCode Premium, so Next never picks it either. */
+  premium: boolean;
   status: PlanProblemStatus;
   /** Set when the problem is in the user's deck (including archived). */
   problemId: string | null;
@@ -205,6 +208,7 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
         leetcodeId: question.id,
         label: question.label ?? String(question.id),
         cnOnly: question.cnOnly === true,
+        premium: planCatalogProblem(question.slug)?.premium === true,
         status: itemStatus,
         problemId: row?.id ?? null,
         archived,
@@ -219,9 +223,9 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
       : plan.slug.startsWith(PATTERN_PLAN_PREFIX)
         ? null
         : deepDivePlanFor(group.name, plan.slug);
-    // leetcode.cn-only problems left over don't hold a chapter open.
+    // Problems the user may not be able to open don't hold a chapter open.
     const deeper =
-      items.every((item) => item.status !== "todo" || item.cnOnly)
+      items.every((item) => !isOpenTodo(item))
         ? goDeeperInChapter(
             items.map((item) => item.slug),
             done.isDone,
@@ -249,8 +253,8 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
   });
 
   // The plan is ordered, so the next problem is the first unsolved one that
-  // leetcode.com can open.
-  const next = groups.flatMap((group) => group.items).find((item) => item.status === "todo" && !item.cnOnly) ?? null;
+  // anyone can open on leetcode.com.
+  const next = groups.flatMap((group) => group.items).find(isOpenTodo) ?? null;
 
   return {
     plan: { slug: plan.slug, name: plan.name, custom: current.custom, sourceUrl: lingSourceUrl(source), source },

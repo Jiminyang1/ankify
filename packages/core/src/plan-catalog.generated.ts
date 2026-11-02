@@ -2888,7 +2888,7 @@ export const PLAN_PROBLEM_ROWS: readonly PlanProblemRow[] = [
 
 /** Problem references are frontend ids, or slugs for leetcode.cn-only problems. */
 export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
-  {"id":"L0","zh":"滑动窗口与双指针","en":"Sliding Window & Two Pointers","topic":"sliding-window","url":"https://leetcode.cn/circle/discuss/0viNMK/","c":[
+  {"id":"L0","zh":"滑动窗口与双指针","en":"Sliding Window & Two Pointers","topic":"sliding-window","url":"https://leetcode.cn/circle/discuss/0viNMK/","updated":"2026-09-12","c":[
     {"id":"L0.0","zh":"一、定长滑动窗口","en":"1. Fixed-size sliding window","cap":1700,"c":[
       {"id":"L0.0.0","zh":"§1.1 基础","en":"§1.1 Basics","p":[1456,643,1343,2090,2379,2841,2461,1423,1176,1100,1852,1151,2107]},
       {"id":"L0.0.1","zh":"§1.2 进阶（选做）","en":"§1.2 Advanced (optional)","o":1,"p":[1052,3679,3439,3694,1297,2134,1652,4043,4044,3652,567,438,30,1888,2156,2953,3672,2067,2524,2200,1461,1016,2653]},
@@ -2921,7 +2921,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L0.4","zh":"五、三指针","en":"5. Three pointers","p":[2367,2563,795,2444,3347,1213,3464]},
     {"id":"L0.5","zh":"六、分组循环","en":"6. Group-by-run loops","p":[485,1446,1869,4038,2414,3456,830,2273,2264,2348,1513,1957,674,3708,696,978,2110,228,2760,1887,845,2038,2900,1759,3011,1861,1578,1839,2765,3255,3350,3105,3926,838,467,3499,3952,413,3738,2147,2593,68,135,3872,2948,3948,3830,3640,2393,3773,2436,2495,3063]},
   ]},
-  {"id":"L1","zh":"二分算法","en":"Binary Search","topic":"binary-search","url":"https://leetcode.cn/circle/discuss/SqopEo/","c":[
+  {"id":"L1","zh":"二分算法","en":"Binary Search","topic":"binary-search","url":"https://leetcode.cn/circle/discuss/SqopEo/","updated":"2026-10-19","c":[
     {"id":"L1.0","zh":"一、二分查找","en":"1. Binary search","cap":1700,"c":[
       {"id":"L1.0.0","zh":"§1.1 基础","en":"§1.1 Basics","p":[34,35,704,744,2529]},
       {"id":"L1.0.1","zh":"§1.2 进阶","en":"§1.2 Advanced","o":1,"p":[1385,1170,2300,2389,2080,3488,2563,1146,981,3508,658,1818,911,"ju-qing-hong-fa-shi-jian",1182,3893,2819,74,1287,2476,2070,4012,1150]},
@@ -2937,7 +2937,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L1.2","zh":"三、三分法","en":"3. Ternary search","p":[1515]},
     {"id":"L1.3","zh":"四、其他","en":"4. Other","p":[69,278,374,162,1901,852,1095,153,154,33,81,222,1539,3911,540,4,1064,702,2936,1060,1198,1428,1533,2387,302]},
   ]},
-  {"id":"L2","zh":"单调栈","en":"Monotonic Stack","cap":1700,"topic":"monotonic-stack","url":"https://leetcode.cn/circle/discuss/9oZFK9/","c":[
+  {"id":"L2","zh":"单调栈","en":"Monotonic Stack","cap":1700,"topic":"monotonic-stack","url":"https://leetcode.cn/circle/discuss/9oZFK9/","updated":"2026-09-06","c":[
     {"id":"L2.0","zh":"一、单调栈","en":"1. Monotonic stack","cap":1700,"c":[
       {"id":"L2.0.0","zh":"§1.1 基础","en":"§1.1 Basics","cap":1700,"p":[739,1475,496,503,901]},
       {"id":"L2.0.1","zh":"§1.2 进阶","en":"§1.2 Advanced","o":1,"cap":1700,"p":[3676,456,3113,2866,975,1944,2454,654,1130,2289,2736,3420,3221,1966,2832,1063,1950,2282,3555,1019,962,853,768,3814,2054,3542,1124,1340,1776,2863,2355]},
@@ -2946,14 +2946,14 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L2.2","zh":"三、贡献法","en":"3. Contribution counting","cap":1700,"p":[907,2104,1856,3878,2818,2281,3430,3359,2334]},
     {"id":"L2.3","zh":"四、最小字典序","en":"4. Smallest lexicographic result","cap":1700,"p":[402,1673,316,1081,3816,321,2030]},
   ]},
-  {"id":"L3","zh":"网格图","en":"Grid Graphs","topic":"grid","url":"https://leetcode.cn/circle/discuss/YiXPXW/","c":[
+  {"id":"L3","zh":"网格图","en":"Grid Graphs","topic":"grid","url":"https://leetcode.cn/circle/discuss/YiXPXW/","updated":"2026-09-12","c":[
     {"id":"L3.0","zh":"一、网格图 DFS","en":"1. Grid DFS","cap":1700,"p":[200,695,3619,2658,"pond-sizes-lcci","YesdPw",463,733,1034,1020,2684,1254,130,1905,1391,1559,529,417,827,"EXvqDp",305,2061,2852,489,1970]},
     {"id":"L3.1","zh":"二、网格图 BFS","en":"2. Grid BFS","p":[1926,1091,1162,542,994,3905,1765,934,2146,1293,909,1210,675,2812,749,1730,286,490,505,499,1197,317,2814]},
     {"id":"L3.2","zh":"三、网格图 0-1 BFS","en":"3. Grid 0-1 BFS","p":[3286,2290,1368,3552,1824,"6UEx57"]},
     {"id":"L3.3","zh":"四、网格图 Dijkstra","en":"4. Grid Dijkstra","ref":"L5.2.0"},
     {"id":"L3.4","zh":"五、综合应用","en":"5. Combined techniques","p":[3882,1631,2267,778,3568,1036,864,1263,2258,2556,2577,2617,"xun-bao","Db3wC1","kplEvH","rdmXM7",1778,694,711,1102]},
   ]},
-  {"id":"L4","zh":"位运算","en":"Bit Manipulation","topic":"bits","url":"https://leetcode.cn/circle/discuss/dHn9Vk/","c":[
+  {"id":"L4","zh":"位运算","en":"Bit Manipulation","topic":"bits","url":"https://leetcode.cn/circle/discuss/dHn9Vk/","updated":"2026-09-12","c":[
     {"id":"L4.0","zh":"一、基础题","en":"1. Basics","p":[3370,3827,3226,1356,461,2220,1342,476,1009,868,2917,2657,231,342,693,3950,191,338,2595,2154,3211,"insert-into-bits-lcci",3690,190,4030,3750,3769]},
     {"id":"L4.1","zh":"二、异或（XOR）的性质","en":"2. Properties of XOR","p":[1486,1720,2433,1310,3702,2683,1829,2997,1442,2429,2527,2317,2588,2564,1734,2857,1803,3215]},
     {"id":"L4.2","zh":"三、与或（AND/OR）的性质","en":"3. Properties of AND and OR","p":[2980,1318,2419,2871,2401,2680,3133,3108,3117,3125],"c":[
@@ -2967,7 +2967,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L4.7","zh":"八、思维题","en":"8. Insight problems","p":[2546,1558,2571,3315,2568,3644,2509,2939,2749,2835,2897,810,3064,3094]},
     {"id":"L4.8","zh":"九、其他","en":"9. Other","p":[136,260,2965,137,645,371,201,2438,1680,1415,1261,1545,89,1238,2126,3766,3782,390,982,3307,1611,3514,"ryfUiz",751,3595,3141]},
   ]},
-  {"id":"L5","zh":"图论算法","en":"Graph Algorithms","topic":"graph","url":"https://leetcode.cn/circle/discuss/01LUak/","c":[
+  {"id":"L5","zh":"图论算法","en":"Graph Algorithms","topic":"graph","url":"https://leetcode.cn/circle/discuss/01LUak/","updated":"2026-09-10","c":[
     {"id":"L5.0","zh":"一、图的遍历","en":"1. Graph traversal","c":[
       {"id":"L5.0.0","zh":"§1.1 深度优先搜索（DFS）","en":"§1.1 Depth-first search (DFS)","p":[547,1971,797,1306,841,2316,1319,2492,3310,2685,2192,3387,924,2101,721,207,802,3695,928,2092,3108,"chuan-di-xin-xi",261,323,1298]},
       {"id":"L5.0.1","zh":"§1.2 广度优先搜索（BFS）","en":"§1.2 Breadth-first search (BFS)","p":[3243,1311,3015,1129,2039,2608,815,3807]},
@@ -2990,7 +2990,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L5.8","zh":"九、其他","en":"9. Other","p":[1042,1761,2508,1579,2065,1697,2242,2493,1782,3666,2612,3435,466,"you-le-yuan-de-you-lan-ji-hua",277,1724,2077,3656]},
     {"id":"L5.9","zh":"十、树上算法","en":"10. Algorithms on trees","ref":"L10.2"},
   ]},
-  {"id":"L6","zh":"动态规划","en":"Dynamic Programming","topic":"dp","url":"https://leetcode.cn/circle/discuss/tXLS3i/","c":[
+  {"id":"L6","zh":"动态规划","en":"Dynamic Programming","topic":"dp","url":"https://leetcode.cn/circle/discuss/tXLS3i/","updated":"2026-08-17","c":[
     {"id":"L6.0","zh":"一、入门 DP","en":"1. Intro DP","cap":2000,"c":[
       {"id":"L6.0.0","zh":"§1.1 爬楼梯","en":"§1.1 Climbing stairs","p":[70,746,3693,377,2466,2266,2533]},
       {"id":"L6.0.1","zh":"§1.2 打家劫舍","en":"§1.2 House robber","p":[198,213,2320,3840,740,3186,2140]},
@@ -3080,7 +3080,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L6.17","zh":"专题：跳跃游戏","en":"Special topic: jump game","p":[1306,2770,403,1340,1871,1696,975,1654,"zui-xiao-tiao-yue-ci-shu","meChtZ",656,2297]},
     {"id":"L6.18","zh":"其他","en":"Other","p":[1387,397,2998,823,1553,2930,1896]},
   ]},
-  {"id":"L7","zh":"常用数据结构","en":"Data Structures","topic":"data-structures","url":"https://leetcode.cn/circle/discuss/mOr1u6/","c":[
+  {"id":"L7","zh":"常用数据结构","en":"Data Structures","topic":"data-structures","url":"https://leetcode.cn/circle/discuss/mOr1u6/","updated":"2026-10-28","c":[
     {"id":"L7.0","zh":"零、常用枚举技巧","en":"0. Common enumeration techniques","cap":1700,"c":[
       {"id":"L7.0.0","zh":"§0.1 枚举右，维护左","en":"§0.1 Enumerate the right end, keep the left","c":[
         {"id":"L7.0.0.0","zh":"§0.1.1 基础","en":"§0.1.1 Basics","p":[1,1512,2441,4074,121,2016,624,3880,2342,3979,1128,1679,"pairs-with-sum-lcci",219,2260,2001,2815,3623,2364,3805,3371,3761,1014,1814,3584,2905,3837,3907]},
@@ -3172,7 +3172,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
       {"id":"L7.12.2","zh":"Part C","en":"Part C","p":[3197,2532,2056,"fsa7oZ","Za25hA","De4qBB","xun-bao","rMeRt2","1ybDKD","cnHoX6"]},
     ]},
   ]},
-  {"id":"L8","zh":"数学算法","en":"Math","topic":"math","url":"https://leetcode.cn/circle/discuss/IYT3ss/","c":[
+  {"id":"L8","zh":"数学算法","en":"Math","topic":"math","url":"https://leetcode.cn/circle/discuss/IYT3ss/","updated":"2026-09-13","c":[
     {"id":"L8.0","zh":"一、数论","en":"1. Number theory","c":[
       {"id":"L8.0.0","zh":"§1.1 判断质数","en":"§1.1 Primality tests","p":[3115,2614,3765,3556,3044,866]},
       {"id":"L8.0.1","zh":"§1.2 预处理质数（筛质数）","en":"§1.2 Prime sieves","p":[204,3618,3591,3918,762,3896,2761,3233,3770,2523,2601]},
@@ -3220,7 +3220,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
       {"id":"L8.6.9","zh":"§7.10 其他","en":"§7.10 Other","p":[1523,1716,2829,2579,3648,2834,1414,319,1780,3091,3468,2310,2145,2541,1502,2195,2457,1017,3649,1954,1073,1823,166,3012,483,3782,390,1680,972,1515,1862,1739,2443,1806,458,31,60,2117,3666,"W7yuXW","deep-dark-fraction","SNJvJP","05ZEDJ",800,660,2979,2647]},
     ]},
   ]},
-  {"id":"L9","zh":"贪心与思维","en":"Greedy & Insight","topic":"greedy","url":"https://leetcode.cn/circle/discuss/g6KTKL/","c":[
+  {"id":"L9","zh":"贪心与思维","en":"Greedy & Insight","topic":"greedy","url":"https://leetcode.cn/circle/discuss/g6KTKL/","updated":"2026-08-19","c":[
     {"id":"L9.0","zh":"一、贪心策略","en":"1. Greedy strategies","c":[
       {"id":"L9.0.0","zh":"§1.1 从最小/最大开始贪心","en":"§1.1 From the smallest or largest","p":[3074,3545,3745,2279,1833,2144,1005,1481,1403,3010,1338,1710,3075,2554,2126,2587,976,1561,3627,3462,2099,3301,945,1846,3727,1647,2971,2178,954,1578,2567,1509,2611,3397,3457,3767,"uOAnQW",1262,948,1775,2333,3645,3947,2141,1196,2214,3763,3730,3476,2098,2548,3119,2557,"WqXACV",1984,624,910,2835,3366]},
       {"id":"L9.0.1","zh":"§1.2 单序列配对","en":"§1.2 Pairing within one sequence","p":[561,1877,881,2592,2576]},
@@ -3268,7 +3268,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     {"id":"L9.6","zh":"七、交互题","en":"7. Interactive problems","p":[278,374,1237,1095,843,2728,277,2782,3064,3094,1428,702,1533,2936,1618,1538,489,1778,1810,1274]},
     {"id":"L9.7","zh":"八、其他","en":"8. Other","p":[2833,2740,2946,3523,781,1041,3587,1864,1899,2498,134,3443,3635,3002,1733,659,2732,3474,"programmable-robot","hSRGyL","XxZZjK",2340,3460,2753]},
   ]},
-  {"id":"L10","zh":"链表、二叉树与回溯","en":"Linked Lists, Trees & Backtracking","topic":"trees","url":"https://leetcode.cn/circle/discuss/K0n2gO/","c":[
+  {"id":"L10","zh":"链表、二叉树与回溯","en":"Linked Lists, Trees & Backtracking","topic":"trees","url":"https://leetcode.cn/circle/discuss/K0n2gO/","updated":"2026-10-28","c":[
     {"id":"L10.0","zh":"一、链表","en":"1. Linked lists","c":[
       {"id":"L10.0.0","zh":"§1.1 遍历链表","en":"§1.1 Traversal","p":[1290,2058,2181,725,817,3263,3294,3062,3063]},
       {"id":"L10.0.1","zh":"§1.2 删除节点","en":"§1.2 Deleting nodes","p":[203,3217,83,82,1669,2487,1836,237]},
@@ -3326,7 +3326,7 @@ export const PLAN_LIST_ROWS: readonly PlanSectionRow[] = [
     ]},
     {"id":"L10.4","zh":"五、其他递归/分治","en":"5. Other recursion and divide and conquer","p":[3537,3864,1545,3307,880,3614,932,215,912]},
   ]},
-  {"id":"L11","zh":"字符串","en":"Strings","topic":"strings","url":"https://leetcode.cn/circle/discuss/SJFwQI/","c":[
+  {"id":"L11","zh":"字符串","en":"Strings","topic":"strings","url":"https://leetcode.cn/circle/discuss/SJFwQI/","updated":"2026-09-05","c":[
     {"id":"L11.0","zh":"一、KMP（前缀的后缀）","en":"1. KMP","p":[28,796,1392,3036,1764,1668,459,2800,3008,214,3529,686,3455,1397,3037,3571]},
     {"id":"L11.1","zh":"二、Z 函数（后缀的前缀）","en":"2. Z-function","p":[2223,3031,3045,3303,3292,3474,2430,3388,2573,1977]},
     {"id":"L11.2","zh":"三、Manacher 算法（回文串）","en":"3. Manacher's algorithm","p":[5,647,214,3985,3327,1745,1960,3844,3504,2472,3615,3579]},

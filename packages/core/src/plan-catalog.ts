@@ -49,6 +49,8 @@ export interface PlanSectionRow {
   c?: readonly PlanSectionRow[];
   topic?: string;
   url?: string;
+  /** His lists: when the source post was last updated, at the snapshot. */
+  updated?: string;
 }
 
 export interface PlanVideoRow {
@@ -104,6 +106,8 @@ export interface PlanCatalogNode {
   title: { en: string; zh: string };
   optional?: boolean;
   url?: string;
+  /** His lists: when the source post was last updated, at the snapshot. */
+  updated?: string;
   /** Video nodes: the lesson. */
   videoUrl?: string;
   /** This node's own problems. On a video, the ones worked in the lesson. */
@@ -304,6 +308,7 @@ function build(): Built {
       title: { en: row.en, zh: row.zh },
       ...(optional ? { optional } : {}),
       ...(row.url ? { url: row.url } : {}),
+      ...(row.updated ? { updated: row.updated } : {}),
       problems: slugs(row.p),
       children: (row.c ?? []).map((child) => section(child, { optional, stepCap })),
       ...(row.topic ? { plan: `ling:${row.topic}` } : {}),

@@ -5,7 +5,8 @@
  * Hot 100, and Top Interview 150 lists. Re-run when the map changes:
  *   pnpm plans:catalog <path-to-saved-page.html>
  *
- * Only structure is kept: titles, problem data, ratings, urls. Fields are
+ * Only structure is kept: titles, problem data, ratings, urls, each post's last
+ * update. Fields are
  * copied one by one, so the page's prose (`d`, `n`, ...), NeetCode's video ids,
  * and the Blind 75 flag never reach the output. English names are our own, in
  * scripts/plan-catalog-names.json keyed by node id; a node without one fails
@@ -111,7 +112,8 @@ const lists = data.lists.map((list) => {
   const topic = topicBySource.get(source);
   if (!topic) throw new Error(`${list.id}: no topic in pattern-names.json for ${list.url}`);
   topicOf.set(list.k, topic);
-  return { ...section(list), topic, url: list.url };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(list.upd ?? "")) throw new Error(`${list.id}: no source post date`);
+  return { ...section(list), topic, url: list.url, updated: list.upd };
 });
 
 function ids(rows, out = new Set()) {

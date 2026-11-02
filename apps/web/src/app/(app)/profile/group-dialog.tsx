@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
-import { DifficultyPill } from "@/components/ui/pill";
+import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
 import { TechniqueCredit, TechniqueStep } from "@/components/technique-suggestion";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
@@ -278,6 +278,7 @@ function PlanItemRow({
           <span className="hidden shrink-0 sm:inline-flex">
             <DifficultyPill difficulty={item.difficulty} language={language} />
           </span>
+          {item.premium && <Pill className="shrink-0">{t.planMap.tags.premium}</Pill>}
         </span>
         <span className={cn("mt-0.5 block text-xs sm:hidden", noteTone)}>{note}</span>
       </span>

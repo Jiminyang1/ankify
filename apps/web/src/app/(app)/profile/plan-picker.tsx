@@ -9,16 +9,21 @@ import { Input, Select } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
 import { useHydrated } from "@/lib/use-hydrated";
+import type { StudyPlanCategory } from "@/server/study-plans";
 
-type PlanOption = { slug: string; name: string; custom: boolean };
+type PlanOption = { slug: string; name: string; custom: boolean; category: StudyPlanCategory };
+type CurrentPlan = { slug: string; custom: boolean };
 type ImportError = keyof ReturnType<typeof useLanguage>["t"]["profile"]["plans"]["errors"];
 
 const IMPORT_VALUE = "__import__";
 
-/** Switch between LeetCode's study plans and the user's imported lists, or
- *  import a new public LeetCode list. */
-export function PlanPicker({ plans, current }: { plans: PlanOption[]; current: PlanOption }) {
+const CATEGORIES: readonly StudyPlanCategory[] = ["ling", "frequent", "dictionary", "imported"];
+
+/** Switch between the built-in plans, by category, and the user's imported
+ *  lists, or import a new public LeetCode list. */
+export function PlanPicker({ plans, current }: { plans: PlanOption[]; current: CurrentPlan }) {
   const { t } = useLanguage();
+  const categoryNames = t.planMap.categories;
   const copy = t.profile.plans;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -45,11 +50,19 @@ export function PlanPicker({ plans, current }: { plans: PlanOption[]; current: P
           else if (value !== current.slug) void send("POST", value);
         }}
       >
-        {plans.map((plan) => (
-          <option key={plan.slug} value={plan.slug}>
-            {plan.name}
-          </option>
-        ))}
+        {CATEGORIES.map((category) => {
+          const inCategory = plans.filter((plan) => plan.category === category);
+          if (inCategory.length === 0) return null;
+          return (
+            <optgroup key={category} label={categoryNames[category]}>
+              {inCategory.map((plan) => (
+                <option key={plan.slug} value={plan.slug}>
+                  {plan.name}
+                </option>
+              ))}
+            </optgroup>
+          );
+        })}
         <option value={IMPORT_VALUE}>+ {copy.importOption}</option>
       </Select>
       {current.custom && (

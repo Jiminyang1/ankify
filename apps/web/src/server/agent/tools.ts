@@ -15,6 +15,7 @@ import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/p
 import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { getRequestLanguage } from "@/server/i18n";
+import { isOpenTodo } from "@/server/plan-next";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
@@ -162,7 +163,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
             order: index + 1,
             name: group.name,
             counts: counts(group.counts),
-            nextNotStarted: group.items.filter((item) => item.status === "todo" && !item.cnOnly).slice(0, 5).map(newProblem),
+            nextNotStarted: group.items.filter(isOpenTodo).slice(0, 5).map(newProblem),
             forgottenBefore: group.items
               .filter((item) => item.problemId && item.lapses > 0)
               .sort((a, b) => b.lapses - a.lapses)

@@ -146,7 +146,7 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
       <div
         ref={shellRef}
         className={cn(
-          "relative grid min-h-[calc(100dvh-94px)] grid-cols-1 sm:min-h-[calc(100dvh-61px)] md:transition-[grid-template-columns] md:duration-200 motion-reduce:transition-none",
+          "relative grid min-h-[calc(100dvh-94px)] grid-cols-1 overflow-x-clip sm:min-h-[calc(100dvh-61px)] md:transition-[grid-template-columns] md:duration-200 motion-reduce:transition-none",
           outerPanelOpen
             ? "md:grid-cols-[minmax(0,1fr)_20px_var(--agent-panel-width)]"
             : "md:grid-cols-[minmax(0,1fr)_0px_0px]",

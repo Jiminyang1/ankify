@@ -17,6 +17,7 @@ import { AI_PROVIDERS, getAiProviderInfo, type AiProvider } from "@ankify/core";
 import type { OnboardingProgressDto } from "@ankify/contracts";
 import type { SolvedSummary } from "@/server/profile";
 import type { StudyPlanOption } from "@/server/study-plans";
+import { PlanCredit } from "@/components/plan-credit";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
@@ -231,7 +232,7 @@ export function OnboardingCard({
   currentPlan: string;
 }) {
   const t = COPY[language];
-  const profileCopy = getTranslations(language).profile;
+  const categoryNames = getTranslations(language).planMap.categories;
   const router = useRouter();
   const [progress, setProgress] = useState(initialProgress);
   const [planSlug, setPlanSlug] = useState(currentPlan);
@@ -261,6 +262,8 @@ export function OnboardingCard({
   const aiHandled = progress.aiChoice !== "not_started";
   const hasStarterCredits = starter.enabled && starter.remaining > 0;
   const selectedPlan = plans.find((plan) => plan.slug === planSlug);
+  // A new user chooses from a handful: the dictionary stays on the Plan page.
+  const firstPlans = plans.filter((plan) => plan.category !== "dictionary" || plan.slug === planSlug);
   const doneCount = [
     Boolean(progress.planChosenAt),
     Boolean(progress.extensionConnectedAt),
@@ -405,11 +408,19 @@ export function OnboardingCard({
                     setPlanError(null);
                   }}
                 >
-                  {plans.map((plan) => (
-                    <option key={plan.slug} value={plan.slug}>
-                      {plan.name}
-                    </option>
-                  ))}
+                  {(["ling", "frequent", "dictionary", "imported"] as const).map((category) => {
+                    const inCategory = firstPlans.filter((plan) => plan.category === category);
+                    if (inCategory.length === 0) return null;
+                    return (
+                      <optgroup key={category} label={categoryNames[category]}>
+                        {inCategory.map((plan) => (
+                          <option key={plan.slug} value={plan.slug}>
+                            {plan.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </Select>
                 <Button size="sm" variant="primary" disabled={planBusy || refreshing} onClick={() => void choosePlan()}>
                   {(planBusy || refreshing) && <Spinner />}
@@ -419,13 +430,10 @@ export function OnboardingCard({
               {selectedPlan && (
                 <p className="mt-2 text-xs leading-5 text-muted">
                   {t.planSize(selectedPlan.problems, selectedPlan.chapters)}
-                  {selectedPlan.sourceUrl && (
+                  {selectedPlan.source && (
                     <>
                       {" · "}
-                      {profileCopy.sourceCredit}{" "}
-                      <a href={selectedPlan.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-fg">
-                        {profileCopy.sourceLink}
-                      </a>
+                      <PlanCredit source={selectedPlan.source} language={language} />
                     </>
                   )}
                 </p>
