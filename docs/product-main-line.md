@@ -121,6 +121,10 @@ site last open), and the list's "Open problems on" filter overrides that.
    - **Next**: the plan's next unsolved problem and its chapter progress.
      Learns a new pattern. Today this is one line at the bottom of the page;
      it becomes the second part, after the reviews.
+
+   The extension's side panel is too narrow for both on one screen: its
+   Today is the reviews alone, and Next is the Plan screen behind a flag in
+   Today's top bar.
 3. **Solve it on LeetCode.** The extension collects it on the first new
    submission (unchanged), and it shows under its chapter on the roadmap.
 4. **When it's due, review it by talking it through** (practice is the
