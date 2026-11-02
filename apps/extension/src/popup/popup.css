@@ -535,6 +535,9 @@ label, button, th, .font-ui {
   border-radius: 5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  /* One word: beside a long title it keeps its width (中等 never splits). */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Difficulty uses its own tokens rather than borrowing success/accent/danger,
