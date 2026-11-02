@@ -37,6 +37,7 @@ describe("extension settings", () => {
     await expect(getSettings()).resolves.toEqual({
       apiBaseUrl: PRODUCTION_ORIGIN,
       language: "zh",
+      textSize: "default",
       resetCodeOnProblemOpen: true,
       autoCapture: true,
     });
@@ -45,6 +46,16 @@ describe("extension settings", () => {
         language: "zh",
         resetCodeOnProblemOpen: true,
       },
+    });
+  });
+
+  it("keeps a saved text size", async () => {
+    const { getSettings, setSettings, set } = await loadStorage({ textSize: "large" });
+
+    await expect(getSettings()).resolves.toMatchObject({ textSize: "large" });
+    await setSettings({ textSize: "small" });
+    expect(set).toHaveBeenCalledWith({
+      "ankify.settings": expect.objectContaining({ textSize: "small" }),
     });
   });
 
@@ -62,6 +73,7 @@ describe("extension settings", () => {
     expect(set).toHaveBeenCalledWith({
       "ankify.settings": {
         language: "zh",
+        textSize: "default",
         resetCodeOnProblemOpen: false,
         autoCapture: true,
       },

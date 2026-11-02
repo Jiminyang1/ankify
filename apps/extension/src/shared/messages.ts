@@ -64,9 +64,13 @@ export type SolvedSyncState =
   | { ok: true; at: number; username: string; count: number }
   | { ok: false; at: number; error: string };
 
+/** The side panel's text size: the root font size every rem is relative to. */
+export type TextSize = "small" | "default" | "large";
+
 export interface ExtSettings {
   apiBaseUrl: string;
   language: "en" | "zh";
+  textSize: TextSize;
   resetCodeOnProblemOpen: boolean;
   /** Collect a problem automatically on its first new submission. */
   autoCapture: boolean;
