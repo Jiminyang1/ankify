@@ -1,5 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { splitCodeFences } from "./code-language";
+import { HighlightedCode } from "./HighlightedCode";
 
 const components: Components = {
   p: ({ children }) => <p>{children}</p>,
@@ -27,14 +29,27 @@ const components: Components = {
         </code>
       );
     }
-    return (
-      <code className={className} {...props}>
-        {children}
-      </code>
-    );
+    return <HighlightedCode code={String(children).replace(/\n$/, "")} language={className.replace(/^language-/, "")} />;
   },
   pre: ({ children }) => <pre className="scroll-area">{children}</pre>,
 };
+
+/** A message as the user typed it: only fenced code blocks are formatted. */
+export function PopupUserText({ children }: { children: string }) {
+  return (
+    <div className="popup-md coach-user-text">
+      {splitCodeFences(children).map((part, index) =>
+        part.kind === "text" ? (
+          <span key={index}>{part.text}</span>
+        ) : (
+          <pre key={index} className="scroll-area">
+            <HighlightedCode code={part.code} language={part.language} />
+          </pre>
+        ),
+      )}
+    </div>
+  );
+}
 
 export function PopupMarkdown({ children, className = "" }: { children: string; className?: string }) {
   return (
