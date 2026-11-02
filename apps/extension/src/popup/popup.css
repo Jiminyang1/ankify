@@ -534,7 +534,6 @@ label, button, th, .font-ui {
 .pill-easy { background: color-mix(in srgb, var(--easy) 15%, transparent); color: var(--easy); }
 .pill-medium { background: color-mix(in srgb, var(--medium) 15%, transparent); color: var(--medium); }
 .pill-hard { background: color-mix(in srgb, var(--hard) 15%, transparent); color: var(--hard); }
-.pill-state { background: var(--subtle); color: var(--muted); }
 .pill-due { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-strong); }
 
 /* ── collapse ── */
@@ -3140,9 +3139,20 @@ a.problem-place-item:hover .problem-place-value,
 
 .problem-place-value {
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* Technique names are long: they take their own line under the label and credit. */
+.problem-place-item:has(.problem-place-credit) {
+  flex-wrap: wrap;
+}
+
+.problem-place-item:has(.problem-place-credit) .problem-place-value {
+  order: 1;
+  flex-basis: 100%;
 }
 
 .problem-place-value a {

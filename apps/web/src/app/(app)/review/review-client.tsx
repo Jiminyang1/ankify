@@ -17,7 +17,7 @@ import type {
   SubmissionDto,
 } from "@ankify/contracts";
 import { leetcodeTagName, type FsrsRating } from "@ankify/core";
-import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
+import { DifficultyPill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -534,7 +534,6 @@ function ReviewHeader({
         </h1>
         <div className="flex shrink-0 items-center gap-2">
           <DifficultyPill difficulty={problem.difficulty} language={language} />
-          <FsrsStatePill state={problem.fsrsState} language={language} />
           <span className="text-xs uppercase tracking-wider text-muted">
             {language === "zh" ? `${dueCount} 到期` : `${dueCount} due`}
           </span>

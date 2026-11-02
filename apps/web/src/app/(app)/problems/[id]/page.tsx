@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { leetcodeTagName } from "@ankify/core";
 import { notFound } from "next/navigation";
-import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Markdown } from "@/components/ui/markdown";
 import { SubmissionList } from "@/components/submission-list";
@@ -74,11 +74,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
           <li key={ev.id} className="flex items-center gap-3 py-2.5 text-sm first:pt-0 last:pb-0">
             <Pill tone={RATING_TONES[ev.fsrsRating!] ?? "neutral"}>{ratingLabel(ev.fsrsRating, t)}</Pill>
             <span className="text-muted">{formatRelative(ev.occurredAt)}</span>
-            {ev.fsrsStabilitySnap != null && (
-              <span className="text-xs text-muted tabular-nums">
-                s{ev.fsrsStabilitySnap.toFixed(1)} d{(ev.fsrsDifficultySnap ?? 0).toFixed(1)}
-              </span>
-            )}
           </li>
         ))}
       </ul>
@@ -107,7 +102,6 @@ export default async function ProblemDetail({ params }: { params: Promise<{ id: 
           <Surface className="p-5">
             <div className="flex flex-wrap items-center gap-2">
               <DifficultyPill difficulty={problem.difficulty} language={language} />
-              <FsrsStatePill state={problem.fsrsState} language={language} />
               {problem.archivedAt != null && <Pill tone="neutral">{t.detail.archived}</Pill>}
               {problem.archivedAt == null && isDue && problem.fsrsReps > 0 && <Pill tone="accent">{t.common.due}</Pill>}
             </div>
