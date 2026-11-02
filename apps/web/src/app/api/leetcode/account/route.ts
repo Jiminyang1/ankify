@@ -7,7 +7,6 @@ import { readJsonBody } from "@/server/request-body";
 
 const ERROR_STATUS = {
   invalid_profile: 400,
-  unsupported_site: 400,
   user_not_found: 404,
   leetcode_unavailable: 502,
 } as const;
@@ -39,6 +38,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const user = await getRequestSessionUser(req);
   if (!user) return unauthorizedResponse();
-  await unlinkLeetcodeAccount(user.id);
+  const site = new URL(req.url).searchParams.get("site") === "cn" ? "cn" : "com";
+  await unlinkLeetcodeAccount(user.id, site);
   return NextResponse.json({ ok: true });
 }

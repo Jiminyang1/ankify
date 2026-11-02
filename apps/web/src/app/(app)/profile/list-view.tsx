@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { PlanCredit } from "@/components/plan-credit";
 import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
@@ -44,7 +45,7 @@ import {
   type PlanSite,
 } from "./plan-map-model";
 import { LingCredit, PlanActionAlert, PlanMapFailed, PlanMapSkeleton, ThinBar } from "./plan-map-parts";
-import { PLAN_STORAGE, readStored, replaceQuery, writeStored } from "./plan-storage";
+import { PLAN_STORAGE, readStored, readStoredSite, replaceQuery, writeStored } from "./plan-storage";
 import { usePlanMap, type PlanMapApi, type PlanMapData } from "./use-plan-map";
 
 /** Sections open by themselves while filtering until this many rows are drawn. */
@@ -91,7 +92,12 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
   // storage while initializing state can't mismatch the server's HTML.
   const [only, setOnly] = useState<PlanOnly>(() => urlOnly ?? parsePlanOnly(readStored(PLAN_STORAGE.only)) ?? "all");
   const [filters, setFilters] = useState<PlanFilters>(() => sanitizeFilters(readStored(PLAN_STORAGE.filters) ?? NO_FILTERS));
-  const [site, setSite] = useState<PlanSite>(() => (readStored(PLAN_STORAGE.site) === "cn" ? "cn" : "com"));
+  const accountSite = useLeetcodeSite();
+  const [site, setSiteState] = useState<PlanSite>(() => readStoredSite(accountSite));
+  const setSite = useCallback((next: PlanSite) => {
+    setSiteState(next);
+    writeStored(PLAN_STORAGE.site, next);
+  }, []);
   const [nc150Toggle, setNc150Toggle] = useState(() => readStored(PLAN_STORAGE.nc150) === true);
   const [opened, setOpened] = useState<Record<string, boolean>>(() => {
     const stored = readStored(PLAN_STORAGE.open);
@@ -111,7 +117,6 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
 
   useEffect(() => writeStored(PLAN_STORAGE.only, only), [only]);
   useEffect(() => writeStored(PLAN_STORAGE.filters, filters), [filters]);
-  useEffect(() => writeStored(PLAN_STORAGE.site, site), [site]);
   useEffect(() => writeStored(PLAN_STORAGE.nc150, nc150Toggle), [nc150Toggle]);
   useEffect(() => writeStored(PLAN_STORAGE.open, opened), [opened]);
 

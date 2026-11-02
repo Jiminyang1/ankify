@@ -5,6 +5,8 @@ import {
   groupByPattern,
   type LeetCodeDifficulty,
   type StudyPlan,
+  leetcodeSiteOfHost,
+  type LeetcodeSite,
 } from "@ankify/core";
 import {
   PATTERN_ROUTE_SLUG,
@@ -143,7 +145,6 @@ export function builtInPlanOptions(language: Language): StudyPlanOption[] {
 
 export type ImportListError =
   | "invalid_link"
-  | "unsupported_site"
   | "not_found"
   | "empty"
   | "too_many_lists"
@@ -215,9 +216,7 @@ export async function removeCustomPlan(userId: string, slug: string) {
 }
 
 /** Every problem slug in the plans this user can see and on the map, so
- *  add-to-review only accepts problems that are actually on a roadmap. Never a
- *  leetcode.cn-only one: English plans leave them out and so does the map's
- *  list, since they can't be captured from leetcode.com. */
+ *  add-to-review only accepts problems that are actually on a roadmap. */
 export async function studyPlanSlugsForUser(userId: string): Promise<Set<string>> {
   const plans = [...OFFICIAL_STUDY_PLANS, ...sourcedPlansIn("en"), ...(await getCustomPlans(userId))];
   return new Set([
@@ -228,12 +227,12 @@ export async function studyPlanSlugsForUser(userId: string): Promise<Set<string>
 
 const LIST_SLUG_RE = /^[a-z0-9-]{4,64}$/i;
 
-/** Accepts `leetcode.com/problem-list/<slug>/`, the legacy `/list/<slug>/`,
- *  or the bare slug. */
-export function parseLeetcodeListLink(input: string): { slug: string } | { error: ImportListError } {
+/** Accepts `/problem-list/<slug>/` or the legacy `/list/<slug>/` on either site,
+ *  or the bare slug (leetcode.com). */
+export function parseLeetcodeListLink(input: string): { slug: string; site: LeetcodeSite } | { error: ImportListError } {
   const raw = input.trim();
   if (!raw) return { error: "invalid_link" };
-  if (!/[/.]/.test(raw)) return LIST_SLUG_RE.test(raw) ? { slug: raw } : { error: "invalid_link" };
+  if (!/[/.]/.test(raw)) return LIST_SLUG_RE.test(raw) ? { slug: raw, site: "com" } : { error: "invalid_link" };
 
   let url: URL;
   try {
@@ -241,12 +240,11 @@ export function parseLeetcodeListLink(input: string): { slug: string } | { error
   } catch {
     return { error: "invalid_link" };
   }
-  const host = url.hostname.toLowerCase().replace(/^www\./, "");
-  if (host === "leetcode.cn") return { error: "unsupported_site" };
-  if (host !== "leetcode.com") return { error: "invalid_link" };
+  const site = leetcodeSiteOfHost(url.hostname);
+  if (!site) return { error: "invalid_link" };
   const [kind, slug] = url.pathname.split("/").filter(Boolean);
   return (kind === "problem-list" || kind === "list") && slug && LIST_SLUG_RE.test(slug)
-    ? { slug }
+    ? { slug, site }
     : { error: "invalid_link" };
 }
 
@@ -258,6 +256,9 @@ const LIST_QUERY = `query ankifyList($slug: String!, $skip: Int!, $limit: Int!) 
   }
 }`;
 
+/** leetcode.cn's list rows also carry the Chinese title. */
+const CN_LIST_QUERY = LIST_QUERY.replace("questionFrontendId title", "questionFrontendId title translatedTitle");
+
 const listPageSchema = z.object({
   data: z.object({
     favoriteDetailV2: z.object({ name: z.string() }).nullable(),
@@ -268,6 +269,7 @@ const listPageSchema = z.object({
           z.object({
             questionFrontendId: z.string(),
             title: z.string(),
+            translatedTitle: z.string().nullable().optional(),
             titleSlug: z.string(),
             difficulty: z.string(),
             topicTags: z.array(z.object({ slug: z.string() })),
@@ -294,7 +296,9 @@ export async function importLeetcodeList(
   try {
     for (let skip = 0; skip < MAX_LIST_QUESTIONS; skip += PAGE_SIZE) {
       const page = listPageSchema.parse(
-        await leetcodeGraphql(LIST_QUERY, { slug: parsed.slug, skip, limit: PAGE_SIZE }),
+        parsed.site === "cn"
+          ? await leetcodeGraphql(CN_LIST_QUERY, { slug: parsed.slug, skip, limit: PAGE_SIZE }, "cn")
+          : await leetcodeGraphql(LIST_QUERY, { slug: parsed.slug, skip, limit: PAGE_SIZE }),
       ).data;
       if (!page.favoriteDetailV2 || !page.favoriteQuestionList) return { error: "not_found" };
       name = page.favoriteDetailV2.name;
@@ -304,7 +308,7 @@ export async function importLeetcodeList(
         questions.push({
           id: Number.parseInt(q.questionFrontendId, 10) || 0,
           slug: q.titleSlug,
-          title: q.title,
+          title: q.translatedTitle || q.title,
           difficulty,
           tagSlugs: q.topicTags.map((tag) => tag.slug),
         });

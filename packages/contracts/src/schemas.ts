@@ -294,6 +294,8 @@ export const submissionSyncSchema = z.object({
 /** POST /api/leetcode/solved — the extension's snapshot of every problem the
  *  signed-in LeetCode user has solved. Slugs only; no code or session data. */
 export const leetcodeSolvedSyncSchema = z.object({
+  /** Which site the list is from. Older extension builds only run on leetcode.com. */
+  site: z.enum(["com", "cn"]).default("com"),
   username: z.string().trim().min(1).max(64),
   slugs: z.array(z.string().min(1).max(256)).max(6_000),
 });

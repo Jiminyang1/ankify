@@ -1,8 +1,8 @@
 import type { ChapterDeeperDto, PlanNextDto } from "@ankify/contracts";
 import type { PlanGroup } from "./profile";
 
-/** Not started, and anyone can open it on leetcode.com. leetcode.cn-only and
- *  Premium problems would make Next a dead end. */
+/** Not started, and anyone can open it on either site. leetcode.cn-only and
+ *  Premium problems would make Next a dead end for some. */
 export function isOpenTodo(item: Pick<PlanGroup["items"][number], "status" | "cnOnly" | "premium">): boolean {
   return item.status === "todo" && !item.cnOnly && !item.premium;
 }

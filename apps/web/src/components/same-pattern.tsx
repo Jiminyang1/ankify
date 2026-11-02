@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { PatternStepDto, ProblemPatternDto, ProblemPatternsDto } from "@ankify/contracts";
+import { leetcodeProblemUrl } from "@ankify/core/leetcode-site";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
@@ -12,10 +14,6 @@ import { cn } from "@/lib/utils";
 
 /** Shown before "Show all": enough to see where the ladder goes next. */
 const NEXT_COUNT = 3;
-
-function leetcodeUrl(slug: string) {
-  return `https://leetcode.com/problems/${slug}/`;
-}
 
 /**
  * The patterns this problem belongs to, from 灵茶山艾府's problem lists: each
@@ -123,6 +121,7 @@ function PatternCard({ pattern, currentSlug }: { pattern: ProblemPatternDto; cur
 }
 
 function StepRow({ step, current }: { step: PatternStepDto; current: boolean }) {
+  const site = useLeetcodeSite();
   const { language, t } = useLanguage();
   const title = (
     <>
@@ -148,7 +147,7 @@ function StepRow({ step, current }: { step: PatternStepDto; current: boolean }) 
         </Link>
       ) : (
         <a
-          href={leetcodeUrl(step.slug)}
+          href={leetcodeProblemUrl(step.slug, site)}
           target="_blank"
           rel="noreferrer"
           className="min-w-0 flex-1 truncate text-fg hover:underline"

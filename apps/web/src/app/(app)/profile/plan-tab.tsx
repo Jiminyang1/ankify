@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { leetcodeProblemUrl } from "@ankify/core/leetcode-site";
 import { buttonClasses } from "@/components/ui/button";
 import { DifficultyPill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
@@ -34,7 +35,7 @@ export async function PlanTab({
   // First step, only while nothing from this plan is in review yet.
   const inReview = data.counts.remembered + data.counts.due;
   const startGroup =
-    inReview === 0 ? data.groups.find((group) => group.items.some((item) => item.status === "solved" && !item.cnOnly)) : undefined;
+    inReview === 0 ? data.groups.find((group) => group.items.some((item) => item.status === "solved")) : undefined;
   const showConnect = !startGroup && !data.solvedSync;
 
   return (
@@ -76,7 +77,7 @@ export async function PlanTab({
                   </div>
                 </div>
                 <a
-                  href={`https://leetcode.com/problems/${data.next.slug}/`}
+                  href={leetcodeProblemUrl(data.next.slug, data.site)}
                   target="_blank"
                   rel="noreferrer"
                   className={buttonClasses({ variant: data.counts.due > 0 ? "secondary" : "primary", size: "sm" })}
@@ -100,7 +101,7 @@ export async function PlanTab({
           total={data.total}
           group={{
             name: startGroup.name,
-            slugs: startGroup.items.filter((item) => item.status === "solved" && !item.cnOnly).map((item) => item.slug),
+            slugs: startGroup.items.filter((item) => item.status === "solved").map((item) => item.slug),
           }}
         />
       ) : (
@@ -114,8 +115,8 @@ export async function PlanTab({
       {data.frequentMistakes.length > 0 && <FrequentMistakes mistakes={data.frequentMistakes} />}
 
       <section id="leetcode" className="space-y-2">
-        <LeetcodeCard account={data.leetcode} stale={data.leetcodeStale} />
-        {data.leetcode && (
+        <LeetcodeCard accounts={data.leetcode} stale={data.leetcodeStale} />
+        {data.leetcode.length > 0 && (
           <p className="text-xs text-muted">
             {data.solvedSync
               ? copy.solvedSynced(data.solvedSync.count, formatRelative(data.solvedSync.syncedAt))

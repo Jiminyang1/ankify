@@ -7,7 +7,12 @@ import {
 import { PATTERN_PLAN_PREFIX, focusPlanAfter, goDeeperInChapter } from "@ankify/core/patterns";
 import { planCatalogProblem } from "@ankify/core/plan-catalog";
 import type { ChapterDeeperDto, PlanFocusDto, PlanNextDto } from "@ankify/contracts";
-import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
+import {
+  getCachedLeetcodeAccounts,
+  getLeetcodeAccounts,
+  getLeetcodeSolved,
+  preferredLeetcodeSite,
+} from "./leetcode-account";
 import { toPatternRef, toPatternStep, type DoneSet } from "./patterns";
 import { loadPlanStatusContext } from "./plan-map";
 import { isOpenTodo, planNextFrom } from "./plan-next";
@@ -27,8 +32,7 @@ export type PlanItem = {
   leetcodeId: number;
   /** What to show as its number: the id, or "LCP 68". */
   label: string;
-  /** Only on leetcode.cn: no leetcode.com page, can't be added to review, and
-   *  Next never picks it. */
+  /** Only on leetcode.cn: its links always go there, and Next never picks it. */
   cnOnly: boolean;
   /** Needs LeetCode Premium, so Next never picks it either. */
   premium: boolean;
@@ -88,7 +92,7 @@ type Language = "en" | "zh";
  *  LeetCode account. */
 export async function loadProfile(userId: string, language: Language) {
   const now = new Date();
-  const leetcode = await getLeetcodeAccount(userId);
+  const leetcode = await getLeetcodeAccounts(userId);
   const [progress, weaknesses] = await Promise.all([
     loadPlanProgress(userId, language, leetcode, now),
     loadActiveWeaknesses(userId),
@@ -132,9 +136,10 @@ export async function loadProfile(userId: string, language: Language) {
     groups,
     frequentMistakes,
     leetcode,
-    leetcodeStale:
-      leetcode != null &&
-      (!leetcode.fetchedAt || now.getTime() - new Date(leetcode.fetchedAt).getTime() > LEETCODE_STALE_MS),
+    site: preferredLeetcodeSite(leetcode),
+    leetcodeStale: leetcode
+      .filter(({ fetchedAt }) => !fetchedAt || now.getTime() - new Date(fetchedAt).getTime() > LEETCODE_STALE_MS)
+      .map(({ site }) => site),
   };
 }
 
@@ -142,8 +147,9 @@ export async function loadProfile(userId: string, language: Language) {
  *  extension. Reads the cached LeetCode account only, so Today never waits
  *  on LeetCode. Once the plan is solved it suggests a focused plan. */
 export async function loadPlanNext(userId: string, language: Language): Promise<PlanNextDto> {
-  const progress = await loadPlanProgress(userId, language, await getCachedLeetcodeAccount(userId), new Date());
-  const next = planNextFrom(progress.plan, progress.groups);
+  const leetcode = await getCachedLeetcodeAccounts(userId);
+  const progress = await loadPlanProgress(userId, language, leetcode, new Date());
+  const next = { ...planNextFrom(progress.plan, progress.groups), site: preferredLeetcodeSite(leetcode) };
   if (next.next) return next;
   return { ...next, focus: focusAfterPlan(progress, language) };
 }
@@ -177,7 +183,7 @@ function focusAfterPlan(
   };
 }
 
-async function loadPlanProgress(userId: string, language: Language, leetcode: AccountForStatus, now: Date) {
+async function loadPlanProgress(userId: string, language: Language, leetcode: readonly AccountForStatus[], now: Date) {
   const [status, current] = await Promise.all([
     loadPlanStatusContext(userId, leetcode, now),
     getCurrentStudyPlan(userId, language),
@@ -253,7 +259,7 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
   });
 
   // The plan is ordered, so the next problem is the first unsolved one that
-  // anyone can open on leetcode.com.
+  // anyone can open on either site.
   const next = groups.flatMap((group) => group.items).find(isOpenTodo) ?? null;
 
   return {
@@ -263,7 +269,7 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
     counts,
     total: groups.reduce((sum, group) => sum + group.items.length, 0),
     next,
-    solvedSync: solvedSync ? { count: solvedSync.slugs.length, syncedAt: solvedSync.syncedAt } : null,
+    solvedSync,
     deck: rows,
   };
 }
@@ -272,8 +278,8 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
  *  Today onboarding step. null until the extension has synced something. */
 export async function loadSolvedSummary(userId: string, language: Language) {
   const [solved, current] = await Promise.all([getLeetcodeSolved(userId), getCurrentStudyPlan(userId, language)]);
-  if (!solved || solved.slugs.length === 0) return null;
-  const solvedSlugs = new Set(solved.slugs);
+  const solvedSlugs = new Set(solved.flatMap((list) => list.slugs));
+  if (solvedSlugs.size === 0) return null;
   const planSlugs = current.plan.groups.flatMap((group) => group.questions.map((question) => question.slug));
   return {
     solved: solvedSlugs.size,

@@ -22,6 +22,12 @@ export function readStored(key: string): unknown {
   }
 }
 
+/** The site the user picked in the list's filters, else where their links open. */
+export function readStoredSite(fallback: "com" | "cn"): "com" | "cn" {
+  const stored = readStored(PLAN_STORAGE.site);
+  return stored === "cn" || stored === "com" ? stored : fallback;
+}
+
 export function writeStored(key: string, value: unknown) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));

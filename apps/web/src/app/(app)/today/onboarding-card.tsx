@@ -13,10 +13,11 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { AI_PROVIDERS, getAiProviderInfo, type AiProvider } from "@ankify/core";
+import { AI_PROVIDERS, getAiProviderInfo, leetcodeProblemUrl, type AiProvider } from "@ankify/core";
 import type { OnboardingProgressDto } from "@ankify/contracts";
 import type { SolvedSummary } from "@/server/profile";
 import type { StudyPlanOption } from "@/server/study-plans";
+import { useLeetcodeSite } from "@/components/leetcode-site-provider";
 import { PlanCredit } from "@/components/plan-credit";
 import { Surface } from "@/components/ui/surface";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -231,6 +232,7 @@ export function OnboardingCard({
   plans: StudyPlanOption[];
   currentPlan: string;
 }) {
+  const site = useLeetcodeSite();
   const t = COPY[language];
   const categoryNames = getTranslations(language).planMap.categories;
   const router = useRouter();
@@ -581,7 +583,7 @@ export function OnboardingCard({
               </Link>
             ) : progress.extensionConnectedAt ? (
               <a
-                href="https://leetcode.com/problems/two-sum/"
+                href={leetcodeProblemUrl("two-sum", site)}
                 target="_blank"
                 rel="noreferrer"
                 className={buttonClasses({ variant: "primary", size: "sm" })}

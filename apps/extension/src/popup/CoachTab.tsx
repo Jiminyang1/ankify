@@ -19,6 +19,7 @@ import { PopupMarkdown } from "./PopupMarkdown";
 import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
 import { WeakSpots, type WeakSpotsCopy } from "./WeakSpots";
 import { builtinWeaknessCategoryName } from "@ankify/core";
+import { parseLeetcodeProblemUrl } from "@ankify/core/leetcode-site";
 
 /** The problem the Problem tab resolved, when it's saved in ankify. */
 export type CoachSavedProblem = { slug: string; problemId: string; title: string; due: boolean };
@@ -197,7 +198,7 @@ export function CoachTab({
   useEffect(() => {
     const refresh = async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
-      const slug = tab?.url?.match(/leetcode\.com\/problems\/([^/?#]+)/)?.[1] ?? null;
+      const slug = parseLeetcodeProblemUrl(tab?.url)?.slug ?? null;
       setPage(tab?.id != null && slug ? { tabId: tab.id, slug, title: problemTitle(tab.title) } : null);
     };
     void refresh();

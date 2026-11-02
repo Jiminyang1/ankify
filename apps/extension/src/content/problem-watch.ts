@@ -1,5 +1,5 @@
 import type { BackgroundRequest, SolvedSyncState, SubmissionSummary } from "../shared/messages";
-import { fetchSolvedList, fetchSubmissionSummaries } from "./leetcode";
+import { LEETCODE_PAGE_SITE, fetchSolvedList, fetchSubmissionSummaries } from "./leetcode";
 
 /**
  * Problem-page watcher. Each check reports the open problem's recent
@@ -18,7 +18,7 @@ const AFTER_SUBMIT_DELAYS_MS = [5_000, 12_000, 25_000, 45_000];
  *  have been opened or reloaded right after submitting. */
 const RECENT_SUBMISSION_WINDOW_S = 10 * 60;
 /** Verdicts still being judged; they're reported once LeetCode settles. */
-const PENDING_STATUS = /pending|judging|running/i;
+const PENDING_STATUS = /pending|judging|running|等待|判题|执行中/i;
 
 let started = false;
 let scheduled: number | undefined;
@@ -136,7 +136,7 @@ async function ask<T>(msg: BackgroundRequest): Promise<T | undefined> {
 }
 
 async function syncSolvedIfDue() {
-  const due = await ask<{ due: boolean }>({ type: "solved_sync_due" });
+  const due = await ask<{ due: boolean }>({ type: "solved_sync_due", site: LEETCODE_PAGE_SITE });
   if (!due?.due) return;
   try {
     await syncSolved();
@@ -150,5 +150,12 @@ async function syncSolvedIfDue() {
 export async function syncSolved(): Promise<SolvedSyncState | null> {
   const list = await fetchSolvedList();
   if (!list) return null;
-  return (await ask<SolvedSyncState>({ type: "solved_sync", username: list.username, slugs: list.slugs })) ?? null;
+  return (
+    (await ask<SolvedSyncState>({
+      type: "solved_sync",
+      site: LEETCODE_PAGE_SITE,
+      username: list.username,
+      slugs: list.slugs,
+    })) ?? null
+  );
 }

@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { PATTERN_TOPICS } from "@ankify/core/patterns";
-import { builtInPlanOptions, findBuiltInStudyPlan, lingSourceUrl, studyPlanSource } from "./study-plans";
+import {
+  builtInPlanOptions,
+  findBuiltInStudyPlan,
+  lingSourceUrl,
+  parseLeetcodeListLink,
+  studyPlanSource,
+} from "./study-plans";
+
+describe("parseLeetcodeListLink", () => {
+  it.each([
+    ["abc123xy", "com"],
+    ["leetcode.com/problem-list/abc123xy", "com"],
+    ["https://leetcode.com/list/abc123xy/", "com"],
+    ["https://leetcode.cn/problem-list/abc123xy/", "cn"],
+    ["leetcode.cn/problem-list/abc123xy/?tab=1", "cn"],
+  ])("reads %s", (input, site) => {
+    expect(parseLeetcodeListLink(input)).toEqual({ slug: "abc123xy", site });
+  });
+
+  it.each(["", "https://example.com/problem-list/abc123xy/", "https://leetcode.cn/problems/two-sum/"])(
+    "rejects %s",
+    (input) => {
+      expect(parseLeetcodeListLink(input)).toEqual({ error: "invalid_link" });
+    },
+  );
+});
 
 describe("builtInPlanOptions", () => {
   it("lists plans in the map's order and categories", () => {

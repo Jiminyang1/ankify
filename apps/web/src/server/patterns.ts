@@ -45,7 +45,7 @@ export async function loadDone(userId: string) {
     readPlanTicks(userId),
   ]);
   const inDeck = new Map(deck.map((row) => [row.slug, row.id]));
-  const solvedSlugs = new Set(solved?.slugs ?? []);
+  const solvedSlugs = new Set(solved.flatMap((list) => list.slugs));
   return { inDeck, isDone: (slug: string) => inDeck.has(slug) || solvedSlugs.has(slug) || ticks.has(slug) };
 }
 

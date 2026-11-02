@@ -1,3 +1,4 @@
+import type { LeetcodeSite } from "@ankify/core/leetcode-site";
 import type { ExtSettings, SolvedSyncState } from "./messages";
 
 export const SETTINGS_KEY = "ankify.settings";
@@ -70,20 +71,35 @@ export async function clearCardDraft(slug: string): Promise<void> {
   await setCardDraft(slug, "");
 }
 
-const SOLVED_SYNC_KEY = "ankify.solvedSync";
+const SOLVED_SYNC_KEY: Record<LeetcodeSite, string> = {
+  com: "ankify.solvedSync",
+  cn: "ankify.solvedSync.cn",
+};
+/** The LeetCode site whose problem page was open last; links open there. */
+export const LEETCODE_SITE_KEY = "ankify.leetcodeSite";
 /** Session-scoped, per slug: submission ids already sent to ankify. The
  *  server skips exact duplicates without storing their id, so without this
  *  the same submission would be re-sent on every check. */
 const SENT_SUBMISSIONS_KEY = "ankify.sentSubmissions";
 const MAX_SENT_SLUGS = 64;
 
-export async function getSolvedSyncState(): Promise<SolvedSyncState | null> {
-  const r = await chrome.storage.local.get(SOLVED_SYNC_KEY);
-  return (r[SOLVED_SYNC_KEY] as SolvedSyncState | undefined) ?? null;
+export async function getSolvedSyncState(site: LeetcodeSite): Promise<SolvedSyncState | null> {
+  const key = SOLVED_SYNC_KEY[site];
+  const r = await chrome.storage.local.get(key);
+  return (r[key] as SolvedSyncState | undefined) ?? null;
 }
 
-export async function setSolvedSyncState(state: SolvedSyncState): Promise<void> {
-  await chrome.storage.local.set({ [SOLVED_SYNC_KEY]: state });
+export async function setSolvedSyncState(site: LeetcodeSite, state: SolvedSyncState): Promise<void> {
+  await chrome.storage.local.set({ [SOLVED_SYNC_KEY[site]]: state });
+}
+
+export async function getLeetcodeSite(): Promise<LeetcodeSite> {
+  const r = await chrome.storage.local.get(LEETCODE_SITE_KEY);
+  return r[LEETCODE_SITE_KEY] === "cn" ? "cn" : "com";
+}
+
+export async function setLeetcodeSite(site: LeetcodeSite): Promise<void> {
+  await chrome.storage.local.set({ [LEETCODE_SITE_KEY]: site });
 }
 
 export async function getSentSubmissionIds(slug: string): Promise<Set<string>> {

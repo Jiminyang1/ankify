@@ -16,25 +16,34 @@ export type PlanStatusRow = {
   fsrsLapses: number;
 };
 
-export type AccountForStatus = Pick<LeetcodeAccountDto, "username" | "profile"> | null;
+export type AccountForStatus = Pick<LeetcodeAccountDto, "site" | "username" | "profile">;
 
 export function planStatusContext(input: {
   rows: readonly PlanStatusRow[];
-  solved: LeetcodeSolved | null;
-  leetcode: AccountForStatus;
+  solved: readonly LeetcodeSolved[];
+  leetcode: readonly AccountForStatus[];
   ticks: ReadonlySet<string>;
   now: Date;
 }) {
   const { rows, solved, leetcode, ticks, now } = input;
   const deck = new Map(rows.map((row) => [row.leetcodeSlug, row]));
-  // Publicly LeetCode shows only the latest 20 accepted problems; the
-  // extension's snapshot adds the full solved list for the linked account.
-  const solvedSync =
-    solved && leetcode && solved.username.toLowerCase() === leetcode.username.toLowerCase() ? solved : null;
+  // Publicly LeetCode shows only the latest accepted problems; the extension's
+  // snapshot adds the full solved list for the linked account. A slug names the
+  // same problem on both sites, so either site's solve counts.
+  const synced = solved.filter((list) =>
+    leetcode.some(
+      (account) => account.site === list.site && account.username.toLowerCase() === list.username.toLowerCase(),
+    ),
+  );
+  const syncedSlugs = new Set(synced.flatMap((list) => list.slugs));
   const solvedOnLeetcode = new Set([
-    ...(leetcode?.profile?.recentAccepted.map((item) => item.slug) ?? []),
-    ...(solvedSync?.slugs ?? []),
+    ...leetcode.flatMap((account) => account.profile?.recentAccepted.map((item) => item.slug) ?? []),
+    ...syncedSlugs,
   ]);
+  const solvedSync =
+    synced.length > 0
+      ? { count: syncedSlugs.size, syncedAt: synced.map((list) => list.syncedAt).sort().at(-1)! }
+      : null;
 
   const statusOf = (slug: string): PlanProblemStatus => {
     const row = deck.get(slug);

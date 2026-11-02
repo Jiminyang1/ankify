@@ -307,6 +307,8 @@ export type OnboardingProgressDto = {
 /** Today's Next part (web and extension): the current plan's first problem
  *  the user hasn't solved, in plan order, and the chapter it's in. */
 export type PlanNextDto = {
+  /** Where the user's problem links open (older servers omit it). */
+  site?: "com" | "cn";
   plan: {
     slug: string;
     name: string;
@@ -399,6 +401,7 @@ export type LeetcodeProfileDto = {
 };
 
 export type LeetcodeAccountDto = {
+  site: "com" | "cn";
   username: string;
   linkedAt: string;
   fetchedAt: string | null;

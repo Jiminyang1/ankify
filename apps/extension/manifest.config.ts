@@ -16,7 +16,7 @@ export default defineManifest(({ mode }) => {
     name: "ankify",
     description:
       "A study coach beside LeetCode: follow a plan, talk through what you solved, and get each problem back before you forget it.",
-    version: "0.3.2",
+    version: "0.4.0",
     ...(includeDevelopmentKey ? { key: DEVELOPMENT_EXTENSION_KEY } : {}),
     action: {
       default_title: "ankify",
@@ -37,20 +37,20 @@ export default defineManifest(({ mode }) => {
       default_path: "src/popup/index.html",
     },
     permissions: ["storage", "sidePanel", "tabs"],
-    host_permissions: ["https://leetcode.com/*", `${apiOrigin}/*`],
+    host_permissions: ["https://leetcode.com/*", "https://leetcode.cn/*", `${apiOrigin}/*`],
     homepage_url: apiOrigin,
     content_security_policy: {
       extension_pages: "script-src 'self'; object-src 'none';",
     },
     content_scripts: [
       {
-        matches: ["https://leetcode.com/problems/*"],
+        matches: ["https://leetcode.com/problems/*", "https://leetcode.cn/problems/*"],
         js: ["src/content/index.ts"],
         run_at: "document_idle",
       },
       {
         // Reads LeetCode's code editor for the Study Coach; see editor-main.ts.
-        matches: ["https://leetcode.com/problems/*"],
+        matches: ["https://leetcode.com/problems/*", "https://leetcode.cn/problems/*"],
         js: ["src/content/editor-main.ts"],
         run_at: "document_idle",
         world: "MAIN",

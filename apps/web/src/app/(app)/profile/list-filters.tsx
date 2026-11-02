@@ -110,7 +110,6 @@ export function ListFilterPanel({
             </Select>
           </Field>
         </div>
-        {site === "cn" && <p className="text-xs leading-5 text-muted">{labels.cnHint}</p>}
         <p aria-live="polite" className="text-xs leading-5 text-muted">
           {countLine}
           {cutLine && <span className="block">{cutLine}</span>}

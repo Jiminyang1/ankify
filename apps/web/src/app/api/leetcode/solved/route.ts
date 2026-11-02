@@ -7,7 +7,7 @@ import { RATE_LIMITS, checkRateLimit, rateLimitResponse } from "@/server/rate-li
 import { readJsonBody } from "@/server/request-body";
 
 /** The extension's daily snapshot of the signed-in LeetCode user's solved
- *  problems. Also links that LeetCode account when it isn't linked yet. */
+ *  problems on one site. Also links that account when it isn't linked yet. */
 export async function POST(req: Request) {
   const user = await getRequestUser(req);
   if (!user) return unauthorizedResponse();
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_payload", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const result = await saveLeetcodeSolved(user.id, parsed.data.username, parsed.data.slugs);
+  const result = await saveLeetcodeSolved(user.id, parsed.data.site, parsed.data.username, parsed.data.slugs);
   if ("error" in result) return NextResponse.json(result, { status: 400 });
   // Only the extension posts here, so this also proves it's connected.
   await markExtensionConnected(user.id).catch((error) => {

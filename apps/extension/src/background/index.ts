@@ -6,12 +6,14 @@ import type {
   SolvedSyncState,
   SubmissionSummary,
 } from "../shared/messages";
+import { LEETCODE_SITES, parseLeetcodeProblemUrl, type LeetcodeSite } from "@ankify/core/leetcode-site";
 import { encodeCapturePayload, encodeSubmissionSyncPayload } from "../shared/capture-payload";
 import {
   addSentSubmissionIds,
   getSentSubmissionIds,
   getSettings,
   getSolvedSyncState,
+  setLeetcodeSite,
   setSolvedSyncState,
 } from "../shared/storage";
 
@@ -71,6 +73,7 @@ const busy = new Set<string>();
 chrome.runtime.onMessage.addListener((msg: BackgroundRequest | { type?: string }, sender, sendResponse) => {
   if (msg?.type === "problem_page_check") {
     const tabId = sender.tab?.id;
+    rememberSite(sender.tab?.url);
     if (tabId != null) void handleProblemPage(tabId, msg as Extract<BackgroundRequest, { type: "problem_page_check" }>);
   } else if (msg?.type === "capture_badge_captured") {
     const { slug } = msg as Extract<BackgroundRequest, { type: "capture_badge_captured" }>;
@@ -88,15 +91,26 @@ chrome.runtime.onMessage.addListener((msg: BackgroundRequest | { type?: string }
       });
     return true;
   } else if (msg?.type === "solved_sync_due") {
-    void isSolvedSyncDue().then((due) => sendResponse({ due }));
+    const { site } = msg as Extract<BackgroundRequest, { type: "solved_sync_due" }>;
+    void isSolvedSyncDue(site).then((due) => sendResponse({ due }));
     return true;
   } else if (msg?.type === "solved_sync") {
-    const { username, slugs } = msg as Extract<BackgroundRequest, { type: "solved_sync" }>;
-    void postSolvedList(username, slugs).then(sendResponse);
+    const { site, username, slugs } = msg as Extract<BackgroundRequest, { type: "solved_sync" }>;
+    void postSolvedList(site, username, slugs).then(sendResponse);
     return true;
   }
   return false;
 });
+
+let lastSite: LeetcodeSite | null = null;
+
+/** The panel opens problems on the site the user was last on. */
+function rememberSite(url: string | undefined) {
+  const site = parseLeetcodeProblemUrl(url)?.site;
+  if (!site || site === lastSite) return;
+  lastSite = site;
+  void setLeetcodeSite(site).catch((err) => console.warn("ankify: failed to save LeetCode site", err));
+}
 
 async function apiBase(): Promise<string | null> {
   const settings = await getSettings();
@@ -230,7 +244,7 @@ async function syncMissingSubmissions(
 async function clearBadgeForSlug(slug: string) {
   try {
     const tabs = await chrome.tabs.query({
-      url: `https://leetcode.com/problems/${slug}*`,
+      url: LEETCODE_SITES.map((site) => `https://leetcode.${site}/problems/${slug}*`),
     });
     await Promise.all(tabs.map((tab) => (tab.id != null ? setBadge(tab.id, false) : Promise.resolve())));
   } catch (err) {
@@ -263,21 +277,22 @@ async function flashCaptured(tabId: number) {
 }
 
 /* ------------------------------------------------------------------------ *
- * Solved-list sync. Once a day a LeetCode problem page reads the signed-in
- * user's solved list (slugs only) and we post it to ankify, which also links
- * that LeetCode account. The profile uses it to mark plan problems solved.
+ * Solved-list sync. Once a day per site, a problem page there reads the
+ * signed-in user's solved list (slugs only) and we post it to ankify, which
+ * also links that LeetCode account. The profile uses it to mark plan problems
+ * solved.
  * ------------------------------------------------------------------------ */
 
 const SOLVED_SYNC_EVERY_MS = 20 * 60 * 60 * 1000;
 const SOLVED_SYNC_RETRY_MS = 60 * 60 * 1000;
 
-async function isSolvedSyncDue(): Promise<boolean> {
-  const last = await getSolvedSyncState();
+async function isSolvedSyncDue(site: LeetcodeSite): Promise<boolean> {
+  const last = await getSolvedSyncState(site);
   if (!last) return true;
   return Date.now() - last.at > (last.ok ? SOLVED_SYNC_EVERY_MS : SOLVED_SYNC_RETRY_MS);
 }
 
-async function postSolvedList(username: string, slugs: string[]): Promise<SolvedSyncState> {
+async function postSolvedList(site: LeetcodeSite, username: string, slugs: string[]): Promise<SolvedSyncState> {
   let state: SolvedSyncState;
   try {
     const base = await apiBase();
@@ -286,7 +301,7 @@ async function postSolvedList(username: string, slugs: string[]): Promise<Solved
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username, slugs }),
+      body: JSON.stringify({ site, username, slugs }),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -297,6 +312,6 @@ async function postSolvedList(username: string, slugs: string[]): Promise<Solved
   } catch (err) {
     state = { ok: false, at: Date.now(), error: err instanceof Error ? err.message : String(err) };
   }
-  await setSolvedSyncState(state);
+  await setSolvedSyncState(site, state);
   return state;
 }

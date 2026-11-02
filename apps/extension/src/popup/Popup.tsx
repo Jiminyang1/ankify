@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FsrsRating } from "@ankify/core";
+import {
+  LEETCODE_SITES,
+  leetcodeProblemUrl,
+  parseLeetcodeProblemUrl,
+  type LeetcodeSite,
+} from "@ankify/core/leetcode-site";
 import type {
   AuthUserDto as AuthAccount,
   CaptureProblemInput,
@@ -19,6 +25,8 @@ import type {
 import type { BackgroundRequest, ContentResponse, EditorReadFailure, ExtSettings, PanelEvent, SolvedSyncState } from "../shared/messages";
 import { encodeCapturePayload } from "../shared/capture-payload";
 import {
+  LEETCODE_SITE_KEY,
+  getLeetcodeSite,
   getSettings,
   getSolvedSyncState,
   setSettings,
@@ -760,9 +768,21 @@ function applyThemePreference(preference: ThemePreference) {
 }
 
 function parseSlugFromUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  const m = url.match(/leetcode\.com\/problems\/([^/?#]+)/);
-  return m?.[1] ?? null;
+  return parseLeetcodeProblemUrl(url)?.slug ?? null;
+}
+
+/** The site whose problem page was open last, where problem links open. */
+function useLeetcodeSite(): LeetcodeSite {
+  const [site, setSite] = useState<LeetcodeSite>("com");
+  useEffect(() => {
+    void getLeetcodeSite().then(setSite);
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === "local" && LEETCODE_SITE_KEY in changes) void getLeetcodeSite().then(setSite);
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []);
+  return site;
 }
 
 function isDue(fsrsDue: string | null): boolean {
@@ -875,6 +895,7 @@ export function Popup() {
   // mid-action. The user-facing Refresh button passes `force: true` to bypass.
   const currentSlugRef = useRef<string | null>(null);
   const hasDetectedOnceRef = useRef(false);
+  const leetcodeSite = useLeetcodeSite();
 
   const detect = useCallback(
     async (opts?: { force?: boolean }) => {
@@ -990,7 +1011,7 @@ export function Popup() {
   // order stays stable while the session state changes.
   const jumpToSticky = useCallback(async () => {
     if (!sticky) return;
-    const targetUrl = `https://leetcode.com/problems/${sticky.slug}/`;
+    const targetUrl = leetcodeProblemUrl(sticky.slug, leetcodeSite);
     try {
       if (sticky.tabId != null) {
         const tab = await chrome.tabs.get(sticky.tabId).catch(() => null);
@@ -1000,7 +1021,9 @@ export function Popup() {
           return;
         }
       }
-      const matches = await chrome.tabs.query({ url: `*://leetcode.com/problems/${sticky.slug}/*` });
+      const matches = await chrome.tabs.query({
+        url: LEETCODE_SITES.map((site) => `*://leetcode.${site}/problems/${sticky.slug}/*`),
+      });
       if (matches.length > 0 && matches[0]?.id != null) {
         await chrome.tabs.update(matches[0].id, { active: true });
         if (matches[0].windowId != null) await chrome.windows.update(matches[0].windowId, { focused: true });
@@ -1010,7 +1033,7 @@ export function Popup() {
     } catch {
       // chrome.tabs.update can reject if the tab was just closed mid-call; ignore
     }
-  }, [sticky]);
+  }, [sticky, leetcodeSite]);
 
   if (!settings || authState.kind === "loading") {
     return (
@@ -1308,6 +1331,7 @@ function EasierProblemCard({
 }) {
   const t = getExtText(settings);
   const language = settings.language === "zh" ? "zh" : "en";
+  const site = useLeetcodeSite();
   return (
     <div className="technique-card">
       <div className="technique-card-head">
@@ -1321,7 +1345,7 @@ function EasierProblemCard({
       <div className="technique-card-actions">
         <a
           className="btn btn-primary btn-inline technique-card-open"
-          href={`https://leetcode.com/problems/${suggestion.problem.slug}/`}
+          href={leetcodeProblemUrl(suggestion.problem.slug, site)}
           target="_blank"
           rel="noreferrer"
         >
@@ -1448,6 +1472,7 @@ function TodayTab({
   onJumpToProblem: () => void;
 }) {
   const t = getExtText(settings);
+  const site = useLeetcodeSite();
   const [data, setData] = useState<QueueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1500,7 +1525,7 @@ function TodayTab({
   }
 
   function jumpToProblem(p: QueueProblem) {
-    void openProblem(p.url || `https://leetcode.com/problems/${p.leetcodeSlug}/`);
+    void openProblem(p.url || leetcodeProblemUrl(p.leetcodeSlug, site));
   }
 
   if (loading && !data) return <p className="popup-muted">{t.common.loadingQueue}</p>;
@@ -1596,7 +1621,7 @@ function TodayTab({
 
       <PlanNextPart
         settings={settings}
-        onOpen={(slug) => void openProblem(`https://leetcode.com/problems/${slug}/`)}
+        onOpen={(slug) => void openProblem(leetcodeProblemUrl(slug, site))}
       />
     </div>
   );
@@ -2117,13 +2142,20 @@ function SettingsTab({
     message: "",
   });
   const apiBaseUrl = settings.apiBaseUrl.replace(/\/+$/, "");
-  const [solvedSync, setSolvedSync] = useState<SolvedSyncState | null>(null);
+  const [solvedSync, setSolvedSync] = useState<{ site: LeetcodeSite; state: SolvedSyncState }[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void getSolvedSyncState().then(setSolvedSync);
+  const loadSolvedSync = useCallback(async () => {
+    const states = await Promise.all(
+      LEETCODE_SITES.map(async (site) => ({ site, state: await getSolvedSyncState(site) })),
+    );
+    setSolvedSync(states.flatMap(({ site, state }) => (state ? [{ site, state }] : [])));
   }, []);
+
+  useEffect(() => {
+    void loadSolvedSync();
+  }, [loadSolvedSync]);
 
   async function syncSolvedNow() {
     setSyncing(true);
@@ -2138,7 +2170,7 @@ function SettingsTab({
         throw isMissingContentScriptError(error) ? new Error(t.settings.syncOpenLeetcode) : error;
       }
       if (resp.type === "solved_synced") {
-        setSolvedSync(resp.result);
+        await loadSolvedSync();
       } else {
         const message = resp.type === "error" ? resp.message : "Unexpected response";
         throw new Error(message === "leetcode_signed_out" ? t.settings.syncLeetcodeSignedOut : message);
@@ -2150,22 +2182,30 @@ function SettingsTab({
     }
   }
 
-  const solvedSyncText = syncError
-    ? syncError
-    : !solvedSync
-      ? t.settings.solvedNever
-      : solvedSync.ok
-        ? t.settings.solvedSynced(
-            solvedSync.count,
-            new Date(solvedSync.at).toLocaleString(settings.language === "zh" ? "zh-CN" : "en-US", {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }),
-          )
-        : t.settings.solvedFailed(solvedSync.error);
-  const solvedSyncKind = syncError || (solvedSync && !solvedSync.ok) ? "error" : solvedSync ? "success" : "loading";
+  const solvedSyncLine = ({ site, state }: { site: LeetcodeSite; state: SolvedSyncState }) => {
+    const line = state.ok
+      ? t.settings.solvedSynced(
+          state.count,
+          new Date(state.at).toLocaleString(settings.language === "zh" ? "zh-CN" : "en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        )
+      : t.settings.solvedFailed(state.error);
+    // leetcode.com alone reads as it always has.
+    return site === "cn" || solvedSync.length > 1 ? `leetcode.${site}: ${line}` : line;
+  };
+  const solvedSyncLines = syncError
+    ? [{ key: "error", kind: "error", text: syncError }]
+    : solvedSync.length === 0
+      ? [{ key: "never", kind: "loading", text: t.settings.solvedNever }]
+      : solvedSync.map((entry) => ({
+          key: entry.site,
+          kind: entry.state.ok ? "success" : "error",
+          text: solvedSyncLine(entry),
+        }));
 
   async function testConnection() {
     setTestState({ kind: "loading", message: t.settings.checking });
@@ -2296,7 +2336,11 @@ function SettingsTab({
             </label>
           </div>
         </div>
-        <p className={`connection-status connection-status-${solvedSyncKind}`}>{solvedSyncText}</p>
+        {solvedSyncLines.map((line) => (
+          <p key={line.key} className={`connection-status connection-status-${line.kind}`}>
+            {line.text}
+          </p>
+        ))}
         <div className="settings-actions">
           <button type="button" className="btn btn-secondary" onClick={syncSolvedNow} disabled={syncing}>
             {syncing && <span className="btn-spinner" />}
