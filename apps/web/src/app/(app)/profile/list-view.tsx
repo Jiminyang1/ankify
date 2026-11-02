@@ -188,7 +188,7 @@ function ListContent({ data, map, currentPlan }: { data: PlanMapData; map: PlanM
   const countLine = useMemo(() => {
     if (active) return copy.count.matched(auto.unique, auto.rows);
     if (only === "all" || only === "dictionary") {
-      const lists = index.nodes.get("G")!.children.filter((node) => node.id.startsWith("L")).map((node) => node.id);
+      const lists = index.nodes.get("G")!.children.map((node) => node.id);
       const dictionary = visibleCount(index, lists, language, site);
       if (only === "dictionary") return copy.count.scoped(copy.only.dictionary, dictionary);
       return copy.count.everything(visibleCount(index, ["C", "X", "N", "H", "T"], language, site), dictionary);

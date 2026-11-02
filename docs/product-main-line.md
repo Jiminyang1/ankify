@@ -65,6 +65,45 @@ user got something wrong, not *what technique* it was. They stay as they are.
 Vocabulary stays at solved / in review / due (decided with the profile
 roadmap), plus chapter and technique. No mastery percentages, no FSRS terms.
 
+## The map of plans
+
+Added 2026-11-01. Jimin's own study-plan map is the reference for the Plan
+page: every list keeps its own structure, lists are never mixed, and progress
+is shared because status belongs to the problem.
+
+| Group | Lists | Job |
+| --- | --- | --- |
+| 灵茶山艾府 | Algorithm Basics (27 videos, 172 problems), Core Route (7 steps, 459 problems) | Learn in order |
+| High frequency | NeetCode 150 / 250, Top 100 Liked, Top Interview 150, LeetCode 75 | Prepare for interviews |
+| Dictionary | 灵茶山艾府's 12 full lists, LeetCode's DP / Graph Theory / Binary Search plans | Look things up, go deeper |
+
+- **Core Route:** the chapters in his guide at his rating caps (1700, or 2000
+  for DP), non-premium. It replaces the earlier 239-problem version, which kept
+  only the core tier.
+- **The Plan page** has four tabs: Plan (the current plan's roadmap, as before),
+  Mind map, List, and Route, under meters for the total (5 lists counted once,
+  721 problems) and each list. Phones get no Mind map tab.
+- **The current plan still decides what's next.** One plan is current, and
+  Today's Next comes from it alone. The total shows only on the Plan page.
+- **New users** choose from 7 plans (the first two groups); the dictionary is
+  in the picker afterwards.
+- **Done is automatic where it can be, manual otherwise.** Solves on
+  leetcode.com and the deck count on their own; anything else can be ticked by
+  hand (`plan-ticks`), and a tick never overrides what the app can see.
+- **Next is never a dead end:** it skips premium and leetcode.cn-only problems.
+  Plans still count both, so a plan can end on something like 457 of 459.
+- **leetcode.cn-only problems** (22 in the Core Route, 90 in all) show for
+  Chinese users and link to leetcode.cn. English plans leave them out, so the
+  totals there are 437 and 699.
+- **Sources:** the data is a snapshot from the map page (`pnpm plans:catalog`):
+  structure, titles, and our own English names, none of its prose. NeetCode's
+  lists are included with a source link, Jimin's decision knowing that their
+  terms restrict redistribution; no NeetCode videos or text. Course videos are
+  links to Bilibili, credited.
+
+Still open: the extension and the account link only support leetcode.com, so
+solves on leetcode.cn are ticked by hand.
+
 ## The user's path
 
 1. **First visit: pick a plan.** This is a new first step in onboarding,
