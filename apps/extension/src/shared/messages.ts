@@ -1,6 +1,7 @@
 /** Messages exchanged between content script, popup, and background. */
 
 import type { CaptureProblemInput, CaptureSubmissionInput } from "@ankify/contracts";
+import type { LeetcodeSite } from "@ankify/core/leetcode-site";
 
 /** One row of LeetCode's submission list for the open problem. */
 export type SubmissionSummary = { id: string; status: string; timestamp: number };
@@ -49,16 +50,16 @@ export type BackgroundRequest =
   | { type: "capture_badge_captured"; slug: string }
   /** Content scripts receive only the one non-secret preference they need. */
   | { type: "get_content_settings" }
-  /** Content script asks whether the daily solved-list sync is due. */
-  | { type: "solved_sync_due" }
-  /** Content script hands over the signed-in user's solved list. */
-  | { type: "solved_sync"; username: string; slugs: string[] };
+  /** Content script asks whether its site's daily solved-list sync is due. */
+  | { type: "solved_sync_due"; site: LeetcodeSite }
+  /** Content script hands over the signed-in user's solved list on its site. */
+  | { type: "solved_sync"; site: LeetcodeSite; username: string; slugs: string[] };
 
 export type ContentSettingsResponse = {
   resetCodeOnProblemOpen: boolean;
 };
 
-/** Last solved-list sync, kept in extension storage for the popup. */
+/** Last solved-list sync per site, kept in extension storage for the popup. */
 export type SolvedSyncState =
   | { ok: true; at: number; username: string; count: number }
   | { ok: false; at: number; error: string };

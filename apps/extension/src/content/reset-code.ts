@@ -117,7 +117,7 @@ function findEditorResetButton(): HTMLButtonElement | null {
 
   return (
     buttons.find((button) => {
-      if (!isVisible(button) || !button.querySelector('svg[data-icon="arrow-rotate-left"]')) return false;
+      if (!isVisible(button) || !button.querySelector('svg[data-icon="arrow-rotate-left"], svg.fa-arrow-rotate-left')) return false;
       if (!editorRect) return true;
 
       const rect = button.getBoundingClientRect();

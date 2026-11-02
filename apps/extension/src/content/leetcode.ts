@@ -1,5 +1,7 @@
 import type { CaptureProblemInput, CaptureSubmissionInput } from "@ankify/contracts";
+import { leetcodeProblemUrl, leetcodeSiteOfHost, type LeetcodeSite } from "@ankify/core/leetcode-site";
 import type { SubmissionSummary } from "../shared/messages";
+import { storedVerdict, submissionVerdict } from "./submission-status";
 
 /**
  * LeetCode page extraction.
@@ -8,9 +10,17 @@ import type { SubmissionSummary } from "../shared/messages";
  * structured fields. Fall back to DOM scraping for the title if GraphQL fails.
  *
  * The submission list and per-submission details are also fetched via GraphQL.
+ *
+ * leetcode.cn has the same `/graphql/` and `question` query, but no
+ * `questionSubmissionList`, `submissionDetails`, or `questionList`: see the
+ * `*Cn` functions below. Its `question` also carries the Chinese title and
+ * statement the page shows, and problems only on leetcode.cn have only those.
  */
 
 const GRAPHQL = "/graphql/";
+
+/** The LeetCode site this content script is running on. */
+export const LEETCODE_PAGE_SITE: LeetcodeSite = leetcodeSiteOfHost(window.location.hostname) ?? "com";
 
 type GqlResponse<T> = { data: T; errors?: { message: string }[] };
 
@@ -65,6 +75,8 @@ async function fetchProblem(slug: string) {
       titleSlug: string;
       difficulty: "Easy" | "Medium" | "Hard";
       content: string;
+      translatedTitle?: string | null;
+      translatedContent?: string | null;
       topicTags: { slug: string; name: string }[];
       similarQuestions: string;
     } | null;
@@ -73,6 +85,7 @@ async function fetchProblem(slug: string) {
     `query Q($slug: String!) {
        question(titleSlug: $slug) {
          questionFrontendId title titleSlug difficulty content
+         ${LEETCODE_PAGE_SITE === "cn" ? "translatedTitle translatedContent" : ""}
          topicTags { slug name }
          similarQuestions
        }
@@ -85,6 +98,8 @@ async function fetchProblem(slug: string) {
 type RawSubmission = {
   id: string;
   statusDisplay: string;
+  status?: string | number | null;
+  isPending?: string | boolean | null;
   lang: string;
   runtime: string;
   memory: string;
@@ -95,6 +110,7 @@ type RawSubmission = {
  *  Modern site (~2023+) uses `questionSubmissionList`; the old `submissionList`
  *  still resolves on some endpoints. We try modern first, fall back. */
 async function fetchRecentSubmissions(slug: string, limit = 5): Promise<RawSubmission[]> {
+  if (LEETCODE_PAGE_SITE === "cn") return fetchRecentSubmissionsCn(slug, limit);
   try {
     type R = {
       questionSubmissionList: {
@@ -135,29 +151,95 @@ async function fetchRecentSubmissions(slug: string, limit = 5): Promise<RawSubmi
   }
 }
 
-/** The user's latest submissions for this slug, newest first. */
-export async function fetchSubmissionSummaries(slug: string, limit = 20): Promise<SubmissionSummary[]> {
-  const recent = await fetchRecentSubmissions(slug, limit);
-  return recent.map((s) => ({ id: s.id, status: s.statusDisplay, timestamp: Number(s.timestamp) || 0 }));
+/** Errors reach the caller, so a failed read is never mistaken for "no
+ *  submissions yet". */
+async function fetchRecentSubmissionsCn(slug: string, limit: number): Promise<RawSubmission[]> {
+  type R = { submissionList: { submissions: RawSubmission[] } | null };
+  const data = await gql<R>(
+    `query Q($questionSlug: String!, $offset: Int!, $limit: Int!, $lastKey: String) {
+       submissionList(questionSlug: $questionSlug, offset: $offset, limit: $limit, lastKey: $lastKey) {
+         submissions { id status statusDisplay isPending lang runtime memory timestamp }
+       }
+     }`,
+    { questionSlug: slug, offset: 0, limit, lastKey: null },
+  );
+  return data.submissionList?.submissions ?? [];
 }
 
-async function fetchSubmissionDetails(submissionId: string) {
+function toSummary(s: RawSubmission): SubmissionSummary {
+  return { id: s.id, status: submissionVerdict(s), timestamp: Number(s.timestamp) || 0 };
+}
+
+/** The user's latest submissions for this slug, newest first. */
+export async function fetchSubmissionSummaries(slug: string, limit = 20): Promise<SubmissionSummary[]> {
+  return (await fetchRecentSubmissions(slug, limit)).map(toSummary);
+}
+
+type SubmissionDetails = {
+  code: string;
+  lang: { name: string; verboseName?: string };
+  runtimeDisplay: string | null;
+  memoryDisplay: string | null;
+  lastTestcase: string | null;
+  expectedOutput: string | null;
+  codeOutput: string | null;
+  runtimeError: string | null;
+  compileError: string | null;
+  timestamp: number;
+};
+
+/** leetcode.cn's `submissionDetail`, in the shape of leetcode.com's. The query
+ *  is the one its own submission page sends. */
+async function fetchSubmissionDetailsCn(submissionId: string): Promise<SubmissionDetails | null> {
+  const output = `outputDetail { codeOutput expectedOutput compileError runtimeError lastTestcase }`;
   type R = {
-    submissionDetails: {
+    submissionDetail: {
       code: string;
-      lang: { name: string; verboseName?: string };
-      statusDisplay?: string;
-      statusCode?: number;
+      lang: string;
+      langVerboseName: string | null;
       runtimeDisplay: string | null;
       memoryDisplay: string | null;
-      lastTestcase: string | null;
-      expectedOutput: string | null;
-      codeOutput: string | null;
-      runtimeError: string | null;
-      compileError: string | null;
-      timestamp: number;
+      timestamp: number | string;
+      outputDetail?: {
+        codeOutput: string | null;
+        expectedOutput: string | null;
+        compileError: string | null;
+        runtimeError: string | null;
+        lastTestcase: string | null;
+      } | null;
     } | null;
   };
+  const { submissionDetail: d } = await gql<R>(
+    `query Q($submissionId: ID!) {
+       submissionDetail(submissionId: $submissionId) {
+         code timestamp lang langVerboseName
+         runtimeDisplay: runtime
+         memoryDisplay: memory
+         ... on GeneralSubmissionNode { ${output} }
+         ... on ContestSubmissionNode { ${output} }
+       }
+     }`,
+    { submissionId },
+  );
+  if (!d) return null;
+  return {
+    code: d.code,
+    lang: { name: d.lang, verboseName: d.langVerboseName ?? undefined },
+    runtimeDisplay: d.runtimeDisplay,
+    memoryDisplay: d.memoryDisplay,
+    // Empty strings when there's nothing to show, unlike leetcode.com's nulls.
+    lastTestcase: d.outputDetail?.lastTestcase || null,
+    expectedOutput: d.outputDetail?.expectedOutput || null,
+    codeOutput: d.outputDetail?.codeOutput || null,
+    runtimeError: d.outputDetail?.runtimeError || null,
+    compileError: d.outputDetail?.compileError || null,
+    timestamp: Number(d.timestamp),
+  };
+}
+
+async function fetchSubmissionDetails(submissionId: string): Promise<SubmissionDetails | null> {
+  if (LEETCODE_PAGE_SITE === "cn") return fetchSubmissionDetailsCn(submissionId);
+  type R = { submissionDetails: SubmissionDetails | null };
   // Modern LC submissionDetails takes `submissionId: Int!`. The id from
   // submissionList comes as a string — coerce it.
   const idInt = parseInt(submissionId, 10);
@@ -181,18 +263,6 @@ async function fetchSubmissionDetails(submissionId: string) {
     { submissionId: idInt },
   );
   return data.submissionDetails;
-}
-
-function normaliseStatus(s: string): CaptureSubmissionInput["status"] {
-  const known: CaptureSubmissionInput["status"][] = [
-    "Accepted",
-    "Wrong Answer",
-    "Time Limit Exceeded",
-    "Memory Limit Exceeded",
-    "Runtime Error",
-    "Compile Error",
-  ];
-  return known.find((k) => k === s) ?? "Other";
 }
 
 function parseRuntimeMs(s: string | null): number | undefined {
@@ -237,7 +307,7 @@ export async function fetchSubmissionInputs(summaries: SubmissionSummary[]): Pro
         leetcodeSubmissionId: s.id,
         language: d.lang.verboseName || d.lang.name,
         code: d.code,
-        status: normaliseStatus(d.statusDisplay ?? s.status),
+        status: storedVerdict(s.status),
         runtimeMs: parseRuntimeMs(d.runtimeDisplay),
         memoryKb: parseMemoryKb(d.memoryDisplay),
         failedTestcase: d.lastTestcase ?? undefined,
@@ -261,6 +331,7 @@ export async function fetchSubmissionInputs(summaries: SubmissionSummary[]): Pro
  * Returns null when nobody is signed in to LeetCode.
  */
 export async function fetchSolvedList(): Promise<{ username: string; slugs: string[] } | null> {
+  if (LEETCODE_PAGE_SITE === "cn") return fetchSolvedListCn();
   try {
     const res = await fetch("/api/problems/all/", { credentials: "include" });
     if (res.ok) {
@@ -303,6 +374,55 @@ export async function fetchSolvedList(): Promise<{ username: string; slugs: stri
   return { username: status.userStatus.username, slugs };
 }
 
+/** On leetcode.cn the account is its `userSlug`: what profile links and profile
+ *  queries use, and not always the `user_name` of `/api/problems/all/`. Its
+ *  GraphQL fallback is `problemsetQuestionList`. */
+async function fetchSolvedListCn(): Promise<{ username: string; slugs: string[] } | null> {
+  type Status = { userStatus: { userSlug: string | null; isSignedIn: boolean } };
+  const { userStatus } = await gql<Status>(`query { userStatus { userSlug isSignedIn } }`);
+  if (!userStatus.isSignedIn || !userStatus.userSlug) return null;
+  const username = userStatus.userSlug;
+
+  try {
+    const res = await fetch("/api/problems/all/", { credentials: "include" });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        user_name?: string;
+        stat_status_pairs?: { status: string | null; stat: { question__title_slug: string } }[];
+      };
+      // A blank user_name means this response isn't for the signed-in user.
+      if (body.user_name) {
+        return {
+          username,
+          slugs: (body.stat_status_pairs ?? [])
+            .filter((pair) => pair.status === "ac")
+            .map((pair) => pair.stat.question__title_slug),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[ankify] /api/problems/all/ failed; trying GraphQL", err);
+  }
+
+  type Page = { problemsetQuestionList: { hasMore: boolean; questions: { titleSlug: string }[] } };
+  const PAGE = 100;
+  const slugs: string[] = [];
+  for (let skip = 0; skip < 10_000; skip += PAGE) {
+    const { problemsetQuestionList: page } = await gql<Page>(
+      `query Q($skip: Int!, $limit: Int!) {
+         problemsetQuestionList(categorySlug: "", limit: $limit, skip: $skip, filters: { status: AC }) {
+           hasMore
+           questions { titleSlug }
+         }
+       }`,
+      { skip, limit: PAGE },
+    );
+    slugs.push(...page.questions.map((q) => q.titleSlug));
+    if (!page.hasMore) break;
+  }
+  return { username, slugs };
+}
+
 export async function captureCurrent(): Promise<CaptureProblemInput> {
   const slug = slugFromUrl();
   if (!slug) throw new Error("Not a LeetCode problem page");
@@ -316,9 +436,7 @@ export async function captureCurrent(): Promise<CaptureProblemInput> {
   const recent = await fetchRecentSubmissions(slug, 20);
   console.log(`[ankify] submissionList → ${recent.length} entries`, recent);
 
-  const submissions = await fetchSubmissionInputs(
-    recent.map((s) => ({ id: s.id, status: s.statusDisplay, timestamp: Number(s.timestamp) || 0 })),
-  );
+  const submissions = await fetchSubmissionInputs(recent.map(toSummary));
   console.log(`[ankify] captured ${submissions.length} submission details`);
 
   let similarSlugs: string[] = [];
@@ -332,10 +450,10 @@ export async function captureCurrent(): Promise<CaptureProblemInput> {
   return {
     leetcodeSlug: q.titleSlug,
     leetcodeId: parseInt(q.questionFrontendId, 10) || undefined,
-    title: q.title,
+    title: q.translatedTitle || q.title,
     difficulty: q.difficulty,
-    url: `https://leetcode.com/problems/${q.titleSlug}/`,
-    descriptionMd: q.content ?? "",
+    url: leetcodeProblemUrl(q.titleSlug, LEETCODE_PAGE_SITE),
+    descriptionMd: q.translatedContent || (q.content ?? ""),
     topicTags: q.topicTags.map((t) => t.slug),
     similarSlugs,
     submissions,
