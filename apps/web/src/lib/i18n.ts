@@ -50,7 +50,7 @@ export const translations = {
       empty: "empty",
       dueProblems: (count: number) => pluralEn(count, "due problem"),
       submissions: (count: number) => pluralEn(count, "submission"),
-      lapses: (count: number) => pluralEn(count, "lapse"),
+      lapses: (count: number) => `forgot ${pluralEn(count, "time")}`,
       databaseNotInitialized:
         "Database is not initialized. Configure .env.local or .env, then run pnpm db:migrate.",
     },
@@ -260,12 +260,6 @@ export const translations = {
       actionFailed: "That didn't save. Try again.",
     },
     difficulty: { Easy: "Easy", Medium: "Medium", Hard: "Hard" },
-    fsrs: {
-      new: "new",
-      learning: "learning",
-      review: "review",
-      relearning: "relearning",
-    },
     rating: {
       again: "Again",
       hard: "Hard",
@@ -322,18 +316,18 @@ export const translations = {
       addFirst: "Use the Chrome extension on a LeetCode problem to add your first one.",
       summary: (shown: number, total: number, due: number) => `${shown} of ${total} · ${due} due`,
       all: "All",
+      inReview: "In review",
       allTags: "All tags",
       search: "Search...",
       searchAria: "Search problems by title",
-      filterStateAria: "Filter by FSRS state",
+      filterStateAria: "Filter by review status",
       filterTagAria: "Filter by tag",
       due: "Due",
       notDue: "Not due",
       archived: "Archived",
       titleCol: "Title",
       diffCol: "Diff",
-      repsCol: "Reps",
-      stateCol: "State",
+      repsCol: "Reviews",
       noMatches: "No matches",
       noMatchesDescription: "No problems match the current filters. Try clearing the search or tag filter.",
       partialResults: (loaded: number, total: number) =>
@@ -650,7 +644,7 @@ export const translations = {
       deleteProblem: "Delete problem",
       deleteWarning: "This cannot be undone.",
       deletePrompt: (title: string) => `Permanently delete ${title}?`,
-      deleteDescription: "Its notes, solutions, submissions, practice sessions, review history, and FSRS scheduling will be removed.",
+      deleteDescription: "Its notes, solutions, submissions, practice sessions, review history, and review schedule will be removed.",
       deleteForever: "Delete forever",
       deleting: "Deleting...",
       deleteFailed: "Delete failed",
@@ -971,7 +965,7 @@ export const translations = {
       empty: "空",
       dueProblems: (count: number) => `${count} 道待复习题`,
       submissions: (count: number) => `${count} 次提交`,
-      lapses: (count: number) => `${count} 次遗忘`,
+      lapses: (count: number) => `忘了 ${count} 次`,
       databaseNotInitialized: "数据库尚未初始化。配置 .env.local 或 .env，然后运行 pnpm db:migrate。",
     },
     agent: {
@@ -1175,7 +1169,6 @@ export const translations = {
       actionFailed: "没保存成功，请重试。",
     },
     difficulty: { Easy: "简单", Medium: "中等", Hard: "困难" },
-    fsrs: { new: "新题", learning: "学习中", review: "复习", relearning: "重新学习" },
     rating: {
       again: "忘记",
       hard: "困难",
@@ -1226,10 +1219,11 @@ export const translations = {
       addFirst: "在 LeetCode 题目页使用 Chrome 扩展添加第一道题。",
       summary: (shown: number, total: number, due: number) => `${shown} / ${total} · ${due} 到期`,
       all: "全部",
+      inReview: "复习中",
       allTags: "全部标签",
       search: "搜索...",
       searchAria: "按标题搜索题目",
-      filterStateAria: "按 FSRS 状态筛选",
+      filterStateAria: "按复习状态筛选",
       filterTagAria: "按标签筛选",
       due: "到期",
       notDue: "未到期",
@@ -1237,7 +1231,6 @@ export const translations = {
       titleCol: "标题",
       diffCol: "难度",
       repsCol: "复习",
-      stateCol: "状态",
       noMatches: "没有匹配结果",
       noMatchesDescription: "没有题目匹配当前筛选。试试清空搜索或标签筛选。",
       partialResults: (loaded: number, total: number) =>
@@ -1550,7 +1543,7 @@ export const translations = {
       deleteProblem: "删除题目",
       deleteWarning: "此操作无法撤销。",
       deletePrompt: (title: string) => `永久删除「${title}」？`,
-      deleteDescription: "这道题的笔记、解法、提交、练习、复习历史和 FSRS 调度都会一并删除。",
+      deleteDescription: "这道题的笔记、解法、提交、练习、复习历史和复习计划都会一并删除。",
       deleteForever: "永久删除",
       deleting: "删除中...",
       deleteFailed: "删除失败",
@@ -1845,7 +1838,3 @@ export function translateDifficulty(language: Language, difficulty: string) {
   return t.difficulty[difficulty as keyof typeof t.difficulty] ?? difficulty;
 }
 
-export function translateFsrsState(language: Language, state: string) {
-  const t = getTranslations(language);
-  return t.fsrs[state as keyof typeof t.fsrs] ?? state;
-}

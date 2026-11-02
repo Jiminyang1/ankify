@@ -7,7 +7,7 @@ import type {
   ProblemListItemDto,
   ProblemsListPayloadDto,
 } from "@ankify/contracts";
-import { DifficultyPill, FsrsStatePill, Pill } from "@/components/ui/pill";
+import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Surface } from "@/components/ui/surface";
 import { Input, Select } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,7 +19,7 @@ import { cn, formatRelative } from "@/lib/utils";
 
 type FilterState = {
   difficulty: LeetCodeDifficulty | "all";
-  state: "all" | "new" | "learning" | "review" | "relearning" | "due" | "not-due" | "archived";
+  state: "all" | "due" | "not-due" | "archived";
   tag: string;
   search: string;
 };
@@ -178,10 +178,6 @@ export default function ProblemsPage({
       case "archived":
         // Server already returned only archived problems; nothing to narrow.
         break;
-      default:
-        if (filters.state !== "all") {
-          list = list.filter((p) => p.fsrsState === filters.state);
-        }
     }
 
     if (filters.tag) {
@@ -226,10 +222,7 @@ export default function ProblemsPage({
   const stateOptions: { value: FilterState["state"]; label: string }[] = [
     { value: "all", label: t.problems.all },
     { value: "due", label: t.problems.due },
-    { value: "new", label: t.fsrs.new },
-    { value: "learning", label: t.fsrs.learning },
-    { value: "review", label: t.fsrs.review },
-    { value: "relearning", label: t.fsrs.relearning },
+    { value: "not-due", label: t.problems.inReview },
     { value: "archived", label: t.problems.archived },
   ];
 
@@ -363,9 +356,7 @@ export default function ProblemsPage({
                   { key: "difficulty", label: t.problems.diffCol, className: "hidden sm:table-cell" },
                   { key: "due", label: t.problems.due, className: "" },
                   { key: "reps", label: t.problems.repsCol, className: "hidden md:table-cell" },
-                  { key: "state", label: t.problems.stateCol, className: "hidden sm:table-cell" },
-                ] as { key: SortKey | "state"; label: string; className: string }[]).map((col) => {
-                  const sortable = col.key !== "state";
+                ] as { key: SortKey; label: string; className: string }[]).map((col) => {
                   const isSorted = sort.key === col.key;
                   return (
                     <th
@@ -373,18 +364,14 @@ export default function ProblemsPage({
                       className={cn("px-4 py-2.5 font-medium", col.className)}
                       aria-sort={isSorted ? (sort.asc ? "ascending" : "descending") : undefined}
                     >
-                      {sortable ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleSort(col.key as SortKey)}
-                          className="inline-flex select-none items-center gap-1 font-medium uppercase tracking-wide transition hover:text-fg"
-                        >
-                          {col.label}
-                          {isSorted && <span className="text-[9px]">{sort.asc ? "▲" : "▼"}</span>}
-                        </button>
-                      ) : (
-                        <span className="inline-flex items-center gap-1">{col.label}</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(col.key)}
+                        className="inline-flex select-none items-center gap-1 font-medium uppercase tracking-wide transition hover:text-fg"
+                      >
+                        {col.label}
+                        {isSorted && <span className="text-[9px]">{sort.asc ? "▲" : "▼"}</span>}
+                      </button>
                     </th>
                   );
                 })}
@@ -431,10 +418,7 @@ export default function ProblemsPage({
                     </td>
                     <td className="hidden md:table-cell px-4 py-2.5 text-xs tabular-nums">
                       {p.fsrsReps}
-                      {p.fsrsLapses > 0 && <span className="text-danger ml-0.5">↓{p.fsrsLapses}</span>}
-                    </td>
-                    <td className="hidden sm:table-cell px-4 py-2.5">
-                      <FsrsStatePill state={p.fsrsState} language={language} />
+                      {p.fsrsLapses > 0 && <span className="text-danger ml-0.5" title={t.common.lapses(p.fsrsLapses)}>↓{p.fsrsLapses}</span>}
                     </td>
                   </tr>
                 );

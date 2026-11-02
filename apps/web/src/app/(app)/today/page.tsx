@@ -2,7 +2,7 @@ import Link from "next/link";
 import { leetcodeProblemUrl, leetcodeTagName } from "@ankify/core";
 import type { PlanNextDto } from "@ankify/contracts";
 import { Surface } from "@/components/ui/surface";
-import { DifficultyPill, FsrsStatePill } from "@/components/ui/pill";
+import { DifficultyPill } from "@/components/ui/pill";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { requirePageUser } from "@/server/auth";
@@ -141,7 +141,6 @@ export default async function HomePage() {
                     <div className="truncate text-sm font-medium">{problem.title}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <DifficultyPill difficulty={problem.difficulty} language={language} />
-                      <FsrsStatePill state={problem.fsrsState} language={language} />
                       {problem.topicTags.slice(0, 3).map((tag) => (
                         <span key={tag} className="text-xs text-muted">
                           #{leetcodeTagName(tag)}
