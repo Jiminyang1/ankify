@@ -12,10 +12,13 @@
   "dependencies": {
     "@ankify/contracts": "workspace:*",
     "@ankify/core": "workspace:*",
+    "@shikijs/langs": "^4.0.2",
+    "@shikijs/themes": "^4.0.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "shiki": "^4.0.2"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.30",

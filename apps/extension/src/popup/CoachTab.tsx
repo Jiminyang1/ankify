@@ -15,7 +15,7 @@ import type {
 } from "@ankify/contracts";
 import type { ContentResponse, EditorReadFailure, EditorSnapshot, ExtSettings } from "../shared/messages";
 import { apiFetch } from "./api";
-import { PopupMarkdown } from "./PopupMarkdown";
+import { PopupMarkdown, PopupUserText } from "./PopupMarkdown";
 import { PracticeWidget, type PracticeCopy } from "./PracticeWidget";
 import { WeakSpots, type WeakSpotsCopy } from "./WeakSpots";
 import { builtinWeaknessCategoryName } from "@ankify/core";
@@ -907,7 +907,11 @@ export function CoachTab({
             const live = streaming && run.status === "running";
             return (
               <div key={run.id} className="coach-turn">
-                {user && <div className="coach-msg coach-msg-user">{user.content}</div>}
+                {user && (
+                  <div className="coach-msg coach-msg-user">
+                    <PopupUserText>{user.content}</PopupUserText>
+                  </div>
+                )}
                 {steps.filter((step) => step.kind !== "practice").map((step) => (
                   <CoachStep
                     key={step.id}

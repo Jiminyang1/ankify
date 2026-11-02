@@ -2315,6 +2315,10 @@ a:focus-visible,
   white-space: pre-wrap;
 }
 
+.coach-user-text {
+  min-width: 0;
+}
+
 .coach-msg-assistant {
   padding: 2px 2px 0;
 }
