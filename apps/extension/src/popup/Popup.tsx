@@ -1421,16 +1421,18 @@ function ListIcon() {
   );
 }
 
+/** A six-tooth gear. Separate rays around a circle read as a sun (a theme
+ *  toggle), so the teeth are one closed outline. */
 function GearIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
       <path
-        d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"
+        d="M6.37 3.27 6.47 1.37H9.53L9.63 3.27A5 5 0 0 1 11.28 4.23L12.97 3.36 14.5 6.01 12.91 7.05A5 5 0 0 1 12.91 8.95L14.5 9.99 12.97 12.64 11.28 11.77A5 5 0 0 1 9.63 12.73L9.53 14.63H6.47L6.37 12.73A5 5 0 0 1 4.72 11.77L3.03 12.64 1.5 9.99 3.09 8.95A5 5 0 0 1 3.09 7.05L1.5 6.01 3.03 3.36 4.72 4.23A5 5 0 0 1 6.37 3.27Z"
         stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
       />
+      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }
