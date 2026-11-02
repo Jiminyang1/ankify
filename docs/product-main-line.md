@@ -44,7 +44,7 @@ Two facts from the code and the data:
 
 | Layer | Answers | Where it comes from |
 | --- | --- | --- |
-| **Plan** | In what order do I learn? | Top Interview 150, Top 100 Liked, LeetCode 75, 灵茶山艾府's Beginner Route and topic plans, or an imported list. The user picks one first. |
+| **Plan** | In what order do I learn? | Top Interview 150, Top 100 Liked, LeetCode 75, 灵茶山艾府's course, Core Route, and topic plans, NeetCode 150/250, or an imported list. The user picks one first. |
 | **Pattern** | What have I learned? | The plan's own sections are its chapters (Sliding Window, Binary Search, ...). Each problem's techniques come from 灵茶山艾府's catalog (`@ankify/core/patterns`). |
 | **Problem** | An example of a pattern | FSRS still schedules the problem, but the review asks about its pattern. |
 

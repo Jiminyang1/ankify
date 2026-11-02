@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { planCatalogNode, planCatalogProblem } from "./plan-catalog";
 import {
   PATTERN_ROUTE_SLUG,
   PATTERN_TOPICS,
@@ -6,6 +7,7 @@ import {
   findPattern,
   focusPlanAfter,
   goDeeperInChapter,
+  neetcodeStudyPlans,
   patternStudyPlans,
   isMiscPattern,
   nextInPattern,
@@ -89,29 +91,33 @@ describe("nextInPattern", () => {
 
 describe("patternStudyPlans", () => {
   const plans = patternStudyPlans("en");
+  const topicPlans = (language: "en" | "zh") => patternStudyPlans(language).slice(2);
+  const planIn = (language: "en" | "zh", slug: string) => patternStudyPlans(language).find((plan) => plan.slug === slug)!;
+  const size = (plan: { groups: { questions: unknown[] }[] }) =>
+    plan.groups.reduce((sum, group) => sum + group.questions.length, 0);
 
-  it("ships the Beginner Route first, then one plan per list", () => {
+  it("ships the course and Core Route first, then one plan per list", () => {
     expect(plans.map((plan) => plan.slug)).toEqual([
+      "ling:course",
       PATTERN_ROUTE_SLUG,
       ...PATTERN_TOPICS.map((topic) => `ling:${topic.key}`),
     ]);
-    expect(plans[0]!.groups.map((group) => group.name)).toEqual([
+    expect(plans[1]!.groups.map((group) => group.name)).toEqual([
       "1. Sliding window",
       "2. Binary search",
-      "3. Prefix sums, stacks, queues, heaps",
+      "3. Common data structures",
       "4. Binary tree DFS",
       "5. Grid DFS",
       "6. Backtracking",
-      "7. Dynamic programming",
+      "7. Dynamic programming: the first six chapters",
     ]);
   });
 
-  it("keeps each plan's problems unique, free, and its groups non-empty and distinctly named", () => {
+  it("keeps each plan's problems unique and its groups non-empty and distinctly named", () => {
     for (const language of ["en", "zh"] as const) {
       for (const plan of patternStudyPlans(language)) {
         const slugs = plan.groups.flatMap((group) => group.questions.map((q) => q.slug));
         expect(new Set(slugs).size, plan.slug).toBe(slugs.length);
-        expect(slugs.every((slug) => !patternProblem(slug)!.premium), plan.slug).toBe(true);
         expect(plan.groups.every((group) => group.questions.length > 0), plan.slug).toBe(true);
         const names = plan.groups.map((group) => group.name);
         expect(new Set(names).size, `${language} ${plan.slug}`).toBe(names.length);
@@ -119,25 +125,112 @@ describe("patternStudyPlans", () => {
     }
   });
 
-  it("caps the route by rating and points each stage at its list", () => {
-    const route = plans[0]!;
-    const window = findPattern("sliding-window/fixed-window")!.pattern;
-    const rating = new Map(window.problems.map(([slug, value]) => [slug, value]));
-    const stage = route.groups[0]!;
-    expect(stage.deepDive).toBe("ling:sliding-window");
-    for (const question of stage.questions) {
-      if (rating.has(question.slug)) expect(rating.get(question.slug) ?? 0).toBeLessThanOrEqual(1700);
+  it("keeps the topic lists and the route free of premium problems", () => {
+    for (const language of ["en", "zh"] as const) {
+      for (const plan of topicPlans(language)) {
+        const slugs = plan.groups.flatMap((group) => group.questions.map((q) => q.slug));
+        expect(slugs.every((slug) => !patternProblem(slug)!.premium), plan.slug).toBe(true);
+      }
+      const route = planIn(language, PATTERN_ROUTE_SLUG);
+      const slugs = route.groups.flatMap((group) => group.questions.map((q) => q.slug));
+      expect(slugs.every((slug) => !planCatalogProblem(slug)!.premium)).toBe(true);
     }
+  });
+
+  it("caps the route by rating and points each step at its list", () => {
+    const route = plans[1]!;
+    expect(route.sourceUrl).toBe("https://leetcode.cn/discuss/post/3141566/ru-he-ke-xue-shua-ti-by-endlesscheng-q3yd/");
+    expect(route.groups.map((group) => group.deepDive)).toEqual([
+      "ling:sliding-window",
+      "ling:binary-search",
+      "ling:data-structures",
+      "ling:trees",
+      "ling:grid",
+      "ling:trees",
+      "ling:dp",
+    ]);
+    route.groups.forEach((group, index) => {
+      const cap = index === 6 ? 2000 : 1700;
+      for (const question of group.questions) {
+        const problem = planCatalogProblem(question.slug)!;
+        if (problem.rating != null) expect(problem.rating, question.slug).toBeLessThanOrEqual(cap);
+        else expect(problem.difficulty, question.slug).not.toBe("Hard");
+      }
+    });
+  });
+
+  it("includes leetcode.cn-only problems in Chinese and leaves them out in English", () => {
+    const zh = planIn("zh", PATTERN_ROUTE_SLUG);
+    const en = planIn("en", PATTERN_ROUTE_SLUG);
+    expect(size(zh)).toBe(459);
+    expect(size(en)).toBe(437);
+    const cnOnly = zh.groups.flatMap((group) => group.questions).filter((question) => question.cnOnly);
+    expect(cnOnly).toHaveLength(22);
+    expect(en.groups.flatMap((group) => group.questions).some((question) => question.cnOnly)).toBe(false);
+    for (const question of cnOnly) {
+      expect(question).toMatchObject({ id: 0, difficulty: "Medium", cnOnly: true, label: expect.any(String) });
+      expect(question.title).toBe(question.zh);
+      expect(question.label).toBe(planCatalogProblem(question.slug)!.label);
+    }
+  });
+
+  it("gives the course one group per video, with its link", () => {
+    const course = plans[0]!;
+    expect(course.name).toBe("Ling Shen · Algorithm Basics");
+    expect(course.groups).toHaveLength(27);
+    expect(size(course)).toBe(172);
+    expect(course.groups.every((group) => group.videoUrl?.startsWith("https://www.bilibili.com/video/"))).toBe(true);
+    expect(course.groups[0]!.questions.slice(0, 2).map((question) => question.slug)).toEqual(
+      planCatalogNode("V0")!.problems,
+    );
+  });
+
+  it("shows Chinese titles in the new plans in Chinese", () => {
+    const course = planIn("zh", "ling:course");
+    expect(course.name).toBe("灵神 · 基础算法精讲");
+    expect(course.groups[0]!.name).toBe("相向双指针（一）");
+    expect(course.groups[0]!.questions[0]).toMatchObject({ slug: "two-sum-ii-input-array-is-sorted", title: "两数之和 II - 输入有序数组" });
+    expect(plans[0]!.groups[0]!.questions[0]!.title).toBe("Two Sum II - Input Array Is Sorted");
   });
 
   it("names groups in Chinese with his headings", () => {
     const zh = patternStudyPlans("zh");
-    expect(zh[0]!.name).toBe("灵神 · 新手村路线");
+    expect(zh[1]!.name).toBe("灵神 · 核心路线");
     const window = zh.find((plan) => plan.slug === "ling:sliding-window")!;
     expect(window.groups.map((group) => group.name)).toContain("恰好型滑动窗口");
     const trees = zh.find((plan) => plan.slug === "ling:trees")!.groups.map((group) => group.name);
     expect(trees).toContain("二叉树 · 有递有归");
     expect(trees).toContain("一般树 · 有递有归");
+  });
+
+  it("credits every one of his plans to him", () => {
+    expect(plans.every((plan) => plan.credit === "ling")).toBe(true);
+  });
+});
+
+describe("neetcodeStudyPlans", () => {
+  const size = (plan: { groups: { questions: unknown[] }[] }) =>
+    plan.groups.reduce((sum, group) => sum + group.questions.length, 0);
+
+  it("ships 150 and 250 in his 18 categories, named by language", () => {
+    const [nc150, nc250] = neetcodeStudyPlans("en");
+    expect(nc150!.slug).toBe("neetcode-150");
+    expect(nc250!.slug).toBe("neetcode-250");
+    expect(size(nc150!)).toBe(150);
+    expect(size(nc250!)).toBe(250);
+    expect(nc150!.groups).toHaveLength(18);
+    expect(nc250!.groups).toHaveLength(18);
+    expect(nc250!.groups[0]!.name).toBe("Arrays & Hashing");
+    expect(neetcodeStudyPlans("zh")[1]!.groups[0]!.name).toBe("数组与哈希表");
+    expect(nc250).toMatchObject({ sourceUrl: "https://neetcode.io/practice", credit: "neetcode" });
+  });
+
+  it("names deep dives in both languages", () => {
+    for (const language of ["en", "zh"] as const) {
+      const plan = neetcodeStudyPlans(language)[1]!;
+      const dives = plan.groups.filter((group) => group.deepDive).map((group) => group.deepDive);
+      expect(new Set(dives), language).toEqual(new Set(["binary-search", "graph-theory", "dynamic-programming"]));
+    }
   });
 });
 

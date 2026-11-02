@@ -31,7 +31,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   // First step, only while nothing from this plan is in review yet.
   const inReview = data.counts.remembered + data.counts.due;
   const startGroup =
-    inReview === 0 ? data.groups.find((group) => group.items.some((item) => item.status === "solved")) : undefined;
+    inReview === 0 ? data.groups.find((group) => group.items.some((item) => item.status === "solved" && !item.cnOnly)) : undefined;
   const showConnect = !startGroup && !data.solvedSync;
 
   return (
@@ -115,7 +115,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           total={data.total}
           group={{
             name: startGroup.name,
-            slugs: startGroup.items.filter((item) => item.status === "solved").map((item) => item.slug),
+            slugs: startGroup.items.filter((item) => item.status === "solved" && !item.cnOnly).map((item) => item.slug),
           }}
         />
       ) : (

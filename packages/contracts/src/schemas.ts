@@ -310,6 +310,13 @@ export const studyPlanSelectSchema = z.object({
   plan: z.string().min(1).max(100),
 });
 
+/** POST /api/study-plan/tick — mark a problem on the map as done by hand. */
+export const planTickSchema = z.object({
+  slug: z.string().min(1).max(256),
+  done: z.boolean(),
+});
+export type PlanTickInput = z.infer<typeof planTickSchema>;
+
 /** POST /api/study-plan/import — a public LeetCode problem list link. */
 export const studyPlanImportSchema = z.object({
   link: z.string().trim().min(1).max(500),

@@ -1,18 +1,17 @@
 import {
   computeWeaknessProfile,
   deepDivePlanFor,
-  planProblemStatus,
   type LeetCodeDifficulty,
   type PlanProblemStatus,
 } from "@ankify/core";
-import { focusPlanAfter, goDeeperInChapter } from "@ankify/core/patterns";
-import { getDb, schema } from "@ankify/db";
-import { eq } from "drizzle-orm";
-import type { ChapterDeeperDto, LeetcodeAccountDto, PlanFocusDto, PlanNextDto } from "@ankify/contracts";
+import { PATTERN_PLAN_PREFIX, focusPlanAfter, goDeeperInChapter } from "@ankify/core/patterns";
+import type { ChapterDeeperDto, PlanFocusDto, PlanNextDto } from "@ankify/contracts";
 import { getCachedLeetcodeAccount, getLeetcodeAccount, getLeetcodeSolved } from "./leetcode-account";
 import { toPatternRef, toPatternStep, type DoneSet } from "./patterns";
+import { loadPlanStatusContext } from "./plan-map";
 import { planNextFrom } from "./plan-next";
-import { findBuiltInStudyPlan, getCurrentStudyPlan, studyPlanSourceUrl } from "./study-plans";
+import type { AccountForStatus } from "./plan-status";
+import { findBuiltInStudyPlan, getCurrentStudyPlan, lingSourceUrl, studyPlanSource } from "./study-plans";
 import { loadActiveWeaknesses } from "./weaknesses";
 
 /** getLeetcodeAccount refetches after 12h; a cache older than this means
@@ -23,7 +22,13 @@ export type PlanItem = {
   slug: string;
   title: string;
   difficulty: LeetCodeDifficulty;
+  /** 0 for leetcode.cn-only problems; show `label` instead. */
   leetcodeId: number;
+  /** What to show as its number: the id, or "LCP 68". */
+  label: string;
+  /** Only on leetcode.cn: no leetcode.com page, can't be added to review, and
+   *  Next never picks it. */
+  cnOnly: boolean;
   status: PlanProblemStatus;
   /** Set when the problem is in the user's deck (including archived). */
   problemId: string | null;
@@ -74,7 +79,6 @@ export type ProfileData = Awaited<ReturnType<typeof loadProfile>>;
 const emptyCounts = (): Record<PlanProblemStatus, number> => ({ todo: 0, solved: 0, remembered: 0, due: 0 });
 
 type Language = "en" | "zh";
-type AccountForStatus = Pick<LeetcodeAccountDto, "username" | "profile"> | null;
 
 /** The profile page: the current plan with every problem's status, each
  *  chapter's weak spots, the user's frequent mistakes, and the linked
@@ -161,7 +165,7 @@ function focusAfterPlan(
     slug: plan.slug,
     name: plan.name,
     total: plan.groups.reduce((sum, group) => sum + group.questions.length, 0),
-    sourceUrl: studyPlanSourceUrl(plan.slug),
+    sourceUrl: lingSourceUrl(studyPlanSource(plan.slug)),
     reason:
       focus.kind === "topic"
         ? { kind: "topic", name: { en: focus.topic.en, zh: focus.topic.zh } }
@@ -171,37 +175,18 @@ function focusAfterPlan(
 }
 
 async function loadPlanProgress(userId: string, language: Language, leetcode: AccountForStatus, now: Date) {
-  const [rows, solved, current] = await Promise.all([
-    getDb()
-      .select({
-        id: schema.problems.id,
-        leetcodeSlug: schema.problems.leetcodeSlug,
-        archivedAt: schema.problems.archivedAt,
-        fsrsDue: schema.problems.fsrsDue,
-        fsrsLapses: schema.problems.fsrsLapses,
-      })
-      .from(schema.problems)
-      .where(eq(schema.problems.userId, userId)),
-    getLeetcodeSolved(userId),
+  const [status, current] = await Promise.all([
+    loadPlanStatusContext(userId, leetcode, now),
     getCurrentStudyPlan(userId, language),
   ]);
   const plan = current.plan;
-  const sourceUrl = studyPlanSourceUrl(plan.slug);
-
-  const deck = new Map(rows.map((row) => [row.leetcodeSlug, row]));
-  // Publicly LeetCode shows only the latest 20 accepted problems; the
-  // extension's snapshot adds the full solved list for the linked account.
-  const solvedSync =
-    solved && leetcode && solved.username.toLowerCase() === leetcode.username.toLowerCase() ? solved : null;
-  const solvedOnLeetcode = new Set([
-    ...(leetcode?.profile?.recentAccepted.map((item) => item.slug) ?? []),
-    ...(solvedSync?.slugs ?? []),
-  ]);
+  const source = studyPlanSource(plan.slug);
+  const { rows, deck, solvedSync } = status;
 
   // Ladders count a problem as done the same way the roadmap does.
   const done: DoneSet = {
     inDeck: new Map(rows.map((row) => [row.leetcodeSlug, row.id])),
-    isDone: (slug) => deck.has(slug) || solvedOnLeetcode.has(slug),
+    isDone: status.isDone,
   };
 
   const counts = emptyCounts();
@@ -210,36 +195,33 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
     const items = group.questions.map((question): PlanItem => {
       const row = deck.get(question.slug);
       const archived = row?.archivedAt != null;
-      const status = planProblemStatus(
-        {
-          tracked: row ? { due: row.fsrsDue, archived } : undefined,
-          solvedOnLeetcode: solvedOnLeetcode.has(question.slug),
-        },
-        now,
-      );
-      groupCounts[status] += 1;
-      counts[status] += 1;
+      const itemStatus = status.statusOf(question.slug);
+      groupCounts[itemStatus] += 1;
+      counts[itemStatus] += 1;
       return {
         slug: question.slug,
         title: question.title,
         difficulty: question.difficulty,
         leetcodeId: question.id,
-        status,
+        label: question.label ?? String(question.id),
+        cnOnly: question.cnOnly === true,
+        status: itemStatus,
         problemId: row?.id ?? null,
         archived,
         due: row?.fsrsDue?.toISOString() ?? null,
         lapses: row?.fsrsLapses ?? 0,
       };
     });
-    // A plan that names its deep dives (the Beginner Route) uses those;
+    // A plan that names its deep dives (the Core Route, NeetCode) uses those;
     // 灵茶山艾府's topic lists already are the deep dive.
     const dive = group.deepDive
       ? findBuiltInStudyPlan(group.deepDive, language)
-      : sourceUrl
+      : plan.slug.startsWith(PATTERN_PLAN_PREFIX)
         ? null
         : deepDivePlanFor(group.name, plan.slug);
+    // leetcode.cn-only problems left over don't hold a chapter open.
     const deeper =
-      groupCounts.todo === 0
+      items.every((item) => item.status !== "todo" || item.cnOnly)
         ? goDeeperInChapter(
             items.map((item) => item.slug),
             done.isDone,
@@ -266,11 +248,12 @@ async function loadPlanProgress(userId: string, language: Language, leetcode: Ac
     };
   });
 
-  // The plan is ordered, so the next problem is the first unsolved one.
-  const next = groups.flatMap((group) => group.items).find((item) => item.status === "todo") ?? null;
+  // The plan is ordered, so the next problem is the first unsolved one that
+  // leetcode.com can open.
+  const next = groups.flatMap((group) => group.items).find((item) => item.status === "todo" && !item.cnOnly) ?? null;
 
   return {
-    plan: { slug: plan.slug, name: plan.name, custom: current.custom, sourceUrl },
+    plan: { slug: plan.slug, name: plan.name, custom: current.custom, sourceUrl: lingSourceUrl(source), source },
     plans: current.options,
     groups,
     counts,

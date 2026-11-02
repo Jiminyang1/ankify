@@ -16,14 +16,23 @@ export interface StudyPlanQuestion {
   slug: string;
   title: string;
   difficulty: LeetCodeDifficulty;
+  /** The Chinese title, where the plan has one (`title` is in the plan's language). */
+  zh?: string;
+  /** Only on leetcode.cn (LCP, LCR, ...): it has no leetcode.com page, so it
+   *  can't be captured, and Next never picks it. */
+  cnOnly?: boolean;
+  /** What to show as a cn-only problem's number ("LCP 68"); its `id` is 0. */
+  label?: string;
 }
 
 export interface StudyPlanGroup {
   name: string;
   questions: StudyPlanQuestion[];
   /** The plan that goes deeper on this group, when the plan names one (the
-   *  Beginner Route points each stage at its topic list). */
+   *  Core Route points each step at its topic list). */
   deepDive?: string;
+  /** The lesson this group follows (灵茶山艾府's course). */
+  videoUrl?: string;
 }
 
 export interface StudyPlan {
@@ -91,20 +100,21 @@ export function deepDivePlanFor(groupName: string, currentPlan: string): StudyPl
  * - did you solve it? (LeetCode) → `todo` or `solved`
  * - if it's in your ankify reviews, is it due? → `remembered` or `due`
  *
- * `solved` means solved on LeetCode (or archived in ankify) but not being
- * reviewed. FSRS's finer states stay internal; users see only these four.
+ * `solved` means solved on LeetCode, ticked by hand on the Plan page, or
+ * archived in ankify, but not being reviewed. FSRS's finer states stay
+ * internal; users see only these four.
  */
 export type PlanProblemStatus = "todo" | "solved" | "remembered" | "due";
 
 export function planProblemStatus(
-  input: { tracked?: { due: Date | null; archived: boolean }; solvedOnLeetcode: boolean },
+  input: { tracked?: { due: Date | null; archived: boolean }; solvedOnLeetcode: boolean; ticked?: boolean },
   now = new Date(),
 ): PlanProblemStatus {
   const { tracked } = input;
   if (tracked && !tracked.archived) {
     return tracked.due == null || tracked.due <= now ? "due" : "remembered";
   }
-  return tracked || input.solvedOnLeetcode ? "solved" : "todo";
+  return tracked || input.solvedOnLeetcode || input.ticked ? "solved" : "todo";
 }
 
 /**

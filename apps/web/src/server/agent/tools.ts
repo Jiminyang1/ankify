@@ -162,7 +162,7 @@ export function createStudyCoachTools(context: AgentToolContext) {
             order: index + 1,
             name: group.name,
             counts: counts(group.counts),
-            nextNotStarted: group.items.filter((item) => item.status === "todo").slice(0, 5).map(newProblem),
+            nextNotStarted: group.items.filter((item) => item.status === "todo" && !item.cnOnly).slice(0, 5).map(newProblem),
             forgottenBefore: group.items
               .filter((item) => item.problemId && item.lapses > 0)
               .sort((a, b) => b.lapses - a.lapses)

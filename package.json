@@ -38,6 +38,7 @@
     "db:studio:prod": "pnpm --filter @ankify/db studio:prod",
     "plans:sync": "node scripts/sync-study-plans.mjs",
     "patterns:sync": "node scripts/sync-pattern-lists.mjs",
+    "plans:catalog": "node scripts/sync-plan-catalog.mjs",
     "db:backup": "pnpm --filter @ankify/db backup",
     "db:release": "pnpm db:backup && pnpm db:migrate:prod"
   },
