@@ -1,12 +1,21 @@
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 
-/** Summary card, then roadmap-shaped node placeholders. */
+/** Meters, summary card, then roadmap-shaped node placeholders. */
 export default function Loading() {
   return (
     <SkeletonGroup className="space-y-6">
       <div className="space-y-2">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-4 w-96 max-w-full" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 rounded-xl border border-border p-4 sm:grid-cols-4 lg:grid-cols-8">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-1 w-full rounded-full" />
+          </div>
+        ))}
       </div>
       <div className="grid gap-6 rounded-xl border border-border p-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-4">

@@ -19,8 +19,9 @@ import {
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { getLeetcodeSolved } from "./leetcode-account";
+import { readPlanTicks } from "./plan-map";
 import { getReviewSettings } from "./settings";
-import { getCurrentStudyPlan, studyPlanSourceUrl } from "./study-plans";
+import { getCurrentStudyPlan, lingSourceUrl, studyPlanSource } from "./study-plans";
 import { formatDateKeyInTimeZone } from "./time-zone";
 
 /**
@@ -31,19 +32,21 @@ import { formatDateKeyInTimeZone } from "./time-zone";
 
 type Language = "en" | "zh";
 
-/** Slugs the user has done: everything in the deck (archived too) plus the
- *  extension's LeetCode solved list. Deck slugs map to their problem id. */
+/** Slugs the user has done: everything in the deck (archived too), the
+ *  extension's LeetCode solved list, and problems ticked on the Plan page.
+ *  Deck slugs map to their problem id. */
 export async function loadDone(userId: string) {
-  const [deck, solved] = await Promise.all([
+  const [deck, solved, ticks] = await Promise.all([
     getDb()
       .select({ id: schema.problems.id, slug: schema.problems.leetcodeSlug })
       .from(schema.problems)
       .where(eq(schema.problems.userId, userId)),
     getLeetcodeSolved(userId),
+    readPlanTicks(userId),
   ]);
   const inDeck = new Map(deck.map((row) => [row.slug, row.id]));
   const solvedSlugs = new Set(solved?.slugs ?? []);
-  return { inDeck, isDone: (slug: string) => inDeck.has(slug) || solvedSlugs.has(slug) };
+  return { inDeck, isDone: (slug: string) => inDeck.has(slug) || solvedSlugs.has(slug) || ticks.has(slug) };
 }
 
 export type DoneSet = { inDeck: ReadonlyMap<string, string>; isDone: (slug: string) => boolean };
@@ -99,7 +102,7 @@ export async function loadProblemChapter(userId: string, slug: string, language:
   return {
     slug,
     chapter: group
-      ? { name: group.name, plan: { slug: plan.slug, name: plan.name, sourceUrl: studyPlanSourceUrl(plan.slug) } }
+      ? { name: group.name, plan: { slug: plan.slug, name: plan.name, sourceUrl: lingSourceUrl(studyPlanSource(plan.slug)) } }
       : null,
     techniques: techniquesForSlug(slug).map(({ topic, pattern }) => toPatternRef(topic, pattern)),
   };

@@ -35,16 +35,23 @@ type SelectOption = {
   value: string;
   label: React.ReactNode;
   disabled: boolean;
+  /** The `<optgroup>` it sits in; a heading is drawn above each group. */
+  group?: string;
 };
 
-function collectOptions(children: React.ReactNode): SelectOption[] {
+function collectOptions(children: React.ReactNode, group?: string): SelectOption[] {
   const options: SelectOption[] = [];
 
   Children.forEach(children, (child) => {
     if (!isValidElement(child)) return;
     if (child.type === Fragment) {
       const fragmentProps = child.props as { children?: React.ReactNode };
-      collectOptions(fragmentProps.children).forEach((option) => options.push(option));
+      collectOptions(fragmentProps.children, group).forEach((option) => options.push(option));
+      return;
+    }
+    if (child.type === "optgroup") {
+      const groupProps = child.props as React.OptgroupHTMLAttributes<HTMLOptGroupElement>;
+      collectOptions(groupProps.children, groupProps.label).forEach((option) => options.push(option));
       return;
     }
     if (child.type !== "option") return;
@@ -54,6 +61,7 @@ function collectOptions(children: React.ReactNode): SelectOption[] {
       value: String(props.value ?? ""),
       label: props.children,
       disabled: Boolean(props.disabled),
+      group,
     });
   });
 
@@ -79,6 +87,16 @@ export function Select({
   const options = useMemo(() => collectOptions(children), [children]);
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
+  // Consecutive options of one group, keeping each option's index in `options`.
+  const sections = useMemo(() => {
+    const result: { group?: string; items: { option: SelectOption; index: number }[] }[] = [];
+    options.forEach((option, index) => {
+      const last = result.at(-1);
+      if (last && last.group === option.group) last.items.push({ option, index });
+      else result.push({ group: option.group, items: [{ option, index }] });
+    });
+    return result;
+  }, [options]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(Math.max(selectedIndex, 0));
   const [openUpward, setOpenUpward] = useState(false);
@@ -203,33 +221,57 @@ export function Select({
           openUpward ? "bottom-[calc(100%+0.4rem)]" : "top-[calc(100%+0.4rem)]",
         )}
       >
-        {options.map((option, index) => {
-          const selected = option.value === value;
-          const active = index === activeIndex;
+        {sections.map((section, sectionIndex) => {
+          const rows = section.items.map(({ option, index }) => {
+            const selected = option.value === value;
+            const active = index === activeIndex;
+            return (
+              <button
+                key={`${option.value}-${index}`}
+                id={`${listboxId}-${index}`}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                data-option-index={index}
+                disabled={option.disabled}
+                onPointerMove={() => setActiveIndex(index)}
+                onClick={() => choose(option)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-fg transition-colors",
+                  active && "bg-subtle",
+                  selected && "bg-accent-soft font-medium text-accent",
+                  option.disabled && "cursor-not-allowed opacity-45",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <Check
+                  className={cn("h-4 w-4 shrink-0 text-accent", !selected && "invisible")}
+                  aria-hidden
+                />
+              </button>
+            );
+          });
+          if (!section.group) {
+            // Ungrouped options after a group get a rule, not a heading.
+            return sectionIndex === 0 ? (
+              <Fragment key="ungrouped-0">{rows}</Fragment>
+            ) : (
+              <div key={`ungrouped-${sectionIndex}`} className="mt-1 border-t border-border pt-1">
+                {rows}
+              </div>
+            );
+          }
+          const headingId = `${listboxId}-group-${sectionIndex}`;
           return (
-            <button
-              key={`${option.value}-${index}`}
-              id={`${listboxId}-${index}`}
-              type="button"
-              role="option"
-              aria-selected={selected}
-              data-option-index={index}
-              disabled={option.disabled}
-              onPointerMove={() => setActiveIndex(index)}
-              onClick={() => choose(option)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-fg transition-colors",
-                active && "bg-subtle",
-                selected && "bg-accent-soft font-medium text-accent",
-                option.disabled && "cursor-not-allowed opacity-45",
-              )}
-            >
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              <Check
-                className={cn("h-4 w-4 shrink-0 text-accent", !selected && "invisible")}
-                aria-hidden
-              />
-            </button>
+            <div key={headingId} role="group" aria-labelledby={headingId}>
+              <div
+                id={headingId}
+                className="px-3 pb-1 pt-2.5 text-[11px] font-medium uppercase tracking-wide text-muted"
+              >
+                {section.group}
+              </div>
+              {rows}
+            </div>
           );
         })}
       </MotionPresence>

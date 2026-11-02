@@ -9,6 +9,9 @@ function item(slug: string, leetcodeId: number, status: PlanProblemStatus): Plan
     title: slug,
     difficulty: "Medium",
     leetcodeId,
+    label: String(leetcodeId),
+    cnOnly: false,
+    premium: false,
     status,
     problemId: null,
     archived: false,
@@ -75,8 +78,39 @@ describe("planNextFrom", () => {
     expect(next.next?.problem.slug).toBe("merge-sorted-array");
   });
 
+  it("never picks a leetcode.cn-only problem, and it doesn't hold a chapter open", () => {
+    const cnOnly = { ...item("1GxJYY", 0, "todo"), label: "LCP 68", cnOnly: true };
+    const next = planNextFrom(plan, [
+      group("Sliding Window", [item("a", 1, "solved"), cnOnly]),
+      group("Binary Search", [item("b", 2, "todo")]),
+    ]);
+    expect(next.next?.problem.slug).toBe("b");
+    expect(next.finishedChapter).toEqual({ name: "Sliding Window", deeper: null });
+    expect(next.plan).toMatchObject({ done: 1, total: 3 });
+
+    expect(planNextFrom(plan, [group("Sliding Window", [cnOnly])]).next).toBeNull();
+  });
+
+  it("never picks a Premium problem, and it doesn't hold a chapter open", () => {
+    const premium = { ...item("locked", 3, "todo"), premium: true };
+    const next = planNextFrom(plan, [
+      group("Sliding Window", [item("a", 1, "solved"), premium]),
+      group("Binary Search", [item("b", 2, "todo")]),
+    ]);
+    expect(next.next?.problem.slug).toBe("b");
+    expect(next.finishedChapter).toEqual({ name: "Sliding Window", deeper: null });
+    expect(next.plan).toMatchObject({ done: 1, total: 3 });
+
+    expect(planNextFrom(plan, [group("Sliding Window", [premium])]).next).toBeNull();
+  });
+
+  it("skips a ticked problem like any other solved one", () => {
+    const next = planNextFrom(plan, [group("Two Pointers", [item("ticked", 1, "solved"), item("open", 2, "todo")])]);
+    expect(next.next?.problem.slug).toBe("open");
+  });
+
   it("says when every problem is solved", () => {
-    const source = { slug: "ling:route", name: "灵神 · 新手村路线", sourceUrl: "https://leetcode.cn/circle/discuss/RvFUtj/" };
+    const source = { slug: "ling:route", name: "灵神 · 核心路线", sourceUrl: "https://leetcode.cn/discuss/post/3141566/" };
     expect(
       planNextFrom(source, [group("1. 滑动窗口", [item("a", 1, "solved"), item("b", 2, "remembered")])]),
     ).toEqual({ plan: { ...source, done: 2, total: 2 }, next: null });

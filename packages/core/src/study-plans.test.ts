@@ -48,6 +48,13 @@ describe("planProblemStatus", () => {
     expect(planProblemStatus({ solvedOnLeetcode: true }, now)).toBe("solved");
   });
 
+  it("counts a manual tick as solved, without overriding the deck", () => {
+    expect(planProblemStatus({ solvedOnLeetcode: false, ticked: true }, now)).toBe("solved");
+    expect(
+      planProblemStatus({ tracked: { due: inDays(5), archived: false }, solvedOnLeetcode: false, ticked: true }, now),
+    ).toBe("remembered");
+  });
+
   it("splits reviewed problems by whether they are due", () => {
     const track = (due: Date | null) => planProblemStatus({ tracked: { due, archived: false }, solvedOnLeetcode: true }, now);
     expect(track(inDays(5))).toBe("remembered");

@@ -312,6 +312,8 @@ export type PlanNextDto = {
     name: string;
     /** 灵茶山艾府's post, for his lists; null for other plans. */
     sourceUrl: string | null;
+    /** The plan's source and who to credit, NeetCode included (older servers omit it). */
+    source?: { url: string; credit: "ling" | "neetcode" } | null;
     /** Problems solved on LeetCode or in review, of the plan's total. */
     done: number;
     total: number;
@@ -327,6 +329,34 @@ export type PlanNextDto = {
   /** The chapter just finished, while the next one hasn't started: the
    *  technique to go deeper on (older servers omit it). */
   finishedChapter?: { name: string; deeper: ChapterDeeperDto | null } | null;
+};
+
+/** One problem's status on the Plan page. Todo problems have no entry. */
+export type PlanStatusEntryDto = {
+  status: "solved" | "remembered" | "due";
+  /** Set when the problem is in the deck. */
+  problemId?: string;
+  /** Ticked by hand on the Plan page. */
+  ticked?: boolean;
+  /** Solved on LeetCode or in the deck, so unticking can't clear it. */
+  auto?: boolean;
+};
+
+/** GET /api/study-plan/statuses: every problem the user has done, by slug. */
+export type PlanStatusesDto = {
+  statuses: Record<string, PlanStatusEntryDto>;
+  /** Problems due for review now. */
+  due: number;
+};
+
+export type PlanMeterDto = { solved: number; total: number };
+
+/** The Plan page's meters. */
+export type PlanMetersDto = {
+  lists: Record<"course" | "route" | "nc150" | "nc250" | "hot100" | "top150", PlanMeterDto>;
+  /** Course, route, NeetCode 250, Hot 100, and Top Interview 150 together. */
+  main: PlanMeterDto;
+  due: number;
 };
 
 /** After a plan: the plan to switch to, and why. */

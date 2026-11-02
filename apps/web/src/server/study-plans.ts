@@ -6,7 +6,14 @@ import {
   type LeetCodeDifficulty,
   type StudyPlan,
 } from "@ankify/core";
-import { PATTERN_PLAN_PREFIX, PATTERN_ROUTE_SLUG, patternStudyPlans } from "@ankify/core/patterns";
+import {
+  PATTERN_ROUTE_SLUG,
+  neetcodeStudyPlans,
+  patternStudyPlans,
+  type PatternStudyPlan,
+  type StudyPlanCredit,
+} from "@ankify/core/patterns";
+import { planCatalogReviewSlugs } from "@ankify/core/plan-catalog";
 import { getDb, schema } from "@ankify/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -14,11 +21,12 @@ import { leetcodeGraphql } from "./leetcode-graphql";
 
 /**
  * Which study plan the profile shows: one of LeetCode's official plans, one
- * of 灵茶山艾府's lists (`ling:<topic>`, plus his Beginner Route
- * `ling:route`, built from `@ankify/core/patterns` and named in the user's
- * language), or a plan imported from the user's own public LeetCode problem
- * list. Imported plans are stored per user in `settings`
- * (`custom-study-plans`) and use the slug `list:<leetcode list slug>`.
+ * of 灵茶山艾府's (`ling:<topic>`, his course `ling:course`, and his Core
+ * Route `ling:route`), NeetCode 150 or 250 (all built from
+ * `@ankify/core/patterns` and named in the user's language), or a plan imported
+ * from the user's own public LeetCode problem list. Imported plans are stored
+ * per user in `settings` (`custom-study-plans`) and use the slug
+ * `list:<leetcode list slug>`.
  */
 
 const CURRENT_KEY = "study-plan";
@@ -30,30 +38,40 @@ const PAGE_SIZE = 100;
 
 type CustomPlan = StudyPlan & { importedAt: number };
 
+/** Where a built-in plan comes from, and who the credit line names. */
+export type StudyPlanSource = { url: string; credit: StudyPlanCredit };
+export type StudyPlanCategory = "ling" | "frequent" | "dictionary" | "imported";
+
 export type StudyPlanOption = {
   slug: string;
   name: string;
   custom: boolean;
+  category: StudyPlanCategory;
   /** Its size, so onboarding's plan step can say what each plan is. */
   problems: number;
   chapters: number;
   /** 灵茶山艾府's post, for his lists; null for other plans. */
   sourceUrl: string | null;
+  /** Its source and credit: his post, or NeetCode's site. null for other plans. */
+  source: StudyPlanSource | null;
 };
 type Language = "en" | "zh";
 
-function planOption(plan: StudyPlan & { sourceUrl?: string }, custom: boolean): StudyPlanOption {
+function planOption(plan: StudyPlan & Partial<PatternStudyPlan>, category: StudyPlanCategory): StudyPlanOption {
+  const source = plan.sourceUrl && plan.credit ? { url: plan.sourceUrl, credit: plan.credit } : null;
   return {
     slug: plan.slug,
     name: plan.name,
-    custom,
+    custom: category === "imported",
+    category,
     problems: plan.groups.reduce((sum, group) => sum + group.questions.length, 0),
     chapters: plan.groups.length,
-    sourceUrl: plan.sourceUrl ?? null,
+    sourceUrl: source?.credit === "ling" ? source.url : null,
+    source,
   };
 }
 
-/** Without a saved choice, Chinese users start on his Beginner Route. */
+/** Without a saved choice, Chinese users start on his Core Route. */
 function defaultPlanSlug(language: Language) {
   return language === "zh" ? PATTERN_ROUTE_SLUG : DEFAULT_STUDY_PLAN;
 }
@@ -68,15 +86,59 @@ function patternPlansIn(language: Language) {
   return plans;
 }
 
-/** An official or pattern plan by slug (imports need the user's settings). */
-export function findBuiltInStudyPlan(slug: unknown, language: Language): StudyPlan | null {
-  return findOfficialStudyPlan(slug) ?? patternPlansIn(language).find((plan) => plan.slug === slug) ?? null;
+const neetcodePlans = new Map<Language, ReturnType<typeof neetcodeStudyPlans>>();
+function neetcodePlansIn(language: Language) {
+  let plans = neetcodePlans.get(language);
+  if (!plans) {
+    plans = neetcodeStudyPlans(language);
+    neetcodePlans.set(language, plans);
+  }
+  return plans;
 }
 
-/** 灵茶山艾府's post a pattern plan comes from; null for other plans. */
-export function studyPlanSourceUrl(slug: string): string | null {
-  if (!slug.startsWith(PATTERN_PLAN_PREFIX)) return null;
-  return patternPlansIn("en").find((plan) => plan.slug === slug)?.sourceUrl ?? null;
+function sourcedPlansIn(language: Language): PatternStudyPlan[] {
+  return [...patternPlansIn(language), ...neetcodePlansIn(language)];
+}
+
+/** An official, 灵茶山艾府, or NeetCode plan by slug (imports need the user's settings). */
+export function findBuiltInStudyPlan(slug: unknown, language: Language): StudyPlan | null {
+  return findOfficialStudyPlan(slug) ?? sourcedPlansIn(language).find((plan) => plan.slug === slug) ?? null;
+}
+
+/** Where a plan comes from and who to credit; null for LeetCode's own plans
+ *  and imports. */
+export function studyPlanSource(slug: string): StudyPlanSource | null {
+  const plan = sourcedPlansIn("en").find((candidate) => candidate.slug === slug);
+  return plan ? { url: plan.sourceUrl, credit: plan.credit } : null;
+}
+
+/** The source link to send as `sourceUrl`: only his posts, because that field
+ *  has always meant "credit 灵茶山艾府" and extension builds in the store render
+ *  it that way. */
+export function lingSourceUrl(source: StudyPlanSource | null): string | null {
+  return source?.credit === "ling" ? source.url : null;
+}
+
+const FREQUENT_OFFICIAL = ["top-100-liked", "top-interview-150", "leetcode-75"];
+const DICTIONARY_OFFICIAL = ["dynamic-programming", "graph-theory", "binary-search"];
+
+/** Every built-in plan in the order the picker shows them: his course and
+ *  route | the high-frequency lists | the dictionary. */
+export function builtInPlanOptions(language: Language): StudyPlanOption[] {
+  const ling = patternPlansIn(language);
+  const isTopic = (plan: StudyPlan) => plan.slug !== "ling:course" && plan.slug !== PATTERN_ROUTE_SLUG;
+  const official = (slugs: readonly string[]) =>
+    slugs.flatMap((slug) => {
+      const plan = findOfficialStudyPlan(slug);
+      return plan ? [plan] : [];
+    });
+  return [
+    ...ling.filter((plan) => !isTopic(plan)).map((plan) => planOption(plan, "ling")),
+    ...neetcodePlansIn(language).map((plan) => planOption(plan, "frequent")),
+    ...official(FREQUENT_OFFICIAL).map((plan) => planOption(plan, "frequent")),
+    ...ling.filter(isTopic).map((plan) => planOption(plan, "dictionary")),
+    ...official(DICTIONARY_OFFICIAL).map((plan) => planOption(plan, "dictionary")),
+  ];
 }
 
 export type ImportListError =
@@ -119,9 +181,8 @@ export async function getCurrentStudyPlan(userId: string, language: Language) {
     custom.find((candidate) => candidate.slug === slug) ??
     findBuiltInStudyPlan(defaultPlanSlug(language), language)!;
   const options: StudyPlanOption[] = [
-    ...OFFICIAL_STUDY_PLANS.map((official) => planOption(official, false)),
-    ...patternPlansIn(language).map((pattern) => planOption(pattern, false)),
-    ...custom.map((imported) => planOption(imported, true)),
+    ...builtInPlanOptions(language),
+    ...custom.map((imported) => planOption(imported, "imported")),
   ];
   return { plan, custom: plan.slug.startsWith(CUSTOM_PREFIX), options };
 }
@@ -153,11 +214,16 @@ export async function removeCustomPlan(userId: string, slug: string) {
   if (current?.plan === slug) await writeSetting(userId, CURRENT_KEY, {});
 }
 
-/** Every problem slug in the plans this user can see, so add-to-review only
- *  accepts problems that are actually on a roadmap. */
+/** Every problem slug in the plans this user can see and on the map, so
+ *  add-to-review only accepts problems that are actually on a roadmap. Never a
+ *  leetcode.cn-only one: English plans leave them out and so does the map's
+ *  list, since they can't be captured from leetcode.com. */
 export async function studyPlanSlugsForUser(userId: string): Promise<Set<string>> {
-  const plans = [...OFFICIAL_STUDY_PLANS, ...patternPlansIn("en"), ...(await getCustomPlans(userId))];
-  return new Set(plans.flatMap((plan) => plan.groups.flatMap((group) => group.questions.map((q) => q.slug))));
+  const plans = [...OFFICIAL_STUDY_PLANS, ...sourcedPlansIn("en"), ...(await getCustomPlans(userId))];
+  return new Set([
+    ...plans.flatMap((plan) => plan.groups.flatMap((group) => group.questions.map((q) => q.slug))),
+    ...planCatalogReviewSlugs(),
+  ]);
 }
 
 const LIST_SLUG_RE = /^[a-z0-9-]{4,64}$/i;
@@ -265,5 +331,5 @@ export async function importLeetcodeList(
   const next = existing < 0 ? [...custom, plan] : custom.map((candidate, index) => (index === existing ? plan : candidate));
   await writeSetting(userId, CUSTOM_KEY, next);
   await writeSetting(userId, CURRENT_KEY, { plan: slug });
-  return { plan: planOption(plan, true) };
+  return { plan: planOption(plan, "imported") };
 }

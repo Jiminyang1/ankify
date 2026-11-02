@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useLanguage } from "@/components/LanguageProvider";
 import { Button, buttonClasses } from "@/components/ui/button";
-import { DifficultyPill } from "@/components/ui/pill";
+import { DifficultyPill, Pill } from "@/components/ui/pill";
 import { Spinner } from "@/components/ui/spinner";
 import { TechniqueCredit, TechniqueStep } from "@/components/technique-suggestion";
 import { useDialogA11y } from "@/lib/use-dialog-a11y";
@@ -52,7 +52,7 @@ export function GroupDialog({
     };
   }, []);
 
-  const addable = group.items.filter((item) => item.status === "solved").map((item) => item.slug);
+  const addable = group.items.filter((item) => item.status === "solved" && !item.cnOnly).map((item) => item.slug);
   const busy = adding.length > 0 || switching || refreshing;
 
   async function addToReview(slugs: string[]) {
@@ -237,6 +237,14 @@ function PlanItemRow({
         {copy.actions.open}
       </Link>
     );
+  } else if (item.status === "solved" && item.cnOnly) {
+    // Only on leetcode.cn, so it can't be captured into the deck.
+    note = copy.item.solved;
+    action = (
+      <a href={problemUrl(item)} target="_blank" rel="noreferrer" className={ghost}>
+        {copy.actions.leetcode}
+      </a>
+    );
   } else if (item.status === "solved") {
     note = item.archived ? copy.item.archived : copy.item.solved;
     action = (
@@ -250,7 +258,7 @@ function PlanItemRow({
     if (isNext) noteTone = "font-medium text-accent";
     action = (
       <a
-        href={`https://leetcode.com/problems/${item.slug}/`}
+        href={problemUrl(item)}
         target="_blank"
         rel="noreferrer"
         className={isNext ? primary : ghost}
@@ -265,11 +273,12 @@ function PlanItemRow({
       <span aria-hidden="true" className={cn("h-2.5 w-2.5 rounded-[3px]", STATUS_SWATCH[item.status])} />
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-xs tabular-nums text-muted">{item.leetcodeId}.</span>
+          <span className="shrink-0 text-xs tabular-nums text-muted">{item.label}.</span>
           <span className="truncate text-sm">{item.title}</span>
           <span className="hidden shrink-0 sm:inline-flex">
             <DifficultyPill difficulty={item.difficulty} language={language} />
           </span>
+          {item.premium && <Pill className="shrink-0">{t.planMap.tags.premium}</Pill>}
         </span>
         <span className={cn("mt-0.5 block text-xs sm:hidden", noteTone)}>{note}</span>
       </span>
@@ -277,6 +286,10 @@ function PlanItemRow({
       {action}
     </li>
   );
+}
+
+function problemUrl(item: PlanItem) {
+  return `https://leetcode.${item.cnOnly ? "cn" : "com"}/problems/${item.slug}/`;
 }
 
 /** A finished chapter: the next problems on the ladder of the technique most

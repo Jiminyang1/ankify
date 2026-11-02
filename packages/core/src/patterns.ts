@@ -1,4 +1,15 @@
 import { PATTERN_PROBLEM_DATA, PATTERN_TOPIC_DATA } from "./patterns.generated";
+import {
+  NEETCODE_SOURCE_URL,
+  PLAN_COURSE_SLUG,
+  PLAN_COURSE_SOURCE_URL,
+  PLAN_ROUTE_SLUG,
+  PLAN_ROUTE_SOURCE_URL,
+  planCatalogNode,
+  planCatalogProblem,
+  planListSets,
+  planNodeSlugs,
+} from "./plan-catalog";
 import { deepDivePlanFor, type StudyPlan, type StudyPlanGroup, type StudyPlanQuestion } from "./study-plans";
 import type { LeetCodeDifficulty } from "./types";
 
@@ -249,74 +260,18 @@ export function focusPlanAfter(input: {
 /* ── His lists as profile study plans ── */
 
 export const PATTERN_PLAN_PREFIX = "ling:";
-export const PATTERN_ROUTE_SLUG = "ling:route";
-/** His "如何科学刷题" guide, where the Beginner Route comes from. */
-const ROUTE_SOURCE = "RvFUtj";
+export const PATTERN_ROUTE_SLUG = PLAN_ROUTE_SLUG;
 
-/**
- * The Beginner Route (新手村) from his guide: seven stages across the lists,
- * each kept to the problems at or below a rating (unrated problems, which
- * never appeared in a contest, stay in). DP goes to 2000 because few DP
- * problems rate lower. Stage 0, LeetCode's own intro list, is leetcode.cn
- * only and left out.
- */
-const ROUTE: readonly { topic: string; en: string; zh: string; patterns: readonly string[]; maxRating: number }[] = [
-  {
-    topic: "sliding-window",
-    en: "Sliding window",
-    zh: "滑动窗口",
-    patterns: ["fixed-window", "window-longest", "window-shortest", "window-count-at-most", "window-count-at-least", "window-count-exact"],
-    maxRating: 1700,
-  },
-  { topic: "binary-search", en: "Binary search", zh: "二分查找", patterns: ["lower-bound"], maxRating: 1700 },
-  {
-    topic: "data-structures",
-    en: "Prefix sums, stacks, queues, heaps",
-    zh: "前缀和、栈、队列、堆",
-    patterns: ["enumerate-right", "prefix-sum", "prefix-sum-hash", "stack", "queue", "heap"],
-    maxRating: 1700,
-  },
-  {
-    topic: "trees",
-    en: "Binary tree DFS",
-    zh: "二叉树 DFS",
-    patterns: ["tree-traversal", "tree-top-down", "tree-bottom-up", "tree-both-ways", "tree-lca", "bst"],
-    maxRating: 1700,
-  },
-  { topic: "grid", en: "Grid DFS", zh: "网格图 DFS", patterns: ["dfs"], maxRating: 1700 },
-  {
-    topic: "trees",
-    en: "Backtracking",
-    zh: "回溯",
-    patterns: ["subsets", "partitions", "combinations", "permutations"],
-    maxRating: 1700,
-  },
-  {
-    topic: "dp",
-    en: "Dynamic programming",
-    zh: "动态规划",
-    patterns: [
-      "climbing-stairs",
-      "house-robber",
-      "max-subarray",
-      "grid",
-      "knapsack-01",
-      "knapsack-unbounded",
-      "lcs",
-      "lis",
-      "stocks",
-    ],
-    maxRating: 2000,
-  },
-];
+/** Who a built-in plan's source link credits. */
+export type StudyPlanCredit = "ling" | "neetcode";
 
-export type PatternStudyPlan = StudyPlan & { sourceUrl: string };
+export type PatternStudyPlan = StudyPlan & { sourceUrl: string; credit: StudyPlanCredit };
 
 /** A plan's problems: core tier only (advanced and extensions stay in the
  *  Same pattern view), no premium problems. */
-function planQuestions(pattern: Pattern, maxRating = Infinity): StudyPlanQuestion[] {
+function planQuestions(pattern: Pattern): StudyPlanQuestion[] {
   return patternSteps(pattern)
-    .filter((step) => step.tier === "core" && !step.premium && (step.rating ?? 0) <= maxRating)
+    .filter((step) => step.tier === "core" && !step.premium)
     .map((step) => ({ id: step.id, slug: step.slug, title: step.title, difficulty: step.difficulty }));
 }
 
@@ -340,30 +295,80 @@ function zhGroupName(pattern: Pattern, topic: PatternTopic): string {
   return repeated && parts.length > 1 ? `${parts.at(-2)} · ${parts.at(-1)}` : parts.at(-1)!;
 }
 
-/** The Beginner Route and one plan per list, named in the user's language. */
-export function patternStudyPlans(language: "en" | "zh"): PatternStudyPlan[] {
-  const author = language === "zh" ? "灵神" : "Ling Shen";
-  const route: PatternStudyPlan = {
+/** A map problem as a plan question. leetcode.cn-only problems stay out of
+ *  English plans, and only flat plans need a difficulty for them. */
+function catalogQuestion(slug: string, language: "en" | "zh"): StudyPlanQuestion | null {
+  const problem = planCatalogProblem(slug);
+  if (!problem) throw new Error(`Plan catalog: unknown problem ${slug}`);
+  if (problem.cnOnly && language === "en") return null;
+  return {
+    id: problem.id,
+    slug,
+    title: language === "zh" ? problem.zh : problem.en || problem.zh,
+    difficulty: problem.difficulty ?? "Medium",
+    zh: problem.zh,
+    ...(problem.cnOnly ? { cnOnly: true, label: problem.label } : {}),
+  };
+}
+
+function catalogQuestions(slugs: readonly string[], language: "en" | "zh"): StudyPlanQuestion[] {
+  return slugs
+    .map((slug) => catalogQuestion(slug, language))
+    .filter((question): question is StudyPlanQuestion => question !== null);
+}
+
+function requireNode(id: string) {
+  const node = planCatalogNode(id);
+  if (!node) throw new Error(`Plan catalog: no node ${id}`);
+  return node;
+}
+
+/** The Core Route (from 灵茶山艾府's guide): the map's seven steps, each cut from
+ *  his lists under its rating cap, with the step's list as its deep dive.
+ *  Step 0, LeetCode's intro plan, is only a link on the map. */
+function routePlan(language: "en" | "zh"): PatternStudyPlan {
+  const steps = requireNode("X").children.filter((step) => step.stepCap != null);
+  return {
     slug: PATTERN_ROUTE_SLUG,
-    name: language === "zh" ? `${author} · 新手村路线` : `${author} · Beginner Route`,
-    sourceUrl: patternSourceUrl({ source: ROUTE_SOURCE }),
+    name: language === "zh" ? "灵神 · 核心路线" : "Ling Shen · Core Route",
+    sourceUrl: PLAN_ROUTE_SOURCE_URL,
+    credit: "ling",
     groups: dedupe(
-      ROUTE.map((stage, index) => ({
-        name: `${index + 1}. ${stage[language]}`,
-        questions: stage.patterns.flatMap((key) => {
-          const found = findPattern(`${stage.topic}/${key}`);
-          if (!found) throw new Error(`Beginner Route: unknown pattern ${stage.topic}/${key}`);
-          return planQuestions(found.pattern, stage.maxRating);
-        }),
-        deepDive: `${PATTERN_PLAN_PREFIX}${stage.topic}`,
+      steps.map((step, index) => ({
+        name: `${index + 1}. ${step.title[language]}`,
+        questions: catalogQuestions(planNodeSlugs(step), language),
+        ...(step.deepDive ? { deepDive: step.deepDive } : {}),
       })),
     ),
   };
+}
+
+/** His video course: one group per lesson, its worked problems then homework. */
+function coursePlan(language: "en" | "zh"): PatternStudyPlan {
+  return {
+    slug: PLAN_COURSE_SLUG,
+    name: language === "zh" ? "灵神 · 基础算法精讲" : "Ling Shen · Algorithm Basics",
+    sourceUrl: PLAN_COURSE_SOURCE_URL,
+    credit: "ling",
+    groups: dedupe(
+      requireNode("C").children.map((video) => ({
+        name: video.title[language],
+        questions: catalogQuestions(planNodeSlugs(video), language),
+        ...(video.videoUrl ? { videoUrl: video.videoUrl } : {}),
+      })),
+    ),
+  };
+}
+
+/** Course, Core Route, and one plan per list, named in the user's language. */
+export function patternStudyPlans(language: "en" | "zh"): PatternStudyPlan[] {
+  const author = language === "zh" ? "灵神" : "Ling Shen";
   const topics = PATTERN_TOPICS.map(
     (topic): PatternStudyPlan => ({
       slug: `${PATTERN_PLAN_PREFIX}${topic.key}`,
       name: `${author} · ${topic[language]}`,
       sourceUrl: patternSourceUrl(topic),
+      credit: "ling",
       groups: dedupe(
         topic.patterns.map((pattern) => ({
           name: language === "zh" ? zhGroupName(pattern, topic) : pattern.en,
@@ -372,5 +377,32 @@ export function patternStudyPlans(language: "en" | "zh"): PatternStudyPlan[] {
       ),
     }),
   );
-  return [route, ...topics];
+  return [coursePlan(language), routePlan(language), ...topics];
+}
+
+/** NeetCode 150 and 250 in his 18 categories. 150 is the problems tagged so in
+ *  the same categories. Deep dives are matched on the English category name, so
+ *  a Chinese plan gets them too. */
+export function neetcodeStudyPlans(language: "en" | "zh"): PatternStudyPlan[] {
+  const plan = (slug: string, name: string, keep: (slug: string) => boolean): PatternStudyPlan => ({
+    slug,
+    name,
+    sourceUrl: NEETCODE_SOURCE_URL,
+    credit: "neetcode",
+    groups: dedupe(
+      requireNode("N").children.map((group) => {
+        const deepDive = deepDivePlanFor(group.title.en, slug)?.slug;
+        return {
+          name: group.title[language],
+          questions: catalogQuestions(group.problems.filter(keep), language),
+          ...(deepDive ? { deepDive } : {}),
+        };
+      }),
+    ),
+  });
+  const nc150 = new Set(planListSets().nc150);
+  return [
+    plan("neetcode-150", "NeetCode 150", (slug) => nc150.has(slug)),
+    plan("neetcode-250", "NeetCode 250", () => true),
+  ];
 }
