@@ -9,11 +9,12 @@ import type { AgentStepDto, PracticeSessionDto } from "@ankify/contracts";
 import { aiCallOptions } from "@/server/ai/call-options";
 import type { AiRuntimeSettings } from "@/server/settings";
 import { compactAgentSessionIfNeeded } from "./compaction";
-import { STUDY_COACH_INSTRUCTIONS } from "./prompt";
+import { buildLearnerProfileInstructions, STUDY_COACH_INSTRUCTIONS } from "./prompt";
 import { createStepTextBuffer } from "./step-text";
 import { createThinkingPulse } from "./thinking-pulse";
 import { finishAgentRun, getAgentModelMessages } from "./store";
 import { judgeTalkTurn, prepareTalkReferences, recordTutorLine, startTalkTurn } from "@/server/practice";
+import { getLearnerProfile } from "@/server/learner-profile";
 import { analyzeAttempts } from "./analyze-attempts";
 import { createStudyCoachTools } from "./tools";
 
@@ -83,10 +84,11 @@ export async function runStudyCoach(args: {
       args.onStep(step);
     },
   });
+  const learnerProfile = await getLearnerProfile(args.userId);
   const agent = new ToolLoopAgent({
     id: "ankify-study-coach",
     model: args.model,
-    instructions: STUDY_COACH_INSTRUCTIONS,
+    instructions: `${STUDY_COACH_INSTRUCTIONS}\n\n${buildLearnerProfileInstructions(learnerProfile.markdown)}`,
     tools,
     stopWhen: [stepCountIs(8), hasToolCall("open_problem")],
     maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,

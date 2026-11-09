@@ -8,7 +8,13 @@ import {
   type AgentStepDto,
   type DocEdit,
 } from "@ankify/contracts";
-import { WEAKNESS_CATEGORIES, leetcodeProblemUrl, leetcodeTagName } from "@ankify/core";
+import {
+  MAX_LEARNER_FACT_LENGTH,
+  MAX_LEARNER_SECTION_LENGTH,
+  WEAKNESS_CATEGORIES,
+  leetcodeProblemUrl,
+  leetcodeTagName,
+} from "@ankify/core";
 import { getDb, schema } from "@ankify/db";
 import { dueProblemCondition } from "@/server/due-problems";
 import { firstTalkInstruction, gradeTalkTarget, startPractice } from "@/server/practice";
@@ -16,6 +22,7 @@ import { loadProblemDocs, previewProblemDocEdit } from "@/server/problem-docs";
 import { listProblemWeaknesses, loadWeaknessProfile, recordWeakness } from "@/server/weaknesses";
 import { getRequestLanguage } from "@/server/i18n";
 import { isOpenTodo } from "@/server/plan-next";
+import { editLearnerProfile } from "@/server/learner-profile";
 import { loadProfile, type PlanItem } from "@/server/profile";
 import { getReviewQueueStatus } from "@/server/review-queue";
 import { createAgentStep } from "./store";
@@ -32,11 +39,14 @@ type AgentToolContext = {
 const MAX_DOC_PROPOSALS_PER_RUN = 3;
 /** Code-enforced cap on new weaknesses per reply. */
 const MAX_WEAKNESSES_PER_RUN = 3;
+/** Code-enforced cap on learner-profile writes per reply. */
+const MAX_LEARNER_FACTS_PER_RUN = 2;
 
 export function createStudyCoachTools(context: AgentToolContext) {
   let nextSequence = 1;
   let docProposals = 0;
   let weaknessesRecorded = 0;
+  let learnerFactsWritten = 0;
   const problemIdInput = z
     .string()
     .min(1)
@@ -449,6 +459,56 @@ export function createStudyCoachTools(context: AgentToolContext) {
           weaknessId: result.weakness.id,
         });
         return { recorded: true, merged: result.merged, timesSeen: result.weakness.hitCount };
+      },
+    }),
+
+    remember_about_user: tool({
+      description:
+        "Save one durable fact about how the user studies to their learner profile, the markdown doc in your instructions: one bullet under a ## section. Saved at once; the user sees and edits the doc in Settings. Pass replace (an existing bullet's text in that section) to rewrite it instead of adding.",
+      inputSchema: z.object({
+        section: z
+          .string()
+          .max(MAX_LEARNER_SECTION_LENGTH)
+          .describe("A ## heading from the profile when one fits, else a short new one in the language the user writes in, e.g. Coding language, Explanations, Goal"),
+        text: z
+          .string()
+          .max(MAX_LEARNER_FACT_LENGTH)
+          .describe("The fact as one short bullet in the language the user writes in, e.g. 'Java' under a language section, or 'Intuition first, then the proof'"),
+        replace: z.string().max(MAX_LEARNER_FACT_LENGTH).optional().describe("Text of the bullet this rewrites"),
+      }),
+      execute: async ({ section, text, replace }) => {
+        if (learnerFactsWritten >= MAX_LEARNER_FACTS_PER_RUN) return { saved: false, error: "too_many_this_turn" };
+        const result = await editLearnerProfile(context.userId, { op: "remember", section, text, replace });
+        if (!result.ok) return { saved: false, error: result.error };
+        learnerFactsWritten += 1;
+        if (result.changed) {
+          await record({
+            kind: "read",
+            toolName: "remember_about_user",
+            status: "completed",
+            summary: `${section.replace(/^#+/, "").trim()} · ${text.trim()}`,
+          });
+        }
+        return { saved: true, alreadyKnown: !result.changed, profile: result.markdown };
+      },
+    }),
+
+    forget_about_user: tool({
+      description: "Remove a bullet from the learner profile when the user asks you to forget it or it's no longer true.",
+      inputSchema: z.object({
+        section: z.string().max(MAX_LEARNER_SECTION_LENGTH).describe("The bullet's ## heading"),
+        text: z.string().max(MAX_LEARNER_FACT_LENGTH).describe("The bullet's text"),
+      }),
+      execute: async ({ section, text }) => {
+        const result = await editLearnerProfile(context.userId, { op: "forget", section, text });
+        if (!result.ok) return { removed: false, error: result.error };
+        await record({
+          kind: "read",
+          toolName: "forget_about_user",
+          status: "completed",
+          summary: `${section.replace(/^#+/, "").trim()} · ${text.trim()}`,
+        });
+        return { removed: true, profile: result.markdown };
       },
     }),
 

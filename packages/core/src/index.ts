@@ -8,3 +8,4 @@ export * from "./problem-docs";
 export * from "./practice";
 export * from "./practice-talk";
 export * from "./weaknesses";
+export * from "./learner-profile";
