@@ -15,6 +15,13 @@ export function notifyWeaknessesUpdated(problemId: string | null) {
   window.dispatchEvent(new CustomEvent(WEAKNESSES_UPDATED_EVENT, { detail: { problemId } }));
 }
 
+/** The Coach remembered or forgot something in the learner profile. */
+export const LEARNER_PROFILE_UPDATED_EVENT = "ankify:learner-profile-updated";
+
+export function notifyLearnerProfileUpdated() {
+  window.dispatchEvent(new CustomEvent(LEARNER_PROFILE_UPDATED_EVENT));
+}
+
 /** A practice session changed: a reply was judged, it finished, or it was rated. */
 export const PRACTICE_UPDATED_EVENT = "ankify:practice-updated";
 

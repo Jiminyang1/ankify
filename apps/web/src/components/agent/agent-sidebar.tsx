@@ -44,6 +44,7 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   notifyPracticeUpdated,
   notifyProblemDocsUpdated,
+  notifyLearnerProfileUpdated,
   notifyWeaknessesUpdated,
 } from "@/lib/agent-events";
 import { cn } from "@/lib/utils";
@@ -297,6 +298,9 @@ export function AgentSidebar({
         router.push(href);
       }
       if (event.step.kind === "weakness") notifyWeaknessesUpdated(problemIdRef.current);
+      if (event.step.toolName === "remember_about_user" || event.step.toolName === "forget_about_user") {
+        notifyLearnerProfileUpdated();
+      }
       // The Coach started a talk-through: show its tray. Its first one on a
       // problem also wrote the Solutions doc.
       if (event.step.kind === "practice" && event.step.practiceSessionId) {
@@ -1138,10 +1142,16 @@ function AgentStep({
   const toolLabel = t.agent.tools[step.toolName as keyof typeof t.agent.tools] ?? step.summary;
   const docEdit = step.proposal?.action === "doc_edit" ? step.proposal : null;
   if (step.kind === "read") {
+    const label =
+      step.toolName === "remember_about_user"
+        ? t.agent.remembered(step.summary)
+        : step.toolName === "forget_about_user"
+          ? t.agent.forgot(step.summary)
+          : toolLabel;
     return (
-      <div className="flex items-center gap-2 px-1 text-[11px] text-muted">
-        <Check className="h-3 w-3 text-success" aria-hidden />
-        <span>{toolLabel}</span>
+      <div className="flex items-start gap-2 px-1 text-[11px] text-muted">
+        <Check className="mt-0.5 h-3 w-3 shrink-0 text-success" aria-hidden />
+        <span className="min-w-0">{label}</span>
       </div>
     );
   }

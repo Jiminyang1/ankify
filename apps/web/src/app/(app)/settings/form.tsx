@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AI_PROVIDERS,
   DEFAULT_REASONING_LEVEL,
+  MAX_LEARNER_PROFILE_LENGTH,
   getAiProviderInfo,
   getReasoningLevels,
   type AiProvider,
   type AiReasoningLevel,
+  type LearnerProfile,
 } from "@ankify/core";
 import { getTranslations, type Language } from "@/lib/i18n";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -17,6 +19,10 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input, Select } from "@/components/ui/field";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Markdown } from "@/components/ui/markdown";
+import { LEARNER_PROFILE_UPDATED_EVENT } from "@/lib/agent-events";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import { TimeZonePicker } from "./time-zone-picker";
 
 export function AppearanceSettingsForm() {
@@ -660,6 +666,143 @@ export function ReviewSettingsForm({ initial }: { initial: { dailyReviewLimit: n
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The learner profile (`packages/core/src/learner-profile.ts`): a markdown
+ *  doc of what the Study Coach remembers about how the user studies. The Coach
+ *  adds bullets; the user edits the whole doc here, version-checked. */
+export function LearnerProfileForm({ initial }: { initial: LearnerProfile }) {
+  const { t } = useLanguage();
+  const [profile, setProfile] = useState(initial);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  /** Set when a save hit a newer version: it's shown above the draft. */
+  const [conflicted, setConflicted] = useState(false);
+  const tooLong = draft !== null && draft.length > MAX_LEARNER_PROFILE_LENGTH;
+
+  function closeEditor() {
+    setDraft(null);
+    setMsg(null);
+    setConflicted(false);
+  }
+
+  // The Coach can write while this page is open: show its change. Not while
+  // a draft is open: its version must stay stale so saving reports the conflict.
+  const editingRef = useRef(false);
+  useEffect(() => {
+    editingRef.current = draft !== null;
+  }, [draft]);
+  useEffect(() => {
+    const refresh = async () => {
+      if (editingRef.current) return;
+      const res = await fetch("/api/learner-profile").catch(() => null);
+      const data = res?.ok ? ((await res.json()) as { profile: LearnerProfile }) : null;
+      if (data && !editingRef.current) setProfile(data.profile);
+    };
+    const onUpdate = () => void refresh();
+    window.addEventListener(LEARNER_PROFILE_UPDATED_EVENT, onUpdate);
+    return () => window.removeEventListener(LEARNER_PROFILE_UPDATED_EVENT, onUpdate);
+  }, []);
+
+  async function save() {
+    if (draft === null || saving || tooLong) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/learner-profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ markdown: draft, expectedVersion: profile.version }),
+      });
+      const data = (await res.json().catch(() => null)) as { profile?: LearnerProfile } | null;
+      if (res.status === 409 && data?.profile) {
+        // The Coach saved something meanwhile: show it, keep the draft to merge by hand.
+        setProfile(data.profile);
+        setConflicted(true);
+        setMsg(t.settings.learnerProfileConflict);
+        return;
+      }
+      if (!res.ok || !data?.profile) throw new Error();
+      setProfile(data.profile);
+      closeEditor();
+    } catch {
+      setMsg(t.settings.failedToSave);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="max-w-2xl space-y-3">
+      <p className="text-sm leading-6 text-muted">{t.settings.learnerProfileHelp}</p>
+      {draft !== null ? (
+        <>
+          {conflicted && (
+            <div className="rounded-lg border border-warning/40 bg-bg px-3 py-2">
+              <Markdown>{profile.markdown}</Markdown>
+            </div>
+          )}
+          <p className="text-xs text-muted">{t.settings.learnerProfileFormat}</p>
+          {/* Same type as the rendered Markdown, so switching to edit doesn't jump. */}
+          <textarea
+            value={draft}
+            autoFocus
+            // Start at the end: adding a fact is the usual edit.
+            onFocus={(event) => {
+              const end = event.currentTarget.value.length;
+              event.currentTarget.setSelectionRange(end, end);
+            }}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void save();
+              } else if (event.key === "Escape" && !saving) {
+                event.preventDefault();
+                closeEditor();
+              }
+            }}
+            aria-label={t.settings.learnerProfile}
+            placeholder={t.settings.learnerProfilePlaceholder}
+            className="focus-inset min-h-56 w-full resize-y rounded-lg border border-border bg-bg px-3 py-2 text-sm leading-relaxed text-fg outline-none"
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className={cn("mr-auto text-xs tabular-nums", tooLong ? "text-danger" : "text-muted")}>
+              {draft.length} / {MAX_LEARNER_PROFILE_LENGTH}
+            </span>
+            <span className="hidden text-xs text-muted sm:inline">{t.docs.saveHint}</span>
+            <Button variant="ghost" disabled={saving} onClick={closeEditor}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="primary" disabled={saving || tooLong} onClick={() => void save()} className={SETTINGS_ACTION_CLASS}>
+              {saving ? <Spinner /> : t.common.save}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="rounded-lg border border-border bg-bg px-3 py-2">
+            {profile.markdown.trim() ? (
+              <Markdown>{profile.markdown}</Markdown>
+            ) : (
+              <p className="py-2 text-sm text-muted">{t.settings.learnerProfileEmpty}</p>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setDraft(profile.markdown)} className={SETTINGS_ACTION_CLASS}>
+              {t.common.edit}
+            </Button>
+          </div>
+        </>
+      )}
+      {msg && (
+        <p className="text-sm text-muted" role="status" aria-live="polite">
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }
 

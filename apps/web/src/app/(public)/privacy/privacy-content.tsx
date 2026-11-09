@@ -15,7 +15,7 @@ const copy = {
         title: "Data we process",
         body: [
           "Google account identity used for authentication: user id, name, email address, profile image, sessions, and account linkage.",
-          "Study data: LeetCode problem metadata and statements, submission code and results, notes, solutions, weak spots, practice sessions and your replies, Study Coach conversations, review events, and scheduling state, plus any cards and quizzes created in earlier versions.",
+          "Study data: LeetCode problem metadata and statements, submission code and results, notes, solutions, weak spots, practice sessions and your replies, Study Coach conversations, what the Study Coach remembers about how you study, review events, and scheduling state, plus any cards and quizzes created in earlier versions.",
           "LeetCode account data: the username you link, its public profile, and the list of problems you've solved.",
           "Configuration data: your study plan, review settings, and encrypted AI-provider key envelopes. Raw AI keys are encrypted before storage.",
           "Basic operational and page-usage telemetry provided by the hosting platform. We do not sell personal data or use it for advertising.",
@@ -62,7 +62,7 @@ const copy = {
         title: "我们处理的数据",
         body: [
           "用于登录的 Google 账号信息：用户 id、姓名、邮箱、头像、会话和账号关联信息。",
-          "学习数据：LeetCode 题目信息与题面、提交代码与结果、笔记、解法、易错点、练习记录和你的回答、学习教练对话、复习事件和调度状态，以及早期版本中创建的卡片和测验。",
+          "学习数据：LeetCode 题目信息与题面、提交代码与结果、笔记、解法、易错点、练习记录和你的回答、学习教练对话、学习教练记住的学习习惯、复习事件和调度状态，以及早期版本中创建的卡片和测验。",
           "LeetCode 账号数据：你关联的用户名、它的公开资料，以及你做过的题目列表。",
           "配置数据：你的题单、复习设置和加密后的 AI 提供商密钥信封。AI key 会先加密再存储。",
           "托管平台提供的基础运行与页面使用遥测。我们不会出售个人数据，也不会将其用于广告。",

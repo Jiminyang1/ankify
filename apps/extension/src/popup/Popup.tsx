@@ -219,6 +219,8 @@ const EXT_I18N = {
         timesSeen: (count: number) => `${count} times`,
         noted: (detail: string) => `Noted a weak spot: ${detail}`,
       },
+      remembered: (note: string) => `Remembered: ${note}`,
+      forgot: (note: string) => `Forgot: ${note}`,
       practice: {
         title: "Practice",
         talkHint: "Answer the Coach's questions in the chat below.",
@@ -487,6 +489,8 @@ const EXT_I18N = {
         timesSeen: (count: number) => `出现 ${count} 次`,
         noted: (detail: string) => `已记下弱点：${detail}`,
       },
+      remembered: (note: string) => `已记住：${note}`,
+      forgot: (note: string) => `已忘记：${note}`,
       practice: {
         title: "练习",
         talkHint: "在下面的聊天里回答教练的问题。",

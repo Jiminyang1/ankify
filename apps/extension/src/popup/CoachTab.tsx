@@ -27,6 +27,8 @@ export type CoachSavedProblem = { slug: string; problemId: string; title: string
 export type CoachCopy = {
   practice: PracticeCopy;
   weakSpots: WeakSpotsCopy & { analyzePrompt: string; noted: (detail: string) => string };
+  remembered: (note: string) => string;
+  forgot: (note: string) => string;
   startPractice: string;
   rateDirectly: string;
   dueForReview: string;
@@ -1012,7 +1014,13 @@ function CoachStep({
       </div>
     );
   }
-  return <p className="coach-step coach-step-read">{step.summary}</p>;
+  const label =
+    step.toolName === "remember_about_user"
+      ? copy.remembered(step.summary)
+      : step.toolName === "forget_about_user"
+        ? copy.forgot(step.summary)
+        : step.summary;
+  return <p className="coach-step coach-step-read">{label}</p>;
 }
 
 /** What a doc-edit proposal would write, shown before the user applies it. A

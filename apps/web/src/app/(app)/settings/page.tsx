@@ -3,11 +3,13 @@ import { requirePageUser } from "@/server/auth";
 import { getRequestTranslations } from "@/server/i18n";
 import { getAiSettings, getGenerationSettings, getReviewSettings } from "@/server/settings";
 import { getStarterAiStatus } from "@/server/starter-ai";
+import { getLearnerProfile } from "@/server/learner-profile";
 import {
   AccountDataForm,
   AiSettingsForm,
   AppearanceSettingsForm,
   LanguageRegionSettingsForm,
+  LearnerProfileForm,
   ReviewSettingsForm,
 } from "./form";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -23,11 +25,12 @@ const SETTINGS_ACTION_CLASS = "min-w-28";
 
 export default async function SettingsPage() {
   const user = await requirePageUser();
-  const [ai, starter, generation, review, t] = await Promise.all([
+  const [ai, starter, generation, review, learnerProfile, t] = await Promise.all([
     getAiSettings(user.id),
     getStarterAiStatus(user.id),
     getGenerationSettings(user.id),
     getReviewSettings(user.id),
+    getLearnerProfile(user.id),
     getRequestTranslations(),
   ]);
   const displayName = getUserDisplayName(user.name, user.email);
@@ -82,6 +85,10 @@ export default async function SettingsPage() {
               }}
               starter={{ enabled: starter.enabled, remaining: starter.remaining, limit: starter.limit }}
             />
+          </SettingsSection>
+
+          <SettingsSection title={t.settings.learnerProfile}>
+            <LearnerProfileForm initial={learnerProfile} />
           </SettingsSection>
 
           <SettingsSection title={t.settings.extensionConnection}>

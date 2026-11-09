@@ -169,6 +169,15 @@ export const weaknessPatchSchema = z
   .object({ status: z.enum(["active", "resolved", "dismissed"]) })
   .strict();
 
+/** PUT /api/learner-profile: the user's own edit of the learner profile doc
+ *  (max length is MAX_LEARNER_PROFILE_LENGTH in core). */
+export const learnerProfilePutSchema = z
+  .object({
+    markdown: z.string().max(2_000),
+    expectedVersion: z.number().int().min(0),
+  })
+  .strict();
+
 /** PUT /api/problems/:id/docs: the user's own edit of one doc. */
 export const problemDocPutSchema = z
   .object({
